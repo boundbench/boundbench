@@ -103,6 +103,10 @@ You can put a badge in your agent's README. Replace `<owner>` and `<repo>` with 
 
 The badge shows where it ranks among all scored agents (`Top 1%`, `Top 5%`, `Top 10%` or `Audited`) and links to its report. For a server in a monorepo, copy the Markdown from its page on boundbench.com, which adds the server's directory. Until a repository is scored, the badge reads `score` and links to the instructions for scoring it yourself.
 
+## Privacy
+
+The BoundBench plugin runs entirely on your machine. It collects no data, sends nothing over the network, and reads no credentials. The audit reads a repository you have cloned locally, and the scorecard and report are written to your local disk. Nothing is shared unless you share it.
+
 ## License
 
 [MIT](LICENSE)
