@@ -1,0 +1,2547 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "raven",
+  "name": "Raven",
+  "repo_url": "https://github.com/evermind-ai/raven",
+  "subpath": null,
+  "description": "Host agent and CLI/web app that orchestrates built-in and third-party agents (research, code, design, oncall) with memory, skills and chat channels.",
+  "category": "ai_assistants",
+  "pinned_commit": "3632e6040c7038a60ec418ce39ccae185c72c19f",
+  "version": "0.2.4",
+  "scored_date": "2026-10-04",
+  "scored_configuration": "Fresh install of the raven CLI/TUI/web page with shipped defaults: permissions.mode=smart, tools.sandbox.backend=none, restrictToWorkspace=false, no third-party sub-agents or channels configured.",
+  "score": 3.5,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 10,
+    "score": 3.47,
+    "max": 10.0,
+    "percent": 35
+  },
+  "capability_profile": {
+    "code_execution": "yes",
+    "filesystem_write": "yes",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "yes",
+    "untrusted_input": "yes",
+    "third_party_extensions": "yes",
+    "sub_agents": "yes",
+    "external_communication": "yes"
+  },
+  "headline": "Raven has an unusually careful permission gate, a parsed read-only shell allowlist, SSRF-hardened fetching and secret scrubbing, but its shipped defaults undercut them. By default an LLM reviewer, not a person, approves most actions, including pushes and installs; shell commands run on the host with no sandbox; and reading any file or fetching any URL needs no approval, so a prompt injection can leak local credentials unattended. Plugin loading from the working directory is also not gated by a trust decision.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "Raven runs as the operator's own OS user and holds the model-provider and web API keys from its config. Its main shell tool strips the environment down to an allowlist, so API keys and cloud credentials in environment variables do not reach shell commands. Nothing narrows file access by default, though: the read tool has no fence and reading files is auto-allowed, so ~/.ssh, ~/.aws and other credentials on disk are one call away. Third-party CLI sub-agents are given a full capture of the user's login-shell environment.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.275,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Ambient OS-user authority; the only narrowing is an environment allowlist for shell subprocesses.",
+          "gap": "No scoped or per-tool credentials and no authorization gate that maps requests to a least-privilege policy before credentials are used.",
+          "evidence": [
+            {
+              "file": "raven/sandbox/direct_executor.py",
+              "lines": "27",
+              "contains": "_ENV_ALLOWLIST = (",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/direct_executor.py#L27"
+            },
+            {
+              "file": "raven/sandbox/direct_executor.py",
+              "lines": "272",
+              "contains": "{**baseline_env(), **(env or {})}",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/direct_executor.py#L272"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Built-in exec gets the scrubbed env and MCP stdio servers get the SDK default env, but CLI sub-agents inherit the full login-shell environment and in-process plugins see everything.",
+          "gap": "Sub-agents and plugins do not pass through the same scoped-authority layer as built-in tools.",
+          "evidence": [
+            {
+              "file": "raven/sandbox/direct_executor.py",
+              "lines": "272",
+              "contains": "{**baseline_env(), **(env or {})}",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/direct_executor.py#L272"
+            },
+            {
+              "file": "raven/agent/subagent/backends/env.py",
+              "lines": "144",
+              "contains": "[shell, \"-lic\", \"env -0\"]",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/subagent/backends/env.py#L144"
+            },
+            {
+              "file": "raven/mcp/client.py",
+              "lines": "199",
+              "contains": "params = StdioServerParameters(command=cfg.command, args=cfg.args, env=cfg.env or None)",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/mcp/client.py#L199"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The env allowlist is on by default, but file tools are unrestricted by default (restrictToWorkspace false).",
+          "gap": "Default is not near-minimal: whole-home file access needs manual hardening via restrictToWorkspace.",
+          "evidence": [
+            {
+              "file": "raven/config/schema.py",
+              "lines": "1316",
+              "contains": "restrict_to_workspace: bool = False",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L1316"
+            },
+            {
+              "file": "raven/security/redact.py",
+              "lines": "10",
+              "contains": "``read_file`` has no fence by default",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/security/redact.py#L10"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked session can read every credential file the user owns (read_file is auto-allowed with no fence) and reach registered machines over SSH.",
+          "gap": "Blast radius is the user's whole account; would need credential-directory denial or workspace containment by default.",
+          "evidence": [
+            {
+              "file": "raven/permissions/rules.py",
+              "lines": "89",
+              "contains": "\"read_file\",",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/rules.py#L89"
+            },
+            {
+              "file": "raven/security/redact.py",
+              "lines": "10",
+              "contains": "``read_file`` has no fence by default",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/security/redact.py#L10"
+            },
+            {
+              "file": "raven/config/schema.py",
+              "lines": "1316",
+              "contains": "restrict_to_workspace: bool = False",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L1316"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.275,
+          "raw": 0.275,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Ambient OS-user authority; the only narrowing is an environment allowlist for shell subprocesses.",
+              "gap": "No scoped or per-tool credentials and no authorization gate that maps requests to a least-privilege policy before credentials are used.",
+              "evidence": [
+                {
+                  "file": "raven/sandbox/direct_executor.py",
+                  "lines": "27",
+                  "contains": "_ENV_ALLOWLIST = (",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/direct_executor.py#L27"
+                },
+                {
+                  "file": "raven/sandbox/direct_executor.py",
+                  "lines": "272",
+                  "contains": "{**baseline_env(), **(env or {})}",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/direct_executor.py#L272"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Built-in exec gets the scrubbed env and MCP stdio servers get the SDK default env, but CLI sub-agents inherit the full login-shell environment and in-process plugins see everything.",
+              "gap": "Sub-agents and plugins do not pass through the same scoped-authority layer as built-in tools.",
+              "evidence": [
+                {
+                  "file": "raven/sandbox/direct_executor.py",
+                  "lines": "272",
+                  "contains": "{**baseline_env(), **(env or {})}",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/direct_executor.py#L272"
+                },
+                {
+                  "file": "raven/agent/subagent/backends/env.py",
+                  "lines": "144",
+                  "contains": "[shell, \"-lic\", \"env -0\"]",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/subagent/backends/env.py#L144"
+                },
+                {
+                  "file": "raven/mcp/client.py",
+                  "lines": "199",
+                  "contains": "params = StdioServerParameters(command=cfg.command, args=cfg.args, env=cfg.env or None)",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/mcp/client.py#L199"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The env allowlist is on by default, but file tools are unrestricted by default (restrictToWorkspace false).",
+              "gap": "Default is not near-minimal: whole-home file access needs manual hardening via restrictToWorkspace.",
+              "evidence": [
+                {
+                  "file": "raven/config/schema.py",
+                  "lines": "1316",
+                  "contains": "restrict_to_workspace: bool = False",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L1316"
+                },
+                {
+                  "file": "raven/security/redact.py",
+                  "lines": "10",
+                  "contains": "``read_file`` has no fence by default",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/security/redact.py#L10"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked session can read every credential file the user owns (read_file is auto-allowed with no fence) and reach registered machines over SSH.",
+              "gap": "Blast radius is the user's whole account; would need credential-directory denial or workspace containment by default.",
+              "evidence": [
+                {
+                  "file": "raven/permissions/rules.py",
+                  "lines": "89",
+                  "contains": "\"read_file\",",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/rules.py#L89"
+                },
+                {
+                  "file": "raven/security/redact.py",
+                  "lines": "10",
+                  "contains": "``read_file`` has no fence by default",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/security/redact.py#L10"
+                },
+                {
+                  "file": "raven/config/schema.py",
+                  "lines": "1316",
+                  "contains": "restrict_to_workspace: bool = False",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L1316"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "Every tool call, including MCP tools and built-in sub-agents, passes one permission gate with a parsed read-only shell allowlist, a catastrophe deny list and per-call prompts that show the exact call. But the shipped mode is 'smart': an LLM reviewer approves most ask-tier calls itself and is told to allow pushing branches, installing dependencies and running scripts; a human is asked only when it escalates, and the reviewer also runs in unattended turns. Third-party ACP sub-agents have every permission request auto-approved. The strict per-call 'ask' mode exists but is opt-in.",
+      "max": 1.0,
+      "notes": "C2-SELFAPPROVE not applied: the reviewer is a separate constrained call that fails closed to a human, not the acting model's own say-so; it is rated at S L1 instead.",
+      "status": "scored",
+      "score": 0.475,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Per-call human approval showing the exact command or call, with risk tiers, deny-and-stop, and an approval digest so a refused call is not re-asked.",
+          "gap": "Long arguments are shortened in the prompt line and argument-level allow/deny rules exist only for exec.",
+          "evidence": [
+            {
+              "file": "raven/permissions/gate.py",
+              "lines": "219",
+              "contains": "return NeedsApproval(",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/gate.py#L219"
+            },
+            {
+              "file": "raven/permissions/gate.py",
+              "lines": "346",
+              "contains": "if outcome.choice is ApprovalChoice.DENY_STOP",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/gate.py#L346"
+            },
+            {
+              "file": "raven/permissions/builtin.py",
+              "lines": "89",
+              "contains": "def action_digest",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/builtin.py#L89"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Same coverage as the default: registry tools gated, third-party ACP sub-agents auto-approved.",
+          "gap": "Third-party sub-agents bypass the gate.",
+          "evidence": [
+            {
+              "file": "raven/agent/tools/registry.py",
+              "lines": "992",
+              "contains": "refusal = await self._permission_gate.enforce",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/tools/registry.py#L992"
+            },
+            {
+              "file": "raven/acp_client/permissions.py",
+              "lines": "5-6",
+              "contains": "raven approves",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/acp_client/permissions.py#L5-L6"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Opt-in; the shipped default is smart.",
+          "gap": "Ask mode is not the default.",
+          "evidence": [
+            {
+              "file": "raven/config/schema.py",
+              "lines": "1288",
+              "contains": "mode: Literal[\"ask\", \"smart\", \"full\"] = \"smart\"",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L1288"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Same checkpoints as default.",
+          "gap": "No rollback or previews for external actions.",
+          "evidence": [
+            {
+              "file": "raven/config/raven.py",
+              "lines": "1325",
+              "contains": "policy: Literal[\"always\", \"interactive\", \"never\"] = \"interactive\"",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/raven.py#L1325"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.375,
+          "raw": 0.375,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default smart mode lets an LLM classifier auto-approve ask-tier calls, with a human only on escalation or reviewer failure.",
+              "gap": "A human should approve consequential calls by default; an LLM reviewer approving pushes and installs is L1.",
+              "evidence": [
+                {
+                  "file": "raven/config/schema.py",
+                  "lines": "1288",
+                  "contains": "mode: Literal[\"ask\", \"smart\", \"full\"] = \"smart\"",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L1288"
+                },
+                {
+                  "file": "raven/permissions/judge.py",
+                  "lines": "32-33",
+                  "contains": "pushing a branch",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/judge.py#L32-L33"
+                },
+                {
+                  "file": "raven/permissions/gate.py",
+                  "lines": "206-210",
+                  "contains": "return Allow(source=DecisionSource.JUDGE)",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/gate.py#L206-L210"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All registry tools (built-in, MCP, built-in sub-agents) cross the gate and compound shell commands are parsed, but third-party ACP sub-agents' requests are auto-approved.",
+              "gap": "Third-party sub-agent tool calls bypass the human gate entirely.",
+              "evidence": [
+                {
+                  "file": "raven/agent/tools/registry.py",
+                  "lines": "992",
+                  "contains": "refusal = await self._permission_gate.enforce",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/tools/registry.py#L992"
+                },
+                {
+                  "file": "raven/permissions/rules.py",
+                  "lines": "380",
+                  "contains": "_SEPARATORS = frozenset(",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/rules.py#L380"
+                },
+                {
+                  "file": "raven/acp_client/permissions.py",
+                  "lines": "5-6",
+                  "contains": "raven approves",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/acp_client/permissions.py#L5-L6"
+                },
+                {
+                  "file": "raven/acp_client/permissions.py",
+                  "lines": "56",
+                  "contains": "_KIND_ORDER = (\"allow_always\"",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/acp_client/permissions.py#L56"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "On by default, but security settings are not tamper-resistant and plugin loading is not gated by a trust decision.",
+              "gap": "Security settings should be writable only through an operator path.",
+              "evidence": [
+                {
+                  "file": "raven/config/schema.py",
+                  "lines": "1288",
+                  "contains": "mode: Literal[\"ask\", \"smart\", \"full\"] = \"smart\"",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L1288"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Per-turn shadow-git checkpoints make workspace edits reversible in interactive sessions; pushes, installs and network actions are not.",
+              "gap": "No previews or rollback for external actions and no rate limit on consequential calls.",
+              "evidence": [
+                {
+                  "file": "raven/config/raven.py",
+                  "lines": "1325",
+                  "contains": "policy: Literal[\"always\", \"interactive\", \"never\"] = \"interactive\"",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/raven.py#L1325"
+                },
+                {
+                  "file": "raven/permissions/judge.py",
+                  "lines": "32-33",
+                  "contains": "pushing a branch",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/judge.py#L32-L33"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in 'ask' permission mode (permissions.mode=ask)",
+          "score": 0.475,
+          "raw": 0.475,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Per-call human approval showing the exact command or call, with risk tiers, deny-and-stop, and an approval digest so a refused call is not re-asked.",
+              "gap": "Long arguments are shortened in the prompt line and argument-level allow/deny rules exist only for exec.",
+              "evidence": [
+                {
+                  "file": "raven/permissions/gate.py",
+                  "lines": "219",
+                  "contains": "return NeedsApproval(",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/gate.py#L219"
+                },
+                {
+                  "file": "raven/permissions/gate.py",
+                  "lines": "346",
+                  "contains": "if outcome.choice is ApprovalChoice.DENY_STOP",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/gate.py#L346"
+                },
+                {
+                  "file": "raven/permissions/builtin.py",
+                  "lines": "89",
+                  "contains": "def action_digest",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/builtin.py#L89"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Same coverage as the default: registry tools gated, third-party ACP sub-agents auto-approved.",
+              "gap": "Third-party sub-agents bypass the gate.",
+              "evidence": [
+                {
+                  "file": "raven/agent/tools/registry.py",
+                  "lines": "992",
+                  "contains": "refusal = await self._permission_gate.enforce",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/tools/registry.py#L992"
+                },
+                {
+                  "file": "raven/acp_client/permissions.py",
+                  "lines": "5-6",
+                  "contains": "raven approves",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/acp_client/permissions.py#L5-L6"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Opt-in; the shipped default is smart.",
+              "gap": "Ask mode is not the default.",
+              "evidence": [
+                {
+                  "file": "raven/config/schema.py",
+                  "lines": "1288",
+                  "contains": "mode: Literal[\"ask\", \"smart\", \"full\"] = \"smart\"",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L1288"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Same checkpoints as default.",
+              "gap": "No rollback or previews for external actions.",
+              "evidence": [
+                {
+                  "file": "raven/config/raven.py",
+                  "lines": "1325",
+                  "contains": "policy: Literal[\"always\", \"interactive\", \"never\"] = \"interactive\"",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/raven.py#L1325"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "The default tool set includes an arbitrary host shell, file write and edit, web fetch and a browser, all enabled at once. Some validation is strong: web fetch blocks private and metadata addresses and rechecks every redirect hop with DNS pinning, and the shell's auto-allow list is a carefully parsed read-only command set. But file tools resolve paths with no containment by default, and the shell itself is a raw command string. An opt-in restrictToWorkspace mode adds resolved-path containment for file tools.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.425,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "File tools check resolved-path containment against the workspace; exec adds a heuristic path check.",
+          "gap": "Exec containment is a lexical path scan, not a boundary; no narrow-tool replacement for shell.",
+          "evidence": [
+            {
+              "file": "raven/agent/tools/filesystem.py",
+              "lines": "66-70",
+              "contains": "resolved.relative_to(Path(allowed).resolve())",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/tools/filesystem.py#L66-L70"
+            },
+            {
+              "file": "raven/agent/tools/shell.py",
+              "lines": "532",
+              "contains": "def _check_workspace_restriction",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/tools/shell.py#L532"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Applies to built-in file, media and deliver tools; not to MCP/plugin tools.",
+          "gap": "Extension tools are not covered.",
+          "evidence": [
+            {
+              "file": "raven/agent/loop/wiring.py",
+              "lines": "920",
+              "contains": "allowed_dirs = (self.workspace,) if self.restrict_to_workspace else ()",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/loop/wiring.py#L920"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Off by default.",
+          "gap": "Off by default.",
+          "evidence": [
+            {
+              "file": "raven/config/schema.py",
+              "lines": "1316",
+              "contains": "restrict_to_workspace: bool = False",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L1316"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Exec containment is not a complete boundary; network is unrestricted.",
+          "gap": "No quantity bounds and no network scoping.",
+          "evidence": [],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.35,
+          "raw": 0.35,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Typed schemas plus strong SSRF checks on web_fetch, but exec accepts any shell string and file paths are resolved without containment by default.",
+              "gap": "File and shell tools lack allowlist containment by default.",
+              "evidence": [
+                {
+                  "file": "raven/security/network.py",
+                  "lines": "193-231",
+                  "contains": "follow_redirects=False",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/security/network.py#L193-L231"
+                },
+                {
+                  "file": "raven/agent/tools/web.py",
+                  "lines": "1020",
+                  "contains": "is_valid, error_msg = validate_url_target(url)",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/tools/web.py#L1020"
+                },
+                {
+                  "file": "raven/agent/tools/filesystem.py",
+                  "lines": "66-67",
+                  "contains": "resolved = p.resolve()",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/tools/filesystem.py#L66-L67"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Most built-in tools validate their arguments; MCP and plugin tools get only schema validation.",
+              "gap": "No shared argument-policy layer for extension tools.",
+              "evidence": [
+                {
+                  "file": "raven/agent/tools/registry.py",
+                  "lines": "976",
+                  "contains": "errors = validate_params(tool.parameters, params) + tool.validate_params(params)",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/tools/registry.py#L976"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Exec, write, web and browser tools are all registered by default.",
+              "gap": "Read-only default tool set with write/exec enabled explicitly.",
+              "evidence": [
+                {
+                  "file": "raven/agent/loop/wiring.py",
+                  "lines": "921-937",
+                  "contains": "ExecTool(",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/loop/wiring.py#L921-L937"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Exec reaches the whole machine, limited only by a catastrophe-class deny list and the approval tier.",
+              "gap": "Tools are not scoped to a workspace or quantity-bounded by default.",
+              "evidence": [
+                {
+                  "file": "raven/permissions/builtin.py",
+                  "lines": "44",
+                  "contains": "BUILTIN_DENY_PATTERNS: tuple[str, ...] = (",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/builtin.py#L44"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in restrictToWorkspace",
+          "score": 0.425,
+          "raw": 0.425,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "File tools check resolved-path containment against the workspace; exec adds a heuristic path check.",
+              "gap": "Exec containment is a lexical path scan, not a boundary; no narrow-tool replacement for shell.",
+              "evidence": [
+                {
+                  "file": "raven/agent/tools/filesystem.py",
+                  "lines": "66-70",
+                  "contains": "resolved.relative_to(Path(allowed).resolve())",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/tools/filesystem.py#L66-L70"
+                },
+                {
+                  "file": "raven/agent/tools/shell.py",
+                  "lines": "532",
+                  "contains": "def _check_workspace_restriction",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/tools/shell.py#L532"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Applies to built-in file, media and deliver tools; not to MCP/plugin tools.",
+              "gap": "Extension tools are not covered.",
+              "evidence": [
+                {
+                  "file": "raven/agent/loop/wiring.py",
+                  "lines": "920",
+                  "contains": "allowed_dirs = (self.workspace,) if self.restrict_to_workspace else ()",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/loop/wiring.py#L920"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Off by default.",
+              "gap": "Off by default.",
+              "evidence": [
+                {
+                  "file": "raven/config/schema.py",
+                  "lines": "1316",
+                  "contains": "restrict_to_workspace: bool = False",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L1316"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Exec containment is not a complete boundary; network is unrestricted.",
+              "gap": "No quantity bounds and no network scoping.",
+              "evidence": [],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "Shell commands run directly on the host as the user by default; the code even logs a warning saying prompt-injected commands run with full host privileges. An opt-in Boxlite microVM backend is a strong boundary and fails closed if it cannot start, but it mounts the workspace read-write with open network by default, and third-party CLI sub-agents still run on the host. Environment scrubbing keeps API keys out of shell commands, but the home directory is fully reachable.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.475,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Kernel-separated microVM backend; 'auto'/'boxlite' raise rather than fall back to host when unavailable.",
+          "evidence": [
+            {
+              "file": "raven/sandbox/boxlite_executor.py",
+              "lines": "17",
+              "contains": "class BoxliteExecutor(SandboxExecutor):",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/boxlite_executor.py#L17"
+            },
+            {
+              "file": "raven/sandbox/__init__.py",
+              "lines": "106",
+              "contains": "if backend in (\"auto\", \"boxlite\"):",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/__init__.py#L106"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The exec tool runs in the VM, but CLI sub-agents run on the host by design.",
+          "gap": "Sub-agent and other spawned paths are not sandboxed.",
+          "evidence": [
+            {
+              "file": "raven/agent/subagent/backends/cli_agent.py",
+              "lines": "4",
+              "contains": "Runs on the host rather than through the sandbox executor",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/subagent/backends/cli_agent.py#L4"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Off by default.",
+          "gap": "Off by default.",
+          "evidence": [
+            {
+              "file": "raven/sandbox/config.py",
+              "lines": "38",
+              "contains": "backend: Literal[\"none\", \"auto\", \"boxlite\"] = \"none\"",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/config.py#L38"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Workspace mounted read-write and network fully open by default inside the VM.",
+          "gap": "Egress should be off or allowlisted by default.",
+          "evidence": [
+            {
+              "file": "raven/sandbox/boxlite_executor.py",
+              "lines": "235",
+              "contains": "\"readonly\": False",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/boxlite_executor.py#L235"
+            },
+            {
+              "file": "raven/sandbox/config.py",
+              "lines": "44",
+              "contains": "allow_net: bool | list[str] = True",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/config.py#L44"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default backend 'none' runs commands as a same-user host subprocess.",
+              "gap": "No isolation primitive in the default configuration.",
+              "evidence": [
+                {
+                  "file": "raven/sandbox/config.py",
+                  "lines": "38",
+                  "contains": "backend: Literal[\"none\", \"auto\", \"boxlite\"] = \"none\"",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/config.py#L38"
+                },
+                {
+                  "file": "raven/sandbox/__init__.py",
+                  "lines": "94-104",
+                  "contains": "return DirectExecutor()",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/__init__.py#L94-L104"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No execution path is isolated by default.",
+              "gap": "The main exec tool is not sandboxed.",
+              "evidence": [
+                {
+                  "file": "raven/sandbox/__init__.py",
+                  "lines": "94-104",
+                  "contains": "return DirectExecutor()",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/__init__.py#L94-L104"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Sandbox is off by default.",
+              "gap": "Sandboxing is opt-in.",
+              "evidence": [
+                {
+                  "file": "raven/sandbox/config.py",
+                  "lines": "38",
+                  "contains": "backend: Literal[\"none\", \"auto\", \"boxlite\"] = \"none\"",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/config.py#L38"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Host-equivalent: home directory, ~/.ssh and full network are reachable; only env vars are scrubbed.",
+              "gap": "Would need workspace-only filesystem, no secrets, and restricted egress.",
+              "evidence": [
+                {
+                  "file": "raven/sandbox/__init__.py",
+                  "lines": "94-104",
+                  "contains": "return DirectExecutor()",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/__init__.py#L94-L104"
+                },
+                {
+                  "file": "raven/sandbox/direct_executor.py",
+                  "lines": "27",
+                  "contains": "_ENV_ALLOWLIST = (",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/direct_executor.py#L27"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in Boxlite microVM (tools.sandbox.backend=boxlite)",
+          "score": 0.475,
+          "raw": 0.475,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Kernel-separated microVM backend; 'auto'/'boxlite' raise rather than fall back to host when unavailable.",
+              "evidence": [
+                {
+                  "file": "raven/sandbox/boxlite_executor.py",
+                  "lines": "17",
+                  "contains": "class BoxliteExecutor(SandboxExecutor):",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/boxlite_executor.py#L17"
+                },
+                {
+                  "file": "raven/sandbox/__init__.py",
+                  "lines": "106",
+                  "contains": "if backend in (\"auto\", \"boxlite\"):",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/__init__.py#L106"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The exec tool runs in the VM, but CLI sub-agents run on the host by design.",
+              "gap": "Sub-agent and other spawned paths are not sandboxed.",
+              "evidence": [
+                {
+                  "file": "raven/agent/subagent/backends/cli_agent.py",
+                  "lines": "4",
+                  "contains": "Runs on the host rather than through the sandbox executor",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/subagent/backends/cli_agent.py#L4"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Off by default.",
+              "gap": "Off by default.",
+              "evidence": [
+                {
+                  "file": "raven/sandbox/config.py",
+                  "lines": "38",
+                  "contains": "backend: Literal[\"none\", \"auto\", \"boxlite\"] = \"none\"",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/config.py#L38"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Workspace mounted read-write and network fully open by default inside the VM.",
+              "gap": "Egress should be off or allowlisted by default.",
+              "evidence": [
+                {
+                  "file": "raven/sandbox/boxlite_executor.py",
+                  "lines": "235",
+                  "contains": "\"readonly\": False",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/boxlite_executor.py#L235"
+                },
+                {
+                  "file": "raven/sandbox/config.py",
+                  "lines": "44",
+                  "contains": "allow_net: bool | list[str] = True",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/config.py#L44"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "Every tool result is wrapped in a nonce-tagged 'untrusted data' fence before the model sees it, and chat channels deny unknown senders by default. Nothing acts on that fence: reading files and fetching arbitrary URLs are auto-allowed, and the default LLM reviewer approves pushes, installs and script runs. A prompt-injected session can therefore read local secrets and send them out through a fetched URL, and take irreversible actions, without a human.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C5-WORSTCASE",
+        "max": 0.25,
+        "reason": "In the default configuration a hijacked session can leak local secrets through auto-allowed web_fetch and take irreversible actions approved by the LLM reviewer, with no human."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Delimiter-based spotlighting of tool results only; no capability is disabled once untrusted content is read.",
+          "gap": "Egress and state-changing tools should require human approval once untrusted content enters the session.",
+          "evidence": [
+            {
+              "file": "raven/agent/context/builder.py",
+              "lines": "300",
+              "contains": "content = wrap_untrusted(result, source=tool_name)",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/context/builder.py#L300"
+            },
+            {
+              "file": "raven/security/trust.py",
+              "lines": "23",
+              "contains": "def wrap_untrusted",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/security/trust.py#L23"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The fence covers every tool result (including MCP and sub-agent output) and recalled memory, but the user.md memory dump and workspace bootstrap files are injected unfenced.",
+          "gap": "Not every source is fenced; L3 also needs S above L1.",
+          "evidence": [
+            {
+              "file": "raven/agent/context/builder.py",
+              "lines": "300",
+              "contains": "content = wrap_untrusted(result, source=tool_name)",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/context/builder.py#L300"
+            },
+            {
+              "file": "raven/memory_engine/consolidate/consolidator.py",
+              "lines": "937",
+              "contains": "return f\"## Long-term Memory",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/memory_engine/consolidate/consolidator.py#L937"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The fence is unconditional and channel allowlists deny by default.",
+          "gap": "Capped by the weak mechanism (S L1).",
+          "evidence": [
+            {
+              "file": "raven/agent/context/builder.py",
+              "lines": "300",
+              "contains": "content = wrap_untrusted(result, source=tool_name)",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/context/builder.py#L300"
+            },
+            {
+              "file": "raven/auth/allowlist.py",
+              "lines": "48",
+              "contains": "if allow_list is None:",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/auth/allowlist.py#L48"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Unattended exfiltration via auto-allowed read_file plus web_fetch, and irreversible actions via the smart reviewer.",
+          "gap": "Egress or irreversible actions should require human approval.",
+          "evidence": [
+            {
+              "file": "raven/permissions/rules.py",
+              "lines": "89",
+              "contains": "\"read_file\",",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/rules.py#L89"
+            },
+            {
+              "file": "raven/permissions/rules.py",
+              "lines": "97",
+              "contains": "\"web_fetch\",",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/rules.py#L97"
+            },
+            {
+              "file": "raven/permissions/judge.py",
+              "lines": "32-33",
+              "contains": "pushing a branch",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/judge.py#L32-L33"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.325,
+          "cap": {
+            "id": "C5-WORSTCASE",
+            "max": 0.25,
+            "reason": "In the default configuration a hijacked session can leak local secrets through auto-allowed web_fetch and take irreversible actions approved by the LLM reviewer, with no human."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Delimiter-based spotlighting of tool results only; no capability is disabled once untrusted content is read.",
+              "gap": "Egress and state-changing tools should require human approval once untrusted content enters the session.",
+              "evidence": [
+                {
+                  "file": "raven/agent/context/builder.py",
+                  "lines": "300",
+                  "contains": "content = wrap_untrusted(result, source=tool_name)",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/context/builder.py#L300"
+                },
+                {
+                  "file": "raven/security/trust.py",
+                  "lines": "23",
+                  "contains": "def wrap_untrusted",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/security/trust.py#L23"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The fence covers every tool result (including MCP and sub-agent output) and recalled memory, but the user.md memory dump and workspace bootstrap files are injected unfenced.",
+              "gap": "Not every source is fenced; L3 also needs S above L1.",
+              "evidence": [
+                {
+                  "file": "raven/agent/context/builder.py",
+                  "lines": "300",
+                  "contains": "content = wrap_untrusted(result, source=tool_name)",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/context/builder.py#L300"
+                },
+                {
+                  "file": "raven/memory_engine/consolidate/consolidator.py",
+                  "lines": "937",
+                  "contains": "return f\"## Long-term Memory",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/memory_engine/consolidate/consolidator.py#L937"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The fence is unconditional and channel allowlists deny by default.",
+              "gap": "Capped by the weak mechanism (S L1).",
+              "evidence": [
+                {
+                  "file": "raven/agent/context/builder.py",
+                  "lines": "300",
+                  "contains": "content = wrap_untrusted(result, source=tool_name)",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/context/builder.py#L300"
+                },
+                {
+                  "file": "raven/auth/allowlist.py",
+                  "lines": "48",
+                  "contains": "if allow_list is None:",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/auth/allowlist.py#L48"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Unattended exfiltration via auto-allowed read_file plus web_fetch, and irreversible actions via the smart reviewer.",
+              "gap": "Egress or irreversible actions should require human approval.",
+              "evidence": [
+                {
+                  "file": "raven/permissions/rules.py",
+                  "lines": "89",
+                  "contains": "\"read_file\",",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/rules.py#L89"
+                },
+                {
+                  "file": "raven/permissions/rules.py",
+                  "lines": "97",
+                  "contains": "\"web_fetch\",",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/rules.py#L97"
+                },
+                {
+                  "file": "raven/permissions/judge.py",
+                  "lines": "32-33",
+                  "contains": "pushing a branch",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/judge.py#L32-L33"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "Raven's own settings load only from the user's home, but plugin loading from the working directory is not gated by a trust decision. Long-term memory (user.md) is written automatically from conversations and re-injected into the system prompt unfenced, under a single default user id, while the EverOS recall block is fenced.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.175,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C6-REPOCONFIG",
+        "max": 0.25,
+        "reason": "Repository-controlled content can change agent behaviour without a trust decision."
+      },
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Plugin loading from the working directory is not gated by a trust decision; memory writes are unvalidated and reloaded as trusted context.",
+          "gap": "Plugin loading should be hardened, and memory writes should be validated or approved.",
+          "evidence": [],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only the EverOS recall block is fenced; user.md and bootstrap files are uncontrolled.",
+          "gap": "Main memory store and auto-loaded files are not controlled.",
+          "evidence": [
+            {
+              "file": "raven/context_engine/segments/render.py",
+              "lines": "478",
+              "contains": "source=\"recalled memory\"",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/context_engine/segments/render.py#L478"
+            },
+            {
+              "file": "raven/context_engine/segments/render.py",
+              "lines": "54-57",
+              "contains": "\"TOOLS.md\",",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/context_engine/segments/render.py#L54-L57"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Memory is keyed to one configured user id ('default') shared by every sender a channel admits.",
+          "gap": "No per-user/session namespace enforced by default.",
+          "evidence": [
+            {
+              "file": "raven/config/raven.py",
+              "lines": "1153",
+              "contains": "user_id: str = \"default\"",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/raven.py#L1153"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Poisoned memory persists across the user's sessions and can steer tool use.",
+          "gap": "Memory should be session-scoped or easily reviewed and purged.",
+          "evidence": [
+            {
+              "file": "raven/memory_engine/consolidate/consolidator.py",
+              "lines": "916",
+              "contains": "def get_memory_context",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/memory_engine/consolidate/consolidator.py#L916"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.175,
+          "raw": 0.175,
+          "cap": {
+            "id": "C6-REPOCONFIG",
+            "max": 0.25,
+            "reason": "Repository-controlled content can change agent behaviour without a trust decision."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Plugin loading from the working directory is not gated by a trust decision; memory writes are unvalidated and reloaded as trusted context.",
+              "gap": "Plugin loading should be hardened, and memory writes should be validated or approved.",
+              "evidence": [],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only the EverOS recall block is fenced; user.md and bootstrap files are uncontrolled.",
+              "gap": "Main memory store and auto-loaded files are not controlled.",
+              "evidence": [
+                {
+                  "file": "raven/context_engine/segments/render.py",
+                  "lines": "478",
+                  "contains": "source=\"recalled memory\"",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/context_engine/segments/render.py#L478"
+                },
+                {
+                  "file": "raven/context_engine/segments/render.py",
+                  "lines": "54-57",
+                  "contains": "\"TOOLS.md\",",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/context_engine/segments/render.py#L54-L57"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Memory is keyed to one configured user id ('default') shared by every sender a channel admits.",
+              "gap": "No per-user/session namespace enforced by default.",
+              "evidence": [
+                {
+                  "file": "raven/config/raven.py",
+                  "lines": "1153",
+                  "contains": "user_id: str = \"default\"",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/raven.py#L1153"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Poisoned memory persists across the user's sessions and can steer tool use.",
+              "gap": "Memory should be session-scoped or easily reviewed and purged.",
+              "evidence": [
+                {
+                  "file": "raven/memory_engine/consolidate/consolidator.py",
+                  "lines": "916",
+                  "contains": "def get_memory_context",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/memory_engine/consolidate/consolidator.py#L916"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "Raven loads plugins from four places and imports them into its own process with no verification. The Skill Hub installs router-picked skill bundles automatically by default, with no hash checks. The built-in plugin catalog is curated and some entries are pinned, but others launch npx packages at @latest. MCP stdio servers run as separate processes with a reduced environment, but in-process plugins get everything.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.075,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C7-RCELOAD",
+        "max": 0.25,
+        "reason": "By default third-party code can load and execute without consent."
+      },
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Plugin code is imported with no verification; Skill Hub bundles download without integrity checks.",
+          "gap": "Extensions should be pinned and integrity-checked.",
+          "evidence": [
+            {
+              "search": "rg -n 'hashlib|sha256'",
+              "scope": "raven/skill_hub raven/market",
+              "hits": 0,
+              "note": "No integrity verification in the Skill Hub client or plugin market."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only the ACP shim presets are version-pinned; catalog entries mix pinned and @latest, and other types are unverified.",
+          "gap": "Most extension types are unverified.",
+          "evidence": [
+            {
+              "file": "raven/agent/subagent/presets.py",
+              "lines": "126",
+              "contains": "_CLAUDE_ACP = \"npx -y @agentclientprotocol/claude-agent-acp@0.81.1\"",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/subagent/presets.py#L126"
+            },
+            {
+              "file": "raven/market/catalog.json",
+              "lines": "1201",
+              "contains": "@playwright/mcp@latest",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/market/catalog.json#L1201"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Skill Hub auto-install is on by default, and plugin-loading defaults are not consent-gated.",
+          "gap": "Nothing third-party should be enabled without an explicit, informed install.",
+          "evidence": [
+            {
+              "file": "raven/config/raven.py",
+              "lines": "855",
+              "contains": "auto_install: Literal[\"auto\", \"prompt\", \"off\"] = \"auto\"",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/raven.py#L855"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "File-based plugins run in-process with all of the agent's credentials and authority.",
+          "gap": "Extensions should run in a separate process with a scrubbed environment.",
+          "evidence": [],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.075,
+          "raw": 0.075,
+          "cap": {
+            "id": "C7-RCELOAD",
+            "max": 0.25,
+            "reason": "By default third-party code can load and execute without consent."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Plugin code is imported with no verification; Skill Hub bundles download without integrity checks.",
+              "gap": "Extensions should be pinned and integrity-checked.",
+              "evidence": [
+                {
+                  "search": "rg -n 'hashlib|sha256'",
+                  "scope": "raven/skill_hub raven/market",
+                  "hits": 0,
+                  "note": "No integrity verification in the Skill Hub client or plugin market."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only the ACP shim presets are version-pinned; catalog entries mix pinned and @latest, and other types are unverified.",
+              "gap": "Most extension types are unverified.",
+              "evidence": [
+                {
+                  "file": "raven/agent/subagent/presets.py",
+                  "lines": "126",
+                  "contains": "_CLAUDE_ACP = \"npx -y @agentclientprotocol/claude-agent-acp@0.81.1\"",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/subagent/presets.py#L126"
+                },
+                {
+                  "file": "raven/market/catalog.json",
+                  "lines": "1201",
+                  "contains": "@playwright/mcp@latest",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/market/catalog.json#L1201"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Skill Hub auto-install is on by default, and plugin-loading defaults are not consent-gated.",
+              "gap": "Nothing third-party should be enabled without an explicit, informed install.",
+              "evidence": [
+                {
+                  "file": "raven/config/raven.py",
+                  "lines": "855",
+                  "contains": "auto_install: Literal[\"auto\", \"prompt\", \"off\"] = \"auto\"",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/raven.py#L855"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "File-based plugins run in-process with all of the agent's credentials and authority.",
+              "gap": "Extensions should run in a separate process with a scrubbed environment.",
+              "evidence": [],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "Raven scrubs the exact credential values it holds from every tool result before the model, trace spans and the client see them, redacts common secret patterns on the editor wire, gives shell commands an allowlisted environment, and stores OAuth tokens with owner-only permissions. No third-party telemetry was found. But secrets that are not Raven's own, such as ~/.aws/credentials or a repo's .env, are readable without approval and go to the model unredacted, and provider keys are long-lived.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.525,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Exact-value scrubbing of Raven-held secrets plus pattern redaction on the ACP wire; credentials are plaintext files with owner-only modes.",
+          "gap": "No OS keychain or encryption at rest; pattern redaction does not cover model-bound messages.",
+          "evidence": [
+            {
+              "file": "raven/agent/context/builder.py",
+              "lines": "293",
+              "contains": "result = scrub_held_secrets(result)",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/context/builder.py#L293"
+            },
+            {
+              "file": "raven/config/held_secrets.py",
+              "lines": "90",
+              "contains": "def scrub_held_secrets",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/held_secrets.py#L90"
+            },
+            {
+              "file": "raven/mcp/oauth.py",
+              "lines": "363",
+              "contains": "os.chmod(self._path, 0o600)",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/mcp/oauth.py#L363"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Held-secret scrubbing covers model-bound tool results, trace spans and client payloads; subprocess env is allowlisted.",
+          "gap": "Only Raven's own values are covered; other secrets read by tools reach every path unredacted.",
+          "evidence": [
+            {
+              "file": "raven/agent/context/builder.py",
+              "lines": "293",
+              "contains": "result = scrub_held_secrets(result)",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/context/builder.py#L293"
+            },
+            {
+              "file": "raven/agent/tools/registry.py",
+              "lines": "872",
+              "contains": "return _scrubbed(params, await self._execute(name, params, run_meta=run_meta))",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/tools/registry.py#L872"
+            },
+            {
+              "file": "raven/sandbox/direct_executor.py",
+              "lines": "27",
+              "contains": "_ENV_ALLOWLIST = (",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/direct_executor.py#L27"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No third-party telemetry; scrubbing is unconditional; traces stay local.",
+          "gap": "Stored transcripts and traces are not encrypted or minimised.",
+          "evidence": [
+            {
+              "search": "rg -n 'sentry_sdk|posthog|segment\\.io|mixpanel'",
+              "scope": "raven",
+              "hits": 0,
+              "note": "No telemetry SDKs in the package."
+            },
+            {
+              "file": "raven/agent/context/builder.py",
+              "lines": "293",
+              "contains": "result = scrub_held_secrets(result)",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/context/builder.py#L293"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Long-lived provider keys and every credential file in the user's home are reachable by the model (read_file auto-allowed, no fence).",
+          "gap": "Keys should be scoped and short-lived, and home credential files kept out of reach.",
+          "evidence": [
+            {
+              "file": "raven/permissions/rules.py",
+              "lines": "89",
+              "contains": "\"read_file\",",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/rules.py#L89"
+            },
+            {
+              "file": "raven/security/redact.py",
+              "lines": "10",
+              "contains": "``read_file`` has no fence by default",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/security/redact.py#L10"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.525,
+          "raw": 0.525,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Exact-value scrubbing of Raven-held secrets plus pattern redaction on the ACP wire; credentials are plaintext files with owner-only modes.",
+              "gap": "No OS keychain or encryption at rest; pattern redaction does not cover model-bound messages.",
+              "evidence": [
+                {
+                  "file": "raven/agent/context/builder.py",
+                  "lines": "293",
+                  "contains": "result = scrub_held_secrets(result)",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/context/builder.py#L293"
+                },
+                {
+                  "file": "raven/config/held_secrets.py",
+                  "lines": "90",
+                  "contains": "def scrub_held_secrets",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/held_secrets.py#L90"
+                },
+                {
+                  "file": "raven/mcp/oauth.py",
+                  "lines": "363",
+                  "contains": "os.chmod(self._path, 0o600)",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/mcp/oauth.py#L363"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Held-secret scrubbing covers model-bound tool results, trace spans and client payloads; subprocess env is allowlisted.",
+              "gap": "Only Raven's own values are covered; other secrets read by tools reach every path unredacted.",
+              "evidence": [
+                {
+                  "file": "raven/agent/context/builder.py",
+                  "lines": "293",
+                  "contains": "result = scrub_held_secrets(result)",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/context/builder.py#L293"
+                },
+                {
+                  "file": "raven/agent/tools/registry.py",
+                  "lines": "872",
+                  "contains": "return _scrubbed(params, await self._execute(name, params, run_meta=run_meta))",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/tools/registry.py#L872"
+                },
+                {
+                  "file": "raven/sandbox/direct_executor.py",
+                  "lines": "27",
+                  "contains": "_ENV_ALLOWLIST = (",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/direct_executor.py#L27"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No third-party telemetry; scrubbing is unconditional; traces stay local.",
+              "gap": "Stored transcripts and traces are not encrypted or minimised.",
+              "evidence": [
+                {
+                  "search": "rg -n 'sentry_sdk|posthog|segment\\.io|mixpanel'",
+                  "scope": "raven",
+                  "hits": 0,
+                  "note": "No telemetry SDKs in the package."
+                },
+                {
+                  "file": "raven/agent/context/builder.py",
+                  "lines": "293",
+                  "contains": "result = scrub_held_secrets(result)",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/context/builder.py#L293"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Long-lived provider keys and every credential file in the user's home are reachable by the model (read_file auto-allowed, no fence).",
+              "gap": "Keys should be scoped and short-lived, and home credential files kept out of reach.",
+              "evidence": [
+                {
+                  "file": "raven/permissions/rules.py",
+                  "lines": "89",
+                  "contains": "\"read_file\",",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/rules.py#L89"
+                },
+                {
+                  "file": "raven/security/redact.py",
+                  "lines": "10",
+                  "contains": "``read_file`` has no fence by default",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/security/redact.py#L10"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "Every registry tool call is recorded as a structured span with arguments, result, and the permission decision (rule, LLM reviewer verdict, or human choice), in local JSONL under ~/.raven/traces, on by default. Records sit where the agent's own unfenced file and shell tools can edit them, and tracing can be turned off through a setting the LLM reviewer may approve. Write errors are swallowed.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.4,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Structured span per tool call with trace/parent ids and permission.source/approval choice annotations.",
+          "gap": "No verified requesting-principal attribution on records.",
+          "evidence": [
+            {
+              "file": "raven/agent/tools/registry.py",
+              "lines": "856",
+              "contains": "@trace.instrument(\"tool.call\", extract=semconv.tool_call)",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/tools/registry.py#L856"
+            },
+            {
+              "file": "raven/permissions/gate.py",
+              "lines": "309-316",
+              "contains": "permission.approval.choice",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/gate.py#L309-L316"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All registry calls (built-in, MCP, built-in sub-agents) and gate decisions; third-party sub-agents' own calls are not recorded.",
+          "gap": "Third-party sub-agent actions and config changes are not recorded as audit events.",
+          "evidence": [
+            {
+              "file": "raven/agent/tools/registry.py",
+              "lines": "992",
+              "contains": "refusal = await self._permission_gate.enforce",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/tools/registry.py#L992"
+            },
+            {
+              "file": "raven/acp_client/permissions.py",
+              "lines": "5-6",
+              "contains": "raven approves",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/acp_client/permissions.py#L5-L6"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "On by default under ~/.raven/traces, writable by the agent's tools; tracing.enabled is a non-sensitive setting the LLM reviewer may approve.",
+          "gap": "Record should be written by a component the model cannot control or disable.",
+          "evidence": [
+            {
+              "file": "raven/tracing/config.py",
+              "lines": "66",
+              "contains": "return bool(_config_section().get(\"enabled\", True))",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/tracing/config.py#L66"
+            },
+            {
+              "file": "raven/config/self_surface.py",
+              "lines": "662",
+              "contains": "Setting(\"tracing.enabled\", \"Record traces\", \"bool\", _E.NEXT_TURN)",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/self_surface.py#L662"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Write failures are swallowed and the action proceeds.",
+          "gap": "Errors should be surfaced and records durably flushed per action.",
+          "evidence": [
+            {
+              "file": "raven/tracing/store.py",
+              "lines": "280",
+              "contains": "except OSError as exc:",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/tracing/store.py#L280"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.4,
+          "raw": 0.4,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Structured span per tool call with trace/parent ids and permission.source/approval choice annotations.",
+              "gap": "No verified requesting-principal attribution on records.",
+              "evidence": [
+                {
+                  "file": "raven/agent/tools/registry.py",
+                  "lines": "856",
+                  "contains": "@trace.instrument(\"tool.call\", extract=semconv.tool_call)",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/tools/registry.py#L856"
+                },
+                {
+                  "file": "raven/permissions/gate.py",
+                  "lines": "309-316",
+                  "contains": "permission.approval.choice",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/gate.py#L309-L316"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All registry calls (built-in, MCP, built-in sub-agents) and gate decisions; third-party sub-agents' own calls are not recorded.",
+              "gap": "Third-party sub-agent actions and config changes are not recorded as audit events.",
+              "evidence": [
+                {
+                  "file": "raven/agent/tools/registry.py",
+                  "lines": "992",
+                  "contains": "refusal = await self._permission_gate.enforce",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/tools/registry.py#L992"
+                },
+                {
+                  "file": "raven/acp_client/permissions.py",
+                  "lines": "5-6",
+                  "contains": "raven approves",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/acp_client/permissions.py#L5-L6"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "On by default under ~/.raven/traces, writable by the agent's tools; tracing.enabled is a non-sensitive setting the LLM reviewer may approve.",
+              "gap": "Record should be written by a component the model cannot control or disable.",
+              "evidence": [
+                {
+                  "file": "raven/tracing/config.py",
+                  "lines": "66",
+                  "contains": "return bool(_config_section().get(\"enabled\", True))",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/tracing/config.py#L66"
+                },
+                {
+                  "file": "raven/config/self_surface.py",
+                  "lines": "662",
+                  "contains": "Setting(\"tracing.enabled\", \"Record traces\", \"bool\", _E.NEXT_TURN)",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/self_surface.py#L662"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Write failures are swallowed and the action proceeds.",
+              "gap": "Errors should be surfaced and records durably flushed per action.",
+              "evidence": [
+                {
+                  "file": "raven/tracing/store.py",
+                  "lines": "280",
+                  "contains": "except OSError as exc:",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/tracing/store.py#L280"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "Each turn is capped at 40 tool iterations, shell commands time out (60 s default, 600 s max) and their whole process group is killed, model calls have timeouts, and sub-agents are limited to 8 at once and 30 spawns an hour. There is no token or spend cap, sub-agents get their own iteration budgets, and the iteration cap (up to 200) is a setting the LLM reviewer may raise. Long playbook runs and scheduled tasks can continue for days.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.4,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Iteration cap plus per-exec timeout with process-group kill; no cost/token cap.",
+          "gap": "No token/cost cap or rate limits on side-effecting tools.",
+          "evidence": [
+            {
+              "file": "raven/config/schema.py",
+              "lines": "231",
+              "contains": "max_tool_iterations: int = 40",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L231"
+            },
+            {
+              "file": "raven/sandbox/direct_executor.py",
+              "lines": "209",
+              "contains": "os.killpg(pgid, signal.SIGKILL)",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/direct_executor.py#L209"
+            },
+            {
+              "search": "rg -n -i 'max_cost|cost_limit|spend_limit|max_spend|budget_usd|usd_budget'",
+              "scope": "raven",
+              "hits": 0,
+              "note": "No spend or cost cap exists."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Top-level loop and tool timeouts; sub-agents have concurrency and spawn-rate caps but separate iteration budgets.",
+          "gap": "Sub-agents do not draw on the parent's budget.",
+          "evidence": [
+            {
+              "file": "raven/config/schema.py",
+              "lines": "235",
+              "contains": "max_concurrent_subagents: int = Field(default=8, ge=1)",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L235"
+            },
+            {
+              "file": "raven/config/schema.py",
+              "lines": "242",
+              "contains": "max_subagent_spawns_per_hour: int = Field(default=30, ge=1)",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L242"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "maxToolIterations (to 200) is a non-sensitive self-config setting the smart reviewer may approve.",
+          "gap": "The model should not be able to raise its own limits.",
+          "evidence": [
+            {
+              "file": "raven/config/self_surface.py",
+              "lines": "186",
+              "contains": "\"agents.defaults.maxToolIterations\",",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/self_surface.py#L186"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No spend ceiling; /stop cancels a session's sub-agents but long runs and scheduled work continue.",
+          "gap": "Tight per-run time and cost ceilings are absent.",
+          "evidence": [
+            {
+              "file": "raven/cli/gateway_commands.py",
+              "lines": "941",
+              "contains": "cancel_by_session(cid, reason=\"the user sent /stop\")",
+              "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/cli/gateway_commands.py#L941"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.4,
+          "raw": 0.4,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Iteration cap plus per-exec timeout with process-group kill; no cost/token cap.",
+              "gap": "No token/cost cap or rate limits on side-effecting tools.",
+              "evidence": [
+                {
+                  "file": "raven/config/schema.py",
+                  "lines": "231",
+                  "contains": "max_tool_iterations: int = 40",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L231"
+                },
+                {
+                  "file": "raven/sandbox/direct_executor.py",
+                  "lines": "209",
+                  "contains": "os.killpg(pgid, signal.SIGKILL)",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/direct_executor.py#L209"
+                },
+                {
+                  "search": "rg -n -i 'max_cost|cost_limit|spend_limit|max_spend|budget_usd|usd_budget'",
+                  "scope": "raven",
+                  "hits": 0,
+                  "note": "No spend or cost cap exists."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Top-level loop and tool timeouts; sub-agents have concurrency and spawn-rate caps but separate iteration budgets.",
+              "gap": "Sub-agents do not draw on the parent's budget.",
+              "evidence": [
+                {
+                  "file": "raven/config/schema.py",
+                  "lines": "235",
+                  "contains": "max_concurrent_subagents: int = Field(default=8, ge=1)",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L235"
+                },
+                {
+                  "file": "raven/config/schema.py",
+                  "lines": "242",
+                  "contains": "max_subagent_spawns_per_hour: int = Field(default=30, ge=1)",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L242"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "maxToolIterations (to 200) is a non-sensitive self-config setting the smart reviewer may approve.",
+              "gap": "The model should not be able to raise its own limits.",
+              "evidence": [
+                {
+                  "file": "raven/config/self_surface.py",
+                  "lines": "186",
+                  "contains": "\"agents.defaults.maxToolIterations\",",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/self_surface.py#L186"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No spend ceiling; /stop cancels a session's sub-agents but long runs and scheduled work continue.",
+              "gap": "Tight per-run time and cost ceilings are absent.",
+              "evidence": [
+                {
+                  "file": "raven/cli/gateway_commands.py",
+                  "lines": "941",
+                  "contains": "cancel_by_session(cid, reason=\"the user sent /stop\")",
+                  "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/cli/gateway_commands.py#L941"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "By default the agent can read any file the OS user can (including ~/.ssh and ~/.aws) without approval, so a hijacked session holds the user's whole account.",
+      "criterion": "C1",
+      "owasp": [
+        "ASI03"
+      ],
+      "evidence": [
+        {
+          "file": "raven/permissions/rules.py",
+          "lines": "89",
+          "contains": "\"read_file\",",
+          "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/rules.py#L89"
+        },
+        {
+          "file": "raven/config/schema.py",
+          "lines": "1316",
+          "contains": "restrict_to_workspace: bool = False",
+          "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L1316"
+        }
+      ]
+    },
+    {
+      "summary": "Model-driven shell commands execute directly on the host as the user by default (sandbox backend 'none'), with the home directory and network reachable.",
+      "criterion": "C4",
+      "owasp": [
+        "ASI05"
+      ],
+      "evidence": [
+        {
+          "file": "raven/sandbox/config.py",
+          "lines": "38",
+          "contains": "backend: Literal[\"none\", \"auto\", \"boxlite\"] = \"none\"",
+          "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/config.py#L38"
+        },
+        {
+          "file": "raven/sandbox/__init__.py",
+          "lines": "94-104",
+          "contains": "return DirectExecutor()",
+          "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/__init__.py#L94-L104"
+        }
+      ]
+    },
+    {
+      "summary": "Default worst case: an injected instruction can read local credentials (read_file, auto-allowed) and exfiltrate them via web_fetch (auto-allowed), and push or install via the smart-mode LLM reviewer, all unattended.",
+      "criterion": "C5",
+      "owasp": [
+        "ASI01",
+        "LLM01"
+      ],
+      "evidence": [
+        {
+          "file": "raven/permissions/rules.py",
+          "lines": "89",
+          "contains": "\"read_file\",",
+          "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/rules.py#L89"
+        },
+        {
+          "file": "raven/permissions/rules.py",
+          "lines": "97",
+          "contains": "\"web_fetch\",",
+          "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/rules.py#L97"
+        },
+        {
+          "file": "raven/permissions/judge.py",
+          "lines": "32-33",
+          "contains": "pushing a branch",
+          "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/judge.py#L32-L33"
+        }
+      ]
+    },
+    {
+      "summary": "Third-party code loads without consent (C7-RCELOAD): Skill Hub bundles auto-install by default, and plugins are imported with no verification.",
+      "criterion": "C7",
+      "owasp": [
+        "ASI04"
+      ],
+      "evidence": [
+        {
+          "file": "raven/config/raven.py",
+          "lines": "855",
+          "contains": "auto_install: Literal[\"auto\", \"prompt\", \"off\"] = \"auto\"",
+          "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/raven.py#L855"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "web_fetch/browser auto-allowed (raven/permissions/rules.py:97, :109)",
+    "sensitive_data": "read_file auto-allowed with no fence (raven/permissions/rules.py:89, raven/config/schema.py:1316)",
+    "state_change_or_egress": "web_fetch egress auto-allowed; pushes/installs approved by the LLM reviewer (raven/permissions/judge.py:32-33)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Harden plugin loading so third-party code needs an explicit, informed install.",
+      "criterion": "C7",
+      "parameter": "D",
+      "from_level": 0,
+      "to_level": 3,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Route web_fetch, browser navigation and reads outside the workspace through approval once untrusted content is in the session.",
+      "criterion": "C5",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 1",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Ship permissions.mode=ask, or restrict the smart reviewer to reversible workspace-local actions.",
+      "criterion": "C2",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 3,
+      "playbook": "Playbook 5",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Default the sandbox backend to boxlite with network off or allowlisted.",
+      "criterion": "C4",
+      "parameter": "D",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.1
+    },
+    {
+      "summary": "Add a per-run token/spend cap shared with sub-agents.",
+      "criterion": "C10",
+      "parameter": "S",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.075
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was executed, installed, or probed.",
+    "The MCP stdio server environment (env=None) is inferred to be the MCP Python SDK's default safe-variable set; the SDK itself was not read.",
+    "Product agents under agents/ (Raven-Code, Raven-Oncall, etc.), the experimental Curator, the A2A face (off by default), channel adapters and the sentinel/cron engines were sampled, not fully reviewed; Raven-Code additionally auto-loads AGENTS.md/CLAUDE.md/CONTEXT.md from the project.",
+    "G2 was not applied to C2/C4 for one plugin-loading path; that path is scored once, under C6 and C7.",
+    "No text aimed at AI reviewers was found in the repository."
+  ]
+}

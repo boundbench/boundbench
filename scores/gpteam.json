@@ -1,0 +1,2330 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "gpteam",
+  "name": "GPTeam",
+  "repo_url": "https://github.com/101dotxyz/gpteam",
+  "subpath": null,
+  "description": "Multi-agent simulation where GPT-4 agents with memory and plans move between locations and talk to each other to pursue configured goals.",
+  "category": "ai_assistants",
+  "pinned_commit": "a216364ea2dbb208e6501468c5e5b791594cc3d5",
+  "version": null,
+  "scored_date": "2026-10-04",
+  "scored_configuration": "`poetry run world` with the default sqlite database, GPT-4, config.json as shipped, and no optional keys (Discord, SerpAPI, Wolfram Alpha unset).",
+  "score": 4.0,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 8,
+    "score": 2.02,
+    "max": 8.0,
+    "percent": 25
+  },
+  "capability_profile": {
+    "code_execution": "no",
+    "filesystem_write": "no",
+    "network_egress": "opt_in",
+    "external_credentials": "opt_in",
+    "persistent_memory": "yes",
+    "untrusted_input": "opt_in",
+    "third_party_extensions": "no",
+    "sub_agents": "yes",
+    "external_communication": "opt_in"
+  },
+  "headline": "GPTeam is safe mostly because it can do little: by default its agents only talk to each other and write to a local sqlite file, with no shell, file or network tools. It has essentially no controls of its own - no approval step, an authorization mechanism that is not enforced on every path, unvalidated persistent memory, and no step or spending limit, so a run calls GPT-4 forever until killed. Enabling the Discord integration lets any channel member inject text into agent memory while agents post back unattended.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "In the default setup the agents' tools touch only the local simulation database; the OpenAI key lives in the process environment but no tool can read it or spawn a subprocess. When Discord is enabled each agent posts with its own bot token, which is a per-agent identity, but nothing scopes those tokens beyond what the operator configured. The project has a per-tool authorization flag, but every tool sets it to false, and the authorized-tools list is not enforced on every path.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.475,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tools use no credentials by default; with Discord enabled each agent uses a dedicated per-agent bot token selected by its own agent id, but all keys sit in one process environment and are not narrowed per tool.",
+          "gap": "No per-tool or read/write credential separation and no deterministic authorization gate before credentials are attached.",
+          "evidence": [
+            {
+              "file": "src/tools/send_message.py",
+              "lines": "45-50",
+              "contains": "get_discord_token(agent_message.sender_id)",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/send_message.py#L45-L50"
+            },
+            {
+              "file": "src/utils/database/seed.py",
+              "lines": "50-52",
+              "contains": "\"discord_bot_token\": os.environ.get(",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/database/seed.py#L50-L52"
+            },
+            {
+              "file": "src/main.py",
+              "lines": "24",
+              "contains": "load_dotenv()",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/main.py#L24"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "An authorized-tools filter exists, but it is not enforced on every execution path.",
+          "gap": "Every tool call does not pass through an effective authorization layer in code.",
+          "evidence": [
+            {
+              "file": "src/agent/executor.py",
+              "lines": "360",
+              "contains": "result = await tool.run(response.tool_input, tool_context)",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/executor.py#L360"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Default install has no external credentials wired to tools (Discord, SerpAPI and Wolfram enable only when their env keys are set); widening is an operator env change with no warning.",
+          "gap": "Default is not explicitly read-only; write tools (save-document, speak) are always on and adding credentials needs no elevation step.",
+          "evidence": [
+            {
+              "file": "src/utils/parameters.py",
+              "lines": "43-48",
+              "contains": "DISCORD_ENABLED = (",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/parameters.py#L43-L48"
+            },
+            {
+              "file": "src/tools/base.py",
+              "lines": "176-177",
+              "contains": "SEARCH_ENABLED = bool(os.getenv(\"SERPAPI_KEY\"))",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/base.py#L176-L177"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "If the agent loop is hijacked in the default config it can only insert rows (messages, documents) into the local sqlite database; with Discord enabled it can additionally post to configured channels as its bot.",
+          "gap": "Credentials are long-lived and not revocable per run; with Discord on, writes reach an external system.",
+          "evidence": [
+            {
+              "file": "src/tools/document.py",
+              "lines": "18-30",
+              "contains": "async def save_document(title: str, document: str, tool_context: ToolContext):",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/document.py#L18-L30"
+            },
+            {
+              "file": "src/tools/send_message.py",
+              "lines": "45-50",
+              "contains": "get_discord_token(agent_message.sender_id)",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/send_message.py#L45-L50"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.475,
+          "raw": 0.475,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tools use no credentials by default; with Discord enabled each agent uses a dedicated per-agent bot token selected by its own agent id, but all keys sit in one process environment and are not narrowed per tool.",
+              "gap": "No per-tool or read/write credential separation and no deterministic authorization gate before credentials are attached.",
+              "evidence": [
+                {
+                  "file": "src/tools/send_message.py",
+                  "lines": "45-50",
+                  "contains": "get_discord_token(agent_message.sender_id)",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/send_message.py#L45-L50"
+                },
+                {
+                  "file": "src/utils/database/seed.py",
+                  "lines": "50-52",
+                  "contains": "\"discord_bot_token\": os.environ.get(",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/database/seed.py#L50-L52"
+                },
+                {
+                  "file": "src/main.py",
+                  "lines": "24",
+                  "contains": "load_dotenv()",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/main.py#L24"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "An authorized-tools filter exists, but it is not enforced on every execution path.",
+              "gap": "Every tool call does not pass through an effective authorization layer in code.",
+              "evidence": [
+                {
+                  "file": "src/agent/executor.py",
+                  "lines": "360",
+                  "contains": "result = await tool.run(response.tool_input, tool_context)",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/executor.py#L360"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default install has no external credentials wired to tools (Discord, SerpAPI and Wolfram enable only when their env keys are set); widening is an operator env change with no warning.",
+              "gap": "Default is not explicitly read-only; write tools (save-document, speak) are always on and adding credentials needs no elevation step.",
+              "evidence": [
+                {
+                  "file": "src/utils/parameters.py",
+                  "lines": "43-48",
+                  "contains": "DISCORD_ENABLED = (",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/parameters.py#L43-L48"
+                },
+                {
+                  "file": "src/tools/base.py",
+                  "lines": "176-177",
+                  "contains": "SEARCH_ENABLED = bool(os.getenv(\"SERPAPI_KEY\"))",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/base.py#L176-L177"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "If the agent loop is hijacked in the default config it can only insert rows (messages, documents) into the local sqlite database; with Discord enabled it can additionally post to configured channels as its bot.",
+              "gap": "Credentials are long-lived and not revocable per run; with Discord on, writes reach an external system.",
+              "evidence": [
+                {
+                  "file": "src/tools/document.py",
+                  "lines": "18-30",
+                  "contains": "async def save_document(title: str, document: str, tool_context: ToolContext):",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/document.py#L18-L30"
+                },
+                {
+                  "file": "src/tools/send_message.py",
+                  "lines": "45-50",
+                  "contains": "get_discord_token(agent_message.sender_id)",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/send_message.py#L45-L50"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "There is no human approval step for any tool. A requires_authorization flag exists but is false on every tool, so whatever the model picks runs immediately. In the default configuration the tools only write simulation state (messages and documents) into a local database, which limits the damage; once Discord is enabled, agents post to real Discord channels with no gate.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.15,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No approval mechanism: the executor runs the model-selected tool directly.",
+          "gap": "No per-call human approval of any kind.",
+          "evidence": [
+            {
+              "file": "src/agent/executor.py",
+              "lines": "360",
+              "contains": "result = await tool.run(response.tool_input, tool_context)",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/executor.py#L360"
+            },
+            {
+              "file": "src/tools/base.py",
+              "lines": "39",
+              "contains": "requires_authorization: bool = False",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/base.py#L39"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No tool, including the external Discord-posting speak tool when enabled, crosses a gate.",
+          "gap": "Consequential tools are not routed through any gate.",
+          "evidence": [
+            {
+              "file": "src/agent/executor.py",
+              "lines": "322-327",
+              "contains": "[ToolName(formatted_tool_name)]",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/executor.py#L322-L327"
+            },
+            {
+              "file": "src/tools/base.py",
+              "lines": "251-260",
+              "contains": "ToolName.SAVE_DOCUMENT: CustomTool(",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/base.py#L251-L260"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No approval is on by default; every tool is seeded with requires_authorization=False and agents with an empty authorized list.",
+          "gap": "Approval is not on by default.",
+          "evidence": [
+            {
+              "file": "src/utils/database/seed.py",
+              "lines": "46",
+              "contains": "\"authorized_tools\": [],",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/database/seed.py#L46"
+            },
+            {
+              "file": "src/tools/base.py",
+              "lines": "39",
+              "contains": "requires_authorization: bool = False",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/base.py#L39"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Default tools only insert simulation rows into a local sqlite file that db-reset wipes; no external action exists unless the operator sets Discord or search keys.",
+          "gap": "No checkpoint/rollback of individual writes and no preview or rate limit on Discord posts when that integration is enabled.",
+          "evidence": [
+            {
+              "file": "src/tools/document.py",
+              "lines": "18-30",
+              "contains": "async def save_document(title: str, document: str, tool_context: ToolContext):",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/document.py#L18-L30"
+            },
+            {
+              "file": "src/utils/parameters.py",
+              "lines": "43-48",
+              "contains": "DISCORD_ENABLED = (",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/parameters.py#L43-L48"
+            },
+            {
+              "file": "src/tools/send_message.py",
+              "lines": "45-50",
+              "contains": "get_discord_token(agent_message.sender_id)",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/send_message.py#L45-L50"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.15,
+          "raw": 0.15,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No approval mechanism: the executor runs the model-selected tool directly.",
+              "gap": "No per-call human approval of any kind.",
+              "evidence": [
+                {
+                  "file": "src/agent/executor.py",
+                  "lines": "360",
+                  "contains": "result = await tool.run(response.tool_input, tool_context)",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/executor.py#L360"
+                },
+                {
+                  "file": "src/tools/base.py",
+                  "lines": "39",
+                  "contains": "requires_authorization: bool = False",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/base.py#L39"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No tool, including the external Discord-posting speak tool when enabled, crosses a gate.",
+              "gap": "Consequential tools are not routed through any gate.",
+              "evidence": [
+                {
+                  "file": "src/agent/executor.py",
+                  "lines": "322-327",
+                  "contains": "[ToolName(formatted_tool_name)]",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/executor.py#L322-L327"
+                },
+                {
+                  "file": "src/tools/base.py",
+                  "lines": "251-260",
+                  "contains": "ToolName.SAVE_DOCUMENT: CustomTool(",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/base.py#L251-L260"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No approval is on by default; every tool is seeded with requires_authorization=False and agents with an empty authorized list.",
+              "gap": "Approval is not on by default.",
+              "evidence": [
+                {
+                  "file": "src/utils/database/seed.py",
+                  "lines": "46",
+                  "contains": "\"authorized_tools\": [],",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/database/seed.py#L46"
+                },
+                {
+                  "file": "src/tools/base.py",
+                  "lines": "39",
+                  "contains": "requires_authorization: bool = False",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/base.py#L39"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default tools only insert simulation rows into a local sqlite file that db-reset wipes; no external action exists unless the operator sets Discord or search keys.",
+              "gap": "No checkpoint/rollback of individual writes and no preview or rate limit on Discord posts when that integration is enabled.",
+              "evidence": [
+                {
+                  "file": "src/tools/document.py",
+                  "lines": "18-30",
+                  "contains": "async def save_document(title: str, document: str, tool_context: ToolContext):",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/document.py#L18-L30"
+                },
+                {
+                  "file": "src/utils/parameters.py",
+                  "lines": "43-48",
+                  "contains": "DISCORD_ENABLED = (",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/parameters.py#L43-L48"
+                },
+                {
+                  "file": "src/tools/send_message.py",
+                  "lines": "45-50",
+                  "contains": "get_discord_token(agent_message.sender_id)",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/send_message.py#L45-L50"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "The tool set is narrow by design: speak, wait, ask-a-human, a company directory and save/read document, plus web search and Wolfram Alpha only when their API keys are set. Inputs are typed with pydantic schemas, recipients are resolved against the known agent list, and database queries are parameterized, but there are no length or quantity bounds. Per-location and per-agent tool scoping is not enforced on every path.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.5,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Typed pydantic schemas, recipient lookup against known agents, and parameterized SQL; no size or count bounds on messages or documents.",
+          "gap": "No numeric bounds (message length, document size, number of writes) enforced in code.",
+          "evidence": [
+            {
+              "file": "src/agent/message.py",
+              "lines": "60-71",
+              "contains": "get_agent_id_from_name(recipient_name)",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/message.py#L60-L71"
+            },
+            {
+              "file": "src/utils/database/sqlite.py",
+              "lines": "61",
+              "contains": "WHERE {field} = ?\", (value,)",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/database/sqlite.py#L61"
+            },
+            {
+              "file": "src/tools/base.py",
+              "lines": "251-260",
+              "contains": "ToolName.SAVE_DOCUMENT: CustomTool(",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/base.py#L251-L260"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All tool calls flow through CustomTool.run and the same parameterized DB layer; free-text tools (wait, human, directory) take unvalidated strings but are low-power.",
+          "gap": "No central policy layer; tool scoping is not enforced on every path.",
+          "evidence": [
+            {
+              "file": "src/tools/base.py",
+              "lines": "83-89",
+              "contains": "return f\"Error: {e}\"",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/base.py#L83-L89"
+            },
+            {
+              "file": "src/agent/executor.py",
+              "lines": "322-327",
+              "contains": "[ToolName(formatted_tool_name)]",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/executor.py#L322-L327"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No exec tool and network tools off unless keys are set, but the default set always includes write tools and per-location/per-agent selection is not enforced on every path.",
+          "gap": "Default tool set is not read-only.",
+          "evidence": [
+            {
+              "file": "src/tools/base.py",
+              "lines": "176-177",
+              "contains": "SEARCH_ENABLED = bool(os.getenv(\"SERPAPI_KEY\"))",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/base.py#L176-L177"
+            },
+            {
+              "file": "src/utils/database/seed.py",
+              "lines": "34",
+              "contains": "\"available_tools\": [],",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/database/seed.py#L34"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A misused tool can write arbitrary content to the shared local simulation database (documents are global across agents) but nothing outside it by default.",
+          "gap": "Writes are not quantity-bounded.",
+          "evidence": [
+            {
+              "file": "src/tools/document.py",
+              "lines": "18-30",
+              "contains": "async def save_document(title: str, document: str, tool_context: ToolContext):",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/document.py#L18-L30"
+            },
+            {
+              "file": "src/tools/document.py",
+              "lines": "44-48",
+              "contains": "Tables.Documents, \"normalized_title\", normalized_title",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/document.py#L44-L48"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.5,
+          "raw": 0.5,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Typed pydantic schemas, recipient lookup against known agents, and parameterized SQL; no size or count bounds on messages or documents.",
+              "gap": "No numeric bounds (message length, document size, number of writes) enforced in code.",
+              "evidence": [
+                {
+                  "file": "src/agent/message.py",
+                  "lines": "60-71",
+                  "contains": "get_agent_id_from_name(recipient_name)",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/message.py#L60-L71"
+                },
+                {
+                  "file": "src/utils/database/sqlite.py",
+                  "lines": "61",
+                  "contains": "WHERE {field} = ?\", (value,)",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/database/sqlite.py#L61"
+                },
+                {
+                  "file": "src/tools/base.py",
+                  "lines": "251-260",
+                  "contains": "ToolName.SAVE_DOCUMENT: CustomTool(",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/base.py#L251-L260"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All tool calls flow through CustomTool.run and the same parameterized DB layer; free-text tools (wait, human, directory) take unvalidated strings but are low-power.",
+              "gap": "No central policy layer; tool scoping is not enforced on every path.",
+              "evidence": [
+                {
+                  "file": "src/tools/base.py",
+                  "lines": "83-89",
+                  "contains": "return f\"Error: {e}\"",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/base.py#L83-L89"
+                },
+                {
+                  "file": "src/agent/executor.py",
+                  "lines": "322-327",
+                  "contains": "[ToolName(formatted_tool_name)]",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/executor.py#L322-L327"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No exec tool and network tools off unless keys are set, but the default set always includes write tools and per-location/per-agent selection is not enforced on every path.",
+              "gap": "Default tool set is not read-only.",
+              "evidence": [
+                {
+                  "file": "src/tools/base.py",
+                  "lines": "176-177",
+                  "contains": "SEARCH_ENABLED = bool(os.getenv(\"SERPAPI_KEY\"))",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/base.py#L176-L177"
+                },
+                {
+                  "file": "src/utils/database/seed.py",
+                  "lines": "34",
+                  "contains": "\"available_tools\": [],",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/database/seed.py#L34"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A misused tool can write arbitrary content to the shared local simulation database (documents are global across agents) but nothing outside it by default.",
+              "gap": "Writes are not quantity-bounded.",
+              "evidence": [
+                {
+                  "file": "src/tools/document.py",
+                  "lines": "18-30",
+                  "contains": "async def save_document(title: str, document: str, tool_context: ToolContext):",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/document.py#L18-L30"
+                },
+                {
+                  "file": "src/tools/document.py",
+                  "lines": "44-48",
+                  "contains": "Tables.Documents, \"normalized_title\", normalized_title",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/document.py#L44-L48"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "No model-reachable code-execution path exists at this commit. A langchain bash tool is defined in src/tools/built_in.py but nothing imports or calls it, and the only subprocess call is the operator's database-reset command. Model output is parsed as JSON and used as parameterized database values, never evaluated.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'subprocess|os\\.system|os\\.popen|eval\\(|exec\\(|BashProcess|PythonREPL|compile\\('",
+              "scope": "src",
+              "hits": 5,
+              "note": "built_in.py:1,6 define a langchain BashProcess inside get_built_in_tools, which has no callers (see next search); main.py:3 is an unused import; reset.py:3,17 is the operator's db-reset CLI running 'supabase db reset', not reachable from the agent loop."
+            },
+            {
+              "search": "rg -n 'BashProcess|get_built_in_tools'",
+              "scope": "src",
+              "hits": 3,
+              "note": "All three hits are the import and the definition in src/tools/built_in.py; no module imports or calls get_built_in_tools, so the bash tool is dead code."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'subprocess|os\\.system|os\\.popen|eval\\(|exec\\(|BashProcess|PythonREPL|compile\\('",
+              "scope": "src",
+              "hits": 5,
+              "note": "built_in.py:1,6 define a langchain BashProcess inside get_built_in_tools, which has no callers (see next search); main.py:3 is an unused import; reset.py:3,17 is the operator's db-reset CLI running 'supabase db reset', not reachable from the agent loop."
+            },
+            {
+              "search": "rg -n 'BashProcess|get_built_in_tools'",
+              "scope": "src",
+              "hits": 3,
+              "note": "All three hits are the import and the definition in src/tools/built_in.py; no module imports or calls get_built_in_tools, so the bash tool is dead code."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'subprocess|os\\.system|os\\.popen|eval\\(|exec\\(|BashProcess|PythonREPL|compile\\('",
+              "scope": "src",
+              "hits": 5,
+              "note": "built_in.py:1,6 define a langchain BashProcess inside get_built_in_tools, which has no callers (see next search); main.py:3 is an unused import; reset.py:3,17 is the operator's db-reset CLI running 'supabase db reset', not reachable from the agent loop."
+            },
+            {
+              "search": "rg -n 'BashProcess|get_built_in_tools'",
+              "scope": "src",
+              "hits": 3,
+              "note": "All three hits are the import and the definition in src/tools/built_in.py; no module imports or calls get_built_in_tools, so the bash tool is dead code."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'subprocess|os\\.system|os\\.popen|eval\\(|exec\\(|BashProcess|PythonREPL|compile\\('",
+              "scope": "src",
+              "hits": 5,
+              "note": "built_in.py:1,6 define a langchain BashProcess inside get_built_in_tools, which has no callers (see next search); main.py:3 is an unused import; reset.py:3,17 is the operator's db-reset CLI running 'supabase db reset', not reachable from the agent loop."
+            },
+            {
+              "search": "rg -n 'BashProcess|get_built_in_tools'",
+              "scope": "src",
+              "hits": 3,
+              "note": "All three hits are the import and the definition in src/tools/built_in.py; no module imports or calls get_built_in_tools, so the bash tool is dead code."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'subprocess|os\\.system|os\\.popen|eval\\(|exec\\(|BashProcess|PythonREPL|compile\\('",
+                  "scope": "src",
+                  "hits": 5,
+                  "note": "built_in.py:1,6 define a langchain BashProcess inside get_built_in_tools, which has no callers (see next search); main.py:3 is an unused import; reset.py:3,17 is the operator's db-reset CLI running 'supabase db reset', not reachable from the agent loop."
+                },
+                {
+                  "search": "rg -n 'BashProcess|get_built_in_tools'",
+                  "scope": "src",
+                  "hits": 3,
+                  "note": "All three hits are the import and the definition in src/tools/built_in.py; no module imports or calls get_built_in_tools, so the bash tool is dead code."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'subprocess|os\\.system|os\\.popen|eval\\(|exec\\(|BashProcess|PythonREPL|compile\\('",
+                  "scope": "src",
+                  "hits": 5,
+                  "note": "built_in.py:1,6 define a langchain BashProcess inside get_built_in_tools, which has no callers (see next search); main.py:3 is an unused import; reset.py:3,17 is the operator's db-reset CLI running 'supabase db reset', not reachable from the agent loop."
+                },
+                {
+                  "search": "rg -n 'BashProcess|get_built_in_tools'",
+                  "scope": "src",
+                  "hits": 3,
+                  "note": "All three hits are the import and the definition in src/tools/built_in.py; no module imports or calls get_built_in_tools, so the bash tool is dead code."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'subprocess|os\\.system|os\\.popen|eval\\(|exec\\(|BashProcess|PythonREPL|compile\\('",
+                  "scope": "src",
+                  "hits": 5,
+                  "note": "built_in.py:1,6 define a langchain BashProcess inside get_built_in_tools, which has no callers (see next search); main.py:3 is an unused import; reset.py:3,17 is the operator's db-reset CLI running 'supabase db reset', not reachable from the agent loop."
+                },
+                {
+                  "search": "rg -n 'BashProcess|get_built_in_tools'",
+                  "scope": "src",
+                  "hits": 3,
+                  "note": "All three hits are the import and the definition in src/tools/built_in.py; no module imports or calls get_built_in_tools, so the bash tool is dead code."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'subprocess|os\\.system|os\\.popen|eval\\(|exec\\(|BashProcess|PythonREPL|compile\\('",
+                  "scope": "src",
+                  "hits": 5,
+                  "note": "built_in.py:1,6 define a langchain BashProcess inside get_built_in_tools, which has no callers (see next search); main.py:3 is an unused import; reset.py:3,17 is the operator's db-reset CLI running 'supabase db reset', not reachable from the agent loop."
+                },
+                {
+                  "search": "rg -n 'BashProcess|get_built_in_tools'",
+                  "scope": "src",
+                  "hits": 3,
+                  "note": "All three hits are the import and the definition in src/tools/built_in.py; no module imports or calls get_built_in_tools, so the bash tool is dead code."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n 'subprocess|os\\.system|os\\.popen|eval\\(|exec\\(|BashProcess|PythonREPL|compile\\('",
+          "scope": "src",
+          "hits": 5,
+          "note": "built_in.py:1,6 define a langchain BashProcess inside get_built_in_tools, which has no callers (see next search); main.py:3 is an unused import; reset.py:3,17 is the operator's db-reset CLI running 'supabase db reset', not reachable from the agent loop."
+        },
+        {
+          "search": "rg -n 'BashProcess|get_built_in_tools'",
+          "scope": "src",
+          "hits": 3,
+          "note": "All three hits are the import and the definition in src/tools/built_in.py; no module imports or calls get_built_in_tools, so the bash tool is dead code."
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "Nothing structurally limits a hijacked agent: tool results and other agents' messages enter the prompt as plain text alongside instructions. In the default configuration the only content agents read comes from other agents in the same simulation and the operator's own stdin answers, there is no outbound channel beyond the model provider, and the only state change is local database rows. If the operator enables Discord, any human in a mapped channel can inject text that becomes agent memory, and agents reply to Discord unattended.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.15,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No provenance tracking, quarantine or taint-based gating; peer messages and tool observations are concatenated into the prompt.",
+          "gap": "No approval or capability restriction triggered by reading untrusted content.",
+          "evidence": [
+            {
+              "file": "src/agent/executor.py",
+              "lines": "57-59",
+              "contains": "Observation: {observation}",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/executor.py#L57-L59"
+            },
+            {
+              "file": "src/agent/base.py",
+              "lines": "994-1002",
+              "contains": "await self._add_memory(",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/base.py#L994-L1002"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Untrusted sources (peer agents, Discord humans when enabled, search results when enabled) are not distinguished from instructions.",
+          "gap": "Sources are not distinguished at all.",
+          "evidence": [
+            {
+              "file": "src/utils/discord.py",
+              "lines": "152-164",
+              "contains": "said: {event.message.content}",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/discord.py#L152-L164"
+            },
+            {
+              "file": "src/agent/executor.py",
+              "lines": "57-59",
+              "contains": "Observation: {observation}",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/executor.py#L57-L59"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No control exists to be on by default.",
+          "gap": "No untrusted-input control exists.",
+          "evidence": [
+            {
+              "file": "src/agent/executor.py",
+              "lines": "57-59",
+              "contains": "Observation: {observation}",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/executor.py#L57-L59"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Default config: no egress tool and no sensitive systems; a hijack can only write local simulation rows. With Discord enabled a hijacked agent could post to channels, but that is opt-in.",
+          "gap": "Sessions that read peer content can still change state (DB writes), and the opt-in Discord path adds an unattended outbound channel.",
+          "evidence": [
+            {
+              "file": "src/tools/base.py",
+              "lines": "176-177",
+              "contains": "SEARCH_ENABLED = bool(os.getenv(\"SERPAPI_KEY\"))",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/base.py#L176-L177"
+            },
+            {
+              "file": "src/utils/parameters.py",
+              "lines": "43-48",
+              "contains": "DISCORD_ENABLED = (",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/parameters.py#L43-L48"
+            },
+            {
+              "file": "src/tools/document.py",
+              "lines": "18-30",
+              "contains": "async def save_document(title: str, document: str, tool_context: ToolContext):",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/document.py#L18-L30"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.15,
+          "raw": 0.15,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No provenance tracking, quarantine or taint-based gating; peer messages and tool observations are concatenated into the prompt.",
+              "gap": "No approval or capability restriction triggered by reading untrusted content.",
+              "evidence": [
+                {
+                  "file": "src/agent/executor.py",
+                  "lines": "57-59",
+                  "contains": "Observation: {observation}",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/executor.py#L57-L59"
+                },
+                {
+                  "file": "src/agent/base.py",
+                  "lines": "994-1002",
+                  "contains": "await self._add_memory(",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/base.py#L994-L1002"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Untrusted sources (peer agents, Discord humans when enabled, search results when enabled) are not distinguished from instructions.",
+              "gap": "Sources are not distinguished at all.",
+              "evidence": [
+                {
+                  "file": "src/utils/discord.py",
+                  "lines": "152-164",
+                  "contains": "said: {event.message.content}",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/discord.py#L152-L164"
+                },
+                {
+                  "file": "src/agent/executor.py",
+                  "lines": "57-59",
+                  "contains": "Observation: {observation}",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/executor.py#L57-L59"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No control exists to be on by default.",
+              "gap": "No untrusted-input control exists.",
+              "evidence": [
+                {
+                  "file": "src/agent/executor.py",
+                  "lines": "57-59",
+                  "contains": "Observation: {observation}",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/executor.py#L57-L59"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default config: no egress tool and no sensitive systems; a hijack can only write local simulation rows. With Discord enabled a hijacked agent could post to channels, but that is opt-in.",
+              "gap": "Sessions that read peer content can still change state (DB writes), and the opt-in Discord path adds an unattended outbound channel.",
+              "evidence": [
+                {
+                  "file": "src/tools/base.py",
+                  "lines": "176-177",
+                  "contains": "SEARCH_ENABLED = bool(os.getenv(\"SERPAPI_KEY\"))",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/base.py#L176-L177"
+                },
+                {
+                  "file": "src/utils/parameters.py",
+                  "lines": "43-48",
+                  "contains": "DISCORD_ENABLED = (",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/parameters.py#L43-L48"
+                },
+                {
+                  "file": "src/tools/document.py",
+                  "lines": "18-30",
+                  "contains": "async def save_document(title: str, document: str, tool_context: ToolContext):",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/document.py#L18-L30"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "Every observation and model-generated reflection is written to a persistent sqlite memory table with no validation and is loaded back on the next run, where it drives planning and tool use. Memories are filtered per agent in queries, but documents saved by any agent are readable by all agents, and there is no provenance, expiry or per-entry review. The whole store can be inspected through the agents/*.txt dumps and wiped with db-reset, but nothing finer-grained exists.",
+      "max": 1.0,
+      "notes": "config.json and .env are loaded from the project checkout (operator scope); the app does not operate on a third-party workspace, so C6-REPOCONFIG was not applied.",
+      "status": "scored",
+      "score": 0.1,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The model writes reflections and observations straight to persistent memory, which is re-injected as context.",
+          "gap": "No validation, gating or provenance on memory writes.",
+          "evidence": [
+            {
+              "file": "src/agent/base.py",
+              "lines": "615-619",
+              "contains": "type=MemoryType.REFLECTION",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/base.py#L615-L619"
+            },
+            {
+              "file": "src/agent/base.py",
+              "lines": "328",
+              "contains": "insert(Tables.Memories, memory.db_dict())",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/base.py#L328"
+            },
+            {
+              "file": "src/agent/base.py",
+              "lines": "172-174",
+              "contains": "Tables.Memories, \"agent_id\", str(agent_dict[\"id\"])",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/base.py#L172-L174"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No memory store (memories, global documents, LLM response cache.json) is controlled.",
+          "gap": "No store has write controls.",
+          "evidence": [
+            {
+              "file": "src/agent/base.py",
+              "lines": "328",
+              "contains": "insert(Tables.Memories, memory.db_dict())",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/base.py#L328"
+            },
+            {
+              "file": "src/tools/document.py",
+              "lines": "18-30",
+              "contains": "async def save_document(title: str, document: str, tool_context: ToolContext):",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/document.py#L18-L30"
+            },
+            {
+              "file": "src/utils/cache.py",
+              "lines": "13",
+              "contains": "CACHE_FILE = \"cache.json\"",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/cache.py#L13"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Memories are queried per agent_id, but the documents table is global across agents and isolation is not a security control in this single-operator app.",
+          "gap": "Not every store is namespaced; documents are read without an agent filter.",
+          "evidence": [
+            {
+              "file": "src/agent/base.py",
+              "lines": "172-174",
+              "contains": "Tables.Memories, \"agent_id\", str(agent_dict[\"id\"])",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/base.py#L172-L174"
+            },
+            {
+              "file": "src/tools/document.py",
+              "lines": "44-48",
+              "contains": "Tables.Documents, \"normalized_title\", normalized_title",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/document.py#L44-L48"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Poisoned memory persists across runs until a full db-reset and feeds plans that select tools.",
+          "gap": "Persistence is not limited to text-only influence or gated actions, and there is no per-entry purge or rollback.",
+          "evidence": [
+            {
+              "file": "src/agent/base.py",
+              "lines": "172-174",
+              "contains": "Tables.Memories, \"agent_id\", str(agent_dict[\"id\"])",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/base.py#L172-L174"
+            },
+            {
+              "file": "src/agent/base.py",
+              "lines": "889-891",
+              "contains": "tools=self._get_current_tools()",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/base.py#L889-L891"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.1,
+          "raw": 0.1,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The model writes reflections and observations straight to persistent memory, which is re-injected as context.",
+              "gap": "No validation, gating or provenance on memory writes.",
+              "evidence": [
+                {
+                  "file": "src/agent/base.py",
+                  "lines": "615-619",
+                  "contains": "type=MemoryType.REFLECTION",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/base.py#L615-L619"
+                },
+                {
+                  "file": "src/agent/base.py",
+                  "lines": "328",
+                  "contains": "insert(Tables.Memories, memory.db_dict())",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/base.py#L328"
+                },
+                {
+                  "file": "src/agent/base.py",
+                  "lines": "172-174",
+                  "contains": "Tables.Memories, \"agent_id\", str(agent_dict[\"id\"])",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/base.py#L172-L174"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No memory store (memories, global documents, LLM response cache.json) is controlled.",
+              "gap": "No store has write controls.",
+              "evidence": [
+                {
+                  "file": "src/agent/base.py",
+                  "lines": "328",
+                  "contains": "insert(Tables.Memories, memory.db_dict())",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/base.py#L328"
+                },
+                {
+                  "file": "src/tools/document.py",
+                  "lines": "18-30",
+                  "contains": "async def save_document(title: str, document: str, tool_context: ToolContext):",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/document.py#L18-L30"
+                },
+                {
+                  "file": "src/utils/cache.py",
+                  "lines": "13",
+                  "contains": "CACHE_FILE = \"cache.json\"",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/cache.py#L13"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Memories are queried per agent_id, but the documents table is global across agents and isolation is not a security control in this single-operator app.",
+              "gap": "Not every store is namespaced; documents are read without an agent filter.",
+              "evidence": [
+                {
+                  "file": "src/agent/base.py",
+                  "lines": "172-174",
+                  "contains": "Tables.Memories, \"agent_id\", str(agent_dict[\"id\"])",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/base.py#L172-L174"
+                },
+                {
+                  "file": "src/tools/document.py",
+                  "lines": "44-48",
+                  "contains": "Tables.Documents, \"normalized_title\", normalized_title",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/document.py#L44-L48"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Poisoned memory persists across runs until a full db-reset and feeds plans that select tools.",
+              "gap": "Persistence is not limited to text-only influence or gated actions, and there is no per-entry purge or rollback.",
+              "evidence": [
+                {
+                  "file": "src/agent/base.py",
+                  "lines": "172-174",
+                  "contains": "Tables.Memories, \"agent_id\", str(agent_dict[\"id\"])",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/base.py#L172-L174"
+                },
+                {
+                  "file": "src/agent/base.py",
+                  "lines": "889-891",
+                  "contains": "tools=self._get_current_tools()",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/base.py#L889-L891"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "The agent loads no third-party code at runtime: there is no plugin system, no MCP client, no model download and no package installation. The only deserialization is the app's own local vector store file, which this process writes itself.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'importlib|__import__|pip install|trust_remote_code|torch\\.load|pickle|mcp|plugin|entry_points'",
+              "scope": "src",
+              "hits": 5,
+              "note": "All hits are the app's own local HyperDB vector store file vectors.pickle.gz (save/load in sqlite.py, delete in reset.py); it is written by this process, not a third-party extension. No plugin, MCP, hub-download or dynamic-import path exists."
+            },
+            {
+              "search": "rg -n 'load_tools'",
+              "scope": "src",
+              "hits": 4,
+              "note": "langchain load_tools is used only in dead code (built_in.py, and load_built_in_tool in tools/base.py which has no callers); both load langchain's bundled tools, not third-party code."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'importlib|__import__|pip install|trust_remote_code|torch\\.load|pickle|mcp|plugin|entry_points'",
+              "scope": "src",
+              "hits": 5,
+              "note": "All hits are the app's own local HyperDB vector store file vectors.pickle.gz (save/load in sqlite.py, delete in reset.py); it is written by this process, not a third-party extension. No plugin, MCP, hub-download or dynamic-import path exists."
+            },
+            {
+              "search": "rg -n 'load_tools'",
+              "scope": "src",
+              "hits": 4,
+              "note": "langchain load_tools is used only in dead code (built_in.py, and load_built_in_tool in tools/base.py which has no callers); both load langchain's bundled tools, not third-party code."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'importlib|__import__|pip install|trust_remote_code|torch\\.load|pickle|mcp|plugin|entry_points'",
+              "scope": "src",
+              "hits": 5,
+              "note": "All hits are the app's own local HyperDB vector store file vectors.pickle.gz (save/load in sqlite.py, delete in reset.py); it is written by this process, not a third-party extension. No plugin, MCP, hub-download or dynamic-import path exists."
+            },
+            {
+              "search": "rg -n 'load_tools'",
+              "scope": "src",
+              "hits": 4,
+              "note": "langchain load_tools is used only in dead code (built_in.py, and load_built_in_tool in tools/base.py which has no callers); both load langchain's bundled tools, not third-party code."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'importlib|__import__|pip install|trust_remote_code|torch\\.load|pickle|mcp|plugin|entry_points'",
+              "scope": "src",
+              "hits": 5,
+              "note": "All hits are the app's own local HyperDB vector store file vectors.pickle.gz (save/load in sqlite.py, delete in reset.py); it is written by this process, not a third-party extension. No plugin, MCP, hub-download or dynamic-import path exists."
+            },
+            {
+              "search": "rg -n 'load_tools'",
+              "scope": "src",
+              "hits": 4,
+              "note": "langchain load_tools is used only in dead code (built_in.py, and load_built_in_tool in tools/base.py which has no callers); both load langchain's bundled tools, not third-party code."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'importlib|__import__|pip install|trust_remote_code|torch\\.load|pickle|mcp|plugin|entry_points'",
+                  "scope": "src",
+                  "hits": 5,
+                  "note": "All hits are the app's own local HyperDB vector store file vectors.pickle.gz (save/load in sqlite.py, delete in reset.py); it is written by this process, not a third-party extension. No plugin, MCP, hub-download or dynamic-import path exists."
+                },
+                {
+                  "search": "rg -n 'load_tools'",
+                  "scope": "src",
+                  "hits": 4,
+                  "note": "langchain load_tools is used only in dead code (built_in.py, and load_built_in_tool in tools/base.py which has no callers); both load langchain's bundled tools, not third-party code."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'importlib|__import__|pip install|trust_remote_code|torch\\.load|pickle|mcp|plugin|entry_points'",
+                  "scope": "src",
+                  "hits": 5,
+                  "note": "All hits are the app's own local HyperDB vector store file vectors.pickle.gz (save/load in sqlite.py, delete in reset.py); it is written by this process, not a third-party extension. No plugin, MCP, hub-download or dynamic-import path exists."
+                },
+                {
+                  "search": "rg -n 'load_tools'",
+                  "scope": "src",
+                  "hits": 4,
+                  "note": "langchain load_tools is used only in dead code (built_in.py, and load_built_in_tool in tools/base.py which has no callers); both load langchain's bundled tools, not third-party code."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'importlib|__import__|pip install|trust_remote_code|torch\\.load|pickle|mcp|plugin|entry_points'",
+                  "scope": "src",
+                  "hits": 5,
+                  "note": "All hits are the app's own local HyperDB vector store file vectors.pickle.gz (save/load in sqlite.py, delete in reset.py); it is written by this process, not a third-party extension. No plugin, MCP, hub-download or dynamic-import path exists."
+                },
+                {
+                  "search": "rg -n 'load_tools'",
+                  "scope": "src",
+                  "hits": 4,
+                  "note": "langchain load_tools is used only in dead code (built_in.py, and load_built_in_tool in tools/base.py which has no callers); both load langchain's bundled tools, not third-party code."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'importlib|__import__|pip install|trust_remote_code|torch\\.load|pickle|mcp|plugin|entry_points'",
+                  "scope": "src",
+                  "hits": 5,
+                  "note": "All hits are the app's own local HyperDB vector store file vectors.pickle.gz (save/load in sqlite.py, delete in reset.py); it is written by this process, not a third-party extension. No plugin, MCP, hub-download or dynamic-import path exists."
+                },
+                {
+                  "search": "rg -n 'load_tools'",
+                  "scope": "src",
+                  "hits": 4,
+                  "note": "langchain load_tools is used only in dead code (built_in.py, and load_built_in_tool in tools/base.py which has no callers); both load langchain's bundled tools, not third-party code."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n -i 'importlib|__import__|pip install|trust_remote_code|torch\\.load|pickle|mcp|plugin|entry_points'",
+          "scope": "src",
+          "hits": 5,
+          "note": "All hits are the app's own local HyperDB vector store file vectors.pickle.gz (save/load in sqlite.py, delete in reset.py); it is written by this process, not a third-party extension. No plugin, MCP, hub-download or dynamic-import path exists."
+        },
+        {
+          "search": "rg -n 'load_tools'",
+          "scope": "src",
+          "hits": 4,
+          "note": "langchain load_tools is used only in dead code (built_in.py, and load_built_in_tool in tools/base.py which has no callers); both load langchain's bundled tools, not third-party code."
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "API keys come from environment variables or a .env file and are never placed in prompts. Nothing is masked: Discord bot tokens are copied into a plaintext column of the local sqlite database, and the full agent transcript is written unredacted to a log file that an unauthenticated local websocket streams to any connecting page. There is no telemetry.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Secrets are read from env vars; Discord tokens are stored in plaintext in database.db; no redaction helpers exist.",
+          "gap": "No type-level masking or log filters; tokens persisted in plaintext DB.",
+          "evidence": [
+            {
+              "file": "src/main.py",
+              "lines": "24",
+              "contains": "load_dotenv()",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/main.py#L24"
+            },
+            {
+              "file": "src/utils/database/seed.py",
+              "lines": "50-52",
+              "contains": "\"discord_bot_token\": os.environ.get(",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/database/seed.py#L50-L52"
+            },
+            {
+              "file": "src/utils/database/sqlite.py",
+              "lines": "234",
+              "contains": "discord_bot_token TEXT",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/database/sqlite.py#L234"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Keys are kept out of model-bound prompts by design, but logs, transcript dumps and the DB have no protection.",
+          "gap": "Logs and transcripts are not protected.",
+          "evidence": [
+            {
+              "file": "src/agent/executor.py",
+              "lines": "364",
+              "contains": "[Action Response] {result}",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/executor.py#L364"
+            },
+            {
+              "file": "src/utils/database/sqlite.py",
+              "lines": "234",
+              "contains": "discord_bot_token TEXT",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/database/sqlite.py#L234"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No telemetry, but verbose agent logs are always on, unredacted, and served over an unauthenticated websocket with Quart debug enabled.",
+          "gap": "Logs are not minimized or access-restricted by default.",
+          "evidence": [
+            {
+              "file": "src/web/__init__.py",
+              "lines": "31-55",
+              "contains": "@app.websocket(\"/logs\")",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/web/__init__.py#L31-L55"
+            },
+            {
+              "file": "src/web/__init__.py",
+              "lines": "24",
+              "contains": "app.config[\"DEBUG\"] = True",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/web/__init__.py#L24"
+            },
+            {
+              "file": "src/utils/logging.py",
+              "lines": "107",
+              "contains": "logging.FileHandler(\"src/web/logs/agent.txt\")",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/logging.py#L107"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Long-lived OpenAI and Discord bot keys; not reachable by the model (no exec or env-reading tool) but stored/kept for the process lifetime.",
+          "gap": "Keys are not scoped or short-lived.",
+          "evidence": [
+            {
+              "file": "src/main.py",
+              "lines": "24",
+              "contains": "load_dotenv()",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/main.py#L24"
+            },
+            {
+              "file": "src/utils/database/seed.py",
+              "lines": "50-52",
+              "contains": "\"discord_bot_token\": os.environ.get(",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/database/seed.py#L50-L52"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.25,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Secrets are read from env vars; Discord tokens are stored in plaintext in database.db; no redaction helpers exist.",
+              "gap": "No type-level masking or log filters; tokens persisted in plaintext DB.",
+              "evidence": [
+                {
+                  "file": "src/main.py",
+                  "lines": "24",
+                  "contains": "load_dotenv()",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/main.py#L24"
+                },
+                {
+                  "file": "src/utils/database/seed.py",
+                  "lines": "50-52",
+                  "contains": "\"discord_bot_token\": os.environ.get(",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/database/seed.py#L50-L52"
+                },
+                {
+                  "file": "src/utils/database/sqlite.py",
+                  "lines": "234",
+                  "contains": "discord_bot_token TEXT",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/database/sqlite.py#L234"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Keys are kept out of model-bound prompts by design, but logs, transcript dumps and the DB have no protection.",
+              "gap": "Logs and transcripts are not protected.",
+              "evidence": [
+                {
+                  "file": "src/agent/executor.py",
+                  "lines": "364",
+                  "contains": "[Action Response] {result}",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/executor.py#L364"
+                },
+                {
+                  "file": "src/utils/database/sqlite.py",
+                  "lines": "234",
+                  "contains": "discord_bot_token TEXT",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/database/sqlite.py#L234"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No telemetry, but verbose agent logs are always on, unredacted, and served over an unauthenticated websocket with Quart debug enabled.",
+              "gap": "Logs are not minimized or access-restricted by default.",
+              "evidence": [
+                {
+                  "file": "src/web/__init__.py",
+                  "lines": "31-55",
+                  "contains": "@app.websocket(\"/logs\")",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/web/__init__.py#L31-L55"
+                },
+                {
+                  "file": "src/web/__init__.py",
+                  "lines": "24",
+                  "contains": "app.config[\"DEBUG\"] = True",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/web/__init__.py#L24"
+                },
+                {
+                  "file": "src/utils/logging.py",
+                  "lines": "107",
+                  "contains": "logging.FileHandler(\"src/web/logs/agent.txt\")",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/logging.py#L107"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Long-lived OpenAI and Discord bot keys; not reachable by the model (no exec or env-reading tool) but stored/kept for the process lifetime.",
+              "gap": "Keys are not scoped or short-lived.",
+              "evidence": [
+                {
+                  "file": "src/main.py",
+                  "lines": "24",
+                  "contains": "load_dotenv()",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/main.py#L24"
+                },
+                {
+                  "file": "src/utils/database/seed.py",
+                  "lines": "50-52",
+                  "contains": "\"discord_bot_token\": os.environ.get(",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/database/seed.py#L50-L52"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "Each tool call and its result are written as plain text lines to src/web/logs/agent.txt, and plan scratchpads with tool name and input are saved to the database. The log has no timestamps or structure, consecutive wait steps overwrite each other in the scratchpad, and the log file is truncated every time the world starts, so earlier runs leave no record.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.325,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Unstructured INFO log lines of thought, action and response; scratchpad stores tool and input but no per-step timestamps.",
+          "gap": "No structured per-call record with timestamps and result status.",
+          "evidence": [
+            {
+              "file": "src/agent/executor.py",
+              "lines": "364",
+              "contains": "[Action Response] {result}",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/executor.py#L364"
+            },
+            {
+              "file": "src/agent/executor.py",
+              "lines": "374-379",
+              "contains": "intermediate_steps[-1] = (response, result)",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/executor.py#L374-L379"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All tool calls go through the single executor path that logs them; there are no extensions or approvals to cover.",
+          "gap": "Approvals/denials and sub-agent attribution are not recorded (no approval path exists).",
+          "evidence": [
+            {
+              "file": "src/agent/executor.py",
+              "lines": "364",
+              "contains": "[Action Response] {result}",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/executor.py#L364"
+            },
+            {
+              "file": "src/agent/executor.py",
+              "lines": "338-340",
+              "contains": "[Action Response] {result}",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/executor.py#L338-L340"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Logging is on by default but the log is truncated on every launch.",
+          "gap": "Log is not preserved outside the process's control; it is wiped at start.",
+          "evidence": [
+            {
+              "file": "src/utils/logging.py",
+              "lines": "89",
+              "contains": "open(\"src/web/logs/agent.txt\", \"w\").close()",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/logging.py#L89"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Best-effort file logging; records from previous runs are destroyed on restart.",
+          "gap": "Records are not durable across restarts.",
+          "evidence": [
+            {
+              "file": "src/utils/logging.py",
+              "lines": "89",
+              "contains": "open(\"src/web/logs/agent.txt\", \"w\").close()",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/logging.py#L89"
+            },
+            {
+              "file": "src/utils/logging.py",
+              "lines": "107",
+              "contains": "logging.FileHandler(\"src/web/logs/agent.txt\")",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/logging.py#L107"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.325,
+          "raw": 0.325,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Unstructured INFO log lines of thought, action and response; scratchpad stores tool and input but no per-step timestamps.",
+              "gap": "No structured per-call record with timestamps and result status.",
+              "evidence": [
+                {
+                  "file": "src/agent/executor.py",
+                  "lines": "364",
+                  "contains": "[Action Response] {result}",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/executor.py#L364"
+                },
+                {
+                  "file": "src/agent/executor.py",
+                  "lines": "374-379",
+                  "contains": "intermediate_steps[-1] = (response, result)",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/executor.py#L374-L379"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All tool calls go through the single executor path that logs them; there are no extensions or approvals to cover.",
+              "gap": "Approvals/denials and sub-agent attribution are not recorded (no approval path exists).",
+              "evidence": [
+                {
+                  "file": "src/agent/executor.py",
+                  "lines": "364",
+                  "contains": "[Action Response] {result}",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/executor.py#L364"
+                },
+                {
+                  "file": "src/agent/executor.py",
+                  "lines": "338-340",
+                  "contains": "[Action Response] {result}",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/executor.py#L338-L340"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Logging is on by default but the log is truncated on every launch.",
+              "gap": "Log is not preserved outside the process's control; it is wiped at start.",
+              "evidence": [
+                {
+                  "file": "src/utils/logging.py",
+                  "lines": "89",
+                  "contains": "open(\"src/web/logs/agent.txt\", \"w\").close()",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/logging.py#L89"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Best-effort file logging; records from previous runs are destroyed on restart.",
+              "gap": "Records are not durable across restarts.",
+              "evidence": [
+                {
+                  "file": "src/utils/logging.py",
+                  "lines": "89",
+                  "contains": "open(\"src/web/logs/agent.txt\", \"w\").close()",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/logging.py#L89"
+                },
+                {
+                  "file": "src/utils/logging.py",
+                  "lines": "107",
+                  "contains": "logging.FileHandler(\"src/web/logs/agent.txt\")",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/logging.py#L107"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "The world runs agents in an infinite loop with no step, time or spending limit. Plan durations are only suggested to the model in the prompt, and the only hard bound is a per-request timeout on some model calls. A runaway simulation keeps calling GPT-4 until the operator kills the process.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.075,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only advisory limits (max_duration_hrs told to the model) and per-request LLM timeouts; no iteration, wall-clock or cost cap.",
+          "gap": "No enforced iteration cap plus wall-clock or cost cap.",
+          "evidence": [
+            {
+              "file": "src/agent/plans.py",
+              "lines": "148",
+              "contains": "If do not finish within {self.max_duration_hrs} hours, stop.",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/plans.py#L148"
+            },
+            {
+              "file": "src/agent/base.py",
+              "lines": "717",
+              "contains": "request_timeout=600",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/base.py#L717"
+            },
+            {
+              "file": "src/world/base.py",
+              "lines": "98-101",
+              "contains": "while True:",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/world/base.py#L98-L101"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No enforced limit applies to the agent loop or tools.",
+          "gap": "No limit covers the top-level loop.",
+          "evidence": [
+            {
+              "file": "src/world/base.py",
+              "lines": "98-101",
+              "contains": "while True:",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/world/base.py#L98-L101"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Unlimited by default.",
+          "gap": "No default limits exist.",
+          "evidence": [
+            {
+              "file": "src/world/base.py",
+              "lines": "98-101",
+              "contains": "while True:",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/world/base.py#L98-L101"
+            },
+            {
+              "file": "src/world/base.py",
+              "lines": "111",
+              "contains": "concurrency = min(os.cpu_count(), len(self.agents))",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/world/base.py#L111"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No ceiling: the loop spends model tokens indefinitely until killed.",
+          "gap": "No run-level time or cost ceiling.",
+          "evidence": [
+            {
+              "file": "src/world/base.py",
+              "lines": "98-101",
+              "contains": "while True:",
+              "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/world/base.py#L98-L101"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.075,
+          "raw": 0.075,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only advisory limits (max_duration_hrs told to the model) and per-request LLM timeouts; no iteration, wall-clock or cost cap.",
+              "gap": "No enforced iteration cap plus wall-clock or cost cap.",
+              "evidence": [
+                {
+                  "file": "src/agent/plans.py",
+                  "lines": "148",
+                  "contains": "If do not finish within {self.max_duration_hrs} hours, stop.",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/plans.py#L148"
+                },
+                {
+                  "file": "src/agent/base.py",
+                  "lines": "717",
+                  "contains": "request_timeout=600",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/agent/base.py#L717"
+                },
+                {
+                  "file": "src/world/base.py",
+                  "lines": "98-101",
+                  "contains": "while True:",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/world/base.py#L98-L101"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No enforced limit applies to the agent loop or tools.",
+              "gap": "No limit covers the top-level loop.",
+              "evidence": [
+                {
+                  "file": "src/world/base.py",
+                  "lines": "98-101",
+                  "contains": "while True:",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/world/base.py#L98-L101"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Unlimited by default.",
+              "gap": "No default limits exist.",
+              "evidence": [
+                {
+                  "file": "src/world/base.py",
+                  "lines": "98-101",
+                  "contains": "while True:",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/world/base.py#L98-L101"
+                },
+                {
+                  "file": "src/world/base.py",
+                  "lines": "111",
+                  "contains": "concurrency = min(os.cpu_count(), len(self.agents))",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/world/base.py#L111"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No ceiling: the loop spends model tokens indefinitely until killed.",
+              "gap": "No run-level time or cost ceiling.",
+              "evidence": [
+                {
+                  "file": "src/world/base.py",
+                  "lines": "98-101",
+                  "contains": "while True:",
+                  "url": "https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/world/base.py#L98-L101"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [],
+  "rule_of_two": {
+    "untrusted_input": "Default: peer-agent messages only (src/agent/executor.py:57-59); opt-in Discord humans (src/utils/discord.py:152-164)",
+    "sensitive_data": "None reachable by tools by default; API keys stay in process env (src/main.py:24)",
+    "state_change_or_egress": "Local DB writes (src/tools/document.py:18-30); opt-in Discord posting (src/tools/send_message.py:45-50)",
+    "same_session": false
+  },
+  "fixes": [
+    {
+      "summary": "Add an enforced per-run step cap, wall-clock limit and token/cost budget to World.run_agent_loop.",
+      "criterion": "C10",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 3 step 3",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Stop truncating agent.txt at startup; write a per-run, timestamped JSONL log of every tool call.",
+      "criterion": "C9",
+      "parameter": "D",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 1 step 3",
+      "estimated_gain": 0.05
+    },
+    {
+      "summary": "Harden enforcement of requires_authorization/authorized_tools on the execution path.",
+      "criterion": "C1",
+      "parameter": "C",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 4",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Require per-call human approval for speak when it posts to Discord, showing the exact message and channel.",
+      "criterion": "C2",
+      "parameter": "S",
+      "from_level": 0,
+      "to_level": 3,
+      "playbook": "Playbook 5",
+      "estimated_gain": 0.225
+    },
+    {
+      "summary": "Keep Discord tokens out of the database (read from env at send time) and redact logs.",
+      "criterion": "C8",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 4",
+      "estimated_gain": 0.075
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was executed, installed, or probed.",
+    "Behaviour of third-party libraries (langchain 0.0.144 SerpAPIWrapper/WolframAlphaAPIWrapper, hikari, Quart's default bind host, HyperDB's pickle-based load) was inferred from their documented behaviour, not read in source.",
+    "The Supabase backend (src/utils/database/supabase.py) and the Window AI model path were not scored in depth; they are opt-in.",
+    "No text aimed at AI reviewers was found in the repository."
+  ]
+}

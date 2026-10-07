@@ -1,0 +1,2224 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "coze-studio",
+  "name": "Coze Studio",
+  "repo_url": "https://github.com/coze-dev/coze-studio",
+  "subpath": null,
+  "description": "Open-source low-code platform for building, debugging and publishing AI agents, apps and workflows.",
+  "category": "agent_frameworks",
+  "pinned_commit": "fefb05ff27be1da939612fbf9faf5db62583b8ae",
+  "version": null,
+  "scored_date": "2026-10-05",
+  "scored_configuration": "Docker Compose stack as shipped via `make web` (docker/docker-compose.yml with docker/.env.example): single agents with author-bound plugins, workflows, databases and variables, workflow code nodes on the default sandbox runner, open registration.",
+  "score": 3.0,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 10,
+    "score": 2.98,
+    "max": 10.0,
+    "percent": 30
+  },
+  "capability_profile": {
+    "code_execution": "yes",
+    "filesystem_write": "no",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "yes",
+    "untrusted_input": "yes",
+    "third_party_extensions": "yes",
+    "sub_agents": "yes",
+    "external_communication": "yes"
+  },
+  "headline": "Coze Studio agents call plugins, workflows and a raw-SQL database tool with no human approval, and nothing limits what injected content can make them do, including sending data to any URL. Workflow code runs in a Deno and Pyodide sandbox by default, but that sandbox lives inside the server container that holds every deployment secret. Credential storage and logging defaults are weak, and registration is open. Read the README's public-network warning and close registration before exposing it.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "The agent acts with the platform server's own authority and with whatever credentials the plugin author attached. Service-token plugins use one static credential for every end user of a published agent; only OAuth plugins act on behalf of the individual user. Resource authorization is a creator-only check, and the README itself lists horizontal privilege escalation in some APIs as a known risk. The server process holds credentials for the shared database, object store and search index of every tenant, so a failure of the authorization layer exposes the whole deployment.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.2,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Plugin tools inject either a per-plugin service token shared by all users of the agent or a per-user OAuth token; platform actions use the server's single database identity.",
+          "gap": "No per-capability credential split or per-request authority for service-token plugins and platform data access.",
+          "evidence": [
+            {
+              "file": "backend/domain/plugin/service/tool/invocation_http.go",
+              "lines": "164-170",
+              "contains": "injectServiceAPIToken",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/plugin/service/tool/invocation_http.go#L164-L170"
+            },
+            {
+              "file": "docker/.env.example",
+              "lines": "18",
+              "contains": "MYSQL_DSN",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/.env.example#L18"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Resource access is checked against the resource creator, but workflow HTTP nodes and plugins reach any address from the server's network position, outside any authorization layer (SSRF is listed as a known risk in the README).",
+          "gap": "Tool-originated outbound requests and data access are not routed through one authorization layer.",
+          "evidence": [
+            {
+              "file": "backend/domain/permission/authz_checker.go",
+              "lines": "102",
+              "contains": "operatorID == resourceInfo.CreatorID",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/permission/authz_checker.go#L102"
+            },
+            {
+              "file": "README.md",
+              "lines": "71",
+              "contains": "SSRF",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/README.md#L71"
+            },
+            {
+              "search": "rg -n -i 'ssrf|isprivate|isloopback|169\\.254'",
+              "scope": "backend/domain backend/infra backend/pkg",
+              "hits": 0,
+              "note": "No internal-address filtering for plugin or workflow HTTP requests."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Registration is open by default, so any visitor can create an account and build agents and workflows that run with the server's authority.",
+          "gap": "No minimal default role; open registration and full builder rights are the default.",
+          "evidence": [
+            {
+              "file": "docker/.env.example",
+              "lines": "261",
+              "contains": "DISABLE_USER_REGISTRATION=\"\"",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/.env.example#L261"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The server container receives the whole .env (database, object store, model and plugin encryption secrets) and serves all tenants, so a hijacked identity reaches every tenant's data.",
+          "gap": "Credentials are deployment-wide and long-lived rather than scoped to one tenant or task.",
+          "evidence": [
+            {
+              "file": "docker/docker-compose.yml",
+              "lines": "392",
+              "contains": "env_file: *env_file",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/docker-compose.yml#L392"
+            },
+            {
+              "file": "docker/docker-compose.yml",
+              "lines": "401",
+              "contains": ".env:/app/.env",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/docker-compose.yml#L401"
+            },
+            {
+              "file": "docker/.env.example",
+              "lines": "18",
+              "contains": "MYSQL_DSN",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/.env.example#L18"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.2,
+          "raw": 0.2,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Plugin tools inject either a per-plugin service token shared by all users of the agent or a per-user OAuth token; platform actions use the server's single database identity.",
+              "gap": "No per-capability credential split or per-request authority for service-token plugins and platform data access.",
+              "evidence": [
+                {
+                  "file": "backend/domain/plugin/service/tool/invocation_http.go",
+                  "lines": "164-170",
+                  "contains": "injectServiceAPIToken",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/plugin/service/tool/invocation_http.go#L164-L170"
+                },
+                {
+                  "file": "docker/.env.example",
+                  "lines": "18",
+                  "contains": "MYSQL_DSN",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/.env.example#L18"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Resource access is checked against the resource creator, but workflow HTTP nodes and plugins reach any address from the server's network position, outside any authorization layer (SSRF is listed as a known risk in the README).",
+              "gap": "Tool-originated outbound requests and data access are not routed through one authorization layer.",
+              "evidence": [
+                {
+                  "file": "backend/domain/permission/authz_checker.go",
+                  "lines": "102",
+                  "contains": "operatorID == resourceInfo.CreatorID",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/permission/authz_checker.go#L102"
+                },
+                {
+                  "file": "README.md",
+                  "lines": "71",
+                  "contains": "SSRF",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/README.md#L71"
+                },
+                {
+                  "search": "rg -n -i 'ssrf|isprivate|isloopback|169\\.254'",
+                  "scope": "backend/domain backend/infra backend/pkg",
+                  "hits": 0,
+                  "note": "No internal-address filtering for plugin or workflow HTTP requests."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Registration is open by default, so any visitor can create an account and build agents and workflows that run with the server's authority.",
+              "gap": "No minimal default role; open registration and full builder rights are the default.",
+              "evidence": [
+                {
+                  "file": "docker/.env.example",
+                  "lines": "261",
+                  "contains": "DISABLE_USER_REGISTRATION=\"\"",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/.env.example#L261"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The server container receives the whole .env (database, object store, model and plugin encryption secrets) and serves all tenants, so a hijacked identity reaches every tenant's data.",
+              "gap": "Credentials are deployment-wide and long-lived rather than scoped to one tenant or task.",
+              "evidence": [
+                {
+                  "file": "docker/docker-compose.yml",
+                  "lines": "392",
+                  "contains": "env_file: *env_file",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/docker-compose.yml#L392"
+                },
+                {
+                  "file": "docker/docker-compose.yml",
+                  "lines": "401",
+                  "contains": ".env:/app/.env",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/docker-compose.yml#L401"
+                },
+                {
+                  "file": "docker/.env.example",
+                  "lines": "18",
+                  "contains": "MYSQL_DSN",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/.env.example#L18"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "There is no human approval step for any tool call. The ReAct agent invokes plugins, workflows (which can contain code and HTTP nodes) and a raw-SQL database tool directly, and the run handler persists and streams the calls but never pauses for a decision. Workflow question and input nodes exist, but they are placed by the author for data entry and do not gate actions. Write and delete operations on external APIs and on user databases happen unattended.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tools are handed straight to the ReAct agent with no approval hook.",
+          "gap": "No per-call human approval of tool calls.",
+          "evidence": [
+            {
+              "file": "backend/domain/agent/singleagent/internal/agentflow/agent_flow_builder.go",
+              "lines": "173-176",
+              "contains": "Tools: agentTools",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/agent_flow_builder.go#L173-L176"
+            },
+            {
+              "search": "rg -n -i 'approv|confirm'",
+              "scope": "backend/domain/agent backend/domain/conversation/agentrun backend/domain/workflow/internal/nodes/plugin backend/domain/plugin/service/tool",
+              "hits": 0,
+              "note": "No approval or confirmation step anywhere in the agent loop, the run handler, or the plugin execution path."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No tool path, including code-running workflows and the SQL tool, crosses an approval gate.",
+          "gap": "No gate exists for any tool, including the most powerful ones.",
+          "evidence": [
+            {
+              "file": "backend/domain/agent/singleagent/internal/agentflow/agent_flow_builder.go",
+              "lines": "173-176",
+              "contains": "react.NewAgent",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/agent_flow_builder.go#L173-L176"
+            },
+            {
+              "search": "rg -n -i 'approv|confirm'",
+              "scope": "backend/domain/agent backend/domain/conversation/agentrun backend/domain/workflow/internal/nodes/plugin backend/domain/plugin/service/tool",
+              "hits": 0,
+              "note": "No approval or confirmation step anywhere in the agent loop, the run handler, or the plugin execution path."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "There is no approval setting to turn on.",
+          "gap": "Approval is not available, on by default or otherwise.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'approv|confirm'",
+              "scope": "backend/domain/agent backend/domain/conversation/agentrun backend/domain/workflow/internal/nodes/plugin backend/domain/plugin/service/tool",
+              "hits": 0,
+              "note": "No approval or confirmation step anywhere in the agent loop, the run handler, or the plugin execution path."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The model-written SQL tool advertises INSERT, UPDATE and DELETE, and plugins call external write APIs, with no undo.",
+          "gap": "No checkpoints, previews or rollback for consequential actions.",
+          "evidence": [
+            {
+              "file": "backend/domain/agent/singleagent/internal/agentflow/node_tool_database.go",
+              "lines": "66",
+              "contains": "SELECT, INSERT, UPDATE, DELETE",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/node_tool_database.go#L66"
+            },
+            {
+              "file": "backend/domain/plugin/service/tool/invocation_http.go",
+              "lines": "141",
+              "contains": "reqURL.String()",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/plugin/service/tool/invocation_http.go#L141"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tools are handed straight to the ReAct agent with no approval hook.",
+              "gap": "No per-call human approval of tool calls.",
+              "evidence": [
+                {
+                  "file": "backend/domain/agent/singleagent/internal/agentflow/agent_flow_builder.go",
+                  "lines": "173-176",
+                  "contains": "Tools: agentTools",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/agent_flow_builder.go#L173-L176"
+                },
+                {
+                  "search": "rg -n -i 'approv|confirm'",
+                  "scope": "backend/domain/agent backend/domain/conversation/agentrun backend/domain/workflow/internal/nodes/plugin backend/domain/plugin/service/tool",
+                  "hits": 0,
+                  "note": "No approval or confirmation step anywhere in the agent loop, the run handler, or the plugin execution path."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No tool path, including code-running workflows and the SQL tool, crosses an approval gate.",
+              "gap": "No gate exists for any tool, including the most powerful ones.",
+              "evidence": [
+                {
+                  "file": "backend/domain/agent/singleagent/internal/agentflow/agent_flow_builder.go",
+                  "lines": "173-176",
+                  "contains": "react.NewAgent",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/agent_flow_builder.go#L173-L176"
+                },
+                {
+                  "search": "rg -n -i 'approv|confirm'",
+                  "scope": "backend/domain/agent backend/domain/conversation/agentrun backend/domain/workflow/internal/nodes/plugin backend/domain/plugin/service/tool",
+                  "hits": 0,
+                  "note": "No approval or confirmation step anywhere in the agent loop, the run handler, or the plugin execution path."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "There is no approval setting to turn on.",
+              "gap": "Approval is not available, on by default or otherwise.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'approv|confirm'",
+                  "scope": "backend/domain/agent backend/domain/conversation/agentrun backend/domain/workflow/internal/nodes/plugin backend/domain/plugin/service/tool",
+                  "hits": 0,
+                  "note": "No approval or confirmation step anywhere in the agent loop, the run handler, or the plugin execution path."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The model-written SQL tool advertises INSERT, UPDATE and DELETE, and plugins call external write APIs, with no undo.",
+              "gap": "No checkpoints, previews or rollback for consequential actions.",
+              "evidence": [
+                {
+                  "file": "backend/domain/agent/singleagent/internal/agentflow/node_tool_database.go",
+                  "lines": "66",
+                  "contains": "SELECT, INSERT, UPDATE, DELETE",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/node_tool_database.go#L66"
+                },
+                {
+                  "file": "backend/domain/plugin/service/tool/invocation_http.go",
+                  "lines": "141",
+                  "contains": "reqURL.String()",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/plugin/service/tool/invocation_http.go#L141"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "Agents only receive the plugins, workflows and databases their author explicitly attaches, which keeps the default tool set empty. Plugin arguments follow typed OpenAPI schemas with required-field checks, and model-written SQL is parsed, rewritten onto the bound table, checked against a denylist and a table-name pattern, and filtered per user in the default read-write mode. Outbound HTTP from plugins and workflow nodes accepts any URL, with no internal-address filtering.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.5,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "SQL goes through a parser rewrite plus denylist and pattern checks; plugin parameters are typed; HTTP destinations are unrestricted.",
+          "gap": "No URL/host allowlist or internal-address blocking, and SQL is filtered by denylist rather than a structural allowlist.",
+          "evidence": [
+            {
+              "file": "backend/domain/memory/database/service/database_impl.go",
+              "lines": "2210",
+              "contains": "UNION queries are not allowed",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/memory/database/service/database_impl.go#L2210"
+            },
+            {
+              "file": "backend/domain/memory/database/service/database_impl.go",
+              "lines": "2217",
+              "contains": "dangerousTables",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/memory/database/service/database_impl.go#L2217"
+            },
+            {
+              "file": "backend/domain/plugin/service/tool/invocation_args.go",
+              "lines": "307-308",
+              "contains": "is required",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/plugin/service/tool/invocation_args.go#L307-L308"
+            },
+            {
+              "search": "rg -n -i 'ssrf|isprivate|isloopback|169\\.254'",
+              "scope": "backend/domain backend/infra backend/pkg",
+              "hits": 0,
+              "note": "No internal-address filtering for plugin or workflow HTTP requests."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Plugins and the database tool validate arguments (including read-only table mode); the workflow HTTP node and plugin server URLs are not validated.",
+          "gap": "Not every built-in tool validates its inputs; HTTP destinations are unchecked.",
+          "evidence": [
+            {
+              "file": "backend/domain/memory/database/service/database_impl.go",
+              "lines": "1059",
+              "contains": "BotTableRWMode_ReadOnly",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/memory/database/service/database_impl.go#L1059"
+            },
+            {
+              "file": "backend/domain/workflow/internal/nodes/httprequester/http_requester.go",
+              "lines": "368",
+              "contains": "func (hg *HTTPRequester) Invoke",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/workflow/internal/nodes/httprequester/http_requester.go#L368"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "An agent starts with no tools; database, plugin and workflow tools are added only when the author binds them, and the model cannot add tools itself.",
+          "gap": "No per-task narrowing below the author's bound set; once bound, write tools are always offered.",
+          "evidence": [
+            {
+              "file": "backend/domain/agent/singleagent/internal/agentflow/agent_flow_builder.go",
+              "lines": "123",
+              "contains": "if len(conf.Agent.Database) > 0",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/agent_flow_builder.go#L123"
+            },
+            {
+              "file": "backend/domain/agent/singleagent/internal/agentflow/agent_flow_builder.go",
+              "lines": "173-176",
+              "contains": "Tools: agentTools",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/agent_flow_builder.go#L173-L176"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A misused plugin or HTTP node can reach any host from the server's network, and the SQL tool can write and delete within the bound table.",
+          "gap": "Reach is not limited to approved destinations or bounded in quantity.",
+          "evidence": [
+            {
+              "file": "backend/domain/plugin/service/tool/invocation_http.go",
+              "lines": "51",
+              "contains": "resty.New()",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/plugin/service/tool/invocation_http.go#L51"
+            },
+            {
+              "file": "backend/domain/plugin/service/tool/invocation_http.go",
+              "lines": "141",
+              "contains": "reqURL.String()",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/plugin/service/tool/invocation_http.go#L141"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.5,
+          "raw": 0.5,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "SQL goes through a parser rewrite plus denylist and pattern checks; plugin parameters are typed; HTTP destinations are unrestricted.",
+              "gap": "No URL/host allowlist or internal-address blocking, and SQL is filtered by denylist rather than a structural allowlist.",
+              "evidence": [
+                {
+                  "file": "backend/domain/memory/database/service/database_impl.go",
+                  "lines": "2210",
+                  "contains": "UNION queries are not allowed",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/memory/database/service/database_impl.go#L2210"
+                },
+                {
+                  "file": "backend/domain/memory/database/service/database_impl.go",
+                  "lines": "2217",
+                  "contains": "dangerousTables",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/memory/database/service/database_impl.go#L2217"
+                },
+                {
+                  "file": "backend/domain/plugin/service/tool/invocation_args.go",
+                  "lines": "307-308",
+                  "contains": "is required",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/plugin/service/tool/invocation_args.go#L307-L308"
+                },
+                {
+                  "search": "rg -n -i 'ssrf|isprivate|isloopback|169\\.254'",
+                  "scope": "backend/domain backend/infra backend/pkg",
+                  "hits": 0,
+                  "note": "No internal-address filtering for plugin or workflow HTTP requests."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Plugins and the database tool validate arguments (including read-only table mode); the workflow HTTP node and plugin server URLs are not validated.",
+              "gap": "Not every built-in tool validates its inputs; HTTP destinations are unchecked.",
+              "evidence": [
+                {
+                  "file": "backend/domain/memory/database/service/database_impl.go",
+                  "lines": "1059",
+                  "contains": "BotTableRWMode_ReadOnly",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/memory/database/service/database_impl.go#L1059"
+                },
+                {
+                  "file": "backend/domain/workflow/internal/nodes/httprequester/http_requester.go",
+                  "lines": "368",
+                  "contains": "func (hg *HTTPRequester) Invoke",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/workflow/internal/nodes/httprequester/http_requester.go#L368"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "An agent starts with no tools; database, plugin and workflow tools are added only when the author binds them, and the model cannot add tools itself.",
+              "gap": "No per-task narrowing below the author's bound set; once bound, write tools are always offered.",
+              "evidence": [
+                {
+                  "file": "backend/domain/agent/singleagent/internal/agentflow/agent_flow_builder.go",
+                  "lines": "123",
+                  "contains": "if len(conf.Agent.Database) > 0",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/agent_flow_builder.go#L123"
+                },
+                {
+                  "file": "backend/domain/agent/singleagent/internal/agentflow/agent_flow_builder.go",
+                  "lines": "173-176",
+                  "contains": "Tools: agentTools",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/agent_flow_builder.go#L173-L176"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A misused plugin or HTTP node can reach any host from the server's network, and the SQL tool can write and delete within the bound table.",
+              "gap": "Reach is not limited to approved destinations or bounded in quantity.",
+              "evidence": [
+                {
+                  "file": "backend/domain/plugin/service/tool/invocation_http.go",
+                  "lines": "51",
+                  "contains": "resty.New()",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/plugin/service/tool/invocation_http.go#L51"
+                },
+                {
+                  "file": "backend/domain/plugin/service/tool/invocation_http.go",
+                  "lines": "141",
+                  "contains": "reqURL.String()",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/plugin/service/tool/invocation_http.go#L141"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "Workflow code nodes run in a sandbox by default: Python executes under Pyodide inside Deno with no network, environment, subprocess or FFI permission, file access limited to a module cache, a 60-second timeout and a 100 MB memory cap, and errors do not fall back to host execution. An operator can switch to a local runner that executes Python directly in the server container, through an environment variable or the admin settings, without a warning. The Deno process runs inside the main server container and inherits its environment, which holds the deployment's secrets, so an escape from the runtime sandbox lands next to every credential.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.55,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The default runner executes code in Pyodide under Deno's permission model with net, env, run and ffi denied and read/write limited to the module directory.",
+          "gap": "Not kernel-separated (no microVM, gVisor or remote ephemeral sandbox).",
+          "evidence": [
+            {
+              "file": "backend/infra/coderunner/impl/script/sandbox.py",
+              "lines": "10",
+              "contains": "pyodide-sandbox@0.0.4",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/infra/coderunner/impl/script/sandbox.py#L10"
+            },
+            {
+              "file": "backend/infra/coderunner/impl/script/sandbox.py",
+              "lines": "47-53",
+              "contains": "--allow-net",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/infra/coderunner/impl/script/sandbox.py#L47-L53"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every model-reachable code path (workflow code nodes) goes through the configured runner; the only other subprocess runs the bundled document parsers.",
+          "gap": "The sandbox does not cover the documented local-runner escape hatch, and per-process limits outside the runner are absent.",
+          "evidence": [
+            {
+              "file": "backend/infra/coderunner/impl/impl.go",
+              "lines": "53-54",
+              "contains": "return direct.NewRunner()",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/infra/coderunner/impl/impl.go#L53-L54"
+            },
+            {
+              "search": "rg -n 'exec\\.Command'",
+              "scope": "backend",
+              "hits": 3,
+              "note": "Direct runner (opt-in), sandbox runner (default), and the document parser running bundled scripts."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "An empty CODE_RUNNER_TYPE selects the sandbox, but any other value or the admin configuration switches to direct host execution silently.",
+          "gap": "Disabling the sandbox is not an explicit, warned operator flag.",
+          "evidence": [
+            {
+              "file": "backend/bizpkg/config/base/base.go",
+              "lines": "69",
+              "contains": "runnerTypeStr == \"\"",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/bizpkg/config/base/base.go#L69"
+            },
+            {
+              "file": "backend/infra/coderunner/impl/impl.go",
+              "lines": "53-54",
+              "contains": "direct.NewRunner()",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/infra/coderunner/impl/impl.go#L53-L54"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The Deno process is started without a scrubbed environment inside the server container, whose environment carries all deployment secrets, and network access is the server's.",
+          "gap": "Credentials are present in the sandbox process environment and the sandbox is not ephemeral or separately networked.",
+          "evidence": [
+            {
+              "file": "backend/infra/coderunner/impl/script/sandbox.py",
+              "lines": "126-131",
+              "contains": "process = subprocess.run(",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/infra/coderunner/impl/script/sandbox.py#L126-L131"
+            },
+            {
+              "file": "docker/docker-compose.yml",
+              "lines": "392",
+              "contains": "env_file: *env_file",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/docker-compose.yml#L392"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.55,
+          "raw": 0.55,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The default runner executes code in Pyodide under Deno's permission model with net, env, run and ffi denied and read/write limited to the module directory.",
+              "gap": "Not kernel-separated (no microVM, gVisor or remote ephemeral sandbox).",
+              "evidence": [
+                {
+                  "file": "backend/infra/coderunner/impl/script/sandbox.py",
+                  "lines": "10",
+                  "contains": "pyodide-sandbox@0.0.4",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/infra/coderunner/impl/script/sandbox.py#L10"
+                },
+                {
+                  "file": "backend/infra/coderunner/impl/script/sandbox.py",
+                  "lines": "47-53",
+                  "contains": "--allow-net",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/infra/coderunner/impl/script/sandbox.py#L47-L53"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every model-reachable code path (workflow code nodes) goes through the configured runner; the only other subprocess runs the bundled document parsers.",
+              "gap": "The sandbox does not cover the documented local-runner escape hatch, and per-process limits outside the runner are absent.",
+              "evidence": [
+                {
+                  "file": "backend/infra/coderunner/impl/impl.go",
+                  "lines": "53-54",
+                  "contains": "return direct.NewRunner()",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/infra/coderunner/impl/impl.go#L53-L54"
+                },
+                {
+                  "search": "rg -n 'exec\\.Command'",
+                  "scope": "backend",
+                  "hits": 3,
+                  "note": "Direct runner (opt-in), sandbox runner (default), and the document parser running bundled scripts."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "An empty CODE_RUNNER_TYPE selects the sandbox, but any other value or the admin configuration switches to direct host execution silently.",
+              "gap": "Disabling the sandbox is not an explicit, warned operator flag.",
+              "evidence": [
+                {
+                  "file": "backend/bizpkg/config/base/base.go",
+                  "lines": "69",
+                  "contains": "runnerTypeStr == \"\"",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/bizpkg/config/base/base.go#L69"
+                },
+                {
+                  "file": "backend/infra/coderunner/impl/impl.go",
+                  "lines": "53-54",
+                  "contains": "direct.NewRunner()",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/infra/coderunner/impl/impl.go#L53-L54"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The Deno process is started without a scrubbed environment inside the server container, whose environment carries all deployment secrets, and network access is the server's.",
+              "gap": "Credentials are present in the sandbox process environment and the sandbox is not ephemeral or separately networked.",
+              "evidence": [
+                {
+                  "file": "backend/infra/coderunner/impl/script/sandbox.py",
+                  "lines": "126-131",
+                  "contains": "process = subprocess.run(",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/infra/coderunner/impl/script/sandbox.py#L126-L131"
+                },
+                {
+                  "file": "docker/docker-compose.yml",
+                  "lines": "392",
+                  "contains": "env_file: *env_file",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/docker-compose.yml#L392"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "Nothing limits what untrusted content can make the agent do. Published agents take messages from end users through the API and chat SDK, and plugin responses, HTTP results and knowledge documents return to the model as plain tool output with no provenance or taint handling. In the same session the agent can read private databases and knowledge, send data to any URL through plugins, and write or delete records, all without a human. On a multi-user deployment a hijacked agent can also touch data and credentials that other users configured.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C5-WORSTCASE",
+        "max": 0.25,
+        "reason": "Untrusted content can drive unattended exfiltration and irreversible database writes in the default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No structural limit on a hijacked agent: no injection controls, no approval after untrusted reads.",
+          "gap": "No capability is disabled or gated once untrusted content enters a session.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'prompt.?injection|guardrail|untrusted|jailbreak'",
+              "scope": "backend/domain backend/application backend/crossdomain",
+              "hits": 0,
+              "note": "No injection detection, provenance tagging or taint tracking in the backend."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Plugin results are returned verbatim as tool output and are not distinguished from trusted input.",
+          "gap": "Untrusted sources are not distinguished from the principal's input.",
+          "evidence": [
+            {
+              "file": "backend/domain/agent/singleagent/internal/agentflow/node_tool_plugin.go",
+              "lines": "147",
+              "contains": "return resp.TrimmedResp, nil",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/node_tool_plugin.go#L147"
+            },
+            {
+              "search": "rg -n -i 'prompt.?injection|guardrail|untrusted|jailbreak'",
+              "scope": "backend/domain backend/application backend/crossdomain",
+              "hits": 0,
+              "note": "No injection detection, provenance tagging or taint tracking in the backend."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No such control exists to enable.",
+          "gap": "No default-on protection.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'prompt.?injection|guardrail|untrusted|jailbreak'",
+              "scope": "backend/domain backend/application backend/crossdomain",
+              "hits": 0,
+              "note": "No injection detection, provenance tagging or taint tracking in the backend."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Unattended exfiltration through plugins or HTTP nodes and unattended database writes and deletes are both available in one session, on a multi-user platform.",
+          "gap": "Exfiltration and irreversible actions are not gated by a human.",
+          "evidence": [
+            {
+              "file": "backend/domain/agent/singleagent/internal/agentflow/node_tool_database.go",
+              "lines": "66",
+              "contains": "SELECT, INSERT, UPDATE, DELETE",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/node_tool_database.go#L66"
+            },
+            {
+              "file": "backend/domain/plugin/service/tool/invocation_http.go",
+              "lines": "141",
+              "contains": "reqURL.String()",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/plugin/service/tool/invocation_http.go#L141"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": {
+            "id": "C5-WORSTCASE",
+            "max": 0.25,
+            "reason": "Untrusted content can drive unattended exfiltration and irreversible database writes in the default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No structural limit on a hijacked agent: no injection controls, no approval after untrusted reads.",
+              "gap": "No capability is disabled or gated once untrusted content enters a session.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'prompt.?injection|guardrail|untrusted|jailbreak'",
+                  "scope": "backend/domain backend/application backend/crossdomain",
+                  "hits": 0,
+                  "note": "No injection detection, provenance tagging or taint tracking in the backend."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Plugin results are returned verbatim as tool output and are not distinguished from trusted input.",
+              "gap": "Untrusted sources are not distinguished from the principal's input.",
+              "evidence": [
+                {
+                  "file": "backend/domain/agent/singleagent/internal/agentflow/node_tool_plugin.go",
+                  "lines": "147",
+                  "contains": "return resp.TrimmedResp, nil",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/node_tool_plugin.go#L147"
+                },
+                {
+                  "search": "rg -n -i 'prompt.?injection|guardrail|untrusted|jailbreak'",
+                  "scope": "backend/domain backend/application backend/crossdomain",
+                  "hits": 0,
+                  "note": "No injection detection, provenance tagging or taint tracking in the backend."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No such control exists to enable.",
+              "gap": "No default-on protection.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'prompt.?injection|guardrail|untrusted|jailbreak'",
+                  "scope": "backend/domain backend/application backend/crossdomain",
+                  "hits": 0,
+                  "note": "No injection detection, provenance tagging or taint tracking in the backend."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Unattended exfiltration through plugins or HTTP nodes and unattended database writes and deletes are both available in one session, on a multi-user platform.",
+              "gap": "Exfiltration and irreversible actions are not gated by a human.",
+              "evidence": [
+                {
+                  "file": "backend/domain/agent/singleagent/internal/agentflow/node_tool_database.go",
+                  "lines": "66",
+                  "contains": "SELECT, INSERT, UPDATE, DELETE",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/node_tool_database.go#L66"
+                },
+                {
+                  "file": "backend/domain/plugin/service/tool/invocation_http.go",
+                  "lines": "141",
+                  "contains": "reqURL.String()",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/plugin/service/tool/invocation_http.go#L141"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "Agents can persist state through user variables and user databases that the model writes with tools, and these are fed back into later conversations and can drive further tool calls. Isolation is per user by default: variables are keyed to the end user and connector, and databases default to a mode that adds a per-user filter to queries. Nothing validates, reviews or expires what the model writes, and there is no provenance or rollback. There are no workspace instruction files or repo configs to auto-load, since this is a hosted platform.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.3,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The variables tool writes model-chosen values straight to persistent per-user variables with no validation or review.",
+          "gap": "Memory writes are not gated, validated or expired.",
+          "evidence": [
+            {
+              "file": "backend/domain/agent/singleagent/internal/agentflow/node_tool_variables.go",
+              "lines": "121",
+              "contains": "SetVariableInstance",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/node_tool_variables.go#L121"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Variables and database rows are both written by the model without control; knowledge bases are author-managed.",
+          "gap": "No memory store has write controls.",
+          "evidence": [
+            {
+              "file": "backend/domain/agent/singleagent/internal/agentflow/node_tool_variables.go",
+              "lines": "121",
+              "contains": "SetVariableInstance",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/node_tool_variables.go#L121"
+            },
+            {
+              "file": "backend/domain/agent/singleagent/internal/agentflow/node_tool_database.go",
+              "lines": "66",
+              "contains": "INSERT, UPDATE, DELETE",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/node_tool_database.go#L66"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Per-user isolation is the default: databases default to limited (per-user) read-write mode, and variables are keyed to the end user.",
+          "gap": "Isolation relies on a query filter in shared tables rather than separate storage, and the author can switch a table to shared mode.",
+          "evidence": [
+            {
+              "file": "frontend/packages/studio/stores/bot-detail/src/store/bot-skill/defaults.ts",
+              "lines": "72",
+              "contains": "BotTableRWMode.LimitedReadWrite",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/frontend/packages/studio/stores/bot-detail/src/store/bot-skill/defaults.ts#L72"
+            },
+            {
+              "file": "backend/domain/agent/singleagent/internal/agentflow/node_tool_variables.go",
+              "lines": "47",
+              "contains": "ConnectorUID: vc.UserID",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/node_tool_variables.go#L47"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Poisoned variables or rows persist across the user's sessions and are re-injected into context where they can steer tool calls.",
+          "gap": "Poisoned state is not limited to text output or gated actions.",
+          "evidence": [
+            {
+              "file": "backend/domain/agent/singleagent/internal/agentflow/node_tool_variables.go",
+              "lines": "121",
+              "contains": "SetVariableInstance",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/node_tool_variables.go#L121"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.3,
+          "raw": 0.3,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The variables tool writes model-chosen values straight to persistent per-user variables with no validation or review.",
+              "gap": "Memory writes are not gated, validated or expired.",
+              "evidence": [
+                {
+                  "file": "backend/domain/agent/singleagent/internal/agentflow/node_tool_variables.go",
+                  "lines": "121",
+                  "contains": "SetVariableInstance",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/node_tool_variables.go#L121"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Variables and database rows are both written by the model without control; knowledge bases are author-managed.",
+              "gap": "No memory store has write controls.",
+              "evidence": [
+                {
+                  "file": "backend/domain/agent/singleagent/internal/agentflow/node_tool_variables.go",
+                  "lines": "121",
+                  "contains": "SetVariableInstance",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/node_tool_variables.go#L121"
+                },
+                {
+                  "file": "backend/domain/agent/singleagent/internal/agentflow/node_tool_database.go",
+                  "lines": "66",
+                  "contains": "INSERT, UPDATE, DELETE",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/node_tool_database.go#L66"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Per-user isolation is the default: databases default to limited (per-user) read-write mode, and variables are keyed to the end user.",
+              "gap": "Isolation relies on a query filter in shared tables rather than separate storage, and the author can switch a table to shared mode.",
+              "evidence": [
+                {
+                  "file": "frontend/packages/studio/stores/bot-detail/src/store/bot-skill/defaults.ts",
+                  "lines": "72",
+                  "contains": "BotTableRWMode.LimitedReadWrite",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/frontend/packages/studio/stores/bot-detail/src/store/bot-skill/defaults.ts#L72"
+                },
+                {
+                  "file": "backend/domain/agent/singleagent/internal/agentflow/node_tool_variables.go",
+                  "lines": "47",
+                  "contains": "ConnectorUID: vc.UserID",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/node_tool_variables.go#L47"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Poisoned variables or rows persist across the user's sessions and are re-injected into context where they can steer tool calls.",
+              "gap": "Poisoned state is not limited to text output or gated actions.",
+              "evidence": [
+                {
+                  "file": "backend/domain/agent/singleagent/internal/agentflow/node_tool_variables.go",
+                  "lines": "121",
+                  "contains": "SetVariableInstance",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/node_tool_variables.go#L121"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "Extensions are plugins: OpenAPI descriptions of remote HTTP services, either from the operator-curated official catalog or created by users with their own server URL. No third-party code runs inside the platform; MCP invocation is not implemented and the Coze SaaS plugin source is off by default. User-created plugins point at whatever the remote server currently does, with no pinning or change detection, but a malicious plugin only receives the arguments sent to it and its own credentials.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.4,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "User-created plugins call a user-chosen server URL whose behaviour can change at any time; nothing is pinned or verified.",
+          "gap": "No pinning or integrity check of plugin endpoints and definitions.",
+          "evidence": [
+            {
+              "file": "backend/domain/plugin/service/tool/invocation_http.go",
+              "lines": "141",
+              "contains": "reqURL.String()",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/plugin/service/tool/invocation_http.go#L141"
+            },
+            {
+              "file": "backend/domain/plugin/service/tool/invocation_mcp.go",
+              "lines": "32",
+              "contains": "mcp call not implemented",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/plugin/service/tool/invocation_mcp.go#L32"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only the official catalog is curated; user plugins are unverified.",
+          "gap": "Verification does not cover user-created plugins.",
+          "evidence": [
+            {
+              "file": "backend/domain/plugin/service/tool/invocation_http.go",
+              "lines": "141",
+              "contains": "reqURL.String()",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/plugin/service/tool/invocation_http.go#L141"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No third-party source is enabled by default (the SaaS plugin source is off); users add plugins explicitly.",
+          "gap": "Any registered user can add plugins, and adding one doesn't show a permissions summary.",
+          "evidence": [
+            {
+              "file": "backend/bizpkg/config/base/base.go",
+              "lines": "81",
+              "contains": "COZE_SAAS_PLUGIN_ENABLED\", false",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/bizpkg/config/base/base.go#L81"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Plugins run remotely and receive only the call arguments plus their own injected credential, with no access to the platform process or other plugins' secrets.",
+          "gap": "No limit on what data the model can send to a plugin's declared endpoint.",
+          "evidence": [
+            {
+              "file": "backend/domain/plugin/service/tool/invocation_http.go",
+              "lines": "158-170",
+              "contains": "injectAuthInfo",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/plugin/service/tool/invocation_http.go#L158-L170"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.4,
+          "raw": 0.4,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "User-created plugins call a user-chosen server URL whose behaviour can change at any time; nothing is pinned or verified.",
+              "gap": "No pinning or integrity check of plugin endpoints and definitions.",
+              "evidence": [
+                {
+                  "file": "backend/domain/plugin/service/tool/invocation_http.go",
+                  "lines": "141",
+                  "contains": "reqURL.String()",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/plugin/service/tool/invocation_http.go#L141"
+                },
+                {
+                  "file": "backend/domain/plugin/service/tool/invocation_mcp.go",
+                  "lines": "32",
+                  "contains": "mcp call not implemented",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/plugin/service/tool/invocation_mcp.go#L32"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only the official catalog is curated; user plugins are unverified.",
+              "gap": "Verification does not cover user-created plugins.",
+              "evidence": [
+                {
+                  "file": "backend/domain/plugin/service/tool/invocation_http.go",
+                  "lines": "141",
+                  "contains": "reqURL.String()",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/plugin/service/tool/invocation_http.go#L141"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No third-party source is enabled by default (the SaaS plugin source is off); users add plugins explicitly.",
+              "gap": "Any registered user can add plugins, and adding one doesn't show a permissions summary.",
+              "evidence": [
+                {
+                  "file": "backend/bizpkg/config/base/base.go",
+                  "lines": "81",
+                  "contains": "COZE_SAAS_PLUGIN_ENABLED\", false",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/bizpkg/config/base/base.go#L81"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Plugins run remotely and receive only the call arguments plus their own injected credential, with no access to the platform process or other plugins' secrets.",
+              "gap": "No limit on what data the model can send to a plugin's declared endpoint.",
+              "evidence": [
+                {
+                  "file": "backend/domain/plugin/service/tool/invocation_http.go",
+                  "lines": "158-170",
+                  "contains": "injectAuthInfo",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/plugin/service/tool/invocation_http.go#L158-L170"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "Secrets come from environment variables and the database. Plugin credentials are encrypted at rest, but model provider keys are stored without encryption (a source comment leaves this to the deployer), and credential encryption is not hardened in the default deployment. There is no log redaction, and the shipped environment and Helm values set debug-level logging. Frontend monitoring is a no-op stub, so no telemetry leaves the deployment.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.2,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Plugin credentials and OAuth tokens are encrypted before storage, model connection keys are stored as-is, and no log redaction exists.",
+          "gap": "No masking or redaction on log paths and no protected storage for model keys.",
+          "evidence": [
+            {
+              "file": "backend/crossdomain/plugin/model/plugin_manifest.go",
+              "lines": "84",
+              "contains": "encrypt.EncryptByAES",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/crossdomain/plugin/model/plugin_manifest.go#L84"
+            },
+            {
+              "file": "backend/bizpkg/config/modelmgr/model_save.go",
+              "lines": "122-123",
+              "contains": "encrypt conn if you need",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/bizpkg/config/modelmgr/model_save.go#L122-L123"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only stored plugin credentials get any protection; logs, error messages and model-bound messages have none.",
+          "gap": "Logs and transcripts are not protected.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'redact|desensitiz|sanitize'",
+              "scope": "backend/domain backend/infra backend/pkg backend/api/middleware",
+              "hits": 6,
+              "note": "One hit is a string sanitizer for the OceanBase search store; the other five are the unrelated 'RequiredAction' run type. No log or message redaction."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Debug-level logging is the shipped default and is not redacted.",
+          "gap": "Logging defaults are verbose and payload logging is not redacted.",
+          "evidence": [
+            {
+              "file": "docker/.env.example",
+              "lines": "3",
+              "contains": "LOG_LEVEL=\"debug\"",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/.env.example#L3"
+            },
+            {
+              "file": "helm/charts/opencoze/values.yaml",
+              "lines": "101",
+              "contains": "LOG_LEVEL: \"debug\"",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/helm/charts/opencoze/values.yaml#L101"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Leaked material is long-lived provider keys and plugin credentials, scoped by whatever the provider issued.",
+          "gap": "Keys are not short-lived or rotated by the platform.",
+          "evidence": [
+            {
+              "file": "docker/.env.example",
+              "lines": "213",
+              "contains": "MODEL_API_KEY_0",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/.env.example#L213"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.2,
+          "raw": 0.2,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Plugin credentials and OAuth tokens are encrypted before storage, model connection keys are stored as-is, and no log redaction exists.",
+              "gap": "No masking or redaction on log paths and no protected storage for model keys.",
+              "evidence": [
+                {
+                  "file": "backend/crossdomain/plugin/model/plugin_manifest.go",
+                  "lines": "84",
+                  "contains": "encrypt.EncryptByAES",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/crossdomain/plugin/model/plugin_manifest.go#L84"
+                },
+                {
+                  "file": "backend/bizpkg/config/modelmgr/model_save.go",
+                  "lines": "122-123",
+                  "contains": "encrypt conn if you need",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/bizpkg/config/modelmgr/model_save.go#L122-L123"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only stored plugin credentials get any protection; logs, error messages and model-bound messages have none.",
+              "gap": "Logs and transcripts are not protected.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'redact|desensitiz|sanitize'",
+                  "scope": "backend/domain backend/infra backend/pkg backend/api/middleware",
+                  "hits": 6,
+                  "note": "One hit is a string sanitizer for the OceanBase search store; the other five are the unrelated 'RequiredAction' run type. No log or message redaction."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Debug-level logging is the shipped default and is not redacted.",
+              "gap": "Logging defaults are verbose and payload logging is not redacted.",
+              "evidence": [
+                {
+                  "file": "docker/.env.example",
+                  "lines": "3",
+                  "contains": "LOG_LEVEL=\"debug\"",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/.env.example#L3"
+                },
+                {
+                  "file": "helm/charts/opencoze/values.yaml",
+                  "lines": "101",
+                  "contains": "LOG_LEVEL: \"debug\"",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/helm/charts/opencoze/values.yaml#L101"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Leaked material is long-lived provider keys and plugin credentials, scoped by whatever the provider issued.",
+              "gap": "Keys are not short-lived or rotated by the platform.",
+              "evidence": [
+                {
+                  "file": "docker/.env.example",
+                  "lines": "213",
+                  "contains": "MODEL_API_KEY_0",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/.env.example#L213"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "Every agent tool call and tool response is stored as a message with run, conversation, agent and user identifiers, and workflow runs store each node's inputs, outputs, status, duration and errors in the database. This gives a structured, per-action record outside anything the model can edit. There is no approval record (there are no approvals), no tamper-evident storage or standard export, and records are written alongside execution rather than before it.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.5,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Structured records of tool calls and workflow node executions with timestamps, inputs and outputs.",
+          "gap": "No approver attribution, delegation chain or tamper evidence.",
+          "evidence": [
+            {
+              "file": "docker/volumes/mysql/schema.sql",
+              "lines": "52",
+              "contains": "CREATE TABLE IF NOT EXISTS `message`",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/volumes/mysql/schema.sql#L52"
+            },
+            {
+              "file": "docker/volumes/mysql/schema.sql",
+              "lines": "60",
+              "contains": "actual input of the node",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/volumes/mysql/schema.sql#L60"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Agent tool calls (plugins, workflows, database, variables) and workflow node executions are recorded.",
+          "gap": "Configuration changes and credential use are not recorded, and there are no approvals or denials to record.",
+          "evidence": [
+            {
+              "file": "backend/domain/conversation/agentrun/internal/message_event.go",
+              "lines": "145-148",
+              "contains": "MessageTypeFunctionCall",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/conversation/agentrun/internal/message_event.go#L145-L148"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Recording is always on and stored in the platform database, which the model cannot reach, but end users can delete their own conversations.",
+          "gap": "Records can be altered or deleted through normal product features.",
+          "evidence": [
+            {
+              "file": "backend/domain/conversation/agentrun/internal/message_event.go",
+              "lines": "145-148",
+              "contains": "crossmessage.DefaultSVC().Create(ctx, cm)",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/conversation/agentrun/internal/message_event.go#L145-L148"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Records are written per action and write failures surface as run errors.",
+          "gap": "Actions are not blocked until their record is durably written.",
+          "evidence": [
+            {
+              "file": "backend/domain/conversation/agentrun/internal/message_event.go",
+              "lines": "148",
+              "contains": "crossmessage.DefaultSVC().Create(ctx, cm)",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/conversation/agentrun/internal/message_event.go#L148"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.5,
+          "raw": 0.5,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Structured records of tool calls and workflow node executions with timestamps, inputs and outputs.",
+              "gap": "No approver attribution, delegation chain or tamper evidence.",
+              "evidence": [
+                {
+                  "file": "docker/volumes/mysql/schema.sql",
+                  "lines": "52",
+                  "contains": "CREATE TABLE IF NOT EXISTS `message`",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/volumes/mysql/schema.sql#L52"
+                },
+                {
+                  "file": "docker/volumes/mysql/schema.sql",
+                  "lines": "60",
+                  "contains": "actual input of the node",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/volumes/mysql/schema.sql#L60"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Agent tool calls (plugins, workflows, database, variables) and workflow node executions are recorded.",
+              "gap": "Configuration changes and credential use are not recorded, and there are no approvals or denials to record.",
+              "evidence": [
+                {
+                  "file": "backend/domain/conversation/agentrun/internal/message_event.go",
+                  "lines": "145-148",
+                  "contains": "MessageTypeFunctionCall",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/conversation/agentrun/internal/message_event.go#L145-L148"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Recording is always on and stored in the platform database, which the model cannot reach, but end users can delete their own conversations.",
+              "gap": "Records can be altered or deleted through normal product features.",
+              "evidence": [
+                {
+                  "file": "backend/domain/conversation/agentrun/internal/message_event.go",
+                  "lines": "145-148",
+                  "contains": "crossmessage.DefaultSVC().Create(ctx, cm)",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/conversation/agentrun/internal/message_event.go#L145-L148"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Records are written per action and write failures surface as run errors.",
+              "gap": "Actions are not blocked until their record is durably written.",
+              "evidence": [
+                {
+                  "file": "backend/domain/conversation/agentrun/internal/message_event.go",
+                  "lines": "148",
+                  "contains": "crossmessage.DefaultSVC().Create(ctx, cm)",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/conversation/agentrun/internal/message_event.go#L148"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "The agent loop inherits the agent framework's default step cap because no limit is set, and sandboxed code has a 60-second timeout. Workflows, which agents can call as tools, have no run timeout and no node-count limit by default, and plugin HTTP calls have no timeout. Cancelling an agent run only updates its database status; workflow cancellation is cooperative, checked every 200 ms. There are no token or cost budgets.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.325,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "The ReAct agent is built without MaxStep, so the library default step limit applies; code execution has a 60-second timeout.",
+          "gap": "No token or cost cap and no run-level time bound.",
+          "evidence": [
+            {
+              "file": "backend/domain/agent/singleagent/internal/agentflow/agent_flow_builder.go",
+              "lines": "173-176",
+              "contains": "react.NewAgent",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/agent_flow_builder.go#L173-L176"
+            },
+            {
+              "file": "backend/bizpkg/config/base/base.go",
+              "lines": "71",
+              "contains": "StrToFloat64D(timeoutSecondsStr, 60)",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/bizpkg/config/base/base.go#L71"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Limits apply to the agent loop and code nodes; workflow runs and plugin calls are unbounded.",
+          "gap": "Tool calls and workflow runs invoked by the agent don't share a time limit.",
+          "evidence": [
+            {
+              "file": "backend/domain/workflow/internal/execute/consts.go",
+              "lines": "25-28",
+              "contains": "0 means no limit",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/workflow/internal/execute/consts.go#L25-L28"
+            },
+            {
+              "file": "backend/domain/plugin/service/tool/invocation_http.go",
+              "lines": "51",
+              "contains": "resty.New()",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/plugin/service/tool/invocation_http.go#L51"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Workflow run timeout and node-count limit default to unlimited.",
+          "gap": "No sensible default limits for workflows.",
+          "evidence": [
+            {
+              "file": "backend/domain/workflow/internal/execute/consts.go",
+              "lines": "25-28",
+              "contains": "foregroundRunTimeout     = 0",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/workflow/internal/execute/consts.go#L25-L28"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Cancelling an agent run only marks the record cancelled, so in-flight work continues.",
+          "gap": "Stopping a run does not cancel in-flight tool calls.",
+          "evidence": [
+            {
+              "file": "backend/domain/conversation/agentrun/internal/dal/dao.go",
+              "lines": "197-202",
+              "contains": "entity.RunEventCancelled",
+              "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/conversation/agentrun/internal/dal/dao.go#L197-L202"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.325,
+          "raw": 0.325,
+          "cap": null,
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "The ReAct agent is built without MaxStep, so the library default step limit applies; code execution has a 60-second timeout.",
+              "gap": "No token or cost cap and no run-level time bound.",
+              "evidence": [
+                {
+                  "file": "backend/domain/agent/singleagent/internal/agentflow/agent_flow_builder.go",
+                  "lines": "173-176",
+                  "contains": "react.NewAgent",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/agent_flow_builder.go#L173-L176"
+                },
+                {
+                  "file": "backend/bizpkg/config/base/base.go",
+                  "lines": "71",
+                  "contains": "StrToFloat64D(timeoutSecondsStr, 60)",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/bizpkg/config/base/base.go#L71"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Limits apply to the agent loop and code nodes; workflow runs and plugin calls are unbounded.",
+              "gap": "Tool calls and workflow runs invoked by the agent don't share a time limit.",
+              "evidence": [
+                {
+                  "file": "backend/domain/workflow/internal/execute/consts.go",
+                  "lines": "25-28",
+                  "contains": "0 means no limit",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/workflow/internal/execute/consts.go#L25-L28"
+                },
+                {
+                  "file": "backend/domain/plugin/service/tool/invocation_http.go",
+                  "lines": "51",
+                  "contains": "resty.New()",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/plugin/service/tool/invocation_http.go#L51"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Workflow run timeout and node-count limit default to unlimited.",
+              "gap": "No sensible default limits for workflows.",
+              "evidence": [
+                {
+                  "file": "backend/domain/workflow/internal/execute/consts.go",
+                  "lines": "25-28",
+                  "contains": "foregroundRunTimeout     = 0",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/workflow/internal/execute/consts.go#L25-L28"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Cancelling an agent run only marks the record cancelled, so in-flight work continues.",
+              "gap": "Stopping a run does not cancel in-flight tool calls.",
+              "evidence": [
+                {
+                  "file": "backend/domain/conversation/agentrun/internal/dal/dao.go",
+                  "lines": "197-202",
+                  "contains": "entity.RunEventCancelled",
+                  "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/conversation/agentrun/internal/dal/dao.go#L197-L202"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "Untrusted content can drive unattended exfiltration and database writes or deletes in one session.",
+      "criterion": "C5",
+      "owasp": [
+        "ASI01",
+        "LLM01"
+      ],
+      "evidence": [
+        {
+          "file": "backend/domain/agent/singleagent/internal/agentflow/node_tool_database.go",
+          "lines": "66",
+          "contains": "INSERT, UPDATE, DELETE",
+          "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/node_tool_database.go#L66"
+        },
+        {
+          "file": "backend/domain/plugin/service/tool/invocation_http.go",
+          "lines": "141",
+          "contains": "reqURL.String()",
+          "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/plugin/service/tool/invocation_http.go#L141"
+        }
+      ]
+    },
+    {
+      "summary": "The code sandbox runs inside the server container and inherits its environment, which holds all deployment secrets.",
+      "criterion": "C4",
+      "owasp": [
+        "ASI05",
+        "T11"
+      ],
+      "evidence": [
+        {
+          "file": "backend/infra/coderunner/impl/script/sandbox.py",
+          "lines": "126-131",
+          "contains": "process = subprocess.run(",
+          "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/infra/coderunner/impl/script/sandbox.py#L126-L131"
+        },
+        {
+          "file": "docker/docker-compose.yml",
+          "lines": "392",
+          "contains": "env_file: *env_file",
+          "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/docker-compose.yml#L392"
+        }
+      ]
+    },
+    {
+      "summary": "The server identity holds deployment-wide credentials for all tenants' data.",
+      "criterion": "C1",
+      "owasp": [
+        "ASI03",
+        "T3"
+      ],
+      "evidence": [
+        {
+          "file": "docker/docker-compose.yml",
+          "lines": "401",
+          "contains": ".env:/app/.env",
+          "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/docker-compose.yml#L401"
+        },
+        {
+          "file": "docker/.env.example",
+          "lines": "18",
+          "contains": "MYSQL_DSN",
+          "url": "https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/.env.example#L18"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "End-user chat on published agents and plugin/HTTP results returned raw to the model (backend/domain/agent/singleagent/internal/agentflow/node_tool_plugin.go:147)",
+    "sensitive_data": "User databases, knowledge bases and plugin credentials bound to the agent (backend/domain/agent/singleagent/internal/agentflow/agent_flow_builder.go:102-133)",
+    "state_change_or_egress": "Plugins to arbitrary server URLs and model-written INSERT/UPDATE/DELETE (backend/domain/plugin/service/tool/invocation_http.go:141; node_tool_database.go:66)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Add an approval hook in the agent's tool node for write-capable plugins, workflows and SQL writes, showing the exact call.",
+      "criterion": "C2",
+      "parameter": "S",
+      "from_level": 0,
+      "to_level": 3,
+      "playbook": "Playbook 5, step 1",
+      "estimated_gain": 0.225
+    },
+    {
+      "summary": "Block internal and link-local addresses (rechecked after redirects) for plugin and workflow HTTP requests.",
+      "criterion": "C3",
+      "parameter": "S",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 3, step 1",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Start the code sandbox with a scrubbed environment, or run it in a separate container with no secrets.",
+      "criterion": "C4",
+      "parameter": "B",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 3, step 2",
+      "estimated_gain": 0.1
+    },
+    {
+      "summary": "Ship info-level logging by default and add a redaction filter to the logger.",
+      "criterion": "C8",
+      "parameter": "D",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 4, step 2",
+      "estimated_gain": 0.1
+    },
+    {
+      "summary": "Set default workflow run timeouts and node limits, a plugin HTTP timeout, and make run cancellation cancel the running context.",
+      "criterion": "C10",
+      "parameter": "C",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 3, step 3",
+      "estimated_gain": 0.075
+    }
+  ],
+  "reaudit_log": [
+    {
+      "criterion": "C4",
+      "parameter": "C",
+      "from_level": 4,
+      "to_level": 3,
+      "reason": "No host fallback exists, but the opt-in local runner is selected silently by any non-sandbox value, so full fail-closed coverage was not credited."
+    },
+    {
+      "criterion": "C9",
+      "parameter": "S",
+      "from_level": 3,
+      "to_level": 2,
+      "reason": "Records carry run, agent and user identifiers, but there is no approver attribution or delegation chain; burden of proof keeps it at L2."
+    },
+    {
+      "criterion": "C3",
+      "parameter": "D",
+      "from_level": 2,
+      "to_level": 3,
+      "reason": "Rechecked the builder: an agent with nothing bound gets no tools, and every tool is added by explicit author binding."
+    }
+  ],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was executed, installed, or probed.",
+    "The agent step cap is inferred from the default of the cloudwego/eino v0.4.8 ReAct agent (node count plus 10 graph steps), read from that library's source, because coze-studio sets no MaxStep.",
+    "The internals of the jsr:@langchain/pyodide-sandbox package and the Deno version shipped in the image were not examined; the C4 strength rating relies on Deno's documented permission model.",
+    "The chat UI's markdown renderer is an external package and was not examined for remote-image rendering.",
+    "The Helm chart, the OceanBase compose variants and the commercial SaaS plugin source were not scored; the Helm values also default to debug logging.",
+    "The repository's agent-instruction file was not reviewed; no reviewer-steering text was observed in the files read."
+  ]
+}

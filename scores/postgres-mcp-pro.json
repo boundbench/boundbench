@@ -1,0 +1,2553 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "postgres-mcp-pro",
+  "name": "Postgres MCP Pro",
+  "repo_url": "https://github.com/crystaldba/postgres-mcp",
+  "subpath": null,
+  "description": "Postgres MCP with configurable read/write access, index tuning and health analysis",
+  "category": "data_analytics",
+  "pinned_commit": "15c8e33353546148acc2d8bd784551cf3905d1e2",
+  "version": null,
+  "scored_date": "2026-10-03",
+  "scored_configuration": "postgres-mcp over stdio with DATABASE_URI set and no flags, i.e. the default --access-mode unrestricted (also used in every README configuration example).",
+  "score": 4.2,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 8,
+    "score": 2.15,
+    "max": 8.0,
+    "percent": 27
+  },
+  "capability_profile": {
+    "code_execution": "yes",
+    "filesystem_write": "no",
+    "network_egress": "opt_in",
+    "external_credentials": "yes",
+    "persistent_memory": "no",
+    "untrusted_input": "yes",
+    "third_party_extensions": "no",
+    "sub_agents": "no",
+    "external_communication": "no"
+  },
+  "headline": "As shipped, Postgres MCP Pro runs in unrestricted mode: the model can execute any SQL, including multi-statement DROP/DELETE batches, with the operator's database login, and every statement is committed immediately with no timeout, record or undo. Risk annotations on some read-only-labelled tools are not accurate. The opt-in restricted mode is a genuinely strong parser allowlist plus read-only transaction with a 30-second timeout; deployers should always use it and a read-only database role.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "The server connects to Postgres with the single connection string the operator supplies in DATABASE_URI and uses that one credential, through one connection pool, for every tool, reads and writes alike. Nothing in the server narrows the database role or checks who is asking: there is no per-caller authorization. Least privilege therefore depends entirely on the operator creating a restricted database role; the README's own examples use a generic user/password login with unrestricted mode.",
+      "max": 1.0,
+      "notes": "The optional network transport as configured by the Docker entrypoint is not locked down. Not the scored default (stdio).",
+      "status": "scored",
+      "score": 0.175,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A dedicated, operator-supplied database login (DATABASE_URI) is the only identity; its privilege is whatever the operator chose and reads and writes share it.",
+          "gap": "No role scoping in the server; L2 needs a role-scoped identity with specific privileges defined or required by the project.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "629",
+              "contains": "os.environ.get(\"DATABASE_URI\", args.database_url)",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L629"
+            },
+            {
+              "file": "src/postgres_mcp/sql/sql_driver.py",
+              "lines": "89-92",
+              "contains": "AsyncConnectionPool(",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L89-L92"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No authorization check runs on any tool call; every tool obtains the same pooled connection via get_sql_driver().",
+          "gap": "No authorization layer; L1 needs at least the main tool path checked against a policy.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "62-71",
+              "contains": "base_driver = SqlDriver(conn=db_connection)",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L62-L71"
+            },
+            {
+              "search": "rg -n -i 'auth|token|bearer'",
+              "scope": "src",
+              "hits": 1,
+              "note": "single hit is the full-text function name ts_token_type in the SQL allowlist; no authorization code exists"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The default install grants the model full use of whatever role the DSN holds (unrestricted mode by default); least privilege requires the operator to create a limited role and pass --access-mode=restricted.",
+          "gap": "No narrower default; L1 needs a narrower default identity or mode out of the box.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "565",
+              "contains": "default=AccessMode.UNRESTRICTED.value",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L565"
+            },
+            {
+              "file": "README.md",
+              "lines": "141",
+              "contains": "--access-mode=unrestricted",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/README.md#L141"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked session gets everything the configured login can do on one database system, including DDL and DELETE via execute_sql; with a superuser login Postgres features (COPY ... PROGRAM, untrusted PL languages) reach the DB host (inferred from Postgres behaviour).",
+          "gap": "Writes, including destructive DDL, are reachable; L3 needs scope limited to mostly-read with non-destructive writes.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "608-615",
+              "contains": "Execute any SQL query",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L608-L615"
+            },
+            {
+              "file": "src/postgres_mcp/sql/sql_driver.py",
+              "lines": "255-256",
+              "contains": "await cursor.execute(\"COMMIT\")",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L255-L256"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.175,
+          "raw": 0.175,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A dedicated, operator-supplied database login (DATABASE_URI) is the only identity; its privilege is whatever the operator chose and reads and writes share it.",
+              "gap": "No role scoping in the server; L2 needs a role-scoped identity with specific privileges defined or required by the project.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "629",
+                  "contains": "os.environ.get(\"DATABASE_URI\", args.database_url)",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L629"
+                },
+                {
+                  "file": "src/postgres_mcp/sql/sql_driver.py",
+                  "lines": "89-92",
+                  "contains": "AsyncConnectionPool(",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L89-L92"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No authorization check runs on any tool call; every tool obtains the same pooled connection via get_sql_driver().",
+              "gap": "No authorization layer; L1 needs at least the main tool path checked against a policy.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "62-71",
+                  "contains": "base_driver = SqlDriver(conn=db_connection)",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L62-L71"
+                },
+                {
+                  "search": "rg -n -i 'auth|token|bearer'",
+                  "scope": "src",
+                  "hits": 1,
+                  "note": "single hit is the full-text function name ts_token_type in the SQL allowlist; no authorization code exists"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The default install grants the model full use of whatever role the DSN holds (unrestricted mode by default); least privilege requires the operator to create a limited role and pass --access-mode=restricted.",
+              "gap": "No narrower default; L1 needs a narrower default identity or mode out of the box.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "565",
+                  "contains": "default=AccessMode.UNRESTRICTED.value",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L565"
+                },
+                {
+                  "file": "README.md",
+                  "lines": "141",
+                  "contains": "--access-mode=unrestricted",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/README.md#L141"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked session gets everything the configured login can do on one database system, including DDL and DELETE via execute_sql; with a superuser login Postgres features (COPY ... PROGRAM, untrusted PL languages) reach the DB host (inferred from Postgres behaviour).",
+              "gap": "Writes, including destructive DDL, are reachable; L3 needs scope limited to mostly-read with non-destructive writes.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "608-615",
+                  "contains": "Execute any SQL query",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L608-L615"
+                },
+                {
+                  "file": "src/postgres_mcp/sql/sql_driver.py",
+                  "lines": "255-256",
+                  "contains": "await cursor.execute(\"COMMIT\")",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L255-L256"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "As a tool server, Postgres MCP Pro cannot show approval prompts itself; it gives the host risk annotations. In the default unrestricted mode, execute_sql is correctly flagged destructive, but the read-only labels on some tools are not accurate. The opt-in restricted mode is much better: every tool goes through a SQL parser allowlist and a read-only transaction, so the read-only labels become true, but it is not the default.",
+      "max": 1.0,
+      "notes": "The restricted-mode validator is credited here as a server-enforced read-only mode (named in the tool-server anchor) and in C3 as argument validation; C4 does not credit it again.",
+      "status": "scored",
+      "score": 0.5,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "In restricted mode every tool goes through SafeSqlDriver: pglast statement/node/function allowlists, EXPLAIN ANALYZE rejected, and execution in a READ ONLY transaction, so every tool's readOnlyHint is accurate and the mode is server-enforced; no destructive operations remain to preview.",
+          "gap": "No confirmation step the host must complete for elevation; L4 needs the read-only mode plus a host-completed confirmation or equivalent.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "66-68",
+              "contains": "SafeSqlDriver(sql_driver=base_driver, timeout=30)",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L66-L68"
+            },
+            {
+              "file": "src/postgres_mcp/sql/safe_sql.py",
+              "lines": "958-975",
+              "contains": "ALLOWED_STMT_TYPES",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/safe_sql.py#L958-L975"
+            },
+            {
+              "file": "src/postgres_mcp/sql/safe_sql.py",
+              "lines": "909-913",
+              "contains": "EXPLAIN ANALYZE is not supported",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/safe_sql.py#L909-L913"
+            },
+            {
+              "file": "src/postgres_mcp/sql/sql_driver.py",
+              "lines": "230-231",
+              "contains": "BEGIN TRANSACTION READ ONLY",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L230-L231"
+            },
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "616-624",
+              "contains": "Execute a read-only SQL query",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L616-L624"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "get_sql_driver() is the single source of drivers, so all tools, including explain and index tuning, pass the same validator and read-only transaction.",
+          "gap": "Unknown statements are rejected but no parsed-argument escalation exists; L4 needs explicit reject/escalate outcomes per call.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "62-71",
+              "contains": "if current_access_mode == AccessMode.RESTRICTED:",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L62-L71"
+            },
+            {
+              "file": "src/postgres_mcp/sql/safe_sql.py",
+              "lines": "1030-1036",
+              "contains": "async def execute_param_query",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/safe_sql.py#L1030-L1036"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Restricted mode must be selected explicitly; the CLI default and README examples are unrestricted.",
+          "gap": "Opt-in; L1 needs the read-only mode on by default.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "565",
+              "contains": "default=AccessMode.UNRESTRICTED.value",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L565"
+            },
+            {
+              "file": "README.md",
+              "lines": "141",
+              "contains": "--access-mode=unrestricted",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/README.md#L141"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "In restricted mode a wrongly approved call can only read (subject to the role's grants) or run allowlisted VACUUM/ANALYZE maintenance; nothing is written.",
+          "gap": "Reads of all data the role can see are unbounded; L4 needs rate or quantity bounds.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/sql/sql_driver.py",
+              "lines": "230-231",
+              "contains": "BEGIN TRANSACTION READ ONLY",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L230-L231"
+            },
+            {
+              "file": "src/postgres_mcp/sql/safe_sql.py",
+              "lines": "102-120",
+              "contains": "VacuumStmt",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/safe_sql.py#L102-L120"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.2,
+          "raw": 0.2,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Annotations exist (execute_sql destructiveHint), but annotations are not fully accurate in unrestricted mode.",
+              "gap": "Annotations are not accurate on every tool; L2 needs accurate read/write annotations on every tool.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "608-615",
+                  "contains": "Execute any SQL query",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L608-L615"
+                },
+                {
+                  "file": "src/postgres_mcp/sql/sql_driver.py",
+                  "lines": "255-256",
+                  "contains": "await cursor.execute(\"COMMIT\")",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L255-L256"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only execute_sql is flagged as destructive; risk signalling for other SQL-taking tools is not complete.",
+              "gap": "Risk signalling is not accurate on every tool; L2 needs every built-in tool's risk signalled accurately.",
+              "evidence": [],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Risk annotations ship by default, but the server-enforced read-only mode is opt-in and the default exposes the destructive execute_sql tool.",
+              "gap": "The safe mode is not the default; L2 needs the read-only/annotated posture on by default with only a config change to widen it.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "565",
+                  "contains": "default=AccessMode.UNRESTRICTED.value",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L565"
+                },
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "606-615",
+                  "contains": "if current_access_mode == AccessMode.UNRESTRICTED:",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L606-L615"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A wrongly approved or mislabelled call can DROP tables or DELETE rows and the driver commits immediately; there is no undo or dry-run.",
+              "gap": "Irreversible destructive SQL with no rollback; L1 needs at least some reversible or previewed operations.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "608-615",
+                  "contains": "Execute any SQL query",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L608-L615"
+                },
+                {
+                  "file": "src/postgres_mcp/sql/sql_driver.py",
+                  "lines": "255-256",
+                  "contains": "await cursor.execute(\"COMMIT\")",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L255-L256"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in restricted mode (--access-mode=restricted)",
+          "score": 0.5,
+          "raw": 0.6,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "In restricted mode every tool goes through SafeSqlDriver: pglast statement/node/function allowlists, EXPLAIN ANALYZE rejected, and execution in a READ ONLY transaction, so every tool's readOnlyHint is accurate and the mode is server-enforced; no destructive operations remain to preview.",
+              "gap": "No confirmation step the host must complete for elevation; L4 needs the read-only mode plus a host-completed confirmation or equivalent.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "66-68",
+                  "contains": "SafeSqlDriver(sql_driver=base_driver, timeout=30)",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L66-L68"
+                },
+                {
+                  "file": "src/postgres_mcp/sql/safe_sql.py",
+                  "lines": "958-975",
+                  "contains": "ALLOWED_STMT_TYPES",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/safe_sql.py#L958-L975"
+                },
+                {
+                  "file": "src/postgres_mcp/sql/safe_sql.py",
+                  "lines": "909-913",
+                  "contains": "EXPLAIN ANALYZE is not supported",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/safe_sql.py#L909-L913"
+                },
+                {
+                  "file": "src/postgres_mcp/sql/sql_driver.py",
+                  "lines": "230-231",
+                  "contains": "BEGIN TRANSACTION READ ONLY",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L230-L231"
+                },
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "616-624",
+                  "contains": "Execute a read-only SQL query",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L616-L624"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "get_sql_driver() is the single source of drivers, so all tools, including explain and index tuning, pass the same validator and read-only transaction.",
+              "gap": "Unknown statements are rejected but no parsed-argument escalation exists; L4 needs explicit reject/escalate outcomes per call.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "62-71",
+                  "contains": "if current_access_mode == AccessMode.RESTRICTED:",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L62-L71"
+                },
+                {
+                  "file": "src/postgres_mcp/sql/safe_sql.py",
+                  "lines": "1030-1036",
+                  "contains": "async def execute_param_query",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/safe_sql.py#L1030-L1036"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Restricted mode must be selected explicitly; the CLI default and README examples are unrestricted.",
+              "gap": "Opt-in; L1 needs the read-only mode on by default.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "565",
+                  "contains": "default=AccessMode.UNRESTRICTED.value",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L565"
+                },
+                {
+                  "file": "README.md",
+                  "lines": "141",
+                  "contains": "--access-mode=unrestricted",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/README.md#L141"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "In restricted mode a wrongly approved call can only read (subject to the role's grants) or run allowlisted VACUUM/ANALYZE maintenance; nothing is written.",
+              "gap": "Reads of all data the role can see are unbounded; L4 needs rate or quantity bounds.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/sql/sql_driver.py",
+                  "lines": "230-231",
+                  "contains": "BEGIN TRANSACTION READ ONLY",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L230-L231"
+                },
+                {
+                  "file": "src/postgres_mcp/sql/safe_sql.py",
+                  "lines": "102-120",
+                  "contains": "VacuumStmt",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/safe_sql.py#L102-L120"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "In the default unrestricted mode the main tool takes any SQL string and runs it as-is, multi-statement batches included, against the whole database. A few helper tools are narrow and parameterised (schema listing, object details, top-queries ranking), but the general execute_sql tool is raw passthrough. The opt-in restricted mode adds real validation: SQL is parsed with Postgres's own parser and checked against allowlists of statement types, node types and functions, inside a read-only transaction with a 30-second timeout.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.5,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "pglast parse with allowlists of statement types, AST node types and functions (no pg_read_file, dblink, pg_sleep), locking clauses and EXPLAIN ANALYZE rejected, executed in a READ ONLY transaction with a 30 s timeout.",
+          "gap": "Still a general SELECT tool over every table with no row bound; L4 needs narrow tools replacing general SQL.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/sql/safe_sql.py",
+              "lines": "958-975",
+              "contains": "ALLOWED_STMT_TYPES",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/safe_sql.py#L958-L975"
+            },
+            {
+              "file": "src/postgres_mcp/sql/safe_sql.py",
+              "lines": "896-903",
+              "contains": "ALLOWED_FUNCTIONS",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/safe_sql.py#L896-L903"
+            },
+            {
+              "file": "src/postgres_mcp/sql/safe_sql.py",
+              "lines": "905-907",
+              "contains": "Locking clause on select is prohibited",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/safe_sql.py#L905-L907"
+            },
+            {
+              "file": "src/postgres_mcp/sql/sql_driver.py",
+              "lines": "230-231",
+              "contains": "BEGIN TRANSACTION READ ONLY",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L230-L231"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All built-in tools obtain the SafeSqlDriver through get_sql_driver(); internal queries are parameterised with psycopg Literal quoting.",
+          "gap": "The policy is applied by driver selection, not a declarative layer new tools must inherit; L4 needs one central policy layer for all tools.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "62-71",
+              "contains": "return SafeSqlDriver(sql_driver=base_driver, timeout=30)",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L62-L71"
+            },
+            {
+              "file": "src/postgres_mcp/sql/safe_sql.py",
+              "lines": "1020-1027",
+              "contains": "Literal(p)",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/safe_sql.py#L1020-L1027"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Restricted mode is opt-in; default is unrestricted.",
+          "gap": "Opt-in; L1 needs dangerous tools off by default.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "565",
+              "contains": "default=AccessMode.UNRESTRICTED.value",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L565"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Reads across the whole database the role can see, without row caps; no writes.",
+          "gap": "No quantity bound on reads; L3 needs max-row or output caps.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/sql/sql_driver.py",
+              "lines": "230-231",
+              "contains": "BEGIN TRANSACTION READ ONLY",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L230-L231"
+            },
+            {
+              "file": "src/postgres_mcp/sql/sql_driver.py",
+              "lines": "252",
+              "contains": "rows = await cursor.fetchall()",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L252"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.075,
+          "raw": 0.075,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "execute_sql passes the model's SQL string straight to the driver; nothing parses or bounds it in unrestricted mode.",
+              "gap": "Raw SQL passthrough; L1 needs at least a denylist or statement filter in the default mode.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "415-421",
+                  "contains": "sql: str = Field(description=\"SQL to run\"",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L415-L421"
+                },
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "421",
+                  "contains": "execute_query(sql)",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L421"
+                },
+                {
+                  "file": "src/postgres_mcp/sql/sql_driver.py",
+                  "lines": "234-241",
+                  "contains": "while cursor.nextset():",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L234-L241"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A few tools validate (parameterised listing queries, get_top_queries sort_by, a statement check in analyze_query_indexes); execute_sql and other SQL-taking tools do not.",
+              "gap": "Most SQL-taking tools are unvalidated; L2 needs most built-in tools to validate.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "133-142",
+                  "contains": "SafeSqlDriver.execute_param_query(",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L133-L142"
+                },
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "549-550",
+                  "contains": "Invalid sort criteria",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L549-L550"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Everything, including arbitrary write SQL, is enabled by default.",
+              "gap": "No least-agency default; L1 needs dangerous capabilities individually disableable or off by default.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "565",
+                  "contains": "default=AccessMode.UNRESTRICTED.value",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L565"
+                },
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "608-615",
+                  "contains": "Execute any SQL query",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L608-L615"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A misused execute_sql reaches any table, schema or server function the login can touch, with no row or quantity bound.",
+              "gap": "General-purpose SQL against the whole database; L1 needs some limit on reach.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "421",
+                  "contains": "execute_query(sql)",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L421"
+                },
+                {
+                  "file": "src/postgres_mcp/sql/sql_driver.py",
+                  "lines": "252",
+                  "contains": "rows = await cursor.fetchall()",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L252"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in restricted mode SQL allowlist",
+          "score": 0.5,
+          "raw": 0.55,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "pglast parse with allowlists of statement types, AST node types and functions (no pg_read_file, dblink, pg_sleep), locking clauses and EXPLAIN ANALYZE rejected, executed in a READ ONLY transaction with a 30 s timeout.",
+              "gap": "Still a general SELECT tool over every table with no row bound; L4 needs narrow tools replacing general SQL.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/sql/safe_sql.py",
+                  "lines": "958-975",
+                  "contains": "ALLOWED_STMT_TYPES",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/safe_sql.py#L958-L975"
+                },
+                {
+                  "file": "src/postgres_mcp/sql/safe_sql.py",
+                  "lines": "896-903",
+                  "contains": "ALLOWED_FUNCTIONS",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/safe_sql.py#L896-L903"
+                },
+                {
+                  "file": "src/postgres_mcp/sql/safe_sql.py",
+                  "lines": "905-907",
+                  "contains": "Locking clause on select is prohibited",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/safe_sql.py#L905-L907"
+                },
+                {
+                  "file": "src/postgres_mcp/sql/sql_driver.py",
+                  "lines": "230-231",
+                  "contains": "BEGIN TRANSACTION READ ONLY",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L230-L231"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All built-in tools obtain the SafeSqlDriver through get_sql_driver(); internal queries are parameterised with psycopg Literal quoting.",
+              "gap": "The policy is applied by driver selection, not a declarative layer new tools must inherit; L4 needs one central policy layer for all tools.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "62-71",
+                  "contains": "return SafeSqlDriver(sql_driver=base_driver, timeout=30)",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L62-L71"
+                },
+                {
+                  "file": "src/postgres_mcp/sql/safe_sql.py",
+                  "lines": "1020-1027",
+                  "contains": "Literal(p)",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/safe_sql.py#L1020-L1027"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Restricted mode is opt-in; default is unrestricted.",
+              "gap": "Opt-in; L1 needs dangerous tools off by default.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "565",
+                  "contains": "default=AccessMode.UNRESTRICTED.value",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L565"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Reads across the whole database the role can see, without row caps; no writes.",
+              "gap": "No quantity bound on reads; L3 needs max-row or output caps.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/sql/sql_driver.py",
+                  "lines": "230-231",
+                  "contains": "BEGIN TRANSACTION READ ONLY",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L230-L231"
+                },
+                {
+                  "file": "src/postgres_mcp/sql/sql_driver.py",
+                  "lines": "252",
+                  "contains": "rows = await cursor.fetchall()",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L252"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "The code-execution surface here is SQL: execute_sql and other SQL-taking tools send model-written statements straight to the database. In the default unrestricted mode there is no boundary at all: no statement filter, no read-only transaction, no timeout, and multi-statement batches are executed and committed. What that SQL can reach is everything the configured login can do; with a superuser login, Postgres features such as COPY ... TO PROGRAM or untrusted procedural languages extend that to the database host. The opt-in restricted mode's parser allowlist is credited under tool scoping rather than here.",
+      "max": 1.0,
+      "notes": "Restricted mode (pglast allowlist + READ ONLY transaction) is a filter in the same DB session (S L1 at most) and is already credited in C3; per the credit-once rule it is not added here as an alt.",
+      "status": "scored",
+      "score": 0.05,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Model-written SQL is executed directly in the database session with no isolation primitive in the default mode.",
+          "gap": "No isolation; L1 needs at least a filter on executed statements in the default path.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "421",
+              "contains": "execute_query(sql)",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L421"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No execution path is confined in the default mode.",
+          "gap": "No path is confined; L1 needs the main exec path confined.",
+          "evidence": [],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Nothing confines execution by default; the only protective mode is opt-in.",
+          "gap": "Off by default; L1 needs a confinement on by default.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "565",
+              "contains": "default=AccessMode.UNRESTRICTED.value",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L565"
+            },
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "58",
+              "contains": "current_access_mode = AccessMode.UNRESTRICTED",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L58"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Model SQL runs with the full privileges of the configured login across the database, including destructive DDL; with a superuser login server-side features reach the DB host (inferred from Postgres behaviour; the README concedes unsafe procedural languages defeat even restricted mode).",
+          "gap": "The whole database (and with superuser the DB host) is reachable; L2 needs reach limited to a workspace-like scope.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "608-615",
+              "contains": "Execute any SQL query",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L608-L615"
+            },
+            {
+              "file": "README.md",
+              "lines": "606",
+              "contains": "unsafe stored procedure languages",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/README.md#L606"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.05,
+          "raw": 0.05,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Model-written SQL is executed directly in the database session with no isolation primitive in the default mode.",
+              "gap": "No isolation; L1 needs at least a filter on executed statements in the default path.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "421",
+                  "contains": "execute_query(sql)",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L421"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No execution path is confined in the default mode.",
+              "gap": "No path is confined; L1 needs the main exec path confined.",
+              "evidence": [],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Nothing confines execution by default; the only protective mode is opt-in.",
+              "gap": "Off by default; L1 needs a confinement on by default.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "565",
+                  "contains": "default=AccessMode.UNRESTRICTED.value",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L565"
+                },
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "58",
+                  "contains": "current_access_mode = AccessMode.UNRESTRICTED",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L58"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Model SQL runs with the full privileges of the configured login across the database, including destructive DDL; with a superuser login server-side features reach the DB host (inferred from Postgres behaviour; the README concedes unsafe procedural languages defeat even restricted mode).",
+              "gap": "The whole database (and with superuser the DB host) is reachable; L2 needs reach limited to a workspace-like scope.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "608-615",
+                  "contains": "Execute any SQL query",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L608-L615"
+                },
+                {
+                  "file": "README.md",
+                  "lines": "606",
+                  "contains": "unsafe stored procedure languages",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/README.md#L606"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "The server returns database rows, catalog data and pg_stat_statements query texts to the model as plain stringified Python lists, with no marking of what came from the database versus the server. Any of that content can be attacker-written (user-submitted rows, logged queries). Nothing in the server limits what a hijacked host can then do: in the default mode the same session can read any data the login can see and run irreversible SQL, and the model-selectable index-tuning method 'llm' sends query text and plans to OpenAI. Restricted mode removes the write leg but not the read-everything leg, and it is opt-in.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.075,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C5-WORSTCASE",
+        "max": 0.25,
+        "reason": "B is L0 in the default unrestricted mode: data reads and irreversible committed SQL from the same session with no server-side gate."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Outputs are plain str() of row dicts with no provenance or untrusted flag; tool descriptions contain no directives.",
+          "gap": "No structure separating content from metadata; L2 needs structured outputs separating returned data from metadata.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "424",
+              "contains": "format_text_response(list([r.cells for r in rows]))",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L424"
+            },
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "74-76",
+              "contains": "types.TextContent(type=\"text\", text=str(text))",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L74-L76"
+            },
+            {
+              "search": "rg -n -i 'untrusted|provenance|source_url'",
+              "scope": "src",
+              "hits": 0,
+              "note": "no provenance or taint marking anywhere"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No source is distinguished: table rows, pg_stat_statements texts and error strings all return the same way.",
+          "gap": "Untrusted DB content is not distinguished; L1 needs at least one source handled.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "424",
+              "contains": "format_text_response(list([r.cells for r in rows]))",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L424"
+            },
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "427",
+              "contains": "return format_error_response(str(e))",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L427"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No untrusted-input control exists to be on by default; the default mode keeps the write leg.",
+          "gap": "Off; L1 needs a protective mode on by default.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "565",
+              "contains": "default=AccessMode.UNRESTRICTED.value",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L565"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Default config: a hijacked session can read every table the login can see and run irreversible DROP/DELETE that is committed immediately; exfiltration can go through the host's channels, and in-DB through extensions such as dblink when available (inferred).",
+          "gap": "Leak and irreversible action are both possible unattended; L1 needs at least one of them removed or gated in code.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "608-615",
+              "contains": "Execute any SQL query",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L608-L615"
+            },
+            {
+              "file": "src/postgres_mcp/sql/sql_driver.py",
+              "lines": "255-256",
+              "contains": "await cursor.execute(\"COMMIT\")",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L255-L256"
+            },
+            {
+              "file": "src/postgres_mcp/index/llm_opt.py",
+              "lines": "156-163",
+              "contains": "Here is the query we are optimizing",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/index/llm_opt.py#L156-L163"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.075,
+          "raw": 0.075,
+          "cap": {
+            "id": "C5-WORSTCASE",
+            "max": 0.25,
+            "reason": "B is L0 in the default unrestricted mode: data reads and irreversible committed SQL from the same session with no server-side gate."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Outputs are plain str() of row dicts with no provenance or untrusted flag; tool descriptions contain no directives.",
+              "gap": "No structure separating content from metadata; L2 needs structured outputs separating returned data from metadata.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "424",
+                  "contains": "format_text_response(list([r.cells for r in rows]))",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L424"
+                },
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "74-76",
+                  "contains": "types.TextContent(type=\"text\", text=str(text))",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L74-L76"
+                },
+                {
+                  "search": "rg -n -i 'untrusted|provenance|source_url'",
+                  "scope": "src",
+                  "hits": 0,
+                  "note": "no provenance or taint marking anywhere"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No source is distinguished: table rows, pg_stat_statements texts and error strings all return the same way.",
+              "gap": "Untrusted DB content is not distinguished; L1 needs at least one source handled.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "424",
+                  "contains": "format_text_response(list([r.cells for r in rows]))",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L424"
+                },
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "427",
+                  "contains": "return format_error_response(str(e))",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L427"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No untrusted-input control exists to be on by default; the default mode keeps the write leg.",
+              "gap": "Off; L1 needs a protective mode on by default.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "565",
+                  "contains": "default=AccessMode.UNRESTRICTED.value",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L565"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default config: a hijacked session can read every table the login can see and run irreversible DROP/DELETE that is committed immediately; exfiltration can go through the host's channels, and in-DB through extensions such as dblink when available (inferred).",
+              "gap": "Leak and irreversible action are both possible unattended; L1 needs at least one of them removed or gated in code.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "608-615",
+                  "contains": "Execute any SQL query",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L608-L615"
+                },
+                {
+                  "file": "src/postgres_mcp/sql/sql_driver.py",
+                  "lines": "255-256",
+                  "contains": "await cursor.execute(\"COMMIT\")",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L255-L256"
+                },
+                {
+                  "file": "src/postgres_mcp/index/llm_opt.py",
+                  "lines": "156-163",
+                  "contains": "Here is the query we are optimizing",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/index/llm_opt.py#L156-L163"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "The server keeps no memory, vector store or conversation state, and it auto-loads no workspace files: configuration comes only from the DATABASE_URI environment variable or a command-line argument set by the operator. There is no .env loading. The database itself is persistent and writable in unrestricted mode, but that is the system being operated on (covered under the other criteria), not agent memory.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'dotenv|load_dotenv|remember|save_memory|\\.mcp\\.json|AGENTS\\.md|CLAUDE\\.md'",
+              "scope": "src",
+              "hits": 0,
+              "note": "no memory, dotenv or auto-loaded instruction/config files"
+            },
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "629",
+              "contains": "os.environ.get(\"DATABASE_URI\", args.database_url)",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L629"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'dotenv|load_dotenv|remember|save_memory|\\.mcp\\.json|AGENTS\\.md|CLAUDE\\.md'",
+              "scope": "src",
+              "hits": 0,
+              "note": "no memory, dotenv or auto-loaded instruction/config files"
+            },
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "629",
+              "contains": "os.environ.get(\"DATABASE_URI\", args.database_url)",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L629"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'dotenv|load_dotenv|remember|save_memory|\\.mcp\\.json|AGENTS\\.md|CLAUDE\\.md'",
+              "scope": "src",
+              "hits": 0,
+              "note": "no memory, dotenv or auto-loaded instruction/config files"
+            },
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "629",
+              "contains": "os.environ.get(\"DATABASE_URI\", args.database_url)",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L629"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'dotenv|load_dotenv|remember|save_memory|\\.mcp\\.json|AGENTS\\.md|CLAUDE\\.md'",
+              "scope": "src",
+              "hits": 0,
+              "note": "no memory, dotenv or auto-loaded instruction/config files"
+            },
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "629",
+              "contains": "os.environ.get(\"DATABASE_URI\", args.database_url)",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L629"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'dotenv|load_dotenv|remember|save_memory|\\.mcp\\.json|AGENTS\\.md|CLAUDE\\.md'",
+                  "scope": "src",
+                  "hits": 0,
+                  "note": "no memory, dotenv or auto-loaded instruction/config files"
+                },
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "629",
+                  "contains": "os.environ.get(\"DATABASE_URI\", args.database_url)",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L629"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'dotenv|load_dotenv|remember|save_memory|\\.mcp\\.json|AGENTS\\.md|CLAUDE\\.md'",
+                  "scope": "src",
+                  "hits": 0,
+                  "note": "no memory, dotenv or auto-loaded instruction/config files"
+                },
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "629",
+                  "contains": "os.environ.get(\"DATABASE_URI\", args.database_url)",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L629"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'dotenv|load_dotenv|remember|save_memory|\\.mcp\\.json|AGENTS\\.md|CLAUDE\\.md'",
+                  "scope": "src",
+                  "hits": 0,
+                  "note": "no memory, dotenv or auto-loaded instruction/config files"
+                },
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "629",
+                  "contains": "os.environ.get(\"DATABASE_URI\", args.database_url)",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L629"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'dotenv|load_dotenv|remember|save_memory|\\.mcp\\.json|AGENTS\\.md|CLAUDE\\.md'",
+                  "scope": "src",
+                  "hits": 0,
+                  "note": "no memory, dotenv or auto-loaded instruction/config files"
+                },
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "629",
+                  "contains": "os.environ.get(\"DATABASE_URI\", args.database_url)",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L629"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n -i 'dotenv|load_dotenv|remember|save_memory|\\.mcp\\.json|AGENTS\\.md|CLAUDE\\.md'",
+          "scope": "src",
+          "hits": 0,
+          "note": "no memory, dotenv or auto-loaded instruction/config files"
+        },
+        {
+          "file": "src/postgres_mcp/server.py",
+          "lines": "629",
+          "contains": "os.environ.get(\"DATABASE_URI\", args.database_url)",
+          "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L629"
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "The server loads no plugins, MCP servers, downloaded tools or model files, and installs nothing at runtime. Its only runtime third-party call is the optional OpenAI API request in the 'llm' index-tuning method, which is a fixed dependency, not loaded code. Database-side extensions created via SQL are scored as SQL execution under C4.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'importlib|entry_points|__import__|pip install|subprocess|trust_remote_code|pickle|torch\\.load'",
+              "scope": "src",
+              "hits": 0,
+              "note": "no dynamic code loading, installs, subprocesses or unsafe deserialization"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'importlib|entry_points|__import__|pip install|subprocess|trust_remote_code|pickle|torch\\.load'",
+              "scope": "src",
+              "hits": 0,
+              "note": "no dynamic code loading, installs, subprocesses or unsafe deserialization"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'importlib|entry_points|__import__|pip install|subprocess|trust_remote_code|pickle|torch\\.load'",
+              "scope": "src",
+              "hits": 0,
+              "note": "no dynamic code loading, installs, subprocesses or unsafe deserialization"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'importlib|entry_points|__import__|pip install|subprocess|trust_remote_code|pickle|torch\\.load'",
+              "scope": "src",
+              "hits": 0,
+              "note": "no dynamic code loading, installs, subprocesses or unsafe deserialization"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'importlib|entry_points|__import__|pip install|subprocess|trust_remote_code|pickle|torch\\.load'",
+                  "scope": "src",
+                  "hits": 0,
+                  "note": "no dynamic code loading, installs, subprocesses or unsafe deserialization"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'importlib|entry_points|__import__|pip install|subprocess|trust_remote_code|pickle|torch\\.load'",
+                  "scope": "src",
+                  "hits": 0,
+                  "note": "no dynamic code loading, installs, subprocesses or unsafe deserialization"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'importlib|entry_points|__import__|pip install|subprocess|trust_remote_code|pickle|torch\\.load'",
+                  "scope": "src",
+                  "hits": 0,
+                  "note": "no dynamic code loading, installs, subprocesses or unsafe deserialization"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'importlib|entry_points|__import__|pip install|subprocess|trust_remote_code|pickle|torch\\.load'",
+                  "scope": "src",
+                  "hits": 0,
+                  "note": "no dynamic code loading, installs, subprocesses or unsafe deserialization"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n 'importlib|entry_points|__import__|pip install|subprocess|trust_remote_code|pickle|torch\\.load'",
+          "scope": "src",
+          "hits": 0,
+          "note": "no dynamic code loading, installs, subprocesses or unsafe deserialization"
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "The database password lives in the DATABASE_URI environment variable or command line. A password-obfuscation helper exists but is only applied to the startup connection-failure warning. Elsewhere, failed SQL is logged with its full text and raw error strings are returned to the model; the Docker entrypoint's credential handling is not locked down. There is no telemetry. The credential is a long-lived database password whose scope is whatever the operator chose.",
+      "max": 1.0,
+      "notes": "When the model selects method='llm' in index tuning, query text and EXPLAIN plans (which may contain literals from data) go to OpenAI gpt-4o using the ambient OPENAI_API_KEY (llm_opt.py:129,156-163).",
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Secret comes from an env var; obfuscate_password masks it in one log path only.",
+          "gap": "No type-level masking or log filters on main paths; L2 needs redaction on the main logging paths.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "629",
+              "contains": "os.environ.get(\"DATABASE_URI\", args.database_url)",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L629"
+            },
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "641-643",
+              "contains": "obfuscate_password(str(e))",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L641-L643"
+            },
+            {
+              "file": "src/postgres_mcp/sql/sql_driver.py",
+              "lines": "20-24",
+              "contains": "def obfuscate_password",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L20-L24"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only the startup connection warning is masked; query error logs and tool error strings returned to the model are not.",
+          "gap": "Only one path is protected; L2 needs logs and transcripts redacted.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/sql/sql_driver.py",
+              "lines": "271",
+              "contains": "logger.error(f\"Error executing query ({query}): {e}\")",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L271"
+            },
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "427",
+              "contains": "return format_error_response(str(e))",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L427"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No telemetry, but failed queries are logged verbatim and the Docker entrypoint's credential handling is not locked down.",
+          "gap": "Default logging is not redacted; L2 needs reasonable logging defaults with redaction.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'sentry|posthog|telemetry|segment|langfuse\\.'",
+              "scope": "src",
+              "hits": 0,
+              "note": "no telemetry SDKs; _langfuse_trace is only a field in the tool response"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A leaked DSN is a long-lived database password whose privilege is the operator's chosen role, often an owner or superuser.",
+          "gap": "Long-lived credential of unbounded scope; L2 needs a scoped credential.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "629",
+              "contains": "os.environ.get(\"DATABASE_URI\", args.database_url)",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L629"
+            },
+            {
+              "file": "README.md",
+              "lines": "141",
+              "contains": "--access-mode=unrestricted",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/README.md#L141"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.25,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Secret comes from an env var; obfuscate_password masks it in one log path only.",
+              "gap": "No type-level masking or log filters on main paths; L2 needs redaction on the main logging paths.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "629",
+                  "contains": "os.environ.get(\"DATABASE_URI\", args.database_url)",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L629"
+                },
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "641-643",
+                  "contains": "obfuscate_password(str(e))",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L641-L643"
+                },
+                {
+                  "file": "src/postgres_mcp/sql/sql_driver.py",
+                  "lines": "20-24",
+                  "contains": "def obfuscate_password",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L20-L24"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only the startup connection warning is masked; query error logs and tool error strings returned to the model are not.",
+              "gap": "Only one path is protected; L2 needs logs and transcripts redacted.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/sql/sql_driver.py",
+                  "lines": "271",
+                  "contains": "logger.error(f\"Error executing query ({query}): {e}\")",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L271"
+                },
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "427",
+                  "contains": "return format_error_response(str(e))",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L427"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No telemetry, but failed queries are logged verbatim and the Docker entrypoint's credential handling is not locked down.",
+              "gap": "Default logging is not redacted; L2 needs reasonable logging defaults with redaction.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'sentry|posthog|telemetry|segment|langfuse\\.'",
+                  "scope": "src",
+                  "hits": 0,
+                  "note": "no telemetry SDKs; _langfuse_trace is only a field in the tool response"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A leaked DSN is a long-lived database password whose privilege is the operator's chosen role, often an owner or superuser.",
+              "gap": "Long-lived credential of unbounded scope; L2 needs a scoped credential.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "629",
+                  "contains": "os.environ.get(\"DATABASE_URI\", args.database_url)",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L629"
+                },
+                {
+                  "file": "README.md",
+                  "lines": "141",
+                  "contains": "--access-mode=unrestricted",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/README.md#L141"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "The server keeps no record of what it did. Successful tool calls, including every write executed through execute_sql, are not logged at all; only failures are logged, as free-text error lines that include the failing SQL. The repository configures no log handler, so these lines go wherever the MCP library or Python's default handler sends them (stderr), and nothing is flushed per action or protected against loss.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.2,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only failed queries are logged, as unstructured error lines; successful calls leave no trace.",
+          "gap": "No structured record of every tool call; L2 needs arguments, status and timestamps for each call.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "419-427",
+              "contains": "logger.error(f\"Error executing query: {e}\")",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L419-L427"
+            },
+            {
+              "search": "rg -n 'logger\\.(info|warning)'",
+              "scope": "src",
+              "hits": 41,
+              "note": "all hits are startup/shutdown, index-tuning progress or warnings; none records a tool call with its arguments"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Error logging covers only some tool paths' failures; successful writes are never recorded.",
+          "gap": "Not all tool calls are recorded; L2 needs every built-in tool call recorded.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/sql/sql_driver.py",
+              "lines": "271",
+              "contains": "logger.error(f\"Error executing query ({query}): {e}\")",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L271"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "Error lines reach stderr by default via the library/stdlib handler (inferred; the repo configures no handler) inside the server process.",
+          "gap": "Recorded by the same process with no protected sink; L2 needs an on-by-default record outside the agent's reach.",
+          "evidence": [
+            {
+              "search": "rg -n 'basicConfig|FileHandler|StreamHandler|setLevel'",
+              "scope": "src",
+              "hits": 0,
+              "note": "no logging configuration in the repo; output depends on FastMCP/stdlib defaults"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Logging is best-effort stderr and actions proceed regardless; successful actions are never recorded.",
+          "gap": "No per-action record; L1 needs at least a best-effort record of actions.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "421",
+              "contains": "execute_query(sql)",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L421"
+            },
+            {
+              "file": "src/postgres_mcp/sql/sql_driver.py",
+              "lines": "255-256",
+              "contains": "await cursor.execute(\"COMMIT\")",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L255-L256"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.2,
+          "raw": 0.2,
+          "cap": null,
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only failed queries are logged, as unstructured error lines; successful calls leave no trace.",
+              "gap": "No structured record of every tool call; L2 needs arguments, status and timestamps for each call.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "419-427",
+                  "contains": "logger.error(f\"Error executing query: {e}\")",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L419-L427"
+                },
+                {
+                  "search": "rg -n 'logger\\.(info|warning)'",
+                  "scope": "src",
+                  "hits": 41,
+                  "note": "all hits are startup/shutdown, index-tuning progress or warnings; none records a tool call with its arguments"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Error logging covers only some tool paths' failures; successful writes are never recorded.",
+              "gap": "Not all tool calls are recorded; L2 needs every built-in tool call recorded.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/sql/sql_driver.py",
+                  "lines": "271",
+                  "contains": "logger.error(f\"Error executing query ({query}): {e}\")",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L271"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "Error lines reach stderr by default via the library/stdlib handler (inferred; the repo configures no handler) inside the server process.",
+              "gap": "Recorded by the same process with no protected sink; L2 needs an on-by-default record outside the agent's reach.",
+              "evidence": [
+                {
+                  "search": "rg -n 'basicConfig|FileHandler|StreamHandler|setLevel'",
+                  "scope": "src",
+                  "hits": 0,
+                  "note": "no logging configuration in the repo; output depends on FastMCP/stdlib defaults"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Logging is best-effort stderr and actions proceed regardless; successful actions are never recorded.",
+              "gap": "No per-action record; L1 needs at least a best-effort record of actions.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "421",
+                  "contains": "execute_query(sql)",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L421"
+                },
+                {
+                  "file": "src/postgres_mcp/sql/sql_driver.py",
+                  "lines": "255-256",
+                  "contains": "await cursor.execute(\"COMMIT\")",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L255-L256"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "In the default unrestricted mode, execute_sql and explain_query have no timeout and no row or output cap: a query runs until Postgres finishes and all rows are buffered. The index-tuning advisor stops itself after 30 seconds and accepts at most 10 queries, and the LLM optimizer stops after 5 attempts without progress. The opt-in restricted mode adds a 30-second timeout to every query. Shutdown closes the connection pool on SIGTERM/SIGINT.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.4,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every query in restricted mode runs under asyncio.timeout(30).",
+          "gap": "No row/output caps or rate limits; L3 needs caps on every operation plus rate limits.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/sql/safe_sql.py",
+              "lines": "990-1003",
+              "contains": "async with asyncio.timeout(self.timeout):",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/safe_sql.py#L990-L1003"
+            },
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "66-68",
+              "contains": "SafeSqlDriver(sql_driver=base_driver, timeout=30)",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L66-L68"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All tools use the timed SafeSqlDriver in restricted mode.",
+          "gap": "Per-query only; no aggregate per-call budget across the many queries a tool issues.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "62-71",
+              "contains": "SafeSqlDriver(sql_driver=base_driver, timeout=30)",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L62-L71"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Opt-in: restricted mode is not the default.",
+          "gap": "Opt-in; L1 needs bounds on by default.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/server.py",
+              "lines": "565",
+              "contains": "default=AccessMode.UNRESTRICTED.value",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L565"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A runaway read is bounded at 30 s per query; whether the server-side query is cancelled on timeout depends on psycopg cancellation behaviour (inferred).",
+          "gap": "No aggregate ceiling per tool call; L3 needs tight per-run ceilings with cancellation.",
+          "evidence": [
+            {
+              "file": "src/postgres_mcp/sql/safe_sql.py",
+              "lines": "998-1003",
+              "contains": "Query execution timed out after",
+              "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/safe_sql.py#L998-L1003"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.325,
+          "raw": 0.325,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Server-enforced caps exist on some operations (DTA max_runtime_seconds=30, max 10 tuning queries, LLM optimizer attempt cap), not on execute_sql.",
+              "gap": "No caps on every operation and no rate limits; L3 needs caps on every operation plus concurrency or rate limits.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/index/dta_calc.py",
+                  "lines": "34",
+                  "contains": "max_runtime_seconds: int = 30",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/index/dta_calc.py#L34"
+                },
+                {
+                  "file": "src/postgres_mcp/index/index_opt_base.py",
+                  "lines": "25",
+                  "contains": "MAX_NUM_INDEX_TUNING_QUERIES = 10",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/index/index_opt_base.py#L25"
+                },
+                {
+                  "file": "src/postgres_mcp/index/llm_opt.py",
+                  "lines": "61",
+                  "contains": "max_no_progress_attempts: int = 5",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/index/llm_opt.py#L61"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Limits cover only index tuning; the general SQL tools are unbounded in unrestricted mode.",
+              "gap": "Main SQL path has no timeout; L2 needs timeouts on the tool paths.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "62-71",
+                  "contains": "return base_driver",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L62-L71"
+                },
+                {
+                  "file": "src/postgres_mcp/sql/sql_driver.py",
+                  "lines": "252",
+                  "contains": "rows = await cursor.fetchall()",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L252"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Defaults exist only where noted; the default mode has no statement timeout and the restricted-mode timeout is hard-coded and opt-in.",
+              "gap": "No sensible default bound on the main tool; L2 needs sensible operator-configurable defaults.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "565",
+                  "contains": "default=AccessMode.UNRESTRICTED.value",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L565"
+                },
+                {
+                  "search": "rg -n 'statement_timeout|asyncio\\.timeout'",
+                  "scope": "src",
+                  "hits": 1,
+                  "note": "the only timeout is in SafeSqlDriver (restricted mode)"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A runaway query has no ceiling in the default mode; killing the server closes the pool but a query already running in Postgres is not shown to be cancelled.",
+              "gap": "No ceiling on default queries; L2 needs moderate ceilings.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "686-689",
+                  "contains": "await db_connection.close()",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L686-L689"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in restricted mode 30 s query timeout",
+          "score": 0.4,
+          "raw": 0.4,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every query in restricted mode runs under asyncio.timeout(30).",
+              "gap": "No row/output caps or rate limits; L3 needs caps on every operation plus rate limits.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/sql/safe_sql.py",
+                  "lines": "990-1003",
+                  "contains": "async with asyncio.timeout(self.timeout):",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/safe_sql.py#L990-L1003"
+                },
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "66-68",
+                  "contains": "SafeSqlDriver(sql_driver=base_driver, timeout=30)",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L66-L68"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All tools use the timed SafeSqlDriver in restricted mode.",
+              "gap": "Per-query only; no aggregate per-call budget across the many queries a tool issues.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "62-71",
+                  "contains": "SafeSqlDriver(sql_driver=base_driver, timeout=30)",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L62-L71"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Opt-in: restricted mode is not the default.",
+              "gap": "Opt-in; L1 needs bounds on by default.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/server.py",
+                  "lines": "565",
+                  "contains": "default=AccessMode.UNRESTRICTED.value",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L565"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A runaway read is bounded at 30 s per query; whether the server-side query is cancelled on timeout depends on psycopg cancellation behaviour (inferred).",
+              "gap": "No aggregate ceiling per tool call; L3 needs tight per-run ceilings with cancellation.",
+              "evidence": [
+                {
+                  "file": "src/postgres_mcp/sql/safe_sql.py",
+                  "lines": "998-1003",
+                  "contains": "Query execution timed out after",
+                  "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/safe_sql.py#L998-L1003"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "Default unrestricted mode: a hijacked host session can read any data the login can see and run irreversible SQL that the server commits immediately, with no server-side gate.",
+      "criterion": "C5",
+      "owasp": [
+        "ASI01",
+        "ASI02"
+      ],
+      "evidence": [
+        {
+          "file": "src/postgres_mcp/server.py",
+          "lines": "565",
+          "contains": "default=AccessMode.UNRESTRICTED.value",
+          "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L565"
+        },
+        {
+          "file": "src/postgres_mcp/server.py",
+          "lines": "608-615",
+          "contains": "Execute any SQL query",
+          "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L608-L615"
+        },
+        {
+          "file": "src/postgres_mcp/sql/sql_driver.py",
+          "lines": "255-256",
+          "contains": "await cursor.execute(\"COMMIT\")",
+          "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L255-L256"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "database rows and pg_stat_statements query texts returned to the model (server.py:424)",
+    "sensitive_data": "the whole database behind DATABASE_URI (server.py:629)",
+    "state_change_or_egress": "arbitrary committed SQL via execute_sql in unrestricted mode (server.py:608-615, sql_driver.py:255-256)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Make --access-mode restricted the default and require an explicit flag for unrestricted.",
+      "criterion": "C3",
+      "parameter": "D",
+      "from_level": 0,
+      "to_level": 3,
+      "playbook": "Playbook 3, step 1",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Make every tool's risk annotation accurate in all modes.",
+      "criterion": "C2",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 5, step 1",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Set a default statement_timeout and a row cap for execute_sql in unrestricted mode.",
+      "criterion": "C10",
+      "parameter": "C",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 3, step 3",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Log every tool call (tool, SQL, status, row count, timestamp) as a structured record.",
+      "criterion": "C9",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 1, step 3",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Apply obfuscate_password to all logged and returned errors.",
+      "criterion": "C8",
+      "parameter": "C",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 4",
+      "estimated_gain": 0.075
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of commit 15c8e33353546148acc2d8bd784551cf3905d1e2 only; nothing was installed, executed or probed.",
+    "Postgres and psycopg behaviour (multi-statement execution without parameters, CREATE EXTENSION blocked in READ ONLY transactions, cancellation on asyncio timeout) is inferred from upstream documentation, not tested.",
+    "Blast radius depends on the database role the operator puts in DATABASE_URI; ratings assume a typical owner-level login as shown in README examples.",
+    "Tests, examples and CI workflows were not reviewed in depth; no reviewer-injection text was found in the repository."
+  ]
+}

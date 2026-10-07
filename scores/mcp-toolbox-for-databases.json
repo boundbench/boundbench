@@ -1,0 +1,2428 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "mcp-toolbox-for-databases",
+  "name": "MCP Toolbox for Databases",
+  "repo_url": "https://github.com/googleapis/mcp-toolbox",
+  "subpath": null,
+  "description": "Open source MCP server for ~30 databases (AlloyDB, Cloud SQL, BigQuery, Spanner, Postgres, MySQL...)",
+  "category": "data_analytics",
+  "pinned_commit": "a24e5e68567fa014a42fc6cc711faa82b964d4c0",
+  "version": null,
+  "scored_date": "2026-10-03",
+  "scored_configuration": "README quick start: `npx -y @toolbox-sdk/server --prebuilt=postgres --stdio` with POSTGRES_* environment variables, all prebuilt postgres tools (no toolset suffix), default flags.",
+  "score": 3.8,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 8,
+    "score": 1.8,
+    "max": 8.0,
+    "percent": 22
+  },
+  "capability_profile": {
+    "code_execution": "yes",
+    "filesystem_write": "no",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "no",
+    "untrusted_input": "yes",
+    "third_party_extensions": "no",
+    "sub_agents": "no",
+    "external_communication": "no"
+  },
+  "headline": "As shipped for IDE use, Toolbox hands the connected AI an execute_sql tool that runs any SQL against your database with the full privileges of the login you configure, with no read-only mode, timeout, row cap, or authorization check for the postgres source. Its safety depends almost entirely on the database role you give it and on your MCP host's approval prompts; the tool is correctly marked destructive so hosts can gate it. Tool calls are not recorded unless debug logging or telemetry export is enabled. Stronger controls (session-locked read-only mode, BigQuery write blocking, per-tool auth) exist for some sources but are opt-in.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "The server connects to Postgres with whatever database user and password the operator puts in environment variables and uses that one static credential for every tool call, reads and writes alike. Nothing in the server narrows it, and in the default stdio mode there is no per-caller authorization at all. An opt-in feature (auth services with authRequired tools and parameters filled from verified ID-token claims) can tie individual custom tools to an authenticated caller over HTTP, but it never narrows the database credential and tools without authRequired stay open. For the Cloud SQL, AlloyDB and BigQuery prebuilts the server instead uses the operator's Application Default Credentials.",
+      "max": 1.0,
+      "notes": "C1-PASSTHRU was considered: BigQuery and several Google sources offer useClientOAuth, which forwards the caller's OAuth token to the downstream API (e.g. internal/prebuiltconfigs/tools/bigquery.yaml:22, default false). It is off in the scored postgres configuration, so the cap was not applied; deployments that enable it should expect it.",
+      "status": "scored",
+      "score": 0.25,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tools can require a verified token from a named auth service and bind parameters to token claims, so a custom tool can be limited to the authenticated principal's rows, but authorization is only 'holds a token from service X' and the database credential stays one broad static login.",
+          "gap": "No role-scoped credential: the DB login is not narrowed per tool or per verb.",
+          "evidence": [
+            {
+              "file": "internal/server/mcp/v20251125/method.go",
+              "lines": "303",
+              "contains": "isAuthorized := tool.Authorized(verifiedAuthServices)",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/server/mcp/v20251125/method.go#L303"
+            },
+            {
+              "file": "internal/util/parameters/parameters.go",
+              "lines": "156",
+              "contains": "v, err = parseFromAuthService(paramAuthServices, claimsMap)",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/util/parameters/parameters.go#L156"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only tools that list authRequired are checked; any tool without it, including generic execute_sql tools, is authorized unconditionally, and stdio sessions skip auth entirely.",
+          "gap": "Authorization does not cover every tool path, and unannotated tools are allowed rather than denied.",
+          "evidence": [
+            {
+              "file": "internal/tools/tools.go",
+              "lines": "163-165",
+              "contains": "if len(authRequiredSources) == 0",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/tools.go#L163-L165"
+            },
+            {
+              "file": "internal/server/mcp/v20251125/method.go",
+              "lines": "270",
+              "contains": "if using stdio, header will be nil and auth will not be supported",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/server/mcp/v20251125/method.go#L270"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Auth services and authRequired are opt-in configuration; the prebuilt postgres config declares none.",
+          "gap": "Not on by default.",
+          "evidence": [
+            {
+              "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+              "lines": "26-29",
+              "contains": "type: postgres-execute-sql",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L26-L29"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "If the per-tool check is bypassed, the same database-wide credential applies.",
+          "gap": "Writes are not limited to non-destructive operations or a single tenant.",
+          "evidence": [
+            {
+              "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+              "lines": "103",
+              "contains": "source.RunSQL(ctx, sql, nil)",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L103"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.175,
+          "raw": 0.175,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A single operator-supplied database credential (POSTGRES_USER/POSTGRES_PASSWORD) is used for all tools; it is a dedicated DB login but its privilege is whatever the operator chose, and read and write share it.",
+              "gap": "No per-tool or read/write credential split and no deterministic authorization gate mapped to database privileges.",
+              "evidence": [
+                {
+                  "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+                  "lines": "21-22",
+                  "contains": "password: ${POSTGRES_PASSWORD}",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L21-L22"
+                },
+                {
+                  "file": "internal/sources/postgres/postgres.go",
+                  "lines": "118",
+                  "contains": "s.PostgresPool().Query(ctx, statement, params...)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/sources/postgres/postgres.go#L118"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "In the scored stdio mode no authorization check runs on any tool call: the auth-service block is skipped when headers are nil, and tools without authRequired are authorized unconditionally.",
+              "gap": "No authorization layer covers the main tool path in the default configuration.",
+              "evidence": [
+                {
+                  "file": "internal/server/mcp/v20251125/method.go",
+                  "lines": "270",
+                  "contains": "if using stdio, header will be nil and auth will not be supported",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/server/mcp/v20251125/method.go#L270"
+                },
+                {
+                  "file": "internal/tools/tools.go",
+                  "lines": "163-165",
+                  "contains": "if len(authRequiredSources) == 0",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/tools.go#L163-L165"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The default install runs with whatever role the operator configures (commonly the database owner); the plain postgres source has no read-only mode, so least privilege depends entirely on manual role hardening outside the server.",
+              "gap": "No narrower default: a read-only or minimal mode does not exist for the postgres source.",
+              "evidence": [
+                {
+                  "file": "internal/sources/postgres/postgres.go",
+                  "lines": "100-101",
+                  "contains": "return false",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/sources/postgres/postgres.go#L100-L101"
+                },
+                {
+                  "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+                  "lines": "21-22",
+                  "contains": "password: ${POSTGRES_PASSWORD}",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L21-L22"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked session gets everything the configured database login can do on one database system, including DDL and DELETE through execute_sql.",
+              "gap": "Writes are not limited to non-destructive operations or a single schema/tenant.",
+              "evidence": [
+                {
+                  "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+                  "lines": "103",
+                  "contains": "source.RunSQL(ctx, sql, nil)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L103"
+                },
+                {
+                  "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+                  "lines": "26-29",
+                  "contains": "type: postgres-execute-sql",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L26-L29"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in auth services: authRequired tools and claim-bound authenticated parameters (HTTP mode, custom tools.yaml)",
+          "score": 0.25,
+          "raw": 0.25,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tools can require a verified token from a named auth service and bind parameters to token claims, so a custom tool can be limited to the authenticated principal's rows, but authorization is only 'holds a token from service X' and the database credential stays one broad static login.",
+              "gap": "No role-scoped credential: the DB login is not narrowed per tool or per verb.",
+              "evidence": [
+                {
+                  "file": "internal/server/mcp/v20251125/method.go",
+                  "lines": "303",
+                  "contains": "isAuthorized := tool.Authorized(verifiedAuthServices)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/server/mcp/v20251125/method.go#L303"
+                },
+                {
+                  "file": "internal/util/parameters/parameters.go",
+                  "lines": "156",
+                  "contains": "v, err = parseFromAuthService(paramAuthServices, claimsMap)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/util/parameters/parameters.go#L156"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only tools that list authRequired are checked; any tool without it, including generic execute_sql tools, is authorized unconditionally, and stdio sessions skip auth entirely.",
+              "gap": "Authorization does not cover every tool path, and unannotated tools are allowed rather than denied.",
+              "evidence": [
+                {
+                  "file": "internal/tools/tools.go",
+                  "lines": "163-165",
+                  "contains": "if len(authRequiredSources) == 0",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/tools.go#L163-L165"
+                },
+                {
+                  "file": "internal/server/mcp/v20251125/method.go",
+                  "lines": "270",
+                  "contains": "if using stdio, header will be nil and auth will not be supported",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/server/mcp/v20251125/method.go#L270"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Auth services and authRequired are opt-in configuration; the prebuilt postgres config declares none.",
+              "gap": "Not on by default.",
+              "evidence": [
+                {
+                  "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+                  "lines": "26-29",
+                  "contains": "type: postgres-execute-sql",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L26-L29"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "If the per-tool check is bypassed, the same database-wide credential applies.",
+              "gap": "Writes are not limited to non-destructive operations or a single tenant.",
+              "evidence": [
+                {
+                  "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+                  "lines": "103",
+                  "contains": "source.RunSQL(ctx, sql, nil)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L103"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "As a tool server, Toolbox leaves approval to the MCP host and its contribution is risk signalling. Every postgres tool carries MCP annotations: execute_sql is marked destructive and the catalog/listing tools read-only, and other config-defined SQL tools default to destructive. But the main SQL tool mixes reads and writes, there is no read-only SQL tool or dry-run, and the plain postgres source has no server-enforced read-only mode (Cloud SQL, AlloyDB and BigQuery sources do, opt-in). A wrongly approved execute_sql call can DROP or DELETE production data irreversibly.",
+      "max": 1.0,
+      "notes": "Server-enforced read-only modes exist for other sources: Cloud SQL PostgreSQL/AlloyDB lock the session read-only (internal/sources/cloudsqlpg/cloud_sql_pg.go:181), and BigQuery offers writeMode blocked/protected. They are opt-in (env default false) and unavailable for the scored postgres source.",
+      "status": "scored",
+      "score": 0.325,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Annotations are present and conservative (execute_sql destructiveHint true), but the one SQL tool mixes reads and writes and no separate read-only SQL tool, dry-run, or server-enforced read-only mode exists for postgres.",
+          "gap": "No separate read and write SQL tools with accurate hints; no dry-run or read-only mode.",
+          "evidence": [
+            {
+              "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+              "lines": "74",
+              "contains": "tools.NewDestructiveAnnotations",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L74"
+            },
+            {
+              "file": "internal/tools/tools.go",
+              "lines": "90-97",
+              "contains": "destructive := true",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/tools.go#L90-L97"
+            },
+            {
+              "file": "internal/sources/postgres/postgres.go",
+              "lines": "100-101",
+              "contains": "return false",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/sources/postgres/postgres.go#L100-L101"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All 24 postgres tool types set default annotations through GetAnnotationsOrDefault, so every tool reaches the host with risk hints.",
+          "gap": "Hints cover every tool but the mechanism itself is only advisory signalling (coverage capped one level above strength).",
+          "evidence": [
+            {
+              "search": "rg -n GetAnnotationsOrDefault",
+              "scope": "internal/tools/postgres",
+              "hits": 24,
+              "note": "one per postgres tool type (24 directories); 22 read-only defaults, 2 destructive (execute-sql, postgres-sql)"
+            },
+            {
+              "file": "internal/tools/postgres/postgreslisttables/postgreslisttables.go",
+              "lines": "153",
+              "contains": "tools.NewReadOnlyAnnotations",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgreslisttables/postgreslisttables.go#L153"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Annotations are on by default and come from the embedded prebuilt config; only an operator-written custom config can override them.",
+          "gap": "Strength caps this; no server-enforced confirmation or read-only mode to default on.",
+          "evidence": [
+            {
+              "file": "internal/prebuiltconfigs/prebuiltconfigs.go",
+              "lines": "25",
+              "contains": "//go:embed tools/*.yaml",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/prebuiltconfigs.go#L25"
+            },
+            {
+              "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+              "lines": "74",
+              "contains": "tools.NewDestructiveAnnotations",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L74"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "execute_sql passes any statement to the production database, so a wrongly approved call can irreversibly drop or delete data with no preview or undo.",
+          "gap": "No dry-run, transaction preview, or rollback for destructive statements.",
+          "evidence": [
+            {
+              "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+              "lines": "103",
+              "contains": "source.RunSQL(ctx, sql, nil)",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L103"
+            },
+            {
+              "file": "internal/sources/postgres/postgres.go",
+              "lines": "118",
+              "contains": "s.PostgresPool().Query(ctx, statement, params...)",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/sources/postgres/postgres.go#L118"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.325,
+          "raw": 0.325,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Annotations are present and conservative (execute_sql destructiveHint true), but the one SQL tool mixes reads and writes and no separate read-only SQL tool, dry-run, or server-enforced read-only mode exists for postgres.",
+              "gap": "No separate read and write SQL tools with accurate hints; no dry-run or read-only mode.",
+              "evidence": [
+                {
+                  "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+                  "lines": "74",
+                  "contains": "tools.NewDestructiveAnnotations",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L74"
+                },
+                {
+                  "file": "internal/tools/tools.go",
+                  "lines": "90-97",
+                  "contains": "destructive := true",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/tools.go#L90-L97"
+                },
+                {
+                  "file": "internal/sources/postgres/postgres.go",
+                  "lines": "100-101",
+                  "contains": "return false",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/sources/postgres/postgres.go#L100-L101"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All 24 postgres tool types set default annotations through GetAnnotationsOrDefault, so every tool reaches the host with risk hints.",
+              "gap": "Hints cover every tool but the mechanism itself is only advisory signalling (coverage capped one level above strength).",
+              "evidence": [
+                {
+                  "search": "rg -n GetAnnotationsOrDefault",
+                  "scope": "internal/tools/postgres",
+                  "hits": 24,
+                  "note": "one per postgres tool type (24 directories); 22 read-only defaults, 2 destructive (execute-sql, postgres-sql)"
+                },
+                {
+                  "file": "internal/tools/postgres/postgreslisttables/postgreslisttables.go",
+                  "lines": "153",
+                  "contains": "tools.NewReadOnlyAnnotations",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgreslisttables/postgreslisttables.go#L153"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Annotations are on by default and come from the embedded prebuilt config; only an operator-written custom config can override them.",
+              "gap": "Strength caps this; no server-enforced confirmation or read-only mode to default on.",
+              "evidence": [
+                {
+                  "file": "internal/prebuiltconfigs/prebuiltconfigs.go",
+                  "lines": "25",
+                  "contains": "//go:embed tools/*.yaml",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/prebuiltconfigs.go#L25"
+                },
+                {
+                  "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+                  "lines": "74",
+                  "contains": "tools.NewDestructiveAnnotations",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L74"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "execute_sql passes any statement to the production database, so a wrongly approved call can irreversibly drop or delete data with no preview or undo.",
+              "gap": "No dry-run, transaction preview, or rollback for destructive statements.",
+              "evidence": [
+                {
+                  "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+                  "lines": "103",
+                  "contains": "source.RunSQL(ctx, sql, nil)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L103"
+                },
+                {
+                  "file": "internal/sources/postgres/postgres.go",
+                  "lines": "118",
+                  "contains": "s.PostgresPool().Query(ctx, statement, params...)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/sources/postgres/postgres.go#L118"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "Toolbox has a real argument-validation mechanism: typed parameters and fixed SQL statements that receive arguments as bind parameters ($1), which is how most of the 29 prebuilt postgres tools work. However, the default tool set also includes execute_sql, which runs any SQL the model writes, and get_query_plan, which pastes a model string into the statement with a Go text template (its own description warns about SQL injection). Toolsets can be selected with --prebuilt=postgres/<toolset>, but the default loads every tool, so the agent can touch any table the credential reaches.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.325,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Typed parameters with bind-parameter statements are a sound mechanism, but template parameters do raw string substitution into SQL and are escapable by design.",
+          "gap": "Template parameters are not restricted to allowlisted values, so the mechanism is escapable.",
+          "evidence": [
+            {
+              "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+              "lines": "126",
+              "contains": "LIMIT COALESCE($1::int, 50);",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L126"
+            },
+            {
+              "file": "internal/util/parameters/parameters.go",
+              "lines": "289-294",
+              "contains": "t.Execute(&result, templateParamsMap)",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/util/parameters/parameters.go#L289-L294"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The most powerful tool, execute_sql, takes raw SQL, and get_query_plan injects a raw string; only the fixed listing tools are bound by validated parameters.",
+          "gap": "The main SQL tool and the plan tool bypass parameter validation.",
+          "evidence": [
+            {
+              "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+              "lines": "103",
+              "contains": "source.RunSQL(ctx, sql, nil)",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L103"
+            },
+            {
+              "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+              "lines": "178",
+              "contains": "EXPLAIN (FORMAT JSON) {{.query}};",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L178"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Toolsets (data, monitor, health, view-config, replication) are selectable, but with no toolset suffix all tools load, including execute_sql in the default.",
+          "gap": "No read-only default tool set; write-capable execute_sql ships enabled.",
+          "evidence": [
+            {
+              "file": "cmd/internal/options.go",
+              "lines": "240",
+              "contains": "if toolsetName != \"\"",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/cmd/internal/options.go#L240"
+            },
+            {
+              "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+              "lines": "260-263",
+              "contains": "- execute_sql",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L260-L263"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "execute_sql reaches any table, schema, or DDL the credential allows, with no row, table, or statement-type bounds.",
+          "gap": "No scoping to schemas/tables or quantity bounds on SQL.",
+          "evidence": [
+            {
+              "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+              "lines": "103",
+              "contains": "source.RunSQL(ctx, sql, nil)",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L103"
+            },
+            {
+              "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+              "lines": "26-29",
+              "contains": "type: postgres-execute-sql",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L26-L29"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.325,
+          "raw": 0.325,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Typed parameters with bind-parameter statements are a sound mechanism, but template parameters do raw string substitution into SQL and are escapable by design.",
+              "gap": "Template parameters are not restricted to allowlisted values, so the mechanism is escapable.",
+              "evidence": [
+                {
+                  "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+                  "lines": "126",
+                  "contains": "LIMIT COALESCE($1::int, 50);",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L126"
+                },
+                {
+                  "file": "internal/util/parameters/parameters.go",
+                  "lines": "289-294",
+                  "contains": "t.Execute(&result, templateParamsMap)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/util/parameters/parameters.go#L289-L294"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The most powerful tool, execute_sql, takes raw SQL, and get_query_plan injects a raw string; only the fixed listing tools are bound by validated parameters.",
+              "gap": "The main SQL tool and the plan tool bypass parameter validation.",
+              "evidence": [
+                {
+                  "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+                  "lines": "103",
+                  "contains": "source.RunSQL(ctx, sql, nil)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L103"
+                },
+                {
+                  "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+                  "lines": "178",
+                  "contains": "EXPLAIN (FORMAT JSON) {{.query}};",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L178"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Toolsets (data, monitor, health, view-config, replication) are selectable, but with no toolset suffix all tools load, including execute_sql in the default.",
+              "gap": "No read-only default tool set; write-capable execute_sql ships enabled.",
+              "evidence": [
+                {
+                  "file": "cmd/internal/options.go",
+                  "lines": "240",
+                  "contains": "if toolsetName != \"\"",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/cmd/internal/options.go#L240"
+                },
+                {
+                  "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+                  "lines": "260-263",
+                  "contains": "- execute_sql",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L260-L263"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "execute_sql reaches any table, schema, or DDL the credential allows, with no row, table, or statement-type bounds.",
+              "gap": "No scoping to schemas/tables or quantity bounds on SQL.",
+              "evidence": [
+                {
+                  "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+                  "lines": "103",
+                  "contains": "source.RunSQL(ctx, sql, nil)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L103"
+                },
+                {
+                  "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+                  "lines": "26-29",
+                  "contains": "type: postgres-execute-sql",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L26-L29"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "The code-execution surface here is SQL: execute_sql (and the template-built get_query_plan) send model-written statements straight to the database through the connection pool. There is no isolation boundary: no read-only transaction, statement-type filter, or sandboxed role is applied for the postgres source, and nothing is opt-in either. What that SQL can reach is the whole database under the configured login; with a superuser login Postgres features such as COPY ... PROGRAM extend that to the database host.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.05,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Model-written SQL is executed directly on the target database session with no isolation primitive.",
+          "gap": "No isolation such as a read-only or restricted session for model SQL.",
+          "evidence": [
+            {
+              "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+              "lines": "103",
+              "contains": "source.RunSQL(ctx, sql, nil)",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L103"
+            },
+            {
+              "file": "internal/sources/postgres/postgres.go",
+              "lines": "118",
+              "contains": "s.PostgresPool().Query(ctx, statement, params...)",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/sources/postgres/postgres.go#L118"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No execution path is isolated; both execute_sql and template-substituted statements run unconfined.",
+          "gap": "No path goes through an isolation boundary.",
+          "evidence": [
+            {
+              "file": "internal/util/parameters/parameters.go",
+              "lines": "289-294",
+              "contains": "t.Execute(&result, templateParamsMap)",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/util/parameters/parameters.go#L289-L294"
+            },
+            {
+              "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+              "lines": "103",
+              "contains": "source.RunSQL(ctx, sql, nil)",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L103"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No isolation exists to be on by default for the postgres source (IsReadOnly is hard-coded false).",
+          "gap": "No default-on isolation.",
+          "evidence": [
+            {
+              "file": "internal/sources/postgres/postgres.go",
+              "lines": "100-101",
+              "contains": "return false",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/sources/postgres/postgres.go#L100-L101"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Model SQL runs with the full privileges of the configured login across the database, including destructive DDL; with a superuser login Postgres server-side features can reach the DB host (inferred from Postgres behaviour, not this repo).",
+          "gap": "Not confined to a schema or read-only session; credential not scoped.",
+          "evidence": [
+            {
+              "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+              "lines": "103",
+              "contains": "source.RunSQL(ctx, sql, nil)",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L103"
+            },
+            {
+              "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+              "lines": "21-22",
+              "contains": "password: ${POSTGRES_PASSWORD}",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L21-L22"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.05,
+          "raw": 0.05,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Model-written SQL is executed directly on the target database session with no isolation primitive.",
+              "gap": "No isolation such as a read-only or restricted session for model SQL.",
+              "evidence": [
+                {
+                  "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+                  "lines": "103",
+                  "contains": "source.RunSQL(ctx, sql, nil)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L103"
+                },
+                {
+                  "file": "internal/sources/postgres/postgres.go",
+                  "lines": "118",
+                  "contains": "s.PostgresPool().Query(ctx, statement, params...)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/sources/postgres/postgres.go#L118"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No execution path is isolated; both execute_sql and template-substituted statements run unconfined.",
+              "gap": "No path goes through an isolation boundary.",
+              "evidence": [
+                {
+                  "file": "internal/util/parameters/parameters.go",
+                  "lines": "289-294",
+                  "contains": "t.Execute(&result, templateParamsMap)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/util/parameters/parameters.go#L289-L294"
+                },
+                {
+                  "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+                  "lines": "103",
+                  "contains": "source.RunSQL(ctx, sql, nil)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L103"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No isolation exists to be on by default for the postgres source (IsReadOnly is hard-coded false).",
+              "gap": "No default-on isolation.",
+              "evidence": [
+                {
+                  "file": "internal/sources/postgres/postgres.go",
+                  "lines": "100-101",
+                  "contains": "return false",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/sources/postgres/postgres.go#L100-L101"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Model SQL runs with the full privileges of the configured login across the database, including destructive DDL; with a superuser login Postgres server-side features can reach the DB host (inferred from Postgres behaviour, not this repo).",
+              "gap": "Not confined to a schema or read-only session; credential not scoped.",
+              "evidence": [
+                {
+                  "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+                  "lines": "103",
+                  "contains": "source.RunSQL(ctx, sql, nil)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L103"
+                },
+                {
+                  "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+                  "lines": "21-22",
+                  "contains": "password: ${POSTGRES_PASSWORD}",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L21-L22"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "Database rows can contain attacker-written text (customer records, comments, tickets), and Toolbox returns them to the model as plain JSON text with nothing marking them as untrusted. The same default session can read sensitive data and run destructive SQL, so a successful injection could make the host read data and delete or alter it with no server-side barrier. The server offers no read-only or no-write mode for postgres that would drop one of those legs.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.075,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C5-WORSTCASE",
+        "max": 0.25,
+        "reason": "In the default configuration the same session reads sensitive data and can execute irreversible SQL with no server-side gate."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tool results are serialized rows in plain text content, with no provenance or untrusted flag.",
+          "gap": "No structured separation of content and metadata, and no provenance on returned data.",
+          "evidence": [
+            {
+              "file": "internal/server/mcp/v20251125/method.go",
+              "lines": "447",
+              "contains": "text.Text = string(dM)",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/server/mcp/v20251125/method.go#L447"
+            },
+            {
+              "search": "rg -n -i \"untrusted|provenance\"",
+              "scope": "internal/server/mcp/v20251125/method.go internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+              "hits": 0
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No returned source is distinguished from any other.",
+          "gap": "No source is marked or limited.",
+          "evidence": [
+            {
+              "file": "internal/server/mcp/v20251125/method.go",
+              "lines": "447",
+              "contains": "text.Text = string(dM)",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/server/mcp/v20251125/method.go#L447"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "There is no mechanism to enable.",
+          "gap": "No default-on mechanism.",
+          "evidence": [
+            {
+              "file": "internal/server/mcp/v20251125/method.go",
+              "lines": "447",
+              "contains": "text.Text = string(dM)",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/server/mcp/v20251125/method.go#L447"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked session can read sensitive database data and run irreversible writes (DROP/DELETE) through execute_sql in the same session, with no server-side approval.",
+          "gap": "Writes and data reads are not separated or gated in the default configuration.",
+          "evidence": [
+            {
+              "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+              "lines": "103",
+              "contains": "source.RunSQL(ctx, sql, nil)",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L103"
+            },
+            {
+              "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+              "lines": "26-29",
+              "contains": "type: postgres-execute-sql",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L26-L29"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.075,
+          "raw": 0.075,
+          "cap": {
+            "id": "C5-WORSTCASE",
+            "max": 0.25,
+            "reason": "In the default configuration the same session reads sensitive data and can execute irreversible SQL with no server-side gate."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tool results are serialized rows in plain text content, with no provenance or untrusted flag.",
+              "gap": "No structured separation of content and metadata, and no provenance on returned data.",
+              "evidence": [
+                {
+                  "file": "internal/server/mcp/v20251125/method.go",
+                  "lines": "447",
+                  "contains": "text.Text = string(dM)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/server/mcp/v20251125/method.go#L447"
+                },
+                {
+                  "search": "rg -n -i \"untrusted|provenance\"",
+                  "scope": "internal/server/mcp/v20251125/method.go internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+                  "hits": 0
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No returned source is distinguished from any other.",
+              "gap": "No source is marked or limited.",
+              "evidence": [
+                {
+                  "file": "internal/server/mcp/v20251125/method.go",
+                  "lines": "447",
+                  "contains": "text.Text = string(dM)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/server/mcp/v20251125/method.go#L447"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "There is no mechanism to enable.",
+              "gap": "No default-on mechanism.",
+              "evidence": [
+                {
+                  "file": "internal/server/mcp/v20251125/method.go",
+                  "lines": "447",
+                  "contains": "text.Text = string(dM)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/server/mcp/v20251125/method.go#L447"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked session can read sensitive database data and run irreversible writes (DROP/DELETE) through execute_sql in the same session, with no server-side approval.",
+              "gap": "Writes and data reads are not separated or gated in the default configuration.",
+              "evidence": [
+                {
+                  "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+                  "lines": "103",
+                  "contains": "source.RunSQL(ctx, sql, nil)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L103"
+                },
+                {
+                  "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+                  "lines": "26-29",
+                  "contains": "type: postgres-execute-sql",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L26-L29"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "In the scored configuration (--prebuilt=postgres) the tool definitions come from YAML embedded in the binary and the connection settings come from the process environment; the server keeps no memory, writes nothing back, and loads no workspace files. Note that a different mode behaves differently: when started with neither --prebuilt nor --config, the server loads tools.yaml from the current directory and watches it for changes, so a launch from inside an untrusted repository would take that repository's tool definitions.",
+      "max": 1.0,
+      "notes": "Unscored no-flag mode: cmd/internal/options.go:176-179 falls back to ./tools.yaml when no --prebuilt and no --config is given, and dynamic reload is on unless --disable-reload is passed. That would trigger C6-REPOCONFIG if scored.",
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i \"godotenv|dotenv\"",
+              "scope": "cmd internal main.go",
+              "hits": 0,
+              "note": "no .env auto-loading anywhere"
+            },
+            {
+              "search": "rg -n \"os\\.WriteFile|os\\.Create\\(|os\\.OpenFile\\(\"",
+              "scope": "internal/server/server.go internal/server/mcp.go internal/server/mcp internal/sources/postgres/postgres.go internal/tools/postgres internal/prebuiltconfigs",
+              "hits": 0,
+              "note": "no persistence written by the server or postgres tools"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i \"godotenv|dotenv\"",
+              "scope": "cmd internal main.go",
+              "hits": 0,
+              "note": "no .env auto-loading anywhere"
+            },
+            {
+              "search": "rg -n \"os\\.WriteFile|os\\.Create\\(|os\\.OpenFile\\(\"",
+              "scope": "internal/server/server.go internal/server/mcp.go internal/server/mcp internal/sources/postgres/postgres.go internal/tools/postgres internal/prebuiltconfigs",
+              "hits": 0,
+              "note": "no persistence written by the server or postgres tools"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i \"godotenv|dotenv\"",
+              "scope": "cmd internal main.go",
+              "hits": 0,
+              "note": "no .env auto-loading anywhere"
+            },
+            {
+              "search": "rg -n \"os\\.WriteFile|os\\.Create\\(|os\\.OpenFile\\(\"",
+              "scope": "internal/server/server.go internal/server/mcp.go internal/server/mcp internal/sources/postgres/postgres.go internal/tools/postgres internal/prebuiltconfigs",
+              "hits": 0,
+              "note": "no persistence written by the server or postgres tools"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i \"godotenv|dotenv\"",
+              "scope": "cmd internal main.go",
+              "hits": 0,
+              "note": "no .env auto-loading anywhere"
+            },
+            {
+              "search": "rg -n \"os\\.WriteFile|os\\.Create\\(|os\\.OpenFile\\(\"",
+              "scope": "internal/server/server.go internal/server/mcp.go internal/server/mcp internal/sources/postgres/postgres.go internal/tools/postgres internal/prebuiltconfigs",
+              "hits": 0,
+              "note": "no persistence written by the server or postgres tools"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i \"godotenv|dotenv\"",
+                  "scope": "cmd internal main.go",
+                  "hits": 0,
+                  "note": "no .env auto-loading anywhere"
+                },
+                {
+                  "search": "rg -n \"os\\.WriteFile|os\\.Create\\(|os\\.OpenFile\\(\"",
+                  "scope": "internal/server/server.go internal/server/mcp.go internal/server/mcp internal/sources/postgres/postgres.go internal/tools/postgres internal/prebuiltconfigs",
+                  "hits": 0,
+                  "note": "no persistence written by the server or postgres tools"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i \"godotenv|dotenv\"",
+                  "scope": "cmd internal main.go",
+                  "hits": 0,
+                  "note": "no .env auto-loading anywhere"
+                },
+                {
+                  "search": "rg -n \"os\\.WriteFile|os\\.Create\\(|os\\.OpenFile\\(\"",
+                  "scope": "internal/server/server.go internal/server/mcp.go internal/server/mcp internal/sources/postgres/postgres.go internal/tools/postgres internal/prebuiltconfigs",
+                  "hits": 0,
+                  "note": "no persistence written by the server or postgres tools"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i \"godotenv|dotenv\"",
+                  "scope": "cmd internal main.go",
+                  "hits": 0,
+                  "note": "no .env auto-loading anywhere"
+                },
+                {
+                  "search": "rg -n \"os\\.WriteFile|os\\.Create\\(|os\\.OpenFile\\(\"",
+                  "scope": "internal/server/server.go internal/server/mcp.go internal/server/mcp internal/sources/postgres/postgres.go internal/tools/postgres internal/prebuiltconfigs",
+                  "hits": 0,
+                  "note": "no persistence written by the server or postgres tools"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i \"godotenv|dotenv\"",
+                  "scope": "cmd internal main.go",
+                  "hits": 0,
+                  "note": "no .env auto-loading anywhere"
+                },
+                {
+                  "search": "rg -n \"os\\.WriteFile|os\\.Create\\(|os\\.OpenFile\\(\"",
+                  "scope": "internal/server/server.go internal/server/mcp.go internal/server/mcp internal/sources/postgres/postgres.go internal/tools/postgres internal/prebuiltconfigs",
+                  "hits": 0,
+                  "note": "no persistence written by the server or postgres tools"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n -i \"godotenv|dotenv\"",
+          "scope": "cmd internal main.go",
+          "hits": 0,
+          "note": "no .env auto-loading anywhere"
+        },
+        {
+          "search": "rg -n \"os\\.WriteFile|os\\.Create\\(|os\\.OpenFile\\(\"",
+          "scope": "internal/server/server.go internal/server/mcp.go internal/server/mcp internal/sources/postgres/postgres.go internal/tools/postgres internal/prebuiltconfigs",
+          "hits": 0,
+          "note": "no persistence written by the server or postgres tools"
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "The server loads no third-party code at runtime in the scored configuration: tool types and database drivers are compiled into the Go binary, and the prebuilt configs are embedded. It does not launch other MCP servers, install packages, or load plugins. The only process spawn in the codebase is the optional Dataform compile-local tool, which is not part of the postgres prebuilt.",
+      "max": 1.0,
+      "notes": "Install-time supply chain (out of scope here): the npm platform packages download the binary from storage.googleapis.com in a postinstall script without a checksum check (npm/server-darwin-arm64/scripts/downloadBinary.js), and the README launches it with an unpinned `npx -y @toolbox-sdk/server`.",
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n \"exec\\.Command|plugin\\.Open\"",
+              "scope": "internal/server internal/sources/postgres internal/tools/postgres internal/prebuiltconfigs cmd main.go",
+              "hits": 0,
+              "note": "elsewhere the only non-test hit is internal/tools/dataform/dataformcompilelocal (not in the scored config)"
+            },
+            {
+              "search": "rg -n -i \"npx|pip install|go install|trust_remote_code\"",
+              "scope": "internal/server internal/sources/postgres internal/tools/postgres internal/prebuiltconfigs/prebuiltconfigs.go",
+              "hits": 0
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n \"exec\\.Command|plugin\\.Open\"",
+              "scope": "internal/server internal/sources/postgres internal/tools/postgres internal/prebuiltconfigs cmd main.go",
+              "hits": 0,
+              "note": "elsewhere the only non-test hit is internal/tools/dataform/dataformcompilelocal (not in the scored config)"
+            },
+            {
+              "search": "rg -n -i \"npx|pip install|go install|trust_remote_code\"",
+              "scope": "internal/server internal/sources/postgres internal/tools/postgres internal/prebuiltconfigs/prebuiltconfigs.go",
+              "hits": 0
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n \"exec\\.Command|plugin\\.Open\"",
+              "scope": "internal/server internal/sources/postgres internal/tools/postgres internal/prebuiltconfigs cmd main.go",
+              "hits": 0,
+              "note": "elsewhere the only non-test hit is internal/tools/dataform/dataformcompilelocal (not in the scored config)"
+            },
+            {
+              "search": "rg -n -i \"npx|pip install|go install|trust_remote_code\"",
+              "scope": "internal/server internal/sources/postgres internal/tools/postgres internal/prebuiltconfigs/prebuiltconfigs.go",
+              "hits": 0
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n \"exec\\.Command|plugin\\.Open\"",
+              "scope": "internal/server internal/sources/postgres internal/tools/postgres internal/prebuiltconfigs cmd main.go",
+              "hits": 0,
+              "note": "elsewhere the only non-test hit is internal/tools/dataform/dataformcompilelocal (not in the scored config)"
+            },
+            {
+              "search": "rg -n -i \"npx|pip install|go install|trust_remote_code\"",
+              "scope": "internal/server internal/sources/postgres internal/tools/postgres internal/prebuiltconfigs/prebuiltconfigs.go",
+              "hits": 0
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n \"exec\\.Command|plugin\\.Open\"",
+                  "scope": "internal/server internal/sources/postgres internal/tools/postgres internal/prebuiltconfigs cmd main.go",
+                  "hits": 0,
+                  "note": "elsewhere the only non-test hit is internal/tools/dataform/dataformcompilelocal (not in the scored config)"
+                },
+                {
+                  "search": "rg -n -i \"npx|pip install|go install|trust_remote_code\"",
+                  "scope": "internal/server internal/sources/postgres internal/tools/postgres internal/prebuiltconfigs/prebuiltconfigs.go",
+                  "hits": 0
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n \"exec\\.Command|plugin\\.Open\"",
+                  "scope": "internal/server internal/sources/postgres internal/tools/postgres internal/prebuiltconfigs cmd main.go",
+                  "hits": 0,
+                  "note": "elsewhere the only non-test hit is internal/tools/dataform/dataformcompilelocal (not in the scored config)"
+                },
+                {
+                  "search": "rg -n -i \"npx|pip install|go install|trust_remote_code\"",
+                  "scope": "internal/server internal/sources/postgres internal/tools/postgres internal/prebuiltconfigs/prebuiltconfigs.go",
+                  "hits": 0
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n \"exec\\.Command|plugin\\.Open\"",
+                  "scope": "internal/server internal/sources/postgres internal/tools/postgres internal/prebuiltconfigs cmd main.go",
+                  "hits": 0,
+                  "note": "elsewhere the only non-test hit is internal/tools/dataform/dataformcompilelocal (not in the scored config)"
+                },
+                {
+                  "search": "rg -n -i \"npx|pip install|go install|trust_remote_code\"",
+                  "scope": "internal/server internal/sources/postgres internal/tools/postgres internal/prebuiltconfigs/prebuiltconfigs.go",
+                  "hits": 0
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n \"exec\\.Command|plugin\\.Open\"",
+                  "scope": "internal/server internal/sources/postgres internal/tools/postgres internal/prebuiltconfigs cmd main.go",
+                  "hits": 0,
+                  "note": "elsewhere the only non-test hit is internal/tools/dataform/dataformcompilelocal (not in the scored config)"
+                },
+                {
+                  "search": "rg -n -i \"npx|pip install|go install|trust_remote_code\"",
+                  "scope": "internal/server internal/sources/postgres internal/tools/postgres internal/prebuiltconfigs/prebuiltconfigs.go",
+                  "hits": 0
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n \"exec\\.Command|plugin\\.Open\"",
+          "scope": "internal/server internal/sources/postgres internal/tools/postgres internal/prebuiltconfigs cmd main.go",
+          "hits": 0,
+          "note": "elsewhere the only non-test hit is internal/tools/dataform/dataformcompilelocal (not in the scored config)"
+        },
+        {
+          "search": "rg -n -i \"npx|pip install|go install|trust_remote_code\"",
+          "scope": "internal/server internal/sources/postgres internal/tools/postgres internal/prebuiltconfigs/prebuiltconfigs.go",
+          "hits": 0
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "The database password arrives through an environment variable and is kept as a plain string in the source config and the connection URL; there is no secret type or redaction layer in the server. It is not sent to the model, telemetry export is opt-in, and the default info log level does not record SQL or parameters. Debug logging, which is a single flag away, logs full SQL text and parameters unredacted, and query results (which may contain sensitive data) go to the model unfiltered.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Secrets come from environment variables into a plain string field; no masking or redaction exists in the server.",
+          "gap": "No type-level masking or log redaction on main paths.",
+          "evidence": [
+            {
+              "file": "internal/sources/postgres/postgres.go",
+              "lines": "59",
+              "contains": "Password      string",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/sources/postgres/postgres.go#L59"
+            },
+            {
+              "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+              "lines": "21-22",
+              "contains": "password: ${POSTGRES_PASSWORD}",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L21-L22"
+            },
+            {
+              "search": "rg -n -i \"redact|mask\"",
+              "scope": "internal/sources/postgres/postgres.go internal/server/server.go internal/server/mcp.go internal/log cmd/internal/options.go cmd/internal/config.go",
+              "hits": 0
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The only protection is that the default log level omits payloads; debug logs, tool results to the model, and errors are not filtered.",
+          "gap": "Logs and transcripts are not redacted.",
+          "evidence": [
+            {
+              "file": "internal/server/mcp/v20251125/method.go",
+              "lines": "350",
+              "contains": "logger.DebugContext(ctx, fmt.Sprintf(\"invocation params: %s\", params))",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/server/mcp/v20251125/method.go#L350"
+            },
+            {
+              "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+              "lines": "101",
+              "contains": "executing `%s` tool query: %s",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L101"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Telemetry exporters are opt-in and default logging is at info, which omits SQL and parameters, but a content-free startup version check calls GitHub by default and verbose debug logging (full SQL and parameters) is one flag away with no redaction.",
+          "gap": "No redaction layer exists to keep on, and the content-free version check is on by default rather than opt-in.",
+          "evidence": [
+            {
+              "file": "cmd/internal/flags.go",
+              "lines": "35-37",
+              "contains": "\"telemetry-otlp\", \"\"",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/cmd/internal/flags.go#L35-L37"
+            },
+            {
+              "file": "internal/server/config.go",
+              "lines": "152",
+              "contains": "return \"info\"",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/server/config.go#L152"
+            },
+            {
+              "file": "cmd/internal/flags.go",
+              "lines": "41",
+              "contains": "disable-version-check",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/cmd/internal/flags.go#L41"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A leaked POSTGRES_PASSWORD is a long-lived database login with whatever privileges the operator gave it.",
+          "gap": "Credentials are not short-lived or rotated by the server.",
+          "evidence": [
+            {
+              "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+              "lines": "21-22",
+              "contains": "password: ${POSTGRES_PASSWORD}",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L21-L22"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.25,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Secrets come from environment variables into a plain string field; no masking or redaction exists in the server.",
+              "gap": "No type-level masking or log redaction on main paths.",
+              "evidence": [
+                {
+                  "file": "internal/sources/postgres/postgres.go",
+                  "lines": "59",
+                  "contains": "Password      string",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/sources/postgres/postgres.go#L59"
+                },
+                {
+                  "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+                  "lines": "21-22",
+                  "contains": "password: ${POSTGRES_PASSWORD}",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L21-L22"
+                },
+                {
+                  "search": "rg -n -i \"redact|mask\"",
+                  "scope": "internal/sources/postgres/postgres.go internal/server/server.go internal/server/mcp.go internal/log cmd/internal/options.go cmd/internal/config.go",
+                  "hits": 0
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The only protection is that the default log level omits payloads; debug logs, tool results to the model, and errors are not filtered.",
+              "gap": "Logs and transcripts are not redacted.",
+              "evidence": [
+                {
+                  "file": "internal/server/mcp/v20251125/method.go",
+                  "lines": "350",
+                  "contains": "logger.DebugContext(ctx, fmt.Sprintf(\"invocation params: %s\", params))",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/server/mcp/v20251125/method.go#L350"
+                },
+                {
+                  "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+                  "lines": "101",
+                  "contains": "executing `%s` tool query: %s",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L101"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Telemetry exporters are opt-in and default logging is at info, which omits SQL and parameters, but a content-free startup version check calls GitHub by default and verbose debug logging (full SQL and parameters) is one flag away with no redaction.",
+              "gap": "No redaction layer exists to keep on, and the content-free version check is on by default rather than opt-in.",
+              "evidence": [
+                {
+                  "file": "cmd/internal/flags.go",
+                  "lines": "35-37",
+                  "contains": "\"telemetry-otlp\", \"\"",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/cmd/internal/flags.go#L35-L37"
+                },
+                {
+                  "file": "internal/server/config.go",
+                  "lines": "152",
+                  "contains": "return \"info\"",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/server/config.go#L152"
+                },
+                {
+                  "file": "cmd/internal/flags.go",
+                  "lines": "41",
+                  "contains": "disable-version-check",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/cmd/internal/flags.go#L41"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A leaked POSTGRES_PASSWORD is a long-lived database login with whatever privileges the operator gave it.",
+              "gap": "Credentials are not short-lived or rotated by the server.",
+              "evidence": [
+                {
+                  "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+                  "lines": "21-22",
+                  "contains": "password: ${POSTGRES_PASSWORD}",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L21-L22"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "In the default configuration, tool calls leave no record: the tool name and parameters are only logged at debug level, the default level is info, and in stdio mode there is no request log. OpenTelemetry tracing is built in and creates a span per tool call with the tool name, but exporters are off unless the operator passes --telemetry-otlp or --telemetry-gcp, and the spans do not include arguments or caller identity. There is no tamper-evident audit trail.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.275,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Spans and metrics per tool call carry tool name, operation and error type, exported via OTLP or to Google Cloud, but not arguments or caller identity.",
+          "gap": "No arguments or actor attribution in the record.",
+          "evidence": [
+            {
+              "file": "internal/server/mcp/v20251125/method.go",
+              "lines": "176-179",
+              "contains": "attribute.String(\"gen_ai.tool.name\", toolName)",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/server/mcp/v20251125/method.go#L176-L179"
+            },
+            {
+              "file": "cmd/internal/flags.go",
+              "lines": "35-37",
+              "contains": "\"telemetry-otlp\", \"\"",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/cmd/internal/flags.go#L35-L37"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every tools/call passes through the instrumented handler, regardless of tool type.",
+          "gap": "Approvals, config changes and credential use are not recorded.",
+          "evidence": [
+            {
+              "file": "internal/server/mcp/v20251125/method.go",
+              "lines": "370",
+              "contains": "results, err := tool.Invoke(ctx, src, params, accessToken)",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/server/mcp/v20251125/method.go#L370"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Exporters are off unless flagged.",
+          "gap": "Not on by default.",
+          "evidence": [
+            {
+              "file": "cmd/internal/flags.go",
+              "lines": "35-37",
+              "contains": "\"telemetry-otlp\", \"\"",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/cmd/internal/flags.go#L35-L37"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Spans use a batching exporter, so records are best-effort and flushed late.",
+          "gap": "Records are not durable per action.",
+          "evidence": [
+            {
+              "file": "internal/telemetry/telemetry.go",
+              "lines": "127",
+              "contains": "tracesdk.WithBatcher(otlpExporter)",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/telemetry/telemetry.go#L127"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tool invocations are logged only at debug level.",
+              "gap": "No record of tool calls at the default log level.",
+              "evidence": [
+                {
+                  "file": "internal/server/mcp/v20251125/method.go",
+                  "lines": "172",
+                  "contains": "tool name: %s",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/server/mcp/v20251125/method.go#L172"
+                },
+                {
+                  "file": "internal/server/mcp/v20251125/method.go",
+                  "lines": "350",
+                  "contains": "logger.DebugContext(ctx, fmt.Sprintf(\"invocation params: %s\", params))",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/server/mcp/v20251125/method.go#L350"
+                },
+                {
+                  "file": "internal/server/config.go",
+                  "lines": "152",
+                  "contains": "return \"info\"",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/server/config.go#L152"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Nothing about successful tool calls is recorded by default.",
+              "gap": "No tool path is recorded by default.",
+              "evidence": [
+                {
+                  "search": "rg -n \"InfoContext|WarnContext\"",
+                  "scope": "internal/server/mcp/v20251125/method.go",
+                  "hits": 0,
+                  "note": "tools/call handler has no info/warn-level logging"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Any useful record requires --log-level debug or an opt-in telemetry exporter.",
+              "gap": "Not on by default.",
+              "evidence": [
+                {
+                  "file": "cmd/internal/flags.go",
+                  "lines": "35-37",
+                  "contains": "\"telemetry-otlp\", \"\"",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/cmd/internal/flags.go#L35-L37"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "With no record, actions proceed unlogged.",
+              "gap": "No per-action record.",
+              "evidence": [
+                {
+                  "file": "internal/server/mcp/v20251125/method.go",
+                  "lines": "370",
+                  "contains": "results, err := tool.Invoke(ctx, src, params, accessToken)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/server/mcp/v20251125/method.go#L370"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in OpenTelemetry export (--telemetry-otlp / --telemetry-gcp)",
+          "score": 0.275,
+          "raw": 0.275,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Spans and metrics per tool call carry tool name, operation and error type, exported via OTLP or to Google Cloud, but not arguments or caller identity.",
+              "gap": "No arguments or actor attribution in the record.",
+              "evidence": [
+                {
+                  "file": "internal/server/mcp/v20251125/method.go",
+                  "lines": "176-179",
+                  "contains": "attribute.String(\"gen_ai.tool.name\", toolName)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/server/mcp/v20251125/method.go#L176-L179"
+                },
+                {
+                  "file": "cmd/internal/flags.go",
+                  "lines": "35-37",
+                  "contains": "\"telemetry-otlp\", \"\"",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/cmd/internal/flags.go#L35-L37"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every tools/call passes through the instrumented handler, regardless of tool type.",
+              "gap": "Approvals, config changes and credential use are not recorded.",
+              "evidence": [
+                {
+                  "file": "internal/server/mcp/v20251125/method.go",
+                  "lines": "370",
+                  "contains": "results, err := tool.Invoke(ctx, src, params, accessToken)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/server/mcp/v20251125/method.go#L370"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Exporters are off unless flagged.",
+              "gap": "Not on by default.",
+              "evidence": [
+                {
+                  "file": "cmd/internal/flags.go",
+                  "lines": "35-37",
+                  "contains": "\"telemetry-otlp\", \"\"",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/cmd/internal/flags.go#L35-L37"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Spans use a batching exporter, so records are best-effort and flushed late.",
+              "gap": "Records are not durable per action.",
+              "evidence": [
+                {
+                  "file": "internal/telemetry/telemetry.go",
+                  "lines": "127",
+                  "contains": "tracesdk.WithBatcher(otlpExporter)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/telemetry/telemetry.go#L127"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "For the postgres source the server puts no time, row or size bound on queries: execute_sql runs until the database finishes, results are fully buffered, and the server has no MCP cancellation handling. Some listing tools take an optional limit with a default of 50, but the caller can raise it. An operator can add a statement_timeout through POSTGRES_QUERY_PARAMS, but it is empty by default. Other sources do better (BigQuery caps rows at 50 by default and supports a billing limit).",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only caller-chosen limits exist (optional limit parameters); there is no server-enforced timeout, row cap or output cap for postgres queries.",
+          "gap": "No server-enforced caps such as a statement timeout or maximum rows.",
+          "evidence": [
+            {
+              "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+              "lines": "126",
+              "contains": "LIMIT COALESCE($1::int, 50);",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L126"
+            },
+            {
+              "search": "rg -n \"WithTimeout|statement_timeout|notifications/cancelled\"",
+              "scope": "internal/sources/postgres/postgres.go internal/tools/postgres/postgresexecutesql/postgresexecutesql.go internal/server/mcp.go internal/server/mcp/v20251125/method.go",
+              "hits": 0
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Default limits exist only on a few listing tools; execute_sql has none.",
+          "gap": "Limits do not cover the main SQL tool.",
+          "evidence": [
+            {
+              "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+              "lines": "103",
+              "contains": "source.RunSQL(ctx, sql, nil)",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L103"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Defaults (limit 50) can be raised by the caller per call, and statement_timeout is only available if the operator sets query params.",
+          "gap": "No sensible default the caller cannot raise.",
+          "evidence": [
+            {
+              "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+              "lines": "23",
+              "contains": "queryParams: ${POSTGRES_QUERY_PARAMS:}",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L23"
+            },
+            {
+              "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+              "lines": "126",
+              "contains": "LIMIT COALESCE($1::int, 50);",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L126"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A runaway query has no ceiling, and killing the server does not reliably stop a query already running in Postgres.",
+          "gap": "No moderate ceilings or in-flight cancellation.",
+          "evidence": [
+            {
+              "file": "internal/sources/postgres/postgres.go",
+              "lines": "118",
+              "contains": "s.PostgresPool().Query(ctx, statement, params...)",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/sources/postgres/postgres.go#L118"
+            },
+            {
+              "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+              "lines": "103",
+              "contains": "source.RunSQL(ctx, sql, nil)",
+              "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L103"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.25,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only caller-chosen limits exist (optional limit parameters); there is no server-enforced timeout, row cap or output cap for postgres queries.",
+              "gap": "No server-enforced caps such as a statement timeout or maximum rows.",
+              "evidence": [
+                {
+                  "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+                  "lines": "126",
+                  "contains": "LIMIT COALESCE($1::int, 50);",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L126"
+                },
+                {
+                  "search": "rg -n \"WithTimeout|statement_timeout|notifications/cancelled\"",
+                  "scope": "internal/sources/postgres/postgres.go internal/tools/postgres/postgresexecutesql/postgresexecutesql.go internal/server/mcp.go internal/server/mcp/v20251125/method.go",
+                  "hits": 0
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default limits exist only on a few listing tools; execute_sql has none.",
+              "gap": "Limits do not cover the main SQL tool.",
+              "evidence": [
+                {
+                  "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+                  "lines": "103",
+                  "contains": "source.RunSQL(ctx, sql, nil)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L103"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Defaults (limit 50) can be raised by the caller per call, and statement_timeout is only available if the operator sets query params.",
+              "gap": "No sensible default the caller cannot raise.",
+              "evidence": [
+                {
+                  "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+                  "lines": "23",
+                  "contains": "queryParams: ${POSTGRES_QUERY_PARAMS:}",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L23"
+                },
+                {
+                  "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+                  "lines": "126",
+                  "contains": "LIMIT COALESCE($1::int, 50);",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L126"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A runaway query has no ceiling, and killing the server does not reliably stop a query already running in Postgres.",
+              "gap": "No moderate ceilings or in-flight cancellation.",
+              "evidence": [
+                {
+                  "file": "internal/sources/postgres/postgres.go",
+                  "lines": "118",
+                  "contains": "s.PostgresPool().Query(ctx, statement, params...)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/sources/postgres/postgres.go#L118"
+                },
+                {
+                  "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+                  "lines": "103",
+                  "contains": "source.RunSQL(ctx, sql, nil)",
+                  "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L103"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "In the default postgres prebuilt, a hijacked session can both read sensitive data and run irreversible SQL (DROP/DELETE) through execute_sql with no server-side gate.",
+      "criterion": "C5",
+      "owasp": [
+        "ASI01",
+        "ASI02",
+        "LLM01"
+      ],
+      "evidence": [
+        {
+          "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+          "lines": "103",
+          "contains": "source.RunSQL(ctx, sql, nil)",
+          "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L103"
+        },
+        {
+          "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+          "lines": "26-29",
+          "contains": "name: execute_sql",
+          "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L26-L29"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "Database row contents returned as plain text to the model (internal/server/mcp/v20251125/method.go:447)",
+    "sensitive_data": "Full read access to the configured database (internal/sources/postgres/postgres.go:118)",
+    "state_change_or_egress": "execute_sql runs arbitrary writes and DDL (internal/tools/postgres/postgresexecutesql/postgresexecutesql.go:103)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Ship execute_sql in a separate write toolset and add a read-only execute_sql (or a readOnly source option that opens READ ONLY transactions) for postgres, enabled by default in the prebuilt.",
+      "criterion": "C2",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 3,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Default the postgres prebuilt to a session-level read-only setting (default_transaction_read_only plus a statement_timeout) the model cannot change, mirroring the Cloud SQL locked read-only session.",
+      "criterion": "C1",
+      "parameter": "D",
+      "from_level": 0,
+      "to_level": 3,
+      "playbook": "Playbook 4",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Set a default statement_timeout and a server-side maximum row/byte cap on SQL results, and honour MCP cancellation.",
+      "criterion": "C10",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 3 step 3",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Log every tool call (tool name, arguments hash or SQL, result status, caller) at info level by default, outside the model's reach.",
+      "criterion": "C9",
+      "parameter": "S",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 1 step 3",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Restrict template parameters to allowlisted values or quoted identifiers and replace get_query_plan's raw substitution with a bound parameter.",
+      "criterion": "C3",
+      "parameter": "C",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.075
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was executed, installed, or probed.",
+    "Scored the postgres prebuilt over stdio as the README's lead example; the ~40 other prebuilt configs and source types (BigQuery, Cloud SQL, AlloyDB, Spanner, Looker, Dataproc, HTTP tool, etc.) were sampled, not reviewed exhaustively, and several have stronger opt-in controls (read-only sessions, write modes, byte caps).",
+    "HTTP mode (not scored) has request-origin defaults that are not locked down. It binds to 127.0.0.1 by default.",
+    "Running the binary with no --prebuilt or --config auto-loads ./tools.yaml from the working directory with hot reload (not scored; would trigger C6-REPOCONFIG).",
+    "Database-side behaviour (e.g. Postgres superuser COPY ... PROGRAM) is inferred from Postgres documentation, not this repo.",
+    "No reviewer-steering text was found in AGENTS.md/CLAUDE.md/GEMINI.md/README."
+  ]
+}

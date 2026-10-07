@@ -1,0 +1,2503 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "neon-mcp",
+  "name": "Neon MCP",
+  "repo_url": "https://github.com/neondatabase/mcp-server-neon",
+  "subpath": null,
+  "description": "MCP server for Neon Management API and databases",
+  "category": "data_analytics",
+  "pinned_commit": "00d82d4e5c925380fc077fe1932780035f564d8b",
+  "version": null,
+  "scored_date": "2026-10-03",
+  "scored_configuration": "Hosted remote server (mcp.neon.tech) as the README leads with it: OAuth or API-key bearer auth, default grant with no readonly, category or projectId parameters (consent page with writes pre-checked).",
+  "score": 4.6,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 8,
+    "score": 2.55,
+    "max": 8.0,
+    "percent": 32
+  },
+  "capability_profile": {
+    "code_execution": "yes",
+    "filesystem_write": "no",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "no",
+    "untrusted_input": "yes",
+    "third_party_extensions": "no",
+    "sub_agents": "no",
+    "external_communication": "no"
+  },
+  "headline": "Neon MCP gives an AI client full write and delete authority over a user's whole Neon account by default: arbitrary SQL as the database owner, project and branch deletion, function deploys and auth changes. Read-only, category and project restrictions exist and are enforced in code, but they are opt-in, and credential handling in the OAuth flow is not strictly scoped. The server also routinely returns database passwords to the model. Use a readonly=true or projectId-scoped URL.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "The server acts on Neon with the user's own authority. In the OAuth flow it requests broad project and organization scopes (create, update, delete, org permissions); in the API-key flow it forwards the user's Neon API key. Read-only, category and project restrictions are enforced inside the server by filtering tools and pinning project_id; handling of the issued credential is not strictly scoped. The default grant is read-write across every project and organization the user can reach.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.225,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C1-PASSTHRU",
+        "max": 0.25,
+        "reason": "Credential handling between the MCP client and the Neon API is not strictly scoped."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Per-client OAuth grant, but the upstream token carries full projects:* and orgs:* scopes (including orgs:permission) and API keys are the user's full key; narrowing is a server-side tool filter only, and credential handling is not strictly scoped.",
+          "gap": "Request minimal Neon OAuth scopes that match the user's grant.",
+          "evidence": [
+            {
+              "file": "lib/oauth/client.ts",
+              "lines": "116-129",
+              "contains": "'urn:neoncloud:orgs:permission'",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/lib/oauth/client.ts#L116-L129"
+            },
+            {
+              "file": "lib/oauth/client.ts",
+              "lines": "208",
+              "contains": "scope: NEON_MCP_SCOPES.join(' ')",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/lib/oauth/client.ts#L208"
+            },
+            {
+              "file": "app/api/[transport]/route.ts",
+              "lines": "385-388",
+              "contains": "const composedTools = getAvailableTools(",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/app/api/[transport]/route.ts#L385-L388"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every tool, host and generated, is registered through the grant filter and invoked through invokeTool, which pins project_id, but enforcement is not a strict boundary.",
+          "gap": "Make the authorization layer cover every path by which the credential can be used.",
+          "evidence": [
+            {
+              "file": "app/api/[transport]/route.ts",
+              "lines": "474-480",
+              "contains": "const result = await invokeTool(",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/app/api/[transport]/route.ts#L474-L480"
+            },
+            {
+              "file": "mcp/tools/grant-filter.ts",
+              "lines": "286-292",
+              "contains": "return { ...args, project_id: grant.projectId };",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/grant-filter.ts#L286-L292"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "With no scope requested the OAuth flow defaults to read+write, the consent page pre-checks writes, and the API-key path is read-write unless readonly is set; all projects and categories are in scope.",
+          "gap": "Default to read-only (or one project) and require an explicit opt-in to writes.",
+          "evidence": [
+            {
+              "file": "mcp/oauth/issued-scopes.ts",
+              "lines": "4",
+              "contains": "return scope.length > 0 ? scope : ['read', 'write'];",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/oauth/issued-scopes.ts#L4"
+            },
+            {
+              "file": "app/api/authorize/route.ts",
+              "lines": "284",
+              "contains": ": ceiling.writeAllowed && !prefReadOnly;",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/app/api/authorize/route.ts#L284"
+            },
+            {
+              "file": "mcp/utils/read-only.ts",
+              "lines": "76",
+              "contains": "return false;",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/utils/read-only.ts#L76"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked session or leaked token can create, update and delete any project in the user's personal account and organizations, manage org permissions, and read and write every database.",
+          "gap": "Bound the token to one project, read-only, short-lived scopes so a hijack cannot reach the whole Neon account.",
+          "evidence": [
+            {
+              "file": "lib/oauth/client.ts",
+              "lines": "116-129",
+              "contains": "'urn:neoncloud:orgs:permission'",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/lib/oauth/client.ts#L116-L129"
+            },
+            {
+              "file": "mcp/tools/handlers/connection-string.ts",
+              "lines": "66",
+              "contains": "roleName = dbObject.owner_name;",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/handlers/connection-string.ts#L66"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.225,
+          "raw": 0.225,
+          "cap": {
+            "id": "C1-PASSTHRU",
+            "max": 0.25,
+            "reason": "Credential handling between the MCP client and the Neon API is not strictly scoped."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Per-client OAuth grant, but the upstream token carries full projects:* and orgs:* scopes (including orgs:permission) and API keys are the user's full key; narrowing is a server-side tool filter only, and credential handling is not strictly scoped.",
+              "gap": "Request minimal Neon OAuth scopes that match the user's grant.",
+              "evidence": [
+                {
+                  "file": "lib/oauth/client.ts",
+                  "lines": "116-129",
+                  "contains": "'urn:neoncloud:orgs:permission'",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/lib/oauth/client.ts#L116-L129"
+                },
+                {
+                  "file": "lib/oauth/client.ts",
+                  "lines": "208",
+                  "contains": "scope: NEON_MCP_SCOPES.join(' ')",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/lib/oauth/client.ts#L208"
+                },
+                {
+                  "file": "app/api/[transport]/route.ts",
+                  "lines": "385-388",
+                  "contains": "const composedTools = getAvailableTools(",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/app/api/[transport]/route.ts#L385-L388"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every tool, host and generated, is registered through the grant filter and invoked through invokeTool, which pins project_id, but enforcement is not a strict boundary.",
+              "gap": "Make the authorization layer cover every path by which the credential can be used.",
+              "evidence": [
+                {
+                  "file": "app/api/[transport]/route.ts",
+                  "lines": "474-480",
+                  "contains": "const result = await invokeTool(",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/app/api/[transport]/route.ts#L474-L480"
+                },
+                {
+                  "file": "mcp/tools/grant-filter.ts",
+                  "lines": "286-292",
+                  "contains": "return { ...args, project_id: grant.projectId };",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/grant-filter.ts#L286-L292"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "With no scope requested the OAuth flow defaults to read+write, the consent page pre-checks writes, and the API-key path is read-write unless readonly is set; all projects and categories are in scope.",
+              "gap": "Default to read-only (or one project) and require an explicit opt-in to writes.",
+              "evidence": [
+                {
+                  "file": "mcp/oauth/issued-scopes.ts",
+                  "lines": "4",
+                  "contains": "return scope.length > 0 ? scope : ['read', 'write'];",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/oauth/issued-scopes.ts#L4"
+                },
+                {
+                  "file": "app/api/authorize/route.ts",
+                  "lines": "284",
+                  "contains": ": ceiling.writeAllowed && !prefReadOnly;",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/app/api/authorize/route.ts#L284"
+                },
+                {
+                  "file": "mcp/utils/read-only.ts",
+                  "lines": "76",
+                  "contains": "return false;",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/utils/read-only.ts#L76"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked session or leaked token can create, update and delete any project in the user's personal account and organizations, manage org permissions, and read and write every database.",
+              "gap": "Bound the token to one project, read-only, short-lived scopes so a hijack cannot reach the whole Neon account.",
+              "evidence": [
+                {
+                  "file": "lib/oauth/client.ts",
+                  "lines": "116-129",
+                  "contains": "'urn:neoncloud:orgs:permission'",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/lib/oauth/client.ts#L116-L129"
+                },
+                {
+                  "file": "mcp/tools/handlers/connection-string.ts",
+                  "lines": "66",
+                  "contains": "roleName = dbObject.owner_name;",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/handlers/connection-string.ts#L66"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "As a hosted tool server, Neon MCP leaves approval to the MCP client and contributes risk signalling. Every tool carries readOnly/destructive hints, deletes and updates are marked destructive, and the descriptions of dangerous tools tell the model to ask first; but run_sql and run_sql_transaction mix reads and writes in one tool, and there is no server-side confirmation step. Migrations and query tuning use a prepare-on-temporary-branch, then complete pattern that works as a preview, but project and branch deletion, raw SQL, function deploys and auth changes have none. A server-enforced read-only mode exists but is off by default.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.375,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Annotations are present on all tools and broadly accurate, but the most powerful tools (run_sql, run_sql_transaction) mix reads and writes, and 'ask the user first' lives only in description text.",
+          "gap": "Split SQL into separate read and write tools so the hints let a host gate writes without gating reads.",
+          "evidence": [
+            {
+              "file": "mcp/tools/definitions.ts",
+              "lines": "59-71",
+              "contains": "destructiveHint: true,",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/definitions.ts#L59-L71"
+            },
+            {
+              "file": "mcp/tools/definitions.ts",
+              "lines": "62",
+              "contains": "NEVER run destructive SQL autonomously",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/definitions.ts#L62"
+            },
+            {
+              "file": "mcp/tools/generated/adapt.ts",
+              "lines": "210-218",
+              "contains": "if (method === 'DELETE' || method === 'PUT' || method === 'PATCH') {",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/adapt.ts#L210-L218"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Host and generated tools all receive annotations from one path (explicit for host tools, method-based for generated ones), and the read-only filter uses the same readOnlySafe flag for every tool.",
+          "gap": "Offer previews or a server confirmation step that covers destructive generated tools, not just migrations and tuning.",
+          "evidence": [
+            {
+              "file": "mcp/tools/generated/adapt.ts",
+              "lines": "183",
+              "contains": "readOnlyHint: tool.annotations.readOnlyHint,",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/adapt.ts#L183"
+            },
+            {
+              "file": "mcp/tools/generated/adapt.ts",
+              "lines": "143",
+              "contains": "return tool.metadata.method === 'GET' && !tool.requiresApproval;",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/adapt.ts#L143"
+            },
+            {
+              "file": "mcp/tools/grant-filter.ts",
+              "lines": "203",
+              "contains": "tools = tools.filter((tool) => tool.readOnlySafe);",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/grant-filter.ts#L203"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Hints are always sent and cannot be changed by the model, but the server's enforceable control (read-only mode) is off by default and the consent page pre-checks writes.",
+          "gap": "Ship read-only as the default grant, with writes as an explicit, visible opt-in.",
+          "evidence": [
+            {
+              "file": "app/api/authorize/route.ts",
+              "lines": "284",
+              "contains": ": ceiling.writeAllowed && !prefReadOnly;",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/app/api/authorize/route.ts#L284"
+            },
+            {
+              "file": "mcp/utils/read-only.ts",
+              "lines": "76",
+              "contains": "return false;",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/utils/read-only.ts#L76"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Wrongly approved calls can delete branches and data, run arbitrary DML/DDL on main branches, deploy code and change auth settings; only project deletion (recover_project) and migrations (temporary branch) have an undo or preview.",
+          "gap": "Add server-side previews or dry-runs and quantity limits for destructive operations.",
+          "evidence": [
+            {
+              "file": "mcp/tools/generated/operations.ts",
+              "lines": "10",
+              "contains": "'projects.recover': 'projects',",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/operations.ts#L10"
+            },
+            {
+              "file": "mcp/tools/tools.ts",
+              "lines": "92",
+              "contains": "const response = await runQuery.query(sql);",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L92"
+            },
+            {
+              "file": "mcp/tools/generated/operations.ts",
+              "lines": "85",
+              "contains": "'functions.deploy': 'functions',",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/operations.ts#L85"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.375,
+          "raw": 0.375,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Annotations are present on all tools and broadly accurate, but the most powerful tools (run_sql, run_sql_transaction) mix reads and writes, and 'ask the user first' lives only in description text.",
+              "gap": "Split SQL into separate read and write tools so the hints let a host gate writes without gating reads.",
+              "evidence": [
+                {
+                  "file": "mcp/tools/definitions.ts",
+                  "lines": "59-71",
+                  "contains": "destructiveHint: true,",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/definitions.ts#L59-L71"
+                },
+                {
+                  "file": "mcp/tools/definitions.ts",
+                  "lines": "62",
+                  "contains": "NEVER run destructive SQL autonomously",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/definitions.ts#L62"
+                },
+                {
+                  "file": "mcp/tools/generated/adapt.ts",
+                  "lines": "210-218",
+                  "contains": "if (method === 'DELETE' || method === 'PUT' || method === 'PATCH') {",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/adapt.ts#L210-L218"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Host and generated tools all receive annotations from one path (explicit for host tools, method-based for generated ones), and the read-only filter uses the same readOnlySafe flag for every tool.",
+              "gap": "Offer previews or a server confirmation step that covers destructive generated tools, not just migrations and tuning.",
+              "evidence": [
+                {
+                  "file": "mcp/tools/generated/adapt.ts",
+                  "lines": "183",
+                  "contains": "readOnlyHint: tool.annotations.readOnlyHint,",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/adapt.ts#L183"
+                },
+                {
+                  "file": "mcp/tools/generated/adapt.ts",
+                  "lines": "143",
+                  "contains": "return tool.metadata.method === 'GET' && !tool.requiresApproval;",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/adapt.ts#L143"
+                },
+                {
+                  "file": "mcp/tools/grant-filter.ts",
+                  "lines": "203",
+                  "contains": "tools = tools.filter((tool) => tool.readOnlySafe);",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/grant-filter.ts#L203"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Hints are always sent and cannot be changed by the model, but the server's enforceable control (read-only mode) is off by default and the consent page pre-checks writes.",
+              "gap": "Ship read-only as the default grant, with writes as an explicit, visible opt-in.",
+              "evidence": [
+                {
+                  "file": "app/api/authorize/route.ts",
+                  "lines": "284",
+                  "contains": ": ceiling.writeAllowed && !prefReadOnly;",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/app/api/authorize/route.ts#L284"
+                },
+                {
+                  "file": "mcp/utils/read-only.ts",
+                  "lines": "76",
+                  "contains": "return false;",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/utils/read-only.ts#L76"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Wrongly approved calls can delete branches and data, run arbitrary DML/DDL on main branches, deploy code and change auth settings; only project deletion (recover_project) and migrations (temporary branch) have an undo or preview.",
+              "gap": "Add server-side previews or dry-runs and quantity limits for destructive operations.",
+              "evidence": [
+                {
+                  "file": "mcp/tools/generated/operations.ts",
+                  "lines": "10",
+                  "contains": "'projects.recover': 'projects',",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/operations.ts#L10"
+                },
+                {
+                  "file": "mcp/tools/tools.ts",
+                  "lines": "92",
+                  "contains": "const response = await runQuery.query(sql);",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L92"
+                },
+                {
+                  "file": "mcp/tools/generated/operations.ts",
+                  "lines": "85",
+                  "contains": "'functions.deploy': 'functions',",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/operations.ts#L85"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "Most of the roughly 110 tools are narrow, typed Neon API operations with strict schemas, and a project-scoped grant pins project_id in code. The tools that matter most are raw passthroughs, though: run_sql, run_sql_transaction and explain_sql_statement send any SQL the model writes, as the database owner role, and deploy_function uploads arbitrary code. By default every category is enabled, including writes, across every project; category and project filters are opt-in. SQL has no row or statement limit.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.325,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Strict zod schemas on all tools and project_id pinning, but the SQL tools pass arbitrary SQL straight to Postgres with no allowlist, parameterisation or bounds.",
+          "gap": "Constrain SQL (restricted role, statement classes, row caps) rather than passing it raw.",
+          "evidence": [
+            {
+              "file": "mcp/tools/tools.ts",
+              "lines": "92",
+              "contains": "const response = await runQuery.query(sql);",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L92"
+            },
+            {
+              "file": "mcp/tools/grant-filter.ts",
+              "lines": "286-292",
+              "contains": "return { ...args, project_id: grant.projectId };",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/grant-filter.ts#L286-L292"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every tool is parsed by its schema before execution (host tools via parseHost, generated via tool.inputSchema.parse), but the validation on the SQL arguments is just a string type.",
+          "gap": "Apply a shared policy layer that bounds what SQL and code-deploy arguments can do, not just their types.",
+          "evidence": [
+            {
+              "file": "mcp/tools/generated/adapt.ts",
+              "lines": "276",
+              "contains": "let parsed = tool.inputSchema.parse(args?.params ?? {});",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/adapt.ts#L276"
+            },
+            {
+              "file": "mcp/tools/toolsSchema.ts",
+              "lines": "24",
+              "contains": "sql: z.string().describe('The SQL query to execute')",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/toolsSchema.ts#L24"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tool categories and a read-only mode are selectable, but the default grant (scopes null) publishes every category including write, delete and code-deploy tools.",
+          "gap": "Make the default tool set read-only, with write categories requiring explicit enabling.",
+          "evidence": [
+            {
+              "file": "mcp/utils/grant-context.ts",
+              "lines": "43-46",
+              "contains": "scopes: null,",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/utils/grant-context.ts#L43-L46"
+            },
+            {
+              "file": "mcp/utils/read-only.ts",
+              "lines": "76",
+              "contains": "return false;",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/utils/read-only.ts#L76"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A misused run_sql can read or modify any table in any database of any project the account reaches, with no row or statement cap.",
+          "gap": "Scope SQL to one project and bound its quantity (rows, statement time).",
+          "evidence": [
+            {
+              "file": "mcp/tools/tools.ts",
+              "lines": "92",
+              "contains": "const response = await runQuery.query(sql);",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L92"
+            },
+            {
+              "file": "mcp/tools/handlers/connection-string.ts",
+              "lines": "66",
+              "contains": "roleName = dbObject.owner_name;",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/handlers/connection-string.ts#L66"
+            },
+            {
+              "search": "rg -n -i 'statement_timeout|rowLimit|max_rows' --glob '!**/__tests__/**'",
+              "scope": "mcp app lib",
+              "hits": 0,
+              "note": "no SQL statement timeout or row cap"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.325,
+          "raw": 0.325,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Strict zod schemas on all tools and project_id pinning, but the SQL tools pass arbitrary SQL straight to Postgres with no allowlist, parameterisation or bounds.",
+              "gap": "Constrain SQL (restricted role, statement classes, row caps) rather than passing it raw.",
+              "evidence": [
+                {
+                  "file": "mcp/tools/tools.ts",
+                  "lines": "92",
+                  "contains": "const response = await runQuery.query(sql);",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L92"
+                },
+                {
+                  "file": "mcp/tools/grant-filter.ts",
+                  "lines": "286-292",
+                  "contains": "return { ...args, project_id: grant.projectId };",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/grant-filter.ts#L286-L292"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every tool is parsed by its schema before execution (host tools via parseHost, generated via tool.inputSchema.parse), but the validation on the SQL arguments is just a string type.",
+              "gap": "Apply a shared policy layer that bounds what SQL and code-deploy arguments can do, not just their types.",
+              "evidence": [
+                {
+                  "file": "mcp/tools/generated/adapt.ts",
+                  "lines": "276",
+                  "contains": "let parsed = tool.inputSchema.parse(args?.params ?? {});",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/adapt.ts#L276"
+                },
+                {
+                  "file": "mcp/tools/toolsSchema.ts",
+                  "lines": "24",
+                  "contains": "sql: z.string().describe('The SQL query to execute')",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/toolsSchema.ts#L24"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tool categories and a read-only mode are selectable, but the default grant (scopes null) publishes every category including write, delete and code-deploy tools.",
+              "gap": "Make the default tool set read-only, with write categories requiring explicit enabling.",
+              "evidence": [
+                {
+                  "file": "mcp/utils/grant-context.ts",
+                  "lines": "43-46",
+                  "contains": "scopes: null,",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/utils/grant-context.ts#L43-L46"
+                },
+                {
+                  "file": "mcp/utils/read-only.ts",
+                  "lines": "76",
+                  "contains": "return false;",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/utils/read-only.ts#L76"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A misused run_sql can read or modify any table in any database of any project the account reaches, with no row or statement cap.",
+              "gap": "Scope SQL to one project and bound its quantity (rows, statement time).",
+              "evidence": [
+                {
+                  "file": "mcp/tools/tools.ts",
+                  "lines": "92",
+                  "contains": "const response = await runQuery.query(sql);",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L92"
+                },
+                {
+                  "file": "mcp/tools/handlers/connection-string.ts",
+                  "lines": "66",
+                  "contains": "roleName = dbObject.owner_name;",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/handlers/connection-string.ts#L66"
+                },
+                {
+                  "search": "rg -n -i 'statement_timeout|rowLimit|max_rows' --glob '!**/__tests__/**'",
+                  "scope": "mcp app lib",
+                  "hits": 0,
+                  "note": "no SQL statement timeout or row cap"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "Nothing the model writes runs on the server: SQL goes to Neon's managed Postgres over HTTPS, and deployed functions run on Neon's platform. That is a real separation from the MCP host, but SQL runs as the database owner role (a neon_superuser member) directly on the chosen branch, usually the main one. The opt-in read-only mode wraps SQL in a read-only transaction using the same owner role rather than a read-only role. Only the migration and tuning flows use a throwaway branch first.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.475,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "The only restriction on executed SQL, the read-only transaction, applies only in the opt-in read-only mode."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Model SQL executes remotely in Neon's Postgres compute, not in the server process, but with the owner role and no restricted role or sandboxed copy by default.",
+          "gap": "Run model SQL as a restricted role or on an ephemeral branch by default.",
+          "evidence": [
+            {
+              "file": "mcp/tools/tools.ts",
+              "lines": "92",
+              "contains": "const response = await runQuery.query(sql);",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L92"
+            },
+            {
+              "file": "mcp/tools/handlers/connection-string.ts",
+              "lines": "66",
+              "contains": "roleName = dbObject.owner_name;",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/handlers/connection-string.ts#L66"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every execution path (run_sql, run_sql_transaction, explain, migrations, tuning, describe/inspect queries, function deploys) runs on Neon infrastructure; nothing spawns a process on the server host.",
+          "gap": "Route every SQL path through a restricted or ephemeral execution context with no fallback to the owner role.",
+          "evidence": [
+            {
+              "file": "mcp/tools/tools.ts",
+              "lines": "92",
+              "contains": "const response = await runQuery.query(sql);",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L92"
+            },
+            {
+              "search": "rg -n 'child_process|spawn\\(|execSync|await import\\(|new Function|eval\\(' --glob '!**/__tests__/**'",
+              "scope": "mcp app lib",
+              "hits": 3,
+              "note": "all three are redis.eval calls of fixed, in-repo Lua scripts in mcp/oauth/refresh-lock.ts (216, 238, 246); no subprocess or dynamic code loading"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No restriction on executed SQL is on by default: the read-only transaction is used only when the opt-in read-only mode is set.",
+          "gap": "Turn the read-only transaction or restricted role on by default and require an explicit opt-in for writes.",
+          "evidence": [
+            {
+              "file": "mcp/tools/tools.ts",
+              "lines": "84-87",
+              "contains": "readOnly: true,",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L84-L87"
+            },
+            {
+              "file": "mcp/utils/read-only.ts",
+              "lines": "76",
+              "contains": "return false;",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/utils/read-only.ts#L76"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Inside the database the SQL has the owner role's rights over the whole branch's data, but no server secrets or host filesystem are reachable from it.",
+          "gap": "Execute on an ephemeral branch with a role limited to the task, so a misuse cannot reach production data.",
+          "evidence": [
+            {
+              "file": "mcp/tools/handlers/connection-string.ts",
+              "lines": "66",
+              "contains": "roleName = dbObject.owner_name;",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/handlers/connection-string.ts#L66"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.475,
+          "raw": 0.475,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "The only restriction on executed SQL, the read-only transaction, applies only in the opt-in read-only mode."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Model SQL executes remotely in Neon's Postgres compute, not in the server process, but with the owner role and no restricted role or sandboxed copy by default.",
+              "gap": "Run model SQL as a restricted role or on an ephemeral branch by default.",
+              "evidence": [
+                {
+                  "file": "mcp/tools/tools.ts",
+                  "lines": "92",
+                  "contains": "const response = await runQuery.query(sql);",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L92"
+                },
+                {
+                  "file": "mcp/tools/handlers/connection-string.ts",
+                  "lines": "66",
+                  "contains": "roleName = dbObject.owner_name;",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/handlers/connection-string.ts#L66"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every execution path (run_sql, run_sql_transaction, explain, migrations, tuning, describe/inspect queries, function deploys) runs on Neon infrastructure; nothing spawns a process on the server host.",
+              "gap": "Route every SQL path through a restricted or ephemeral execution context with no fallback to the owner role.",
+              "evidence": [
+                {
+                  "file": "mcp/tools/tools.ts",
+                  "lines": "92",
+                  "contains": "const response = await runQuery.query(sql);",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L92"
+                },
+                {
+                  "search": "rg -n 'child_process|spawn\\(|execSync|await import\\(|new Function|eval\\(' --glob '!**/__tests__/**'",
+                  "scope": "mcp app lib",
+                  "hits": 3,
+                  "note": "all three are redis.eval calls of fixed, in-repo Lua scripts in mcp/oauth/refresh-lock.ts (216, 238, 246); no subprocess or dynamic code loading"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No restriction on executed SQL is on by default: the read-only transaction is used only when the opt-in read-only mode is set.",
+              "gap": "Turn the read-only transaction or restricted role on by default and require an explicit opt-in for writes.",
+              "evidence": [
+                {
+                  "file": "mcp/tools/tools.ts",
+                  "lines": "84-87",
+                  "contains": "readOnly: true,",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L84-L87"
+                },
+                {
+                  "file": "mcp/utils/read-only.ts",
+                  "lines": "76",
+                  "contains": "return false;",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/utils/read-only.ts#L76"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Inside the database the SQL has the owner role's rights over the whole branch's data, but no server secrets or host filesystem are reachable from it.",
+              "gap": "Execute on an ephemeral branch with a role limited to the task, so a misuse cannot reach production data.",
+              "evidence": [
+                {
+                  "file": "mcp/tools/handlers/connection-string.ts",
+                  "lines": "66",
+                  "contains": "roleName = dbObject.owner_name;",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/handlers/connection-string.ts#L66"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "Database rows, column comments, logs and function code can all hold attacker-written text, and the server returns them to the model as plain JSON with no provenance or untrusted marking. If the model is hijacked by that content, the same session can run any SQL, delete projects and branches, fetch connection strings with passwords, and deploy functions with outbound network access, with nothing in the server asking a human. The read-only and project-scoped modes would cut most of that but are off by default.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.075,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C5-WORSTCASE",
+        "max": 0.25,
+        "reason": "Worst case (B L0): a hijacked agent can leak data and take irreversible actions unattended."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Results are plain JSON text with no provenance; the only directives are static safety notes in tool descriptions, not mixed into returned data.",
+          "gap": "Return structured content with source metadata and an untrusted flag the host can act on.",
+          "evidence": [
+            {
+              "file": "mcp/tools/generated/adapt.ts",
+              "lines": "242-250",
+              "contains": "text: JSON.stringify(data, null, 2),",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/adapt.ts#L242-L250"
+            },
+            {
+              "search": "rg -n -i 'untrusted|injection|provenance' --glob '!**/__tests__/**'",
+              "scope": "mcp app lib",
+              "hits": 0,
+              "note": "no provenance tagging or untrusted-content handling in server code"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No source is distinguished: SQL rows, schemas, logs and API results all enter context the same way.",
+          "gap": "Mark every source of user-controlled data (rows, comments, logs, function code) as untrusted.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'untrusted|injection|provenance' --glob '!**/__tests__/**'",
+              "scope": "mcp app lib",
+              "hits": 0,
+              "note": "no provenance tagging or untrusted-content handling in server code"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "There is no untrusted-input limit to switch on; the modes that drop a Rule-of-Two leg (read-only, project scope) are off by default.",
+          "gap": "Default sessions to read-only so a hijack cannot change state.",
+          "evidence": [
+            {
+              "file": "mcp/utils/read-only.ts",
+              "lines": "76",
+              "contains": "return false;",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/utils/read-only.ts#L76"
+            },
+            {
+              "file": "mcp/oauth/issued-scopes.ts",
+              "lines": "4",
+              "contains": "return scope.length > 0 ? scope : ['read', 'write'];",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/oauth/issued-scopes.ts#L4"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked default session can both leak secrets and data (get_connection_string, run_sql, function deploys with egress) and take irreversible actions (DROP, delete_branch, delete_project) with no human step in the server.",
+          "gap": "Remove either the state-change leg or the sensitive-data leg from default sessions.",
+          "evidence": [
+            {
+              "file": "mcp/tools/tools.ts",
+              "lines": "1181",
+              "contains": "`URI: ${result.uri}`,",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L1181"
+            },
+            {
+              "file": "mcp/tools/tools.ts",
+              "lines": "92",
+              "contains": "const response = await runQuery.query(sql);",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L92"
+            },
+            {
+              "file": "mcp/tools/generated/operations.ts",
+              "lines": "85",
+              "contains": "'functions.deploy': 'functions',",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/operations.ts#L85"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.075,
+          "raw": 0.075,
+          "cap": {
+            "id": "C5-WORSTCASE",
+            "max": 0.25,
+            "reason": "Worst case (B L0): a hijacked agent can leak data and take irreversible actions unattended."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Results are plain JSON text with no provenance; the only directives are static safety notes in tool descriptions, not mixed into returned data.",
+              "gap": "Return structured content with source metadata and an untrusted flag the host can act on.",
+              "evidence": [
+                {
+                  "file": "mcp/tools/generated/adapt.ts",
+                  "lines": "242-250",
+                  "contains": "text: JSON.stringify(data, null, 2),",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/adapt.ts#L242-L250"
+                },
+                {
+                  "search": "rg -n -i 'untrusted|injection|provenance' --glob '!**/__tests__/**'",
+                  "scope": "mcp app lib",
+                  "hits": 0,
+                  "note": "no provenance tagging or untrusted-content handling in server code"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No source is distinguished: SQL rows, schemas, logs and API results all enter context the same way.",
+              "gap": "Mark every source of user-controlled data (rows, comments, logs, function code) as untrusted.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'untrusted|injection|provenance' --glob '!**/__tests__/**'",
+                  "scope": "mcp app lib",
+                  "hits": 0,
+                  "note": "no provenance tagging or untrusted-content handling in server code"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "There is no untrusted-input limit to switch on; the modes that drop a Rule-of-Two leg (read-only, project scope) are off by default.",
+              "gap": "Default sessions to read-only so a hijack cannot change state.",
+              "evidence": [
+                {
+                  "file": "mcp/utils/read-only.ts",
+                  "lines": "76",
+                  "contains": "return false;",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/utils/read-only.ts#L76"
+                },
+                {
+                  "file": "mcp/oauth/issued-scopes.ts",
+                  "lines": "4",
+                  "contains": "return scope.length > 0 ? scope : ['read', 'write'];",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/oauth/issued-scopes.ts#L4"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked default session can both leak secrets and data (get_connection_string, run_sql, function deploys with egress) and take irreversible actions (DROP, delete_branch, delete_project) with no human step in the server.",
+              "gap": "Remove either the state-change leg or the sensitive-data leg from default sessions.",
+              "evidence": [
+                {
+                  "file": "mcp/tools/tools.ts",
+                  "lines": "1181",
+                  "contains": "`URI: ${result.uri}`,",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L1181"
+                },
+                {
+                  "file": "mcp/tools/tools.ts",
+                  "lines": "92",
+                  "contains": "const response = await runQuery.query(sql);",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L92"
+                },
+                {
+                  "file": "mcp/tools/generated/operations.ts",
+                  "lines": "85",
+                  "contains": "'functions.deploy': 'functions',",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/operations.ts#L85"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "The server keeps no memory the model can write and loads no workspace or instruction files. Its persistent state is OAuth tokens, grants and session bindings, which the model cannot influence. Data written into a database can be read in a later session, but that is untrusted input (C5), not server memory.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'load_dotenv|dotenv|readFileSync|readFile\\(|AGENTS\\.md|CLAUDE\\.md' --glob '!**/__tests__/**'",
+              "scope": "mcp app lib",
+              "hits": 0,
+              "note": "no auto-loaded workspace/config files at runtime"
+            },
+            {
+              "search": "rg -n 'memory|remember|vector|embedding' --glob '!**/__tests__/**'",
+              "scope": "mcp app lib",
+              "hits": 3,
+              "note": "all three are comments (tools.ts:311 'No in-memory state storage', docs.ts:8 'vector without authentication', refresh-lock.ts:8 'in-memory singleflight'); no memory store"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'load_dotenv|dotenv|readFileSync|readFile\\(|AGENTS\\.md|CLAUDE\\.md' --glob '!**/__tests__/**'",
+              "scope": "mcp app lib",
+              "hits": 0,
+              "note": "no auto-loaded workspace/config files at runtime"
+            },
+            {
+              "search": "rg -n 'memory|remember|vector|embedding' --glob '!**/__tests__/**'",
+              "scope": "mcp app lib",
+              "hits": 3,
+              "note": "all three are comments (tools.ts:311 'No in-memory state storage', docs.ts:8 'vector without authentication', refresh-lock.ts:8 'in-memory singleflight'); no memory store"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'load_dotenv|dotenv|readFileSync|readFile\\(|AGENTS\\.md|CLAUDE\\.md' --glob '!**/__tests__/**'",
+              "scope": "mcp app lib",
+              "hits": 0,
+              "note": "no auto-loaded workspace/config files at runtime"
+            },
+            {
+              "search": "rg -n 'memory|remember|vector|embedding' --glob '!**/__tests__/**'",
+              "scope": "mcp app lib",
+              "hits": 3,
+              "note": "all three are comments (tools.ts:311 'No in-memory state storage', docs.ts:8 'vector without authentication', refresh-lock.ts:8 'in-memory singleflight'); no memory store"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'load_dotenv|dotenv|readFileSync|readFile\\(|AGENTS\\.md|CLAUDE\\.md' --glob '!**/__tests__/**'",
+              "scope": "mcp app lib",
+              "hits": 0,
+              "note": "no auto-loaded workspace/config files at runtime"
+            },
+            {
+              "search": "rg -n 'memory|remember|vector|embedding' --glob '!**/__tests__/**'",
+              "scope": "mcp app lib",
+              "hits": 3,
+              "note": "all three are comments (tools.ts:311 'No in-memory state storage', docs.ts:8 'vector without authentication', refresh-lock.ts:8 'in-memory singleflight'); no memory store"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'load_dotenv|dotenv|readFileSync|readFile\\(|AGENTS\\.md|CLAUDE\\.md' --glob '!**/__tests__/**'",
+                  "scope": "mcp app lib",
+                  "hits": 0,
+                  "note": "no auto-loaded workspace/config files at runtime"
+                },
+                {
+                  "search": "rg -n 'memory|remember|vector|embedding' --glob '!**/__tests__/**'",
+                  "scope": "mcp app lib",
+                  "hits": 3,
+                  "note": "all three are comments (tools.ts:311 'No in-memory state storage', docs.ts:8 'vector without authentication', refresh-lock.ts:8 'in-memory singleflight'); no memory store"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'load_dotenv|dotenv|readFileSync|readFile\\(|AGENTS\\.md|CLAUDE\\.md' --glob '!**/__tests__/**'",
+                  "scope": "mcp app lib",
+                  "hits": 0,
+                  "note": "no auto-loaded workspace/config files at runtime"
+                },
+                {
+                  "search": "rg -n 'memory|remember|vector|embedding' --glob '!**/__tests__/**'",
+                  "scope": "mcp app lib",
+                  "hits": 3,
+                  "note": "all three are comments (tools.ts:311 'No in-memory state storage', docs.ts:8 'vector without authentication', refresh-lock.ts:8 'in-memory singleflight'); no memory store"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'load_dotenv|dotenv|readFileSync|readFile\\(|AGENTS\\.md|CLAUDE\\.md' --glob '!**/__tests__/**'",
+                  "scope": "mcp app lib",
+                  "hits": 0,
+                  "note": "no auto-loaded workspace/config files at runtime"
+                },
+                {
+                  "search": "rg -n 'memory|remember|vector|embedding' --glob '!**/__tests__/**'",
+                  "scope": "mcp app lib",
+                  "hits": 3,
+                  "note": "all three are comments (tools.ts:311 'No in-memory state storage', docs.ts:8 'vector without authentication', refresh-lock.ts:8 'in-memory singleflight'); no memory store"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'load_dotenv|dotenv|readFileSync|readFile\\(|AGENTS\\.md|CLAUDE\\.md' --glob '!**/__tests__/**'",
+                  "scope": "mcp app lib",
+                  "hits": 0,
+                  "note": "no auto-loaded workspace/config files at runtime"
+                },
+                {
+                  "search": "rg -n 'memory|remember|vector|embedding' --glob '!**/__tests__/**'",
+                  "scope": "mcp app lib",
+                  "hits": 3,
+                  "note": "all three are comments (tools.ts:311 'No in-memory state storage', docs.ts:8 'vector without authentication', refresh-lock.ts:8 'in-memory singleflight'); no memory store"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n 'load_dotenv|dotenv|readFileSync|readFile\\(|AGENTS\\.md|CLAUDE\\.md' --glob '!**/__tests__/**'",
+          "scope": "mcp app lib",
+          "hits": 0,
+          "note": "no auto-loaded workspace/config files at runtime"
+        },
+        {
+          "search": "rg -n 'memory|remember|vector|embedding' --glob '!**/__tests__/**'",
+          "scope": "mcp app lib",
+          "hits": 3,
+          "note": "all three are comments (tools.ts:311 'No in-memory state storage', docs.ts:8 'vector without authentication', refresh-lock.ts:8 'in-memory singleflight'); no memory store"
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "The server loads or launches no third-party code at runtime: no plugins, no subprocesses, no dynamic imports, and it does not connect to other MCP servers. Its tools call the Neon API, Neon Postgres and neon.com docs only. Its @neon/tools dependency is a build-time package and out of scope here.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'child_process|spawn\\(|execSync|await import\\(|new Function|eval\\(' --glob '!**/__tests__/**'",
+              "scope": "mcp app lib",
+              "hits": 3,
+              "note": "all three are redis.eval calls of fixed, in-repo Lua scripts in mcp/oauth/refresh-lock.ts (216, 238, 246); no subprocess or dynamic code loading"
+            },
+            {
+              "search": "rg -n 'StdioClientTransport|StreamableHTTPClientTransport|plugin|loadExtension' --glob '!**/__tests__/**'",
+              "scope": "mcp app lib",
+              "hits": 0,
+              "note": "server acts as no MCP client and has no plugin loader"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'child_process|spawn\\(|execSync|await import\\(|new Function|eval\\(' --glob '!**/__tests__/**'",
+              "scope": "mcp app lib",
+              "hits": 3,
+              "note": "all three are redis.eval calls of fixed, in-repo Lua scripts in mcp/oauth/refresh-lock.ts (216, 238, 246); no subprocess or dynamic code loading"
+            },
+            {
+              "search": "rg -n 'StdioClientTransport|StreamableHTTPClientTransport|plugin|loadExtension' --glob '!**/__tests__/**'",
+              "scope": "mcp app lib",
+              "hits": 0,
+              "note": "server acts as no MCP client and has no plugin loader"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'child_process|spawn\\(|execSync|await import\\(|new Function|eval\\(' --glob '!**/__tests__/**'",
+              "scope": "mcp app lib",
+              "hits": 3,
+              "note": "all three are redis.eval calls of fixed, in-repo Lua scripts in mcp/oauth/refresh-lock.ts (216, 238, 246); no subprocess or dynamic code loading"
+            },
+            {
+              "search": "rg -n 'StdioClientTransport|StreamableHTTPClientTransport|plugin|loadExtension' --glob '!**/__tests__/**'",
+              "scope": "mcp app lib",
+              "hits": 0,
+              "note": "server acts as no MCP client and has no plugin loader"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'child_process|spawn\\(|execSync|await import\\(|new Function|eval\\(' --glob '!**/__tests__/**'",
+              "scope": "mcp app lib",
+              "hits": 3,
+              "note": "all three are redis.eval calls of fixed, in-repo Lua scripts in mcp/oauth/refresh-lock.ts (216, 238, 246); no subprocess or dynamic code loading"
+            },
+            {
+              "search": "rg -n 'StdioClientTransport|StreamableHTTPClientTransport|plugin|loadExtension' --glob '!**/__tests__/**'",
+              "scope": "mcp app lib",
+              "hits": 0,
+              "note": "server acts as no MCP client and has no plugin loader"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'child_process|spawn\\(|execSync|await import\\(|new Function|eval\\(' --glob '!**/__tests__/**'",
+                  "scope": "mcp app lib",
+                  "hits": 3,
+                  "note": "all three are redis.eval calls of fixed, in-repo Lua scripts in mcp/oauth/refresh-lock.ts (216, 238, 246); no subprocess or dynamic code loading"
+                },
+                {
+                  "search": "rg -n 'StdioClientTransport|StreamableHTTPClientTransport|plugin|loadExtension' --glob '!**/__tests__/**'",
+                  "scope": "mcp app lib",
+                  "hits": 0,
+                  "note": "server acts as no MCP client and has no plugin loader"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'child_process|spawn\\(|execSync|await import\\(|new Function|eval\\(' --glob '!**/__tests__/**'",
+                  "scope": "mcp app lib",
+                  "hits": 3,
+                  "note": "all three are redis.eval calls of fixed, in-repo Lua scripts in mcp/oauth/refresh-lock.ts (216, 238, 246); no subprocess or dynamic code loading"
+                },
+                {
+                  "search": "rg -n 'StdioClientTransport|StreamableHTTPClientTransport|plugin|loadExtension' --glob '!**/__tests__/**'",
+                  "scope": "mcp app lib",
+                  "hits": 0,
+                  "note": "server acts as no MCP client and has no plugin loader"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'child_process|spawn\\(|execSync|await import\\(|new Function|eval\\(' --glob '!**/__tests__/**'",
+                  "scope": "mcp app lib",
+                  "hits": 3,
+                  "note": "all three are redis.eval calls of fixed, in-repo Lua scripts in mcp/oauth/refresh-lock.ts (216, 238, 246); no subprocess or dynamic code loading"
+                },
+                {
+                  "search": "rg -n 'StdioClientTransport|StreamableHTTPClientTransport|plugin|loadExtension' --glob '!**/__tests__/**'",
+                  "scope": "mcp app lib",
+                  "hits": 0,
+                  "note": "server acts as no MCP client and has no plugin loader"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'child_process|spawn\\(|execSync|await import\\(|new Function|eval\\(' --glob '!**/__tests__/**'",
+                  "scope": "mcp app lib",
+                  "hits": 3,
+                  "note": "all three are redis.eval calls of fixed, in-repo Lua scripts in mcp/oauth/refresh-lock.ts (216, 238, 246); no subprocess or dynamic code loading"
+                },
+                {
+                  "search": "rg -n 'StdioClientTransport|StreamableHTTPClientTransport|plugin|loadExtension' --glob '!**/__tests__/**'",
+                  "scope": "mcp app lib",
+                  "hits": 0,
+                  "note": "server acts as no MCP client and has no plugin loader"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n 'child_process|spawn\\(|execSync|await import\\(|new Function|eval\\(' --glob '!**/__tests__/**'",
+          "scope": "mcp app lib",
+          "hits": 3,
+          "note": "all three are redis.eval calls of fixed, in-repo Lua scripts in mcp/oauth/refresh-lock.ts (216, 238, 246); no subprocess or dynamic code loading"
+        },
+        {
+          "search": "rg -n 'StdioClientTransport|StreamableHTTPClientTransport|plugin|loadExtension' --glob '!**/__tests__/**'",
+          "scope": "mcp app lib",
+          "hits": 0,
+          "note": "server acts as no MCP client and has no plugin loader"
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "The server deliberately puts database secrets into the model's context: get_connection_string returns the full Postgres URI including the owner role's password, and tool descriptions tell the model to call it after creating a project or branch; role creation and password reset also return passwords. It does strip connection URIs and client secrets from other Management API results and redacts Neon Auth secrets. Token storage and logging do not fully protect credentials. Segment analytics (with user email) and Sentry with default PII and 100% tracing are on by default.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C8-MODELSECRETS",
+        "max": 0.25,
+        "reason": "get_connection_string returns the owner role's password to the model, and create_project/create_branch descriptions tell the model to call it routinely."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A sanitizer drops connection URIs and secrets from generated results and refresh tokens are masked in logs, but connection-string passwords go to the model by design, and token storage and logging do not fully protect credentials.",
+          "gap": "Keep credentials out of model-bound results and harden token storage.",
+          "evidence": [
+            {
+              "file": "mcp/tools/tools.ts",
+              "lines": "1181",
+              "contains": "`URI: ${result.uri}`,",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L1181"
+            },
+            {
+              "file": "mcp/tools/generated/sanitize.ts",
+              "lines": "3-6",
+              "contains": "'postgres.roles.resetPassword',",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/sanitize.ts#L3-L6"
+            },
+            {
+              "file": "mcp/tools/generated/sanitize.ts",
+              "lines": "8-13",
+              "contains": "'connection_uris',",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/sanitize.ts#L8-L13"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Masking covers some log lines and generated model-bound results, but not get_connection_string, role passwords, or the telemetry path.",
+          "gap": "Extend redaction to every model-bound result and to telemetry.",
+          "evidence": [
+            {
+              "file": "mcp/tools/generated/sanitize.ts",
+              "lines": "8-13",
+              "contains": "'connection_uris',",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/sanitize.ts#L8-L13"
+            },
+            {
+              "file": "lib/oauth/client.ts",
+              "lines": "55",
+              "contains": "prefix=${rt.slice(0, 6)}",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/lib/oauth/client.ts#L55"
+            },
+            {
+              "file": "mcp/tools/tools.ts",
+              "lines": "1181",
+              "contains": "`URI: ${result.uri}`,",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L1181"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Segment analytics with a hardcoded write key (identifying users by email) and Sentry with sendDefaultPii are on by default; tool-call events carry no arguments.",
+          "gap": "Make telemetry opt-in and turn off default PII collection.",
+          "evidence": [
+            {
+              "file": "lib/config.ts",
+              "lines": "32",
+              "contains": "gFVzt8ozOp6AZRXoD0g0Lv6UQ6aaoS7O",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/lib/config.ts#L32"
+            },
+            {
+              "file": "mcp/analytics/analytics.ts",
+              "lines": "10",
+              "contains": "process.env.NEON_MCP_DISABLE_ANALYTICS !== '1' && ANALYTICS_WRITE_KEY",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/analytics/analytics.ts#L10"
+            },
+            {
+              "file": "mcp/analytics/analytics.ts",
+              "lines": "36",
+              "contains": "email: account.email,",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/analytics/analytics.ts#L36"
+            },
+            {
+              "file": "mcp/sentry/instrument.ts",
+              "lines": "13",
+              "contains": "sendDefaultPii: true,",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/sentry/instrument.ts#L13"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Leaked material includes long-lived owner-role database passwords and server-held refresh tokens for full-scope Neon OAuth grants.",
+          "gap": "Use short-lived, narrowly scoped credentials so a leak is bounded.",
+          "evidence": [
+            {
+              "file": "mcp/tools/tools.ts",
+              "lines": "1181",
+              "contains": "`URI: ${result.uri}`,",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L1181"
+            },
+            {
+              "file": "lib/oauth/client.ts",
+              "lines": "116-129",
+              "contains": "'urn:neoncloud:orgs:permission'",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/lib/oauth/client.ts#L116-L129"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.275,
+          "cap": {
+            "id": "C8-MODELSECRETS",
+            "max": 0.25,
+            "reason": "get_connection_string returns the owner role's password to the model, and create_project/create_branch descriptions tell the model to call it routinely."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A sanitizer drops connection URIs and secrets from generated results and refresh tokens are masked in logs, but connection-string passwords go to the model by design, and token storage and logging do not fully protect credentials.",
+              "gap": "Keep credentials out of model-bound results and harden token storage.",
+              "evidence": [
+                {
+                  "file": "mcp/tools/tools.ts",
+                  "lines": "1181",
+                  "contains": "`URI: ${result.uri}`,",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L1181"
+                },
+                {
+                  "file": "mcp/tools/generated/sanitize.ts",
+                  "lines": "3-6",
+                  "contains": "'postgres.roles.resetPassword',",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/sanitize.ts#L3-L6"
+                },
+                {
+                  "file": "mcp/tools/generated/sanitize.ts",
+                  "lines": "8-13",
+                  "contains": "'connection_uris',",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/sanitize.ts#L8-L13"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Masking covers some log lines and generated model-bound results, but not get_connection_string, role passwords, or the telemetry path.",
+              "gap": "Extend redaction to every model-bound result and to telemetry.",
+              "evidence": [
+                {
+                  "file": "mcp/tools/generated/sanitize.ts",
+                  "lines": "8-13",
+                  "contains": "'connection_uris',",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/sanitize.ts#L8-L13"
+                },
+                {
+                  "file": "lib/oauth/client.ts",
+                  "lines": "55",
+                  "contains": "prefix=${rt.slice(0, 6)}",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/lib/oauth/client.ts#L55"
+                },
+                {
+                  "file": "mcp/tools/tools.ts",
+                  "lines": "1181",
+                  "contains": "`URI: ${result.uri}`,",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L1181"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Segment analytics with a hardcoded write key (identifying users by email) and Sentry with sendDefaultPii are on by default; tool-call events carry no arguments.",
+              "gap": "Make telemetry opt-in and turn off default PII collection.",
+              "evidence": [
+                {
+                  "file": "lib/config.ts",
+                  "lines": "32",
+                  "contains": "gFVzt8ozOp6AZRXoD0g0Lv6UQ6aaoS7O",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/lib/config.ts#L32"
+                },
+                {
+                  "file": "mcp/analytics/analytics.ts",
+                  "lines": "10",
+                  "contains": "process.env.NEON_MCP_DISABLE_ANALYTICS !== '1' && ANALYTICS_WRITE_KEY",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/analytics/analytics.ts#L10"
+                },
+                {
+                  "file": "mcp/analytics/analytics.ts",
+                  "lines": "36",
+                  "contains": "email: account.email,",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/analytics/analytics.ts#L36"
+                },
+                {
+                  "file": "mcp/sentry/instrument.ts",
+                  "lines": "13",
+                  "contains": "sendDefaultPii: true,",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/sentry/instrument.ts#L13"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Leaked material includes long-lived owner-role database passwords and server-held refresh tokens for full-scope Neon OAuth grants.",
+              "gap": "Use short-lived, narrowly scoped credentials so a leak is bounded.",
+              "evidence": [
+                {
+                  "file": "mcp/tools/tools.ts",
+                  "lines": "1181",
+                  "contains": "`URI: ${result.uri}`,",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L1181"
+                },
+                {
+                  "file": "lib/oauth/client.ts",
+                  "lines": "116-129",
+                  "contains": "'urn:neoncloud:orgs:permission'",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/lib/oauth/client.ts#L116-L129"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "Every tool call passes through one wrapper that writes a log line (tool name, read-only and project-scope flags, client, trace id) before running, and sends a matching analytics event with the account id. Arguments are not recorded, so after an incident you can see that run_sql or delete_project was called but not on what or with which SQL. Logs go to the console, which Vercel collects off-host, beyond the model's reach. There is no tamper-evident audit trail or record of results.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.375,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Log lines record the tool name and context flags but not arguments or targets; analytics adds the account id.",
+          "gap": "Record arguments (redacted), target project/branch and result status for every call.",
+          "evidence": [
+            {
+              "file": "app/api/[transport]/route.ts",
+              "lines": "435-446",
+              "contains": "logger.info('tool call:', properties);",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/app/api/[transport]/route.ts#L435-L446"
+            },
+            {
+              "file": "app/api/[transport]/route.ts",
+              "lines": "452-462",
+              "contains": "event: 'tool_call',",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/app/api/[transport]/route.ts#L452-L462"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All tools, host and generated, go through the same logging wrapper, including the anonymous docs-only path.",
+          "gap": "Also record OAuth consent decisions, grant changes and credential use in the same audit stream.",
+          "evidence": [
+            {
+              "file": "app/api/[transport]/route.ts",
+              "lines": "435-446",
+              "contains": "logger.info('tool call:', properties);",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/app/api/[transport]/route.ts#L435-L446"
+            },
+            {
+              "file": "app/api/[transport]/route.ts",
+              "lines": "757",
+              "contains": "logger.info('tool call (docs-only):', properties);",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/app/api/[transport]/route.ts#L757"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Logging is on by default and goes to stdout collected by the hosting platform, outside anything a tool can write.",
+          "gap": "Write audit records through a component with an integrity guarantee and logged configuration.",
+          "evidence": [
+            {
+              "file": "mcp/utils/logger.ts",
+              "lines": "11-19",
+              "contains": "new winston.transports.Console({",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/utils/logger.ts#L11-L19"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The log line is written before execution, but logging and analytics are best-effort and actions proceed if they fail.",
+          "gap": "Surface logging failures and flush a durable record per action.",
+          "evidence": [
+            {
+              "file": "app/api/[transport]/route.ts",
+              "lines": "435-446",
+              "contains": "logger.info('tool call:', properties);",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/app/api/[transport]/route.ts#L435-L446"
+            },
+            {
+              "file": "app/api/[transport]/route.ts",
+              "lines": "474-480",
+              "contains": "const result = await invokeTool(",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/app/api/[transport]/route.ts#L474-L480"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.375,
+          "raw": 0.375,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Log lines record the tool name and context flags but not arguments or targets; analytics adds the account id.",
+              "gap": "Record arguments (redacted), target project/branch and result status for every call.",
+              "evidence": [
+                {
+                  "file": "app/api/[transport]/route.ts",
+                  "lines": "435-446",
+                  "contains": "logger.info('tool call:', properties);",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/app/api/[transport]/route.ts#L435-L446"
+                },
+                {
+                  "file": "app/api/[transport]/route.ts",
+                  "lines": "452-462",
+                  "contains": "event: 'tool_call',",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/app/api/[transport]/route.ts#L452-L462"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All tools, host and generated, go through the same logging wrapper, including the anonymous docs-only path.",
+              "gap": "Also record OAuth consent decisions, grant changes and credential use in the same audit stream.",
+              "evidence": [
+                {
+                  "file": "app/api/[transport]/route.ts",
+                  "lines": "435-446",
+                  "contains": "logger.info('tool call:', properties);",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/app/api/[transport]/route.ts#L435-L446"
+                },
+                {
+                  "file": "app/api/[transport]/route.ts",
+                  "lines": "757",
+                  "contains": "logger.info('tool call (docs-only):', properties);",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/app/api/[transport]/route.ts#L757"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Logging is on by default and goes to stdout collected by the hosting platform, outside anything a tool can write.",
+              "gap": "Write audit records through a component with an integrity guarantee and logged configuration.",
+              "evidence": [
+                {
+                  "file": "mcp/utils/logger.ts",
+                  "lines": "11-19",
+                  "contains": "new winston.transports.Console({",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/utils/logger.ts#L11-L19"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The log line is written before execution, but logging and analytics are best-effort and actions proceed if they fail.",
+              "gap": "Surface logging failures and flush a durable record per action.",
+              "evidence": [
+                {
+                  "file": "app/api/[transport]/route.ts",
+                  "lines": "435-446",
+                  "contains": "logger.info('tool call:', properties);",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/app/api/[transport]/route.ts#L435-L446"
+                },
+                {
+                  "file": "app/api/[transport]/route.ts",
+                  "lines": "474-480",
+                  "contains": "const result = await invokeTool(",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/app/api/[transport]/route.ts#L474-L480"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "The server bounds some of its own work: each request is capped by the 800-second Vercel function limit, create operations wait at most 120 seconds, docs fetches time out after 10 seconds, and inspection queries cap their row limit. Generated Management API calls receive the client's cancellation signal. But SQL has no statement timeout or row cap, and there are no rate limits on SQL, deletions, or creating projects, branches and computes, all of which keep running in Neon after a request ends.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.45,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Server-enforced caps exist on some operations (function duration, create waits, docs timeout, inspect limit) and API calls get the abort signal.",
+          "gap": "Cap every operation, including SQL statement time and result size, and add rate limits.",
+          "evidence": [
+            {
+              "file": "app/api/[transport]/route.ts",
+              "lines": "112",
+              "contains": "const SSE_MAX_DURATION_SEC = 800;",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/app/api/[transport]/route.ts#L112"
+            },
+            {
+              "file": "mcp/tools/generated/adapt.ts",
+              "lines": "63",
+              "contains": "const WAIT = { timeoutMs: 120_000 } as const;",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/adapt.ts#L63"
+            },
+            {
+              "file": "mcp/tools/handlers/docs.ts",
+              "lines": "9",
+              "contains": "const DOCS_FETCH_TIMEOUT_MS = 10_000;",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/handlers/docs.ts#L9"
+            },
+            {
+              "file": "mcp/inspect/queries.ts",
+              "lines": "558",
+              "contains": "export const INSPECT_MAX_LIMIT = 1000;",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/inspect/queries.ts#L558"
+            },
+            {
+              "file": "mcp/tools/generated/adapt.ts",
+              "lines": "294-297",
+              "contains": "signal: extra.signal,",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/adapt.ts#L294-L297"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The platform duration cap covers every request and some tools add their own timeouts, but run_sql and run_sql_transaction have none.",
+          "gap": "Apply timeouts and size caps to SQL tools as well.",
+          "evidence": [
+            {
+              "file": "vercel.json",
+              "lines": "5",
+              "contains": "\"maxDuration\": 800",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/vercel.json#L5"
+            },
+            {
+              "search": "rg -n -i 'statement_timeout|rowLimit|max_rows' --glob '!**/__tests__/**'",
+              "scope": "mcp app lib",
+              "hits": 0,
+              "note": "no SQL statement timeout or row cap"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Limits are hard-coded constants the model cannot raise, but caller-supplied limit parameters and unbounded SQL leave the defaults loose.",
+          "gap": "Enforce server-side ceilings that caller arguments cannot exceed on every tool.",
+          "evidence": [
+            {
+              "file": "mcp/inspect/queries.ts",
+              "lines": "558",
+              "contains": "export const INSPECT_MAX_LIMIT = 1000;",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/inspect/queries.ts#L558"
+            },
+            {
+              "file": "mcp/tools/generated/adapt.ts",
+              "lines": "63",
+              "contains": "const WAIT = { timeoutMs: 120_000 } as const;",
+              "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/adapt.ts#L63"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A runaway client can create projects, branches and computes or run heavy SQL repeatedly with no server-side rate limit, and upstream operations continue after the request stops.",
+          "gap": "Add per-account rate and quantity limits on consequential and billable operations.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'rate.?limit' --glob '!**/__tests__/**'",
+              "scope": "mcp app lib",
+              "hits": 2,
+              "note": "both hits are the NeonApiError kind 'rate_limit' type check in mcp/server/errors.ts (classifying upstream 429s), not a limiter"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.45,
+          "raw": 0.45,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Server-enforced caps exist on some operations (function duration, create waits, docs timeout, inspect limit) and API calls get the abort signal.",
+              "gap": "Cap every operation, including SQL statement time and result size, and add rate limits.",
+              "evidence": [
+                {
+                  "file": "app/api/[transport]/route.ts",
+                  "lines": "112",
+                  "contains": "const SSE_MAX_DURATION_SEC = 800;",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/app/api/[transport]/route.ts#L112"
+                },
+                {
+                  "file": "mcp/tools/generated/adapt.ts",
+                  "lines": "63",
+                  "contains": "const WAIT = { timeoutMs: 120_000 } as const;",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/adapt.ts#L63"
+                },
+                {
+                  "file": "mcp/tools/handlers/docs.ts",
+                  "lines": "9",
+                  "contains": "const DOCS_FETCH_TIMEOUT_MS = 10_000;",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/handlers/docs.ts#L9"
+                },
+                {
+                  "file": "mcp/inspect/queries.ts",
+                  "lines": "558",
+                  "contains": "export const INSPECT_MAX_LIMIT = 1000;",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/inspect/queries.ts#L558"
+                },
+                {
+                  "file": "mcp/tools/generated/adapt.ts",
+                  "lines": "294-297",
+                  "contains": "signal: extra.signal,",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/adapt.ts#L294-L297"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The platform duration cap covers every request and some tools add their own timeouts, but run_sql and run_sql_transaction have none.",
+              "gap": "Apply timeouts and size caps to SQL tools as well.",
+              "evidence": [
+                {
+                  "file": "vercel.json",
+                  "lines": "5",
+                  "contains": "\"maxDuration\": 800",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/vercel.json#L5"
+                },
+                {
+                  "search": "rg -n -i 'statement_timeout|rowLimit|max_rows' --glob '!**/__tests__/**'",
+                  "scope": "mcp app lib",
+                  "hits": 0,
+                  "note": "no SQL statement timeout or row cap"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Limits are hard-coded constants the model cannot raise, but caller-supplied limit parameters and unbounded SQL leave the defaults loose.",
+              "gap": "Enforce server-side ceilings that caller arguments cannot exceed on every tool.",
+              "evidence": [
+                {
+                  "file": "mcp/inspect/queries.ts",
+                  "lines": "558",
+                  "contains": "export const INSPECT_MAX_LIMIT = 1000;",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/inspect/queries.ts#L558"
+                },
+                {
+                  "file": "mcp/tools/generated/adapt.ts",
+                  "lines": "63",
+                  "contains": "const WAIT = { timeoutMs: 120_000 } as const;",
+                  "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/adapt.ts#L63"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A runaway client can create projects, branches and computes or run heavy SQL repeatedly with no server-side rate limit, and upstream operations continue after the request stops.",
+              "gap": "Add per-account rate and quantity limits on consequential and billable operations.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'rate.?limit' --glob '!**/__tests__/**'",
+                  "scope": "mcp app lib",
+                  "hits": 2,
+                  "note": "both hits are the NeonApiError kind 'rate_limit' type check in mcp/server/errors.ts (classifying upstream 429s), not a limiter"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "A hijacked session or stolen token has write and delete authority over the user's whole Neon account, including organizations and every database.",
+      "criterion": "C1",
+      "owasp": [
+        "ASI03",
+        "T3"
+      ],
+      "evidence": [
+        {
+          "file": "lib/oauth/client.ts",
+          "lines": "116-129",
+          "contains": "'urn:neoncloud:orgs:permission'",
+          "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/lib/oauth/client.ts#L116-L129"
+        },
+        {
+          "file": "lib/oauth/client.ts",
+          "lines": "208",
+          "contains": "scope: NEON_MCP_SCOPES.join(' ')",
+          "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/lib/oauth/client.ts#L208"
+        }
+      ]
+    },
+    {
+      "summary": "Worst case under prompt injection: a hijacked default session can exfiltrate data and secrets and run irreversible SQL and deletions with no server-side human step.",
+      "criterion": "C5",
+      "owasp": [
+        "ASI01",
+        "LLM01",
+        "T6"
+      ],
+      "evidence": [
+        {
+          "file": "mcp/tools/tools.ts",
+          "lines": "92",
+          "contains": "const response = await runQuery.query(sql);",
+          "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L92"
+        },
+        {
+          "file": "mcp/tools/tools.ts",
+          "lines": "1181",
+          "contains": "`URI: ${result.uri}`,",
+          "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L1181"
+        }
+      ]
+    },
+    {
+      "summary": "Database owner-role passwords are routinely returned to the model through get_connection_string, which the create tools tell the model to call.",
+      "criterion": "C8",
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "evidence": [
+        {
+          "file": "mcp/tools/tools.ts",
+          "lines": "1181",
+          "contains": "`URI: ${result.uri}`,",
+          "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L1181"
+        },
+        {
+          "file": "mcp/tools/generated/adapt.ts",
+          "lines": "28",
+          "contains": "Does not return a connection string; call",
+          "url": "https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/generated/adapt.ts#L28"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "Database rows, comments and logs returned as plain JSON (mcp/tools/generated/adapt.ts:247, mcp/tools/tools.ts:92)",
+    "sensitive_data": "Every database in the account via owner-role connection strings (mcp/tools/handlers/connection-string.ts:66, mcp/tools/tools.ts:1181)",
+    "state_change_or_egress": "run_sql writes, delete_project/delete_branch, deploy_function (mcp/tools/tools.ts:92, mcp/tools/generated/operations.ts:85)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Make read-only the default grant (unchecked 'Allow writes', readonly default for API keys) so writes need an explicit opt-in.",
+      "criterion": "C3",
+      "parameter": "D",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.05
+    },
+    {
+      "summary": "Request Neon OAuth scopes that match each grant (read-only scopes for read-only grants).",
+      "criterion": "C1",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 3,
+      "playbook": "Playbook 4",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Default to read-only so a hijacked session cannot change state (drop the state-change leg of the Rule of Two).",
+      "criterion": "C5",
+      "parameter": "D",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 1",
+      "estimated_gain": 0.1
+    },
+    {
+      "summary": "Record redacted arguments and target project/branch for every tool call.",
+      "criterion": "C9",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 1 step 3",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Add a SQL statement timeout, row cap, and per-account rate limits on create/delete operations.",
+      "criterion": "C10",
+      "parameter": "B",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 3 step 3",
+      "estimated_gain": 0.05
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was executed, installed, or probed.",
+    "The ~95 generated Management API tools come from the external @neon/tools package (v2.0.1), which is not in this repo; their schemas, requiresApproval flags and annotations were judged from the adapter code and the committed snapshot mcp/__tests__/__snapshots__/hosted-tools-catalog.md.",
+    "Not verified: the strength of the read-only SQL transaction, which uses the owner role and depends on PostgreSQL transaction semantics that were not tested.",
+    "Neon platform behaviour (point-in-time restore, project recovery windows, upstream OAuth scope enforcement, Sentry's header scrubbing under sendDefaultPii) was not examined and is not credited.",
+    "No reviewer-steering text was found in README, AGENTS.md, .agents/skills or code comments."
+  ]
+}

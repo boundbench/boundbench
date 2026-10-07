@@ -1,0 +1,2485 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "grafana-mcp-server",
+  "name": "Grafana MCP Server",
+  "repo_url": "https://github.com/grafana/mcp-grafana",
+  "subpath": null,
+  "description": "MCP server for Grafana dashboards, datasources (Prometheus/Loki), alerting, OnCall, incidents",
+  "category": "infrastructure_ops",
+  "pinned_commit": "9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f",
+  "version": null,
+  "scored_date": "2026-10-03",
+  "scored_configuration": "stdio transport (the README Quick Start) with default flags: default tool categories enabled, write tools on, a single GRAFANA_SERVICE_ACCOUNT_TOKEN from the environment.",
+  "score": 3.3,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 9,
+    "score": 2.3,
+    "max": 9.0,
+    "percent": 26
+  },
+  "capability_profile": {
+    "code_execution": "yes",
+    "filesystem_write": "no",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "no",
+    "untrusted_input": "yes",
+    "third_party_extensions": "yes",
+    "sub_agents": "no",
+    "external_communication": "yes"
+  },
+  "headline": "Grafana's MCP server is carefully engineered around its credentials: the token never reaches the model, redirects cannot carry it elsewhere, and every tool is annotated so hosts can tell reads from writes. But it ships with write tools on, including a general-purpose Grafana API tool that takes any method and path and can run raw SQL through datasources, plus a plugin installer the model can drive. Nothing in the server marks untrusted log or dashboard content or records what tools did, so a prompt-injected session can read sensitive telemetry, send it out through a new contact point, and delete resources. Run it with --disable-write and a narrowly scoped, read-only service account unless writes are really needed.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "The server uses one Grafana credential for everything: a service account token (or a username and password) taken from its environment, attached to every request by every tool. It does not narrow that credential per tool or per request, and the README's quick-path advice is to give the service account the broad Editor role. Write tools, including a general-purpose Grafana API tool that accepts any method and path, are on by default, so the model can call service-account and access-control endpoints and, with an Admin token, mint new tokens or change its own roles; only Grafana's own permission checks stop that.",
+      "max": 1.0,
+      "notes": "In the non-default streamable-http/SSE transports the server also accepts a caller-supplied X-Grafana-Service-Account-Token header and forwards it to Grafana (mcpgrafana.go:215-224, 954-970), i.e. MCP token passthrough (C1-PASSTHRU, cap 0.40); the lower C1-SELFESC cap already applies. With --allow-grafana-url-override the env credentials are deliberately withheld from caller-selected targets (mcpgrafana.go:955-958).",
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C1-SELFESC",
+        "max": 0.25,
+        "reason": "The default grafana_api_request tool sends any method to any /api path with the server's credential, so the model can call Grafana's service-account token and role-assignment endpoints for its own identity; only Grafana's RBAC on that token stops it."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A dedicated Grafana service-account token from the environment is used as-is for every read and write; the server does no scoping, and the README suggests the broad Editor role as the easy setup.",
+          "gap": "No per-tool or read/write credential split and no in-code authorization policy mapping each request to a least-privilege set before the credential is attached.",
+          "evidence": [
+            {
+              "file": "mcpgrafana.go",
+              "lines": "76-80",
+              "contains": "apiKey := getEnv(grafanaServiceAccountTokenEnvVar)",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/mcpgrafana.go#L76-L80"
+            },
+            {
+              "file": "mcpgrafana.go",
+              "lines": "732-740",
+              "contains": "clonedReq.Header.Set(\"Authorization\", \"Bearer \"+apiKey)",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/mcpgrafana.go#L732-L740"
+            },
+            {
+              "file": "README.md",
+              "lines": "652",
+              "contains": "assign the built-in `Editor` role to the service account",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/README.md#L652"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every built-in tool, including the generic API tool, builds its client from the same config and AuthRoundTripper, so all paths use the one operator-supplied identity; there are no plugins or sub-agents.",
+          "gap": "No authorization layer in the server's code that every tool call passes through; authorization is entirely delegated to Grafana's checks on the shared token.",
+          "evidence": [
+            {
+              "file": "tools/api.go",
+              "lines": "124",
+              "contains": "mcpgrafana.BuildTransport(&cfg, nil)",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L124"
+            },
+            {
+              "file": "mcpgrafana.go",
+              "lines": "908-911",
+              "contains": "transport = NewAuthRoundTripper(transport, cfg.AccessToken, cfg.IDToken, cfg.APIKey, cfg.BasicAuth)",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/mcpgrafana.go#L908-L911"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Write tools and the unrestricted API tool ship enabled (disable-write defaults to false), and the privilege level is whatever token the operator supplies, with Editor suggested.",
+          "gap": "Default tool set is not read-only; write access needs no explicit operator elevation.",
+          "evidence": [
+            {
+              "file": "cmd/mcp-grafana/main.go",
+              "lines": "229",
+              "contains": "flag.BoolVar(&dt.write, \"disable-write\", false",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L229"
+            },
+            {
+              "file": "cmd/mcp-grafana/main.go",
+              "lines": "372",
+              "contains": "enableWriteTools := !dt.write",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L372"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked session can write across Grafana (dashboards, alert rules, contact points, datasources, plugins) and query every datasource the token can reach, including raw SQL against databases via /api/ds/query.",
+          "gap": "Blast radius is not limited to one project or to read-mostly access; writes are not confined to non-destructive operations.",
+          "evidence": [
+            {
+              "file": "tools/api.go",
+              "lines": "18-24",
+              "contains": "http.MethodDelete: true",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L18-L24"
+            },
+            {
+              "file": "tools/api.go",
+              "lines": "129",
+              "contains": "strings.TrimRight(cfg.URL, \"/\") + endpoint",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L129"
+            },
+            {
+              "file": "tools/api.go",
+              "lines": "28-30",
+              "contains": "\"/api/ds/query\": true",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L28-L30"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.325,
+          "cap": {
+            "id": "C1-SELFESC",
+            "max": 0.25,
+            "reason": "The default grafana_api_request tool sends any method to any /api path with the server's credential, so the model can call Grafana's service-account token and role-assignment endpoints for its own identity; only Grafana's RBAC on that token stops it."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A dedicated Grafana service-account token from the environment is used as-is for every read and write; the server does no scoping, and the README suggests the broad Editor role as the easy setup.",
+              "gap": "No per-tool or read/write credential split and no in-code authorization policy mapping each request to a least-privilege set before the credential is attached.",
+              "evidence": [
+                {
+                  "file": "mcpgrafana.go",
+                  "lines": "76-80",
+                  "contains": "apiKey := getEnv(grafanaServiceAccountTokenEnvVar)",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/mcpgrafana.go#L76-L80"
+                },
+                {
+                  "file": "mcpgrafana.go",
+                  "lines": "732-740",
+                  "contains": "clonedReq.Header.Set(\"Authorization\", \"Bearer \"+apiKey)",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/mcpgrafana.go#L732-L740"
+                },
+                {
+                  "file": "README.md",
+                  "lines": "652",
+                  "contains": "assign the built-in `Editor` role to the service account",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/README.md#L652"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every built-in tool, including the generic API tool, builds its client from the same config and AuthRoundTripper, so all paths use the one operator-supplied identity; there are no plugins or sub-agents.",
+              "gap": "No authorization layer in the server's code that every tool call passes through; authorization is entirely delegated to Grafana's checks on the shared token.",
+              "evidence": [
+                {
+                  "file": "tools/api.go",
+                  "lines": "124",
+                  "contains": "mcpgrafana.BuildTransport(&cfg, nil)",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L124"
+                },
+                {
+                  "file": "mcpgrafana.go",
+                  "lines": "908-911",
+                  "contains": "transport = NewAuthRoundTripper(transport, cfg.AccessToken, cfg.IDToken, cfg.APIKey, cfg.BasicAuth)",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/mcpgrafana.go#L908-L911"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Write tools and the unrestricted API tool ship enabled (disable-write defaults to false), and the privilege level is whatever token the operator supplies, with Editor suggested.",
+              "gap": "Default tool set is not read-only; write access needs no explicit operator elevation.",
+              "evidence": [
+                {
+                  "file": "cmd/mcp-grafana/main.go",
+                  "lines": "229",
+                  "contains": "flag.BoolVar(&dt.write, \"disable-write\", false",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L229"
+                },
+                {
+                  "file": "cmd/mcp-grafana/main.go",
+                  "lines": "372",
+                  "contains": "enableWriteTools := !dt.write",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L372"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked session can write across Grafana (dashboards, alert rules, contact points, datasources, plugins) and query every datasource the token can reach, including raw SQL against databases via /api/ds/query.",
+              "gap": "Blast radius is not limited to one project or to read-mostly access; writes are not confined to non-destructive operations.",
+              "evidence": [
+                {
+                  "file": "tools/api.go",
+                  "lines": "18-24",
+                  "contains": "http.MethodDelete: true",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L18-L24"
+                },
+                {
+                  "file": "tools/api.go",
+                  "lines": "129",
+                  "contains": "strings.TrimRight(cfg.URL, \"/\") + endpoint",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L129"
+                },
+                {
+                  "file": "tools/api.go",
+                  "lines": "28-30",
+                  "contains": "\"/api/ds/query\": true",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L28-L30"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "The host, not the server, decides what to approve, so this rates the signals the server gives it. Every tool declares read-only, destructive and open-world hints, and a test fails the build if any tool is missing them, so hosts can tell reads from writes. But the default toolset includes grafana_api_request, one tool that does both reads and writes (correctly flagged destructive), there is no dry-run or preview for destructive operations, and the read-only mode is opt-in. Approved or bypassed calls can delete alert rules, snapshots and annotations, or run destructive SQL through datasources, with no undo in the server.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.325,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Annotations are present and enforced on every tool, but the default generic API tool mixes reads and writes in one tool, and destructive operations have no preview or dry-run.",
+          "gap": "Separate read and write tools on every path: grafana_api_request in its default write variant serves both GET reads and PUT/DELETE writes.",
+          "evidence": [
+            {
+              "file": "tools/api.go",
+              "lines": "204-214",
+              "contains": "mcpgrafana.WithDestructiveHintAnnotation(true)",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L204-L214"
+            },
+            {
+              "file": "cmd/mcp-grafana/annotations_test.go",
+              "lines": "46-79",
+              "contains": "func TestAllToolsDeclareAnnotationHints",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/annotations_test.go#L46-L79"
+            },
+            {
+              "file": "tools/plugins.go",
+              "lines": "234-243",
+              "contains": "mcpgrafana.WithDestructiveHintAnnotation(false)",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/plugins.go#L234-L243"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every registered tool goes through MustTool/Register and carries annotations, checked by a test over all categories with write enabled and disabled.",
+          "gap": "Coverage is limited by the mechanism: the mixed read/write API tool means hosts cannot gate writes without also gating its reads.",
+          "evidence": [
+            {
+              "file": "cmd/mcp-grafana/annotations_test.go",
+              "lines": "54-79",
+              "contains": "if ann.DestructiveHint == nil",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/annotations_test.go#L54-L79"
+            },
+            {
+              "file": "tools.go",
+              "lines": "126-128",
+              "contains": "s.AddTool(t.resolveTool(), t.Handler)",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools.go#L126-L128"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Risk annotations are always emitted and nothing the model sends can change them; the server-enforced read-only mode (--disable-write) exists but is off by default.",
+          "gap": "No server-side read-only default or confirmation step; write tools are on unless the operator passes --disable-write.",
+          "evidence": [
+            {
+              "file": "cmd/mcp-grafana/main.go",
+              "lines": "229",
+              "contains": "flag.BoolVar(&dt.write, \"disable-write\", false",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L229"
+            },
+            {
+              "file": "cmd/mcp-grafana/main.go",
+              "lines": "372",
+              "contains": "enableWriteTools := !dt.write",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L372"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Default tools can perform irreversible actions: DELETE on any Grafana API path, deleting snapshots, annotations and alert rules, and raw SQL through POST /api/ds/query that can drop data if datasource credentials allow.",
+          "gap": "No checkpoints, rollback, or dry-run for destructive operations.",
+          "evidence": [
+            {
+              "file": "tools/api.go",
+              "lines": "18-24",
+              "contains": "http.MethodDelete: true",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L18-L24"
+            },
+            {
+              "file": "README.md",
+              "lines": "565",
+              "contains": "`query_sql` will run a `DROP TABLE`",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/README.md#L565"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.325,
+          "raw": 0.325,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Annotations are present and enforced on every tool, but the default generic API tool mixes reads and writes in one tool, and destructive operations have no preview or dry-run.",
+              "gap": "Separate read and write tools on every path: grafana_api_request in its default write variant serves both GET reads and PUT/DELETE writes.",
+              "evidence": [
+                {
+                  "file": "tools/api.go",
+                  "lines": "204-214",
+                  "contains": "mcpgrafana.WithDestructiveHintAnnotation(true)",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L204-L214"
+                },
+                {
+                  "file": "cmd/mcp-grafana/annotations_test.go",
+                  "lines": "46-79",
+                  "contains": "func TestAllToolsDeclareAnnotationHints",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/annotations_test.go#L46-L79"
+                },
+                {
+                  "file": "tools/plugins.go",
+                  "lines": "234-243",
+                  "contains": "mcpgrafana.WithDestructiveHintAnnotation(false)",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/plugins.go#L234-L243"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every registered tool goes through MustTool/Register and carries annotations, checked by a test over all categories with write enabled and disabled.",
+              "gap": "Coverage is limited by the mechanism: the mixed read/write API tool means hosts cannot gate writes without also gating its reads.",
+              "evidence": [
+                {
+                  "file": "cmd/mcp-grafana/annotations_test.go",
+                  "lines": "54-79",
+                  "contains": "if ann.DestructiveHint == nil",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/annotations_test.go#L54-L79"
+                },
+                {
+                  "file": "tools.go",
+                  "lines": "126-128",
+                  "contains": "s.AddTool(t.resolveTool(), t.Handler)",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools.go#L126-L128"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Risk annotations are always emitted and nothing the model sends can change them; the server-enforced read-only mode (--disable-write) exists but is off by default.",
+              "gap": "No server-side read-only default or confirmation step; write tools are on unless the operator passes --disable-write.",
+              "evidence": [
+                {
+                  "file": "cmd/mcp-grafana/main.go",
+                  "lines": "229",
+                  "contains": "flag.BoolVar(&dt.write, \"disable-write\", false",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L229"
+                },
+                {
+                  "file": "cmd/mcp-grafana/main.go",
+                  "lines": "372",
+                  "contains": "enableWriteTools := !dt.write",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L372"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default tools can perform irreversible actions: DELETE on any Grafana API path, deleting snapshots, annotations and alert rules, and raw SQL through POST /api/ds/query that can drop data if datasource credentials allow.",
+              "gap": "No checkpoints, rollback, or dry-run for destructive operations.",
+              "evidence": [
+                {
+                  "file": "tools/api.go",
+                  "lines": "18-24",
+                  "contains": "http.MethodDelete: true",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L18-L24"
+                },
+                {
+                  "file": "README.md",
+                  "lines": "565",
+                  "contains": "`query_sql` will run a `DROP TABLE`",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/README.md#L565"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "Most tools are narrow, typed Grafana operations, and a shared wrapper rejects unknown arguments for every tool. The generic grafana_api_request tool, enabled by default, undoes much of that: it accepts any HTTP method, any API path on the Grafana host, arbitrary request headers and a free-form body, which includes raw datasource queries. The host is fixed and cross-origin redirects are refused, so it cannot be pointed at other servers directly. Write tools are on by default; a read-only mode and per-category switches exist but must be turned on.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.525,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Typed schemas with additionalProperties=false and unknown-argument rejection, plus per-tool checks (path must start with '/', method allowlist, contact-point UID regex, Loki line cap), but the generic API tool takes any path, method, headers and body.",
+          "gap": "No endpoint allowlist or parsed-query policy on grafana_api_request; raw SQL and admin endpoints pass through unvalidated.",
+          "evidence": [
+            {
+              "file": "tools.go",
+              "lines": "378-381",
+              "contains": "unknownArguments(argMap, properties)",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools.go#L378-L381"
+            },
+            {
+              "file": "tools/api.go",
+              "lines": "107-109",
+              "contains": "endpoint must be a relative path starting with '/'",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L107-L109"
+            },
+            {
+              "file": "tools/api.go",
+              "lines": "144-146",
+              "contains": "req.Header.Set(k, v)",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L144-L146"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The same ConvertTool wrapper (schema decode and unknown-key rejection) runs for every tool; the server loads no extension tools.",
+          "gap": "No central policy layer on arguments' meaning (paths, queries) that every tool inherits.",
+          "evidence": [
+            {
+              "file": "tools.go",
+              "lines": "370-381",
+              "contains": "if unknown := unknownArguments(argMap, properties); len(unknown) > 0",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools.go#L370-L381"
+            },
+            {
+              "file": "tools.go",
+              "lines": "534",
+              "contains": "AdditionalProperties: false",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools.go#L534"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Categories are selectable and a read-only mode exists, but the default category list includes write tools, the generic API tool, and plugin installation.",
+          "gap": "Default tool set is not read-only; write tools require --disable-write to remove.",
+          "evidence": [
+            {
+              "file": "cmd/mcp-grafana/main.go",
+              "lines": "210",
+              "contains": "plugin,api,config,provisioning,docs,user",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L210"
+            },
+            {
+              "file": "cmd/mcp-grafana/main.go",
+              "lines": "229",
+              "contains": "flag.BoolVar(&dt.write, \"disable-write\", false",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L229"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A misused grafana_api_request reaches every endpoint and every datasource the token can access on the Grafana host; limits are only the fixed host and a 10 MB response cap.",
+          "gap": "No scoping to specific resources and no quantity bounds on writes.",
+          "evidence": [
+            {
+              "file": "tools/api.go",
+              "lines": "129",
+              "contains": "strings.TrimRight(cfg.URL, \"/\") + endpoint",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L129"
+            },
+            {
+              "file": "tools/response_utils.go",
+              "lines": "8",
+              "contains": "defaultResponseLimitBytes int64 = 10 * 1024 * 1024",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/response_utils.go#L8"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.525,
+          "raw": 0.525,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Typed schemas with additionalProperties=false and unknown-argument rejection, plus per-tool checks (path must start with '/', method allowlist, contact-point UID regex, Loki line cap), but the generic API tool takes any path, method, headers and body.",
+              "gap": "No endpoint allowlist or parsed-query policy on grafana_api_request; raw SQL and admin endpoints pass through unvalidated.",
+              "evidence": [
+                {
+                  "file": "tools.go",
+                  "lines": "378-381",
+                  "contains": "unknownArguments(argMap, properties)",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools.go#L378-L381"
+                },
+                {
+                  "file": "tools/api.go",
+                  "lines": "107-109",
+                  "contains": "endpoint must be a relative path starting with '/'",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L107-L109"
+                },
+                {
+                  "file": "tools/api.go",
+                  "lines": "144-146",
+                  "contains": "req.Header.Set(k, v)",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L144-L146"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The same ConvertTool wrapper (schema decode and unknown-key rejection) runs for every tool; the server loads no extension tools.",
+              "gap": "No central policy layer on arguments' meaning (paths, queries) that every tool inherits.",
+              "evidence": [
+                {
+                  "file": "tools.go",
+                  "lines": "370-381",
+                  "contains": "if unknown := unknownArguments(argMap, properties); len(unknown) > 0",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools.go#L370-L381"
+                },
+                {
+                  "file": "tools.go",
+                  "lines": "534",
+                  "contains": "AdditionalProperties: false",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools.go#L534"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Categories are selectable and a read-only mode exists, but the default category list includes write tools, the generic API tool, and plugin installation.",
+              "gap": "Default tool set is not read-only; write tools require --disable-write to remove.",
+              "evidence": [
+                {
+                  "file": "cmd/mcp-grafana/main.go",
+                  "lines": "210",
+                  "contains": "plugin,api,config,provisioning,docs,user",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L210"
+                },
+                {
+                  "file": "cmd/mcp-grafana/main.go",
+                  "lines": "229",
+                  "contains": "flag.BoolVar(&dt.write, \"disable-write\", false",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L229"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A misused grafana_api_request reaches every endpoint and every datasource the token can access on the Grafana host; limits are only the fixed host and a 10 MB response cap.",
+              "gap": "No scoping to specific resources and no quantity bounds on writes.",
+              "evidence": [
+                {
+                  "file": "tools/api.go",
+                  "lines": "129",
+                  "contains": "strings.TrimRight(cfg.URL, \"/\") + endpoint",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L129"
+                },
+                {
+                  "file": "tools/response_utils.go",
+                  "lines": "8",
+                  "contains": "defaultResponseLimitBytes int64 = 10 * 1024 * 1024",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/response_utils.go#L8"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "The server never runs commands or code on its own machine: there is no subprocess or eval path, and the jq filter language it accepts runs in a pure-Go interpreter that is denied access to environment variables. It does, however, let the model have code run elsewhere. The default grafana_api_request tool can POST to /api/ds/query, which runs model-written raw SQL against any SQL datasource with that datasource's credentials, and the project's own README notes such queries will run DROP TABLE if the credentials allow. Nothing isolates that path.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.05,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Model-written raw SQL is sent unfiltered through Grafana to the datasource database with the datasource's own credentials; there is no isolation primitive.",
+          "gap": "No boundary around remote query execution (e.g., forcing read-only transactions or a read-only datasource credential).",
+          "evidence": [
+            {
+              "file": "tools/api.go",
+              "lines": "26-30",
+              "contains": "\"/api/ds/query\": true",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L26-L30"
+            },
+            {
+              "file": "cmd/mcp-grafana/main.go",
+              "lines": "231",
+              "contains": "They pass the query through unfiltered, so they can mutate data if the datasource credentials permit it",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L231"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The main remote-execution path (POST /api/ds/query via the default API tool) is not constrained; only the jq filter runs in a capability-free interpreter.",
+          "gap": "Remote query execution is not routed through any isolating or read-only layer.",
+          "evidence": [
+            {
+              "file": "tools/api.go",
+              "lines": "243-246",
+              "contains": "APIRequest.Register(s)",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L243-L246"
+            },
+            {
+              "file": "tools/api.go",
+              "lines": "113-117",
+              "contains": "gojq.Compile(query)",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L113-L117"
+            },
+            {
+              "search": "rg -n -e 'exec\\.Command' -e '\"os/exec\"' -g *.go -g !*_test.go",
+              "scope": ".",
+              "hits": 0,
+              "note": "no local subprocess execution anywhere in the server"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No isolation exists to be on by default; the raw-SQL path ships enabled via the write-mode API tool.",
+          "gap": "No default that disables raw query execution or forces read-only datasource access.",
+          "evidence": [
+            {
+              "file": "cmd/mcp-grafana/main.go",
+              "lines": "229",
+              "contains": "flag.BoolVar(&dt.write, \"disable-write\", false",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L229"
+            },
+            {
+              "file": "tools/api.go",
+              "lines": "243-246",
+              "contains": "APIRequest.Register(s)",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L243-L246"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Model-written SQL runs inside production databases with whatever credentials the Grafana datasources hold; nothing runs on the MCP host itself.",
+          "gap": "Execution is not confined to read-only or scoped credentials.",
+          "evidence": [
+            {
+              "file": "README.md",
+              "lines": "565",
+              "contains": "they can write when the datasource credentials permit it",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/README.md#L565"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.05,
+          "raw": 0.05,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Model-written raw SQL is sent unfiltered through Grafana to the datasource database with the datasource's own credentials; there is no isolation primitive.",
+              "gap": "No boundary around remote query execution (e.g., forcing read-only transactions or a read-only datasource credential).",
+              "evidence": [
+                {
+                  "file": "tools/api.go",
+                  "lines": "26-30",
+                  "contains": "\"/api/ds/query\": true",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L26-L30"
+                },
+                {
+                  "file": "cmd/mcp-grafana/main.go",
+                  "lines": "231",
+                  "contains": "They pass the query through unfiltered, so they can mutate data if the datasource credentials permit it",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L231"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The main remote-execution path (POST /api/ds/query via the default API tool) is not constrained; only the jq filter runs in a capability-free interpreter.",
+              "gap": "Remote query execution is not routed through any isolating or read-only layer.",
+              "evidence": [
+                {
+                  "file": "tools/api.go",
+                  "lines": "243-246",
+                  "contains": "APIRequest.Register(s)",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L243-L246"
+                },
+                {
+                  "file": "tools/api.go",
+                  "lines": "113-117",
+                  "contains": "gojq.Compile(query)",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L113-L117"
+                },
+                {
+                  "search": "rg -n -e 'exec\\.Command' -e '\"os/exec\"' -g *.go -g !*_test.go",
+                  "scope": ".",
+                  "hits": 0,
+                  "note": "no local subprocess execution anywhere in the server"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No isolation exists to be on by default; the raw-SQL path ships enabled via the write-mode API tool.",
+              "gap": "No default that disables raw query execution or forces read-only datasource access.",
+              "evidence": [
+                {
+                  "file": "cmd/mcp-grafana/main.go",
+                  "lines": "229",
+                  "contains": "flag.BoolVar(&dt.write, \"disable-write\", false",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L229"
+                },
+                {
+                  "file": "tools/api.go",
+                  "lines": "243-246",
+                  "contains": "APIRequest.Register(s)",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L243-L246"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Model-written SQL runs inside production databases with whatever credentials the Grafana datasources hold; nothing runs on the MCP host itself.",
+              "gap": "Execution is not confined to read-only or scoped credentials.",
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "lines": "565",
+                  "contains": "they can write when the datasource credentials permit it",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/README.md#L565"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "The server returns logs, traces, dashboards, annotations, incident text and other content that anyone who can write to those systems controls, with no marking of what is untrusted. Several tool descriptions and outputs also carry instructions to the model (for example 'you MUST ask the user' and 'Ask the user whether to install'), relying on the model for consent. In the default configuration the same session can read sensitive telemetry, create contact points that send data to external webhooks or email, install plugins, and delete resources, so a hijacked model can both leak and destroy without a human in the loop as far as the server is concerned.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C5-WORSTCASE",
+        "max": 0.25,
+        "reason": "Worst case (B L0): a hijacked agent can leak data and take irreversible actions unattended."
+      },
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tool descriptions and outputs contain directives to the model, and returned content carries no provenance or untrusted flag; many outputs are structured JSON but that does not separate trusted from untrusted text.",
+          "gap": "Remove model directives from descriptions/outputs and return structured outputs that separate returned content from server metadata.",
+          "evidence": [
+            {
+              "file": "tools/datasources.go",
+              "lines": "452",
+              "contains": "you MUST ask the user for every required field value explicitly",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/datasources.go#L452"
+            },
+            {
+              "file": "tools/plugins.go",
+              "lines": "210",
+              "contains": "Ask the user whether to install this version",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/plugins.go#L210"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No untrusted source is distinguished; log lines, dashboard JSON and incident content enter results the same way as server metadata.",
+          "gap": "Mark content from every untrusted source (logs, traces, dashboards, annotations, incidents) as such.",
+          "evidence": [
+            {
+              "search": "rg -n -i untrusted -g !*_test.go",
+              "scope": "tools",
+              "hits": 0,
+              "note": "no untrusted-content marking in any tool"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The modes that drop a Rule-of-Two leg (--disable-write, --disable-query) are off by default.",
+          "gap": "No default mode that removes state change or egress from sessions that read untrusted content.",
+          "evidence": [
+            {
+              "file": "cmd/mcp-grafana/main.go",
+              "lines": "229",
+              "contains": "flag.BoolVar(&dt.write, \"disable-write\", false",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L229"
+            },
+            {
+              "file": "cmd/mcp-grafana/main.go",
+              "lines": "230",
+              "contains": "flag.BoolVar(&dt.query, \"disable-query\", false",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L230"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked session can read sensitive logs/metrics, exfiltrate via a new webhook or email contact point, and delete or overwrite Grafana resources, all unattended by the server.",
+          "gap": "Egress and irreversible actions are not removed or gated in sessions that read untrusted content.",
+          "evidence": [
+            {
+              "file": "tools/alerting_routing.go",
+              "lines": "170-173",
+              "contains": "Integration type (for example email\\\\, slack or webhook)",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/alerting_routing.go#L170-L173"
+            },
+            {
+              "file": "tools/api.go",
+              "lines": "18-24",
+              "contains": "http.MethodDelete: true",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L18-L24"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": {
+            "id": "C5-WORSTCASE",
+            "max": 0.25,
+            "reason": "Worst case (B L0): a hijacked agent can leak data and take irreversible actions unattended."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tool descriptions and outputs contain directives to the model, and returned content carries no provenance or untrusted flag; many outputs are structured JSON but that does not separate trusted from untrusted text.",
+              "gap": "Remove model directives from descriptions/outputs and return structured outputs that separate returned content from server metadata.",
+              "evidence": [
+                {
+                  "file": "tools/datasources.go",
+                  "lines": "452",
+                  "contains": "you MUST ask the user for every required field value explicitly",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/datasources.go#L452"
+                },
+                {
+                  "file": "tools/plugins.go",
+                  "lines": "210",
+                  "contains": "Ask the user whether to install this version",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/plugins.go#L210"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No untrusted source is distinguished; log lines, dashboard JSON and incident content enter results the same way as server metadata.",
+              "gap": "Mark content from every untrusted source (logs, traces, dashboards, annotations, incidents) as such.",
+              "evidence": [
+                {
+                  "search": "rg -n -i untrusted -g !*_test.go",
+                  "scope": "tools",
+                  "hits": 0,
+                  "note": "no untrusted-content marking in any tool"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The modes that drop a Rule-of-Two leg (--disable-write, --disable-query) are off by default.",
+              "gap": "No default mode that removes state change or egress from sessions that read untrusted content.",
+              "evidence": [
+                {
+                  "file": "cmd/mcp-grafana/main.go",
+                  "lines": "229",
+                  "contains": "flag.BoolVar(&dt.write, \"disable-write\", false",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L229"
+                },
+                {
+                  "file": "cmd/mcp-grafana/main.go",
+                  "lines": "230",
+                  "contains": "flag.BoolVar(&dt.query, \"disable-query\", false",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L230"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked session can read sensitive logs/metrics, exfiltrate via a new webhook or email contact point, and delete or overwrite Grafana resources, all unattended by the server.",
+              "gap": "Egress and irreversible actions are not removed or gated in sessions that read untrusted content.",
+              "evidence": [
+                {
+                  "file": "tools/alerting_routing.go",
+                  "lines": "170-173",
+                  "contains": "Integration type (for example email\\\\, slack or webhook)",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/alerting_routing.go#L170-L173"
+                },
+                {
+                  "file": "tools/api.go",
+                  "lines": "18-24",
+                  "contains": "http.MethodDelete: true",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L18-L24"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "The server keeps no memory, retrieval store, or conversation history between sessions, and it does not load instruction or configuration files from a working directory. Configuration comes only from command-line flags and environment variables set by the operator, plus optional token, TLS and CA file paths the operator names. Caches (clients, frontend settings, docs index) live only in process memory.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -e godotenv -e 'os\\.WriteFile' -e 'os\\.Create\\(' -e 'os\\.OpenFile' -g *.go -g !*_test.go -g !internal/**",
+              "scope": ".",
+              "hits": 0,
+              "note": "no file writes or dotenv loading in server code (internal/ holds a dev-only schema linter)"
+            },
+            {
+              "search": "rg -n -i -e 'AGENTS\\.md' -e 'CLAUDE\\.md' -e vectorstore -e save_memory -g *.go -g !*_test.go",
+              "scope": ".",
+              "hits": 0,
+              "note": "no instruction-file loading or memory store"
+            },
+            {
+              "search": "rg -n 'os\\.ReadFile' -g *.go -g !*_test.go -g !internal/**",
+              "scope": ".",
+              "hits": 2,
+              "note": "the only file reads are the operator-named token file (GRAFANA_SERVICE_ACCOUNT_TOKEN_FILE) and TLS CA file"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -e godotenv -e 'os\\.WriteFile' -e 'os\\.Create\\(' -e 'os\\.OpenFile' -g *.go -g !*_test.go -g !internal/**",
+              "scope": ".",
+              "hits": 0,
+              "note": "no file writes or dotenv loading in server code (internal/ holds a dev-only schema linter)"
+            },
+            {
+              "search": "rg -n -i -e 'AGENTS\\.md' -e 'CLAUDE\\.md' -e vectorstore -e save_memory -g *.go -g !*_test.go",
+              "scope": ".",
+              "hits": 0,
+              "note": "no instruction-file loading or memory store"
+            },
+            {
+              "search": "rg -n 'os\\.ReadFile' -g *.go -g !*_test.go -g !internal/**",
+              "scope": ".",
+              "hits": 2,
+              "note": "the only file reads are the operator-named token file (GRAFANA_SERVICE_ACCOUNT_TOKEN_FILE) and TLS CA file"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -e godotenv -e 'os\\.WriteFile' -e 'os\\.Create\\(' -e 'os\\.OpenFile' -g *.go -g !*_test.go -g !internal/**",
+              "scope": ".",
+              "hits": 0,
+              "note": "no file writes or dotenv loading in server code (internal/ holds a dev-only schema linter)"
+            },
+            {
+              "search": "rg -n -i -e 'AGENTS\\.md' -e 'CLAUDE\\.md' -e vectorstore -e save_memory -g *.go -g !*_test.go",
+              "scope": ".",
+              "hits": 0,
+              "note": "no instruction-file loading or memory store"
+            },
+            {
+              "search": "rg -n 'os\\.ReadFile' -g *.go -g !*_test.go -g !internal/**",
+              "scope": ".",
+              "hits": 2,
+              "note": "the only file reads are the operator-named token file (GRAFANA_SERVICE_ACCOUNT_TOKEN_FILE) and TLS CA file"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -e godotenv -e 'os\\.WriteFile' -e 'os\\.Create\\(' -e 'os\\.OpenFile' -g *.go -g !*_test.go -g !internal/**",
+              "scope": ".",
+              "hits": 0,
+              "note": "no file writes or dotenv loading in server code (internal/ holds a dev-only schema linter)"
+            },
+            {
+              "search": "rg -n -i -e 'AGENTS\\.md' -e 'CLAUDE\\.md' -e vectorstore -e save_memory -g *.go -g !*_test.go",
+              "scope": ".",
+              "hits": 0,
+              "note": "no instruction-file loading or memory store"
+            },
+            {
+              "search": "rg -n 'os\\.ReadFile' -g *.go -g !*_test.go -g !internal/**",
+              "scope": ".",
+              "hits": 2,
+              "note": "the only file reads are the operator-named token file (GRAFANA_SERVICE_ACCOUNT_TOKEN_FILE) and TLS CA file"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -e godotenv -e 'os\\.WriteFile' -e 'os\\.Create\\(' -e 'os\\.OpenFile' -g *.go -g !*_test.go -g !internal/**",
+                  "scope": ".",
+                  "hits": 0,
+                  "note": "no file writes or dotenv loading in server code (internal/ holds a dev-only schema linter)"
+                },
+                {
+                  "search": "rg -n -i -e 'AGENTS\\.md' -e 'CLAUDE\\.md' -e vectorstore -e save_memory -g *.go -g !*_test.go",
+                  "scope": ".",
+                  "hits": 0,
+                  "note": "no instruction-file loading or memory store"
+                },
+                {
+                  "search": "rg -n 'os\\.ReadFile' -g *.go -g !*_test.go -g !internal/**",
+                  "scope": ".",
+                  "hits": 2,
+                  "note": "the only file reads are the operator-named token file (GRAFANA_SERVICE_ACCOUNT_TOKEN_FILE) and TLS CA file"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -e godotenv -e 'os\\.WriteFile' -e 'os\\.Create\\(' -e 'os\\.OpenFile' -g *.go -g !*_test.go -g !internal/**",
+                  "scope": ".",
+                  "hits": 0,
+                  "note": "no file writes or dotenv loading in server code (internal/ holds a dev-only schema linter)"
+                },
+                {
+                  "search": "rg -n -i -e 'AGENTS\\.md' -e 'CLAUDE\\.md' -e vectorstore -e save_memory -g *.go -g !*_test.go",
+                  "scope": ".",
+                  "hits": 0,
+                  "note": "no instruction-file loading or memory store"
+                },
+                {
+                  "search": "rg -n 'os\\.ReadFile' -g *.go -g !*_test.go -g !internal/**",
+                  "scope": ".",
+                  "hits": 2,
+                  "note": "the only file reads are the operator-named token file (GRAFANA_SERVICE_ACCOUNT_TOKEN_FILE) and TLS CA file"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -e godotenv -e 'os\\.WriteFile' -e 'os\\.Create\\(' -e 'os\\.OpenFile' -g *.go -g !*_test.go -g !internal/**",
+                  "scope": ".",
+                  "hits": 0,
+                  "note": "no file writes or dotenv loading in server code (internal/ holds a dev-only schema linter)"
+                },
+                {
+                  "search": "rg -n -i -e 'AGENTS\\.md' -e 'CLAUDE\\.md' -e vectorstore -e save_memory -g *.go -g !*_test.go",
+                  "scope": ".",
+                  "hits": 0,
+                  "note": "no instruction-file loading or memory store"
+                },
+                {
+                  "search": "rg -n 'os\\.ReadFile' -g *.go -g !*_test.go -g !internal/**",
+                  "scope": ".",
+                  "hits": 2,
+                  "note": "the only file reads are the operator-named token file (GRAFANA_SERVICE_ACCOUNT_TOKEN_FILE) and TLS CA file"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -e godotenv -e 'os\\.WriteFile' -e 'os\\.Create\\(' -e 'os\\.OpenFile' -g *.go -g !*_test.go -g !internal/**",
+                  "scope": ".",
+                  "hits": 0,
+                  "note": "no file writes or dotenv loading in server code (internal/ holds a dev-only schema linter)"
+                },
+                {
+                  "search": "rg -n -i -e 'AGENTS\\.md' -e 'CLAUDE\\.md' -e vectorstore -e save_memory -g *.go -g !*_test.go",
+                  "scope": ".",
+                  "hits": 0,
+                  "note": "no instruction-file loading or memory store"
+                },
+                {
+                  "search": "rg -n 'os\\.ReadFile' -g *.go -g !*_test.go -g !internal/**",
+                  "scope": ".",
+                  "hits": 2,
+                  "note": "the only file reads are the operator-named token file (GRAFANA_SERVICE_ACCOUNT_TOKEN_FILE) and TLS CA file"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n -e godotenv -e 'os\\.WriteFile' -e 'os\\.Create\\(' -e 'os\\.OpenFile' -g *.go -g !*_test.go -g !internal/**",
+          "scope": ".",
+          "hits": 0,
+          "note": "no file writes or dotenv loading in server code (internal/ holds a dev-only schema linter)"
+        },
+        {
+          "search": "rg -n -i -e 'AGENTS\\.md' -e 'CLAUDE\\.md' -e vectorstore -e save_memory -g *.go -g !*_test.go",
+          "scope": ".",
+          "hits": 0,
+          "note": "no instruction-file loading or memory store"
+        },
+        {
+          "search": "rg -n 'os\\.ReadFile' -g *.go -g !*_test.go -g !internal/**",
+          "scope": ".",
+          "hits": 2,
+          "note": "the only file reads are the operator-named token file (GRAFANA_SERVICE_ACCOUNT_TOKEN_FILE) and TLS CA file"
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "The server itself loads no plugins or remote code, but its default toolset includes install_plugin, which lets the model install any Grafana plugin at any version into the connected Grafana server through Grafana's install API. The only consent step is a message telling the model to ask the user when no version is given; if the model supplies a version, the install happens immediately. Installed plugins run inside Grafana (backend code on the server, frontend code in every user's browser), with far more access than the MCP server itself.",
+      "max": 1.0,
+      "notes": "Blast radius is inferred from Grafana's plugin model (backend plugins run as Grafana-managed processes, frontend plugins load into the Grafana UI); Grafana's own signature checks for catalog plugins live outside this repository and were not examined. The installation succeeds only if the token holds plugin-install rights (typically Admin).",
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The model chooses the plugin ID and version and the server asks Grafana to install it; there is no allowlist, pinning policy, or verification in the server.",
+          "gap": "No operator allowlist of installable plugins or server-side integrity/signature policy.",
+          "evidence": [
+            {
+              "file": "tools/plugins.go",
+              "lines": "201-219",
+              "contains": "grafanaPluginRequest(ctx, cfg, http.MethodPost, \"/api/plugins/\"+url.PathEscape(pluginID)+\"/install\"",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/plugins.go#L201-L219"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No extension type is verified by the server; plugin installs are the only extension path and they are unchecked.",
+          "gap": "Apply verification to plugin installs.",
+          "evidence": [
+            {
+              "file": "tools/plugins.go",
+              "lines": "417-422",
+              "contains": "InstallPlugin.Register(s)",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/plugins.go#L417-L422"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "install_plugin is registered by default (plugin category in the default list, write tools on), and the confirmation is only text returned to the model.",
+          "gap": "Nothing third-party installable by default; installs should require operator enablement and a human confirmation the server enforces.",
+          "evidence": [
+            {
+              "file": "cmd/mcp-grafana/main.go",
+              "lines": "210",
+              "contains": "plugin,api,config,provisioning,docs,user",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L210"
+            },
+            {
+              "file": "tools/plugins.go",
+              "lines": "202-216",
+              "contains": "ConfirmationRequired: true",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/plugins.go#L202-L216"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "A malicious or compromised plugin runs inside the Grafana server and in users' browsers, with Grafana's own authority rather than the MCP server's narrower token.",
+          "gap": "No confinement of what an installed plugin can reach.",
+          "evidence": [
+            {
+              "file": "tools/plugins.go",
+              "lines": "219-229",
+              "contains": "Plugin installed successfully. Grafana may need to be restarted for the plugin to become active.",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/plugins.go#L219-L229"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The model chooses the plugin ID and version and the server asks Grafana to install it; there is no allowlist, pinning policy, or verification in the server.",
+              "gap": "No operator allowlist of installable plugins or server-side integrity/signature policy.",
+              "evidence": [
+                {
+                  "file": "tools/plugins.go",
+                  "lines": "201-219",
+                  "contains": "grafanaPluginRequest(ctx, cfg, http.MethodPost, \"/api/plugins/\"+url.PathEscape(pluginID)+\"/install\"",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/plugins.go#L201-L219"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No extension type is verified by the server; plugin installs are the only extension path and they are unchecked.",
+              "gap": "Apply verification to plugin installs.",
+              "evidence": [
+                {
+                  "file": "tools/plugins.go",
+                  "lines": "417-422",
+                  "contains": "InstallPlugin.Register(s)",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/plugins.go#L417-L422"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "install_plugin is registered by default (plugin category in the default list, write tools on), and the confirmation is only text returned to the model.",
+              "gap": "Nothing third-party installable by default; installs should require operator enablement and a human confirmation the server enforces.",
+              "evidence": [
+                {
+                  "file": "cmd/mcp-grafana/main.go",
+                  "lines": "210",
+                  "contains": "plugin,api,config,provisioning,docs,user",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L210"
+                },
+                {
+                  "file": "tools/plugins.go",
+                  "lines": "202-216",
+                  "contains": "ConfirmationRequired: true",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/plugins.go#L202-L216"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "A malicious or compromised plugin runs inside the Grafana server and in users' browsers, with Grafana's own authority rather than the MCP server's narrower token.",
+              "gap": "No confinement of what an installed plugin can reach.",
+              "evidence": [
+                {
+                  "file": "tools/plugins.go",
+                  "lines": "219-229",
+                  "contains": "Plugin installed successfully. Grafana may need to be restarted for the plugin to become active.",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/plugins.go#L219-L229"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "The Grafana token never appears in tool output: tools have no way to read it, it is attached only by the transport layer, cross-origin redirects are refused so it cannot follow a redirect elsewhere, and URLs with embedded credentials are rejected. Debug logging of HTTP traffic masks Authorization and similar headers, and startup logs record only whether a key is set. However, tool results such as log lines are passed to the model without any secret scanning, the token is a long-lived credential from an environment variable or file, and anonymous usage statistics are sent to Grafana Labs by default (content-free: counts, tool names, auth method).",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.4,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Header redaction in debug logs, URL redaction in startup logs, rejection of credentials embedded in URLs, and a redirect guard that stops credentials leaving the Grafana origin; credentials are plaintext env vars or files.",
+          "gap": "No secret manager/keychain storage and no redaction of secrets in model-bound tool results.",
+          "evidence": [
+            {
+              "file": "mcpgrafana.go",
+              "lines": "760-777",
+              "contains": "\"Authorization\":                   true",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/mcpgrafana.go#L760-L777"
+            },
+            {
+              "file": "redirect_guard.go",
+              "lines": "13-37",
+              "contains": "refusing cross-origin redirect",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/redirect_guard.go#L13-L37"
+            },
+            {
+              "file": "validate_url.go",
+              "lines": "49-51",
+              "contains": "embedded credentials not allowed",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/validate_url.go#L49-L51"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Logs, error messages and telemetry are covered (redacted headers, origin-only redirect errors, bounded-vocabulary usage stats); model-bound tool results are not scanned.",
+          "gap": "Redaction does not extend to model-bound messages (e.g., secrets inside returned log lines).",
+          "evidence": [
+            {
+              "file": "mcpgrafana.go",
+              "lines": "1009",
+              "contains": "\"api_key_set\", apiKey != \"\"",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/mcpgrafana.go#L1009"
+            },
+            {
+              "file": "redirect_guard.go",
+              "lines": "40-47",
+              "contains": "redirectOriginForError excludes URL userinfo",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/redirect_guard.go#L40-L47"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Usage statistics reporting to stats.grafana.org is on by default and content-free; debug logging is off by default.",
+          "gap": "Telemetry should be opt-in.",
+          "evidence": [
+            {
+              "file": "usagestats/mode.go",
+              "lines": "29",
+              "contains": "DefaultMode = ModeEnabled",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/usagestats/mode.go#L29"
+            },
+            {
+              "file": "usagestats/mode.go",
+              "lines": "44",
+              "contains": "https://stats.grafana.org/mcp-grafana-usage-report",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/usagestats/mode.go#L44"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A leaked token is a long-lived Grafana service-account token whose scope is set by the operator (Editor suggested); file-based rotation is supported but not enforced.",
+          "gap": "No short-lived or narrowly scoped credentials issued by the server.",
+          "evidence": [
+            {
+              "file": "mcpgrafana.go",
+              "lines": "82-92",
+              "contains": "GRAFANA_SERVICE_ACCOUNT_TOKEN_FILE",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/mcpgrafana.go#L82-L92"
+            },
+            {
+              "file": "README.md",
+              "lines": "652",
+              "contains": "assign the built-in `Editor` role",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/README.md#L652"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.4,
+          "raw": 0.4,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Header redaction in debug logs, URL redaction in startup logs, rejection of credentials embedded in URLs, and a redirect guard that stops credentials leaving the Grafana origin; credentials are plaintext env vars or files.",
+              "gap": "No secret manager/keychain storage and no redaction of secrets in model-bound tool results.",
+              "evidence": [
+                {
+                  "file": "mcpgrafana.go",
+                  "lines": "760-777",
+                  "contains": "\"Authorization\":                   true",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/mcpgrafana.go#L760-L777"
+                },
+                {
+                  "file": "redirect_guard.go",
+                  "lines": "13-37",
+                  "contains": "refusing cross-origin redirect",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/redirect_guard.go#L13-L37"
+                },
+                {
+                  "file": "validate_url.go",
+                  "lines": "49-51",
+                  "contains": "embedded credentials not allowed",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/validate_url.go#L49-L51"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Logs, error messages and telemetry are covered (redacted headers, origin-only redirect errors, bounded-vocabulary usage stats); model-bound tool results are not scanned.",
+              "gap": "Redaction does not extend to model-bound messages (e.g., secrets inside returned log lines).",
+              "evidence": [
+                {
+                  "file": "mcpgrafana.go",
+                  "lines": "1009",
+                  "contains": "\"api_key_set\", apiKey != \"\"",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/mcpgrafana.go#L1009"
+                },
+                {
+                  "file": "redirect_guard.go",
+                  "lines": "40-47",
+                  "contains": "redirectOriginForError excludes URL userinfo",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/redirect_guard.go#L40-L47"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Usage statistics reporting to stats.grafana.org is on by default and content-free; debug logging is off by default.",
+              "gap": "Telemetry should be opt-in.",
+              "evidence": [
+                {
+                  "file": "usagestats/mode.go",
+                  "lines": "29",
+                  "contains": "DefaultMode = ModeEnabled",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/usagestats/mode.go#L29"
+                },
+                {
+                  "file": "usagestats/mode.go",
+                  "lines": "44",
+                  "contains": "https://stats.grafana.org/mcp-grafana-usage-report",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/usagestats/mode.go#L44"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A leaked token is a long-lived Grafana service-account token whose scope is set by the operator (Editor suggested); file-based rotation is supported but not enforced.",
+              "gap": "No short-lived or narrowly scoped credentials issued by the server.",
+              "evidence": [
+                {
+                  "file": "mcpgrafana.go",
+                  "lines": "82-92",
+                  "contains": "GRAFANA_SERVICE_ACCOUNT_TOKEN_FILE",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/mcpgrafana.go#L82-L92"
+                },
+                {
+                  "file": "README.md",
+                  "lines": "652",
+                  "contains": "assign the built-in `Editor` role",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/README.md#L652"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "In the default configuration the server keeps no record of the tool calls it makes: the observability middleware is a no-op unless metrics, tracing or slow-request logging is enabled, and tool handlers log nothing at info level. If the operator configures an OpenTelemetry endpoint, every tool call becomes a span with its name, session ID, status and error, exported off the host; arguments are added only with an extra flag, and there is no record of which human or principal asked for the call.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.35,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Each tool call is a span with tool name, session ID, status and error, exported via OTLP off the host; arguments only with --include-args-in-spans.",
+          "gap": "No actor attribution (requesting principal) and arguments are excluded by default.",
+          "evidence": [
+            {
+              "file": "tools.go",
+              "lines": "347-368",
+              "contains": "fmt.Sprintf(\"tools/call %s\", name)",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools.go#L347-L368"
+            },
+            {
+              "file": "cmd/mcp-grafana/main.go",
+              "lines": "275",
+              "contains": "include-args-in-spans",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L275"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Spans are created in the shared ConvertTool wrapper, so every built-in tool is covered, including unknown-argument rejections.",
+          "gap": "No record of configuration changes or credential use.",
+          "evidence": [
+            {
+              "file": "tools.go",
+              "lines": "378-381",
+              "contains": "span.SetStatus(codes.Error, \"unknown arguments\")",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools.go#L378-L381"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Off unless an OTLP endpoint is configured.",
+          "gap": "On by default.",
+          "evidence": [
+            {
+              "file": "observability/observability.go",
+              "lines": "182-193",
+              "contains": "otlptracegrpc.New(context.Background())",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/observability/observability.go#L182-L193"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Spans are exported by a batching processor, best-effort and flushed late; export failures only print to stderr.",
+          "gap": "Per-action durable flush.",
+          "evidence": [
+            {
+              "file": "observability/observability.go",
+              "lines": "187-190",
+              "contains": "sdktrace.WithBatcher(traceExporter)",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/observability/observability.go#L187-L190"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No tool-call record by default: the MCP middleware returns the handler unchanged when metrics, slow-log and tracing are all off.",
+              "gap": "A structured per-call record (tool, arguments, outcome, timestamp) written by default.",
+              "evidence": [
+                {
+                  "file": "observability/observability.go",
+                  "lines": "620-627",
+                  "contains": "if !metricsOn && !slowLogOn && !tracingOn",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/observability/observability.go#L620-L627"
+                },
+                {
+                  "search": "rg -n -e '\\.Info\\(' -e 'InfoContext\\(' -g !*_test.go",
+                  "scope": "tools",
+                  "hits": 0,
+                  "note": "tool handlers never log their actions at info level"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Nothing is recorded for any tool in the default configuration.",
+              "gap": "Record every tool call.",
+              "evidence": [
+                {
+                  "file": "cmd/mcp-grafana/main.go",
+                  "lines": "1321",
+                  "contains": "Default 0 disables slow-request logging",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L1321"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Recording is opt-in only (OTLP endpoint, --metrics or --slow-request-threshold).",
+              "gap": "Recording on by default.",
+              "evidence": [
+                {
+                  "file": "observability/observability.go",
+                  "lines": "182",
+                  "contains": "if OTLPTracesEndpoint() != \"\" {",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/observability/observability.go#L182"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "With nothing recorded, actions proceed with no trace.",
+              "gap": "Records flushed per action with errors surfaced.",
+              "evidence": [
+                {
+                  "file": "observability/observability.go",
+                  "lines": "625-627",
+                  "contains": "return func(next mcp.MethodHandler) mcp.MethodHandler { return next }",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/observability/observability.go#L625-L627"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in OpenTelemetry tracing (OTEL_EXPORTER_OTLP_ENDPOINT)",
+          "score": 0.35,
+          "raw": 0.35,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Each tool call is a span with tool name, session ID, status and error, exported via OTLP off the host; arguments only with --include-args-in-spans.",
+              "gap": "No actor attribution (requesting principal) and arguments are excluded by default.",
+              "evidence": [
+                {
+                  "file": "tools.go",
+                  "lines": "347-368",
+                  "contains": "fmt.Sprintf(\"tools/call %s\", name)",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools.go#L347-L368"
+                },
+                {
+                  "file": "cmd/mcp-grafana/main.go",
+                  "lines": "275",
+                  "contains": "include-args-in-spans",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L275"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Spans are created in the shared ConvertTool wrapper, so every built-in tool is covered, including unknown-argument rejections.",
+              "gap": "No record of configuration changes or credential use.",
+              "evidence": [
+                {
+                  "file": "tools.go",
+                  "lines": "378-381",
+                  "contains": "span.SetStatus(codes.Error, \"unknown arguments\")",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools.go#L378-L381"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Off unless an OTLP endpoint is configured.",
+              "gap": "On by default.",
+              "evidence": [
+                {
+                  "file": "observability/observability.go",
+                  "lines": "182-193",
+                  "contains": "otlptracegrpc.New(context.Background())",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/observability/observability.go#L182-L193"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Spans are exported by a batching processor, best-effort and flushed late; export failures only print to stderr.",
+              "gap": "Per-action durable flush.",
+              "evidence": [
+                {
+                  "file": "observability/observability.go",
+                  "lines": "187-190",
+                  "contains": "sdktrace.WithBatcher(traceExporter)",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/observability/observability.go#L187-L190"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "The server bounds some of its own work: most HTTP responses are capped at 10 MB, Loki log queries at 100 lines, and the typed Grafana client has a 10-second default timeout. Other paths are open-ended: the generic API tool's HTTP client has no timeout, jq filters run until the caller cancels, the model can set any rendering timeout, and the Loki cost guardrail is off by default. There are no rate or concurrency limits on tool calls, including write tools.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.4,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Server-enforced caps on some operations: 10 MB response limit, Loki line cap, 10 s typed-client timeout.",
+          "gap": "Caps on every operation plus rate or concurrency limits.",
+          "evidence": [
+            {
+              "file": "tools/response_utils.go",
+              "lines": "12-20",
+              "contains": "response body exceeds maximum size",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/response_utils.go#L12-L20"
+            },
+            {
+              "file": "tools/loki.go",
+              "lines": "26",
+              "contains": "MaxLokiLogLimit = 100",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/loki.go#L26"
+            },
+            {
+              "file": "mcpgrafana.go",
+              "lines": "430",
+              "contains": "DefaultGrafanaClientTimeout = 10 * time.Second",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/mcpgrafana.go#L430"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Most HTTP tool reads use the size cap, but grafana_api_request's client has no timeout and its jq evaluation is unbounded.",
+          "gap": "Bounds on every tool path, including the generic API tool.",
+          "evidence": [
+            {
+              "file": "tools/api.go",
+              "lines": "148",
+              "contains": "(&http.Client{Transport: transport}).Do(req)",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L148"
+            },
+            {
+              "file": "tools/api.go",
+              "lines": "185-187",
+              "contains": "code.RunWithContext(ctx, input)",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L185-L187"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The model can raise the rendering timeout to any value, and the Loki guardrail defaults to off.",
+          "gap": "Limits the model cannot raise.",
+          "evidence": [
+            {
+              "file": "tools/rendering.go",
+              "lines": "128-131",
+              "contains": "timeout = time.Duration(*args.Timeout) * time.Second",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/rendering.go#L128-L131"
+            },
+            {
+              "file": "cmd/mcp-grafana/main.go",
+              "lines": "268",
+              "contains": "Loki query cost guardrail mode for query_loki_logs: 'off' (default)",
+              "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L268"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No ceiling on how many write or query calls run; a runaway host can issue unlimited destructive calls.",
+          "gap": "Rate limits on side-effecting tools.",
+          "evidence": [
+            {
+              "search": "rg -n -e x/time/rate -e semaphore -e MaxConcurrent -g *.go -g !*_test.go",
+              "scope": ".",
+              "hits": 0,
+              "note": "no rate or concurrency limiter in the server"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.4,
+          "raw": 0.4,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Server-enforced caps on some operations: 10 MB response limit, Loki line cap, 10 s typed-client timeout.",
+              "gap": "Caps on every operation plus rate or concurrency limits.",
+              "evidence": [
+                {
+                  "file": "tools/response_utils.go",
+                  "lines": "12-20",
+                  "contains": "response body exceeds maximum size",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/response_utils.go#L12-L20"
+                },
+                {
+                  "file": "tools/loki.go",
+                  "lines": "26",
+                  "contains": "MaxLokiLogLimit = 100",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/loki.go#L26"
+                },
+                {
+                  "file": "mcpgrafana.go",
+                  "lines": "430",
+                  "contains": "DefaultGrafanaClientTimeout = 10 * time.Second",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/mcpgrafana.go#L430"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Most HTTP tool reads use the size cap, but grafana_api_request's client has no timeout and its jq evaluation is unbounded.",
+              "gap": "Bounds on every tool path, including the generic API tool.",
+              "evidence": [
+                {
+                  "file": "tools/api.go",
+                  "lines": "148",
+                  "contains": "(&http.Client{Transport: transport}).Do(req)",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L148"
+                },
+                {
+                  "file": "tools/api.go",
+                  "lines": "185-187",
+                  "contains": "code.RunWithContext(ctx, input)",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L185-L187"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The model can raise the rendering timeout to any value, and the Loki guardrail defaults to off.",
+              "gap": "Limits the model cannot raise.",
+              "evidence": [
+                {
+                  "file": "tools/rendering.go",
+                  "lines": "128-131",
+                  "contains": "timeout = time.Duration(*args.Timeout) * time.Second",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/rendering.go#L128-L131"
+                },
+                {
+                  "file": "cmd/mcp-grafana/main.go",
+                  "lines": "268",
+                  "contains": "Loki query cost guardrail mode for query_loki_logs: 'off' (default)",
+                  "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L268"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No ceiling on how many write or query calls run; a runaway host can issue unlimited destructive calls.",
+              "gap": "Rate limits on side-effecting tools.",
+              "evidence": [
+                {
+                  "search": "rg -n -e x/time/rate -e semaphore -e MaxConcurrent -g *.go -g !*_test.go",
+                  "scope": ".",
+                  "hits": 0,
+                  "note": "no rate or concurrency limiter in the server"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "The default grafana_api_request tool can call Grafana's service-account and access-control endpoints with the server's own credential, letting the model mint tokens or change roles when the token is Admin (C1-SELFESC).",
+      "criterion": "C1",
+      "owasp": [
+        "ASI03",
+        "T3"
+      ],
+      "evidence": [
+        {
+          "file": "tools/api.go",
+          "lines": "18-24",
+          "contains": "http.MethodDelete: true",
+          "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L18-L24"
+        },
+        {
+          "file": "tools/api.go",
+          "lines": "129",
+          "contains": "strings.TrimRight(cfg.URL, \"/\") + endpoint",
+          "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L129"
+        }
+      ]
+    },
+    {
+      "summary": "Default configuration lets a hijacked session both exfiltrate data (new webhook/email contact points) and take irreversible actions (DELETE on any API path, raw SQL) with no server-side gate (C5-WORSTCASE).",
+      "criterion": "C5",
+      "owasp": [
+        "ASI01",
+        "LLM01",
+        "T6"
+      ],
+      "evidence": [
+        {
+          "file": "tools/alerting_routing.go",
+          "lines": "170-173",
+          "contains": "create_contact_point",
+          "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/alerting_routing.go#L170-L173"
+        },
+        {
+          "file": "tools/api.go",
+          "lines": "18-24",
+          "contains": "http.MethodDelete: true",
+          "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L18-L24"
+        }
+      ]
+    },
+    {
+      "summary": "install_plugin is on by default and installs a model-chosen plugin and version into Grafana, where it runs with Grafana's authority; the only consent is text asking the model to check with the user.",
+      "criterion": "C7",
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "evidence": [
+        {
+          "file": "tools/plugins.go",
+          "lines": "201-219",
+          "contains": "/install",
+          "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/plugins.go#L201-L219"
+        },
+        {
+          "file": "tools/plugins.go",
+          "lines": "417-422",
+          "contains": "InstallPlugin.Register(s)",
+          "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/plugins.go#L417-L422"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "Log lines, traces, dashboards, annotations and incident text returned by default tools (tools/loki.go query_loki_logs, tools/api.go:129)",
+    "sensitive_data": "All datasources the token can query, including logs and SQL databases (tools/api.go:28-30 /api/ds/query)",
+    "state_change_or_egress": "Write tools on by default: grafana_api_request DELETE/PUT (tools/api.go:18-24), contact-point creation to external webhooks (tools/alerting_routing.go:170-173), install_plugin (tools/plugins.go:219)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Ship read-only by default: make --disable-write the default and require an explicit flag to register write tools.",
+      "criterion": "C3",
+      "parameter": "D",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.05
+    },
+    {
+      "summary": "Write a structured record of every tool call (tool, arguments, outcome, timestamp) to stderr or a log file by default.",
+      "criterion": "C9",
+      "parameter": "S",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 1 step 3",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Remove install_plugin from the default toolset and gate it behind an operator allowlist of plugin IDs.",
+      "criterion": "C7",
+      "parameter": "D",
+      "from_level": 0,
+      "to_level": 3,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Drop model-directed instructions from tool descriptions and outputs and mark returned log/dashboard content as untrusted with its source.",
+      "criterion": "C5",
+      "parameter": "S",
+      "from_level": 0,
+      "to_level": 3,
+      "playbook": "Playbook 1",
+      "estimated_gain": 0.225
+    },
+    {
+      "summary": "Add an endpoint allowlist to grafana_api_request that blocks service-account, access-control, admin and plugin-install paths.",
+      "criterion": "C3",
+      "parameter": "S",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.075
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was executed, installed, or probed.",
+    "Grafana server behaviour (RBAC enforcement, plugin signature checks, SQL datasource handling) is outside the repository and was inferred, not verified; C7 blast radius is INFERRED.",
+    "The third-party module github.com/grafana/mcp-doc-server (used by get_doc to fetch documentation URLs) and the MCP go-sdk internals were not examined.",
+    "The non-default HTTP transports (streamable-http, SSE) were reviewed only for credential handling: they forward caller tokens (token passthrough) and have optional bearer auth and Host/Origin checks.",
+    "No reviewer-injection text was found in the repository."
+  ]
+}

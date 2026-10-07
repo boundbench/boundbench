@@ -1,0 +1,2366 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "k8sgpt",
+  "name": "K8sGPT",
+  "repo_url": "https://github.com/k8sgpt-ai/k8sgpt",
+  "subpath": null,
+  "description": "CNCF Kubernetes diagnostics CLI/operator that scans clusters and explains issues with LLMs; ships MCP server",
+  "category": "infrastructure_ops",
+  "pinned_commit": "635d9b122318a41ada1bfcf9153801365fdcaf77",
+  "version": null,
+  "scored_date": "2026-10-03",
+  "scored_configuration": "The CLI as the README Quick Start leads: `k8sgpt auth add` (default OpenAI backend, key stored in the user config), then `k8sgpt analyze --explain` with no other flags: the operator's current kubeconfig context, all core analyzers, file cache on, --anonymize off. The serve, MCP and operator modes are footnoted, not scored.",
+  "score": 5.8,
+  "max_score": 10.0,
+  "band": {
+    "id": "moderate",
+    "label": "Moderate",
+    "color": "amber"
+  },
+  "applicable": {
+    "count": 7,
+    "score": 2.77,
+    "max": 7.0,
+    "percent": 40
+  },
+  "capability_profile": {
+    "code_execution": "no",
+    "filesystem_write": "no",
+    "network_egress": "no",
+    "external_credentials": "yes",
+    "persistent_memory": "yes",
+    "untrusted_input": "yes",
+    "third_party_extensions": "opt_in",
+    "sub_agents": "no",
+    "external_communication": "no"
+  },
+  "headline": "As a CLI, k8sgpt is a fixed pipeline, not a tool-using agent: hard-coded read-only analyzers collect cluster problems, the model explains each one in text, and nothing the model says is executed. A hijacked model can only mislead the operator. The main posture gaps are elsewhere: the CLI uses the operator's full kubeconfig with no narrowing, keeps no record of what it sent to the AI provider, and stores the provider key in plaintext. The score does not cover `k8sgpt serve --mcp`, which hands an MCP host tools that read any Secret and rewrite cache and analyzer endpoints. Assess that mode separately before using it.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "The CLI uses whatever Kubernetes credentials are in the operator's kubeconfig (in-cluster service account first, otherwise the current context), so it typically runs with cluster-admin-level authority and never narrows it. What limits the damage is the design: every Kubernetes request is a hard-coded list or get call in the analyzers, the model never sees or uses the credentials, and nothing on the analyze path writes to the cluster. A hijacked model therefore cannot use the identity at all, but k8sgpt itself still reads cluster-wide with the full credential, including Secret objects it fetches to check that they exist.",
+      "max": 1.0,
+      "notes": "Serve/MCP mode (not scored) exposes get-resource and list-resources for Secrets to the MCP host; its credential handling is not locked down. The Helm chart's ClusterRole grants get/list/watch on all resources in all API groups (charts/k8sgpt/templates/role.yaml).",
+      "status": "scored",
+      "score": 0.3,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Ambient kubeconfig credential with no narrowing, but the request set is fixed read-only code (no model-originated API calls).",
+          "gap": "No dedicated or role-scoped identity: the operator's current context is used as-is, with no read-only impersonation or token downscoping.",
+          "evidence": [
+            {
+              "file": "pkg/kubernetes/kubernetes.go",
+              "lines": "46-60",
+              "contains": "clientcmd.NewNonInteractiveDeferredLoadingClientConfig",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/kubernetes/kubernetes.go#L46-L60"
+            },
+            {
+              "search": "rg -n '\\.(Create|Update|Patch|Delete|DeleteCollection)\\(' --glob '!*_test.go'",
+              "scope": "pkg/analyzer pkg/analysis pkg/ai pkg/kubernetes cmd/analyze",
+              "hits": 0,
+              "note": "No Kubernetes write call anywhere on the analyze path; all 22 matches without the glob are fake-client setup in _test.go files."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every analyzer shares the same ambient client; there is no authorization check, only the fact that each call is a fixed get/list.",
+          "gap": "No authorization layer that every request passes through; coverage rests on code shape rather than a check.",
+          "evidence": [
+            {
+              "file": "pkg/analysis/analysis.go",
+              "lines": "97-100",
+              "contains": "client, err := kubernetes.NewClient(kubecontext, kubeconfig)",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L97-L100"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Default is the kubeconfig current context (or the pod's service account), whatever its privilege.",
+          "gap": "No least-privilege default; running with a read-only identity requires the operator to prepare one and pass --kubeconfig/--kubecontext.",
+          "evidence": [
+            {
+              "file": "cmd/root.go",
+              "lines": "86-87",
+              "contains": "Kubernetes context to use. Only required if out-of-cluster.",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/root.go#L86-L87"
+            },
+            {
+              "file": "pkg/kubernetes/kubernetes.go",
+              "lines": "54-58",
+              "contains": "CurrentContext: kubecontext",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/kubernetes/kubernetes.go#L54-L58"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only hard-coded read calls run against one cluster, the model cannot issue requests, and secret objects are fetched only to test existence; the reads are cluster-wide.",
+          "gap": "Credentials are long-lived ambient kubeconfig, not minutes-lived and task-scoped; reads span all namespaces by default.",
+          "evidence": [
+            {
+              "search": "rg -n '\\.(Create|Update|Patch|Delete|DeleteCollection)\\(' --glob '!*_test.go'",
+              "scope": "pkg/analyzer pkg/analysis pkg/ai pkg/kubernetes cmd/analyze",
+              "hits": 0,
+              "note": "No Kubernetes write call anywhere on the analyze path; all 22 matches without the glob are fake-client setup in _test.go files."
+            },
+            {
+              "file": "pkg/analyzer/ingress.go",
+              "lines": "163",
+              "contains": "_, err := a.Client.GetClient().CoreV1().Secrets(ing.Namespace).Get",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analyzer/ingress.go#L163"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.3,
+          "raw": 0.3,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Ambient kubeconfig credential with no narrowing, but the request set is fixed read-only code (no model-originated API calls).",
+              "gap": "No dedicated or role-scoped identity: the operator's current context is used as-is, with no read-only impersonation or token downscoping.",
+              "evidence": [
+                {
+                  "file": "pkg/kubernetes/kubernetes.go",
+                  "lines": "46-60",
+                  "contains": "clientcmd.NewNonInteractiveDeferredLoadingClientConfig",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/kubernetes/kubernetes.go#L46-L60"
+                },
+                {
+                  "search": "rg -n '\\.(Create|Update|Patch|Delete|DeleteCollection)\\(' --glob '!*_test.go'",
+                  "scope": "pkg/analyzer pkg/analysis pkg/ai pkg/kubernetes cmd/analyze",
+                  "hits": 0,
+                  "note": "No Kubernetes write call anywhere on the analyze path; all 22 matches without the glob are fake-client setup in _test.go files."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every analyzer shares the same ambient client; there is no authorization check, only the fact that each call is a fixed get/list.",
+              "gap": "No authorization layer that every request passes through; coverage rests on code shape rather than a check.",
+              "evidence": [
+                {
+                  "file": "pkg/analysis/analysis.go",
+                  "lines": "97-100",
+                  "contains": "client, err := kubernetes.NewClient(kubecontext, kubeconfig)",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L97-L100"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default is the kubeconfig current context (or the pod's service account), whatever its privilege.",
+              "gap": "No least-privilege default; running with a read-only identity requires the operator to prepare one and pass --kubeconfig/--kubecontext.",
+              "evidence": [
+                {
+                  "file": "cmd/root.go",
+                  "lines": "86-87",
+                  "contains": "Kubernetes context to use. Only required if out-of-cluster.",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/root.go#L86-L87"
+                },
+                {
+                  "file": "pkg/kubernetes/kubernetes.go",
+                  "lines": "54-58",
+                  "contains": "CurrentContext: kubecontext",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/kubernetes/kubernetes.go#L54-L58"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only hard-coded read calls run against one cluster, the model cannot issue requests, and secret objects are fetched only to test existence; the reads are cluster-wide.",
+              "gap": "Credentials are long-lived ambient kubeconfig, not minutes-lived and task-scoped; reads span all namespaces by default.",
+              "evidence": [
+                {
+                  "search": "rg -n '\\.(Create|Update|Patch|Delete|DeleteCollection)\\(' --glob '!*_test.go'",
+                  "scope": "pkg/analyzer pkg/analysis pkg/ai pkg/kubernetes cmd/analyze",
+                  "hits": 0,
+                  "note": "No Kubernetes write call anywhere on the analyze path; all 22 matches without the glob are fake-client setup in _test.go files."
+                },
+                {
+                  "file": "pkg/analyzer/ingress.go",
+                  "lines": "163",
+                  "contains": "_, err := a.Client.GetClient().CoreV1().Secrets(ing.Namespace).Get",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analyzer/ingress.go#L163"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "In the scored CLI flow the model only returns text. It has no tools, and k8sgpt never acts on what the model says: the answer is stored in a local cache and printed. All Kubernetes calls on this path are read-only, so no consequential action exists that would need approval. The MCP server mode (not scored) is different: an MCP host can call a config tool that persists new custom-analyzer endpoints and remote cache buckets with no confirmation step.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+              "scope": "pkg/ai pkg/analysis cmd/analyze",
+              "hits": 0,
+              "note": "No tool or function calling in any AI client or the analysis pipeline."
+            },
+            {
+              "search": "rg -n '\\.(Create|Update|Patch|Delete|DeleteCollection)\\(' --glob '!*_test.go'",
+              "scope": "pkg/analyzer pkg/analysis pkg/ai pkg/kubernetes cmd/analyze",
+              "hits": 0,
+              "note": "No Kubernetes write call anywhere on the analyze path; all 22 matches without the glob are fake-client setup in _test.go files."
+            },
+            {
+              "file": "pkg/ai/iai.go",
+              "lines": "71-72",
+              "contains": "GetCompletion(ctx context.Context, prompt string) (string, error)",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/iai.go#L71-L72"
+            },
+            {
+              "file": "pkg/analysis/analysis.go",
+              "lines": "695-703",
+              "contains": "analysis.Details = result",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L695-L703"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+              "scope": "pkg/ai pkg/analysis cmd/analyze",
+              "hits": 0,
+              "note": "No tool or function calling in any AI client or the analysis pipeline."
+            },
+            {
+              "search": "rg -n '\\.(Create|Update|Patch|Delete|DeleteCollection)\\(' --glob '!*_test.go'",
+              "scope": "pkg/analyzer pkg/analysis pkg/ai pkg/kubernetes cmd/analyze",
+              "hits": 0,
+              "note": "No Kubernetes write call anywhere on the analyze path; all 22 matches without the glob are fake-client setup in _test.go files."
+            },
+            {
+              "file": "pkg/ai/iai.go",
+              "lines": "71-72",
+              "contains": "GetCompletion(ctx context.Context, prompt string) (string, error)",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/iai.go#L71-L72"
+            },
+            {
+              "file": "pkg/analysis/analysis.go",
+              "lines": "695-703",
+              "contains": "analysis.Details = result",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L695-L703"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+              "scope": "pkg/ai pkg/analysis cmd/analyze",
+              "hits": 0,
+              "note": "No tool or function calling in any AI client or the analysis pipeline."
+            },
+            {
+              "search": "rg -n '\\.(Create|Update|Patch|Delete|DeleteCollection)\\(' --glob '!*_test.go'",
+              "scope": "pkg/analyzer pkg/analysis pkg/ai pkg/kubernetes cmd/analyze",
+              "hits": 0,
+              "note": "No Kubernetes write call anywhere on the analyze path; all 22 matches without the glob are fake-client setup in _test.go files."
+            },
+            {
+              "file": "pkg/ai/iai.go",
+              "lines": "71-72",
+              "contains": "GetCompletion(ctx context.Context, prompt string) (string, error)",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/iai.go#L71-L72"
+            },
+            {
+              "file": "pkg/analysis/analysis.go",
+              "lines": "695-703",
+              "contains": "analysis.Details = result",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L695-L703"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+              "scope": "pkg/ai pkg/analysis cmd/analyze",
+              "hits": 0,
+              "note": "No tool or function calling in any AI client or the analysis pipeline."
+            },
+            {
+              "search": "rg -n '\\.(Create|Update|Patch|Delete|DeleteCollection)\\(' --glob '!*_test.go'",
+              "scope": "pkg/analyzer pkg/analysis pkg/ai pkg/kubernetes cmd/analyze",
+              "hits": 0,
+              "note": "No Kubernetes write call anywhere on the analyze path; all 22 matches without the glob are fake-client setup in _test.go files."
+            },
+            {
+              "file": "pkg/ai/iai.go",
+              "lines": "71-72",
+              "contains": "GetCompletion(ctx context.Context, prompt string) (string, error)",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/iai.go#L71-L72"
+            },
+            {
+              "file": "pkg/analysis/analysis.go",
+              "lines": "695-703",
+              "contains": "analysis.Details = result",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L695-L703"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+                  "scope": "pkg/ai pkg/analysis cmd/analyze",
+                  "hits": 0,
+                  "note": "No tool or function calling in any AI client or the analysis pipeline."
+                },
+                {
+                  "search": "rg -n '\\.(Create|Update|Patch|Delete|DeleteCollection)\\(' --glob '!*_test.go'",
+                  "scope": "pkg/analyzer pkg/analysis pkg/ai pkg/kubernetes cmd/analyze",
+                  "hits": 0,
+                  "note": "No Kubernetes write call anywhere on the analyze path; all 22 matches without the glob are fake-client setup in _test.go files."
+                },
+                {
+                  "file": "pkg/ai/iai.go",
+                  "lines": "71-72",
+                  "contains": "GetCompletion(ctx context.Context, prompt string) (string, error)",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/iai.go#L71-L72"
+                },
+                {
+                  "file": "pkg/analysis/analysis.go",
+                  "lines": "695-703",
+                  "contains": "analysis.Details = result",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L695-L703"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+                  "scope": "pkg/ai pkg/analysis cmd/analyze",
+                  "hits": 0,
+                  "note": "No tool or function calling in any AI client or the analysis pipeline."
+                },
+                {
+                  "search": "rg -n '\\.(Create|Update|Patch|Delete|DeleteCollection)\\(' --glob '!*_test.go'",
+                  "scope": "pkg/analyzer pkg/analysis pkg/ai pkg/kubernetes cmd/analyze",
+                  "hits": 0,
+                  "note": "No Kubernetes write call anywhere on the analyze path; all 22 matches without the glob are fake-client setup in _test.go files."
+                },
+                {
+                  "file": "pkg/ai/iai.go",
+                  "lines": "71-72",
+                  "contains": "GetCompletion(ctx context.Context, prompt string) (string, error)",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/iai.go#L71-L72"
+                },
+                {
+                  "file": "pkg/analysis/analysis.go",
+                  "lines": "695-703",
+                  "contains": "analysis.Details = result",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L695-L703"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+                  "scope": "pkg/ai pkg/analysis cmd/analyze",
+                  "hits": 0,
+                  "note": "No tool or function calling in any AI client or the analysis pipeline."
+                },
+                {
+                  "search": "rg -n '\\.(Create|Update|Patch|Delete|DeleteCollection)\\(' --glob '!*_test.go'",
+                  "scope": "pkg/analyzer pkg/analysis pkg/ai pkg/kubernetes cmd/analyze",
+                  "hits": 0,
+                  "note": "No Kubernetes write call anywhere on the analyze path; all 22 matches without the glob are fake-client setup in _test.go files."
+                },
+                {
+                  "file": "pkg/ai/iai.go",
+                  "lines": "71-72",
+                  "contains": "GetCompletion(ctx context.Context, prompt string) (string, error)",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/iai.go#L71-L72"
+                },
+                {
+                  "file": "pkg/analysis/analysis.go",
+                  "lines": "695-703",
+                  "contains": "analysis.Details = result",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L695-L703"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+                  "scope": "pkg/ai pkg/analysis cmd/analyze",
+                  "hits": 0,
+                  "note": "No tool or function calling in any AI client or the analysis pipeline."
+                },
+                {
+                  "search": "rg -n '\\.(Create|Update|Patch|Delete|DeleteCollection)\\(' --glob '!*_test.go'",
+                  "scope": "pkg/analyzer pkg/analysis pkg/ai pkg/kubernetes cmd/analyze",
+                  "hits": 0,
+                  "note": "No Kubernetes write call anywhere on the analyze path; all 22 matches without the glob are fake-client setup in _test.go files."
+                },
+                {
+                  "file": "pkg/ai/iai.go",
+                  "lines": "71-72",
+                  "contains": "GetCompletion(ctx context.Context, prompt string) (string, error)",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/iai.go#L71-L72"
+                },
+                {
+                  "file": "pkg/analysis/analysis.go",
+                  "lines": "695-703",
+                  "contains": "analysis.Details = result",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L695-L703"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+          "scope": "pkg/ai pkg/analysis cmd/analyze",
+          "hits": 0,
+          "note": "No tool or function calling in any AI client or the analysis pipeline."
+        },
+        {
+          "search": "rg -n '\\.(Create|Update|Patch|Delete|DeleteCollection)\\(' --glob '!*_test.go'",
+          "scope": "pkg/analyzer pkg/analysis pkg/ai pkg/kubernetes cmd/analyze",
+          "hits": 0,
+          "note": "No Kubernetes write call anywhere on the analyze path; all 22 matches without the glob are fake-client setup in _test.go files."
+        },
+        {
+          "file": "pkg/ai/iai.go",
+          "lines": "71-72",
+          "contains": "GetCompletion(ctx context.Context, prompt string) (string, error)",
+          "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/iai.go#L71-L72"
+        },
+        {
+          "file": "pkg/analysis/analysis.go",
+          "lines": "695-703",
+          "contains": "analysis.Details = result",
+          "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L695-L703"
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "The model is given no tools, so it never chooses arguments, paths, URLs or queries. Which analyzers run, the namespace and the label selector come from the operator's command-line flags, and the Kubernetes calls are fixed in code. Tool-argument scoping has no surface in the scored mode. The MCP server (not scored) does expose model-callable tools, and those include reading any Secret by name.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+              "scope": "pkg/ai pkg/analysis cmd/analyze",
+              "hits": 0,
+              "note": "No tool or function calling in any AI client or the analysis pipeline."
+            },
+            {
+              "file": "pkg/ai/iai.go",
+              "lines": "71-72",
+              "contains": "GetCompletion(ctx context.Context, prompt string) (string, error)",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/iai.go#L71-L72"
+            },
+            {
+              "file": "pkg/analysis/analysis.go",
+              "lines": "752-760",
+              "contains": "response, err := a.AIClient.GetCompletion(a.Context, prompt)",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L752-L760"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+              "scope": "pkg/ai pkg/analysis cmd/analyze",
+              "hits": 0,
+              "note": "No tool or function calling in any AI client or the analysis pipeline."
+            },
+            {
+              "file": "pkg/ai/iai.go",
+              "lines": "71-72",
+              "contains": "GetCompletion(ctx context.Context, prompt string) (string, error)",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/iai.go#L71-L72"
+            },
+            {
+              "file": "pkg/analysis/analysis.go",
+              "lines": "752-760",
+              "contains": "response, err := a.AIClient.GetCompletion(a.Context, prompt)",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L752-L760"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+              "scope": "pkg/ai pkg/analysis cmd/analyze",
+              "hits": 0,
+              "note": "No tool or function calling in any AI client or the analysis pipeline."
+            },
+            {
+              "file": "pkg/ai/iai.go",
+              "lines": "71-72",
+              "contains": "GetCompletion(ctx context.Context, prompt string) (string, error)",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/iai.go#L71-L72"
+            },
+            {
+              "file": "pkg/analysis/analysis.go",
+              "lines": "752-760",
+              "contains": "response, err := a.AIClient.GetCompletion(a.Context, prompt)",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L752-L760"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+              "scope": "pkg/ai pkg/analysis cmd/analyze",
+              "hits": 0,
+              "note": "No tool or function calling in any AI client or the analysis pipeline."
+            },
+            {
+              "file": "pkg/ai/iai.go",
+              "lines": "71-72",
+              "contains": "GetCompletion(ctx context.Context, prompt string) (string, error)",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/iai.go#L71-L72"
+            },
+            {
+              "file": "pkg/analysis/analysis.go",
+              "lines": "752-760",
+              "contains": "response, err := a.AIClient.GetCompletion(a.Context, prompt)",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L752-L760"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+                  "scope": "pkg/ai pkg/analysis cmd/analyze",
+                  "hits": 0,
+                  "note": "No tool or function calling in any AI client or the analysis pipeline."
+                },
+                {
+                  "file": "pkg/ai/iai.go",
+                  "lines": "71-72",
+                  "contains": "GetCompletion(ctx context.Context, prompt string) (string, error)",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/iai.go#L71-L72"
+                },
+                {
+                  "file": "pkg/analysis/analysis.go",
+                  "lines": "752-760",
+                  "contains": "response, err := a.AIClient.GetCompletion(a.Context, prompt)",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L752-L760"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+                  "scope": "pkg/ai pkg/analysis cmd/analyze",
+                  "hits": 0,
+                  "note": "No tool or function calling in any AI client or the analysis pipeline."
+                },
+                {
+                  "file": "pkg/ai/iai.go",
+                  "lines": "71-72",
+                  "contains": "GetCompletion(ctx context.Context, prompt string) (string, error)",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/iai.go#L71-L72"
+                },
+                {
+                  "file": "pkg/analysis/analysis.go",
+                  "lines": "752-760",
+                  "contains": "response, err := a.AIClient.GetCompletion(a.Context, prompt)",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L752-L760"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+                  "scope": "pkg/ai pkg/analysis cmd/analyze",
+                  "hits": 0,
+                  "note": "No tool or function calling in any AI client or the analysis pipeline."
+                },
+                {
+                  "file": "pkg/ai/iai.go",
+                  "lines": "71-72",
+                  "contains": "GetCompletion(ctx context.Context, prompt string) (string, error)",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/iai.go#L71-L72"
+                },
+                {
+                  "file": "pkg/analysis/analysis.go",
+                  "lines": "752-760",
+                  "contains": "response, err := a.AIClient.GetCompletion(a.Context, prompt)",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L752-L760"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+                  "scope": "pkg/ai pkg/analysis cmd/analyze",
+                  "hits": 0,
+                  "note": "No tool or function calling in any AI client or the analysis pipeline."
+                },
+                {
+                  "file": "pkg/ai/iai.go",
+                  "lines": "71-72",
+                  "contains": "GetCompletion(ctx context.Context, prompt string) (string, error)",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/iai.go#L71-L72"
+                },
+                {
+                  "file": "pkg/analysis/analysis.go",
+                  "lines": "752-760",
+                  "contains": "response, err := a.AIClient.GetCompletion(a.Context, prompt)",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L752-L760"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+          "scope": "pkg/ai pkg/analysis cmd/analyze",
+          "hits": 0,
+          "note": "No tool or function calling in any AI client or the analysis pipeline."
+        },
+        {
+          "file": "pkg/ai/iai.go",
+          "lines": "71-72",
+          "contains": "GetCompletion(ctx context.Context, prompt string) (string, error)",
+          "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/iai.go#L71-L72"
+        },
+        {
+          "file": "pkg/analysis/analysis.go",
+          "lines": "752-760",
+          "contains": "response, err := a.AIClient.GetCompletion(a.Context, prompt)",
+          "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L752-L760"
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "Nothing interprets model output or cluster content as code. The only process launch in the codebase opens a fixed OpenAI key-generation URL in the user's browser for `k8sgpt generate`. There is no shell tool, no eval, no template rendering of model text, and no plugin loading.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'exec\\.Command|os\\.StartProcess|plugin\\.Open'",
+              "scope": "pkg cmd",
+              "hits": 3,
+              "note": "All three hits are cmd/generate/generate.go opening the fixed https://platform.openai.com/api-keys URL in a browser; no model text reaches them."
+            },
+            {
+              "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+              "scope": "pkg/ai pkg/analysis cmd/analyze",
+              "hits": 0,
+              "note": "No tool or function calling in any AI client or the analysis pipeline."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'exec\\.Command|os\\.StartProcess|plugin\\.Open'",
+              "scope": "pkg cmd",
+              "hits": 3,
+              "note": "All three hits are cmd/generate/generate.go opening the fixed https://platform.openai.com/api-keys URL in a browser; no model text reaches them."
+            },
+            {
+              "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+              "scope": "pkg/ai pkg/analysis cmd/analyze",
+              "hits": 0,
+              "note": "No tool or function calling in any AI client or the analysis pipeline."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'exec\\.Command|os\\.StartProcess|plugin\\.Open'",
+              "scope": "pkg cmd",
+              "hits": 3,
+              "note": "All three hits are cmd/generate/generate.go opening the fixed https://platform.openai.com/api-keys URL in a browser; no model text reaches them."
+            },
+            {
+              "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+              "scope": "pkg/ai pkg/analysis cmd/analyze",
+              "hits": 0,
+              "note": "No tool or function calling in any AI client or the analysis pipeline."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'exec\\.Command|os\\.StartProcess|plugin\\.Open'",
+              "scope": "pkg cmd",
+              "hits": 3,
+              "note": "All three hits are cmd/generate/generate.go opening the fixed https://platform.openai.com/api-keys URL in a browser; no model text reaches them."
+            },
+            {
+              "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+              "scope": "pkg/ai pkg/analysis cmd/analyze",
+              "hits": 0,
+              "note": "No tool or function calling in any AI client or the analysis pipeline."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'exec\\.Command|os\\.StartProcess|plugin\\.Open'",
+                  "scope": "pkg cmd",
+                  "hits": 3,
+                  "note": "All three hits are cmd/generate/generate.go opening the fixed https://platform.openai.com/api-keys URL in a browser; no model text reaches them."
+                },
+                {
+                  "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+                  "scope": "pkg/ai pkg/analysis cmd/analyze",
+                  "hits": 0,
+                  "note": "No tool or function calling in any AI client or the analysis pipeline."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'exec\\.Command|os\\.StartProcess|plugin\\.Open'",
+                  "scope": "pkg cmd",
+                  "hits": 3,
+                  "note": "All three hits are cmd/generate/generate.go opening the fixed https://platform.openai.com/api-keys URL in a browser; no model text reaches them."
+                },
+                {
+                  "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+                  "scope": "pkg/ai pkg/analysis cmd/analyze",
+                  "hits": 0,
+                  "note": "No tool or function calling in any AI client or the analysis pipeline."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'exec\\.Command|os\\.StartProcess|plugin\\.Open'",
+                  "scope": "pkg cmd",
+                  "hits": 3,
+                  "note": "All three hits are cmd/generate/generate.go opening the fixed https://platform.openai.com/api-keys URL in a browser; no model text reaches them."
+                },
+                {
+                  "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+                  "scope": "pkg/ai pkg/analysis cmd/analyze",
+                  "hits": 0,
+                  "note": "No tool or function calling in any AI client or the analysis pipeline."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'exec\\.Command|os\\.StartProcess|plugin\\.Open'",
+                  "scope": "pkg cmd",
+                  "hits": 3,
+                  "note": "All three hits are cmd/generate/generate.go opening the fixed https://platform.openai.com/api-keys URL in a browser; no model text reaches them."
+                },
+                {
+                  "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+                  "scope": "pkg/ai pkg/analysis cmd/analyze",
+                  "hits": 0,
+                  "note": "No tool or function calling in any AI client or the analysis pipeline."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n 'exec\\.Command|os\\.StartProcess|plugin\\.Open'",
+          "scope": "pkg cmd",
+          "hits": 3,
+          "note": "All three hits are cmd/generate/generate.go opening the fixed https://platform.openai.com/api-keys URL in a browser; no model text reaches them."
+        },
+        {
+          "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+          "scope": "pkg/ai pkg/analysis cmd/analyze",
+          "hits": 0,
+          "note": "No tool or function calling in any AI client or the analysis pipeline."
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "k8sgpt sends attacker-influenced cluster text to the model: event messages, container status messages and probe output that any workload owner can shape. The only in-prompt defence is a set of triple-dash delimiters. The pipeline is fixed in code before any of that text is read, and the model has no tools, so a hijacked model can only change the explanation the operator reads. The residual risk is the human: injected text can produce convincing but harmful remediation advice for an operator who usually holds cluster-admin, and model output is printed to the terminal without stripping control characters.",
+      "max": 1.0,
+      "notes": "In MCP mode (not scored) the analyze tool's explanations and raw cluster objects, including Secrets, are returned to the host model, which may hold other tools. That mode is a cascading-injection and exfiltration surface outside this score.",
+      "status": "scored",
+      "score": 0.875,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Control and data flow are fixed in code: deterministic analyzers, then one text completion per result, then print; untrusted text cannot choose tools or destinations because none exist.",
+          "evidence": [
+            {
+              "file": "pkg/analysis/analysis.go",
+              "lines": "752-760",
+              "contains": "response, err := a.AIClient.GetCompletion(a.Context, prompt)",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L752-L760"
+            },
+            {
+              "file": "pkg/ai/iai.go",
+              "lines": "71-72",
+              "contains": "GetCompletion(ctx context.Context, prompt string) (string, error)",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/iai.go#L71-L72"
+            },
+            {
+              "file": "pkg/analysis/analysis.go",
+              "lines": "695-703",
+              "contains": "analysis.Details = result",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L695-L703"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every untrusted source (events, statuses, optional pod logs, opt-in custom analyzer results) flows into the same tool-less completion.",
+          "gap": "Untrusted cluster text is spliced into the prompt next to the instructions (delimiters only), so third-party content is not structurally treated as data.",
+          "evidence": [
+            {
+              "file": "pkg/analyzer/pod.go",
+              "lines": "135-137",
+              "contains": "Text:      evt.Message",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analyzer/pod.go#L135-L137"
+            },
+            {
+              "file": "pkg/analyzer/pod.go",
+              "lines": "175-177",
+              "contains": "evt.Reason == \"Unhealthy\"",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analyzer/pod.go#L175-L177"
+            },
+            {
+              "file": "pkg/ai/prompts.go",
+              "lines": "4",
+              "contains": "delimited by triple dashes",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/prompts.go#L4"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "There is no setting, config key or input that gives the model tools or actions on this path.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+              "scope": "pkg/ai pkg/analysis cmd/analyze",
+              "hits": 0,
+              "note": "No tool or function calling in any AI client or the analysis pipeline."
+            },
+            {
+              "file": "pkg/ai/interactive/interactive.go",
+              "lines": "58-65",
+              "contains": "pterm.Println(response)",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/interactive/interactive.go#L58-L65"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijack can only shape text shown to the operator (misleading fixes, terminal escape sequences); there is no unattended egress or state change.",
+          "gap": "The session still holds sensitive cluster data, and model output is printed raw to the terminal, so the human-mediated channel remains.",
+          "evidence": [
+            {
+              "file": "pkg/analysis/output.go",
+              "lines": "103",
+              "contains": "color.GreenString(result.Details",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/output.go#L103"
+            },
+            {
+              "file": "pkg/ai/interactive/interactive.go",
+              "lines": "65",
+              "contains": "pterm.Println(response)",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/interactive/interactive.go#L65"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.875,
+          "raw": 0.875,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Control and data flow are fixed in code: deterministic analyzers, then one text completion per result, then print; untrusted text cannot choose tools or destinations because none exist.",
+              "evidence": [
+                {
+                  "file": "pkg/analysis/analysis.go",
+                  "lines": "752-760",
+                  "contains": "response, err := a.AIClient.GetCompletion(a.Context, prompt)",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L752-L760"
+                },
+                {
+                  "file": "pkg/ai/iai.go",
+                  "lines": "71-72",
+                  "contains": "GetCompletion(ctx context.Context, prompt string) (string, error)",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/iai.go#L71-L72"
+                },
+                {
+                  "file": "pkg/analysis/analysis.go",
+                  "lines": "695-703",
+                  "contains": "analysis.Details = result",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L695-L703"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every untrusted source (events, statuses, optional pod logs, opt-in custom analyzer results) flows into the same tool-less completion.",
+              "gap": "Untrusted cluster text is spliced into the prompt next to the instructions (delimiters only), so third-party content is not structurally treated as data.",
+              "evidence": [
+                {
+                  "file": "pkg/analyzer/pod.go",
+                  "lines": "135-137",
+                  "contains": "Text:      evt.Message",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analyzer/pod.go#L135-L137"
+                },
+                {
+                  "file": "pkg/analyzer/pod.go",
+                  "lines": "175-177",
+                  "contains": "evt.Reason == \"Unhealthy\"",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analyzer/pod.go#L175-L177"
+                },
+                {
+                  "file": "pkg/ai/prompts.go",
+                  "lines": "4",
+                  "contains": "delimited by triple dashes",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/prompts.go#L4"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "There is no setting, config key or input that gives the model tools or actions on this path.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'tool_calls|toolcall|functioncall|tool_choice|tooluse|function_call'",
+                  "scope": "pkg/ai pkg/analysis cmd/analyze",
+                  "hits": 0,
+                  "note": "No tool or function calling in any AI client or the analysis pipeline."
+                },
+                {
+                  "file": "pkg/ai/interactive/interactive.go",
+                  "lines": "58-65",
+                  "contains": "pterm.Println(response)",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/interactive/interactive.go#L58-L65"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijack can only shape text shown to the operator (misleading fixes, terminal escape sequences); there is no unattended egress or state change.",
+              "gap": "The session still holds sensitive cluster data, and model output is printed raw to the terminal, so the human-mediated channel remains.",
+              "evidence": [
+                {
+                  "file": "pkg/analysis/output.go",
+                  "lines": "103",
+                  "contains": "color.GreenString(result.Details",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/output.go#L103"
+                },
+                {
+                  "file": "pkg/ai/interactive/interactive.go",
+                  "lines": "65",
+                  "contains": "pterm.Println(response)",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/interactive/interactive.go#L65"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "Configuration is read only from user scope: the XDG config directory, an explicit --config flag, or K8SGPT_* environment variables. Nothing is loaded from the working directory. The one persistent store the model influences is the response cache: each AI answer is written verbatim and served again, without calling the model, whenever the same failure text recurs. Entries carry no provenance and never expire. The default file cache is private to the OS user (mode 0600), but the cache key ignores which cluster or context produced it. A poisoned explanation can persist across sessions, though it only affects text shown to the operator. `k8sgpt cache purge` clears it.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.35,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Model responses are stored and replayed verbatim with no validation, logging or expiry; config comes only from user scope.",
+          "gap": "Cache writes are neither validated nor provenance-tagged nor time-limited.",
+          "evidence": [
+            {
+              "file": "pkg/analysis/analysis.go",
+              "lines": "757",
+              "contains": "a.Cache.Store(cacheKey, base64.StdEncoding.EncodeToString([]byte(response)))",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L757"
+            },
+            {
+              "file": "pkg/analysis/analysis.go",
+              "lines": "714-725",
+              "contains": "return string(output), nil",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L714-L725"
+            },
+            {
+              "search": "rg -n -i 'godotenv|dotenv|AGENTS\\.md|CLAUDE\\.md'",
+              "scope": "pkg cmd",
+              "hits": 0,
+              "note": "No working-directory .env or instruction files are loaded."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The config path is limited to user scope; the response cache is uncontrolled.",
+          "gap": "The response cache, the only model-influenced store, has no write control.",
+          "evidence": [
+            {
+              "file": "cmd/root.go",
+              "lines": "93-102",
+              "contains": "viper.AddConfigPath(configDir)",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/root.go#L93-L102"
+            },
+            {
+              "file": "pkg/util/util.go",
+              "lines": "181-186",
+              "contains": "func GetCacheKey(provider string, language string, sEnc string) string",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/util/util.go#L181-L186"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The default file cache lives in the user's XDG cache directory with 0600 files; the model cannot choose keys.",
+          "gap": "Cache keys are not scoped to cluster/context, and remote caches (S3/GCS/Azure) can be shared across users once configured.",
+          "evidence": [
+            {
+              "file": "pkg/cache/file_based.go",
+              "lines": "100-107",
+              "contains": "os.WriteFile(path, []byte(data), 0600)",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/cache/file_based.go#L100-L107"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A poisoned answer persists across the user's sessions with no TTL but only influences printed text.",
+          "gap": "Cache entries are not easily inspected (listing shows only hashed keys) and there is no review or rollback.",
+          "evidence": [
+            {
+              "file": "pkg/analysis/analysis.go",
+              "lines": "714-725",
+              "contains": "a.Cache.Exists(cacheKey)",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L714-L725"
+            },
+            {
+              "file": "pkg/cache/file_based.go",
+              "lines": "26-47",
+              "contains": "Name:      file.Name()",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/cache/file_based.go#L26-L47"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.35,
+          "raw": 0.35,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Model responses are stored and replayed verbatim with no validation, logging or expiry; config comes only from user scope.",
+              "gap": "Cache writes are neither validated nor provenance-tagged nor time-limited.",
+              "evidence": [
+                {
+                  "file": "pkg/analysis/analysis.go",
+                  "lines": "757",
+                  "contains": "a.Cache.Store(cacheKey, base64.StdEncoding.EncodeToString([]byte(response)))",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L757"
+                },
+                {
+                  "file": "pkg/analysis/analysis.go",
+                  "lines": "714-725",
+                  "contains": "return string(output), nil",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L714-L725"
+                },
+                {
+                  "search": "rg -n -i 'godotenv|dotenv|AGENTS\\.md|CLAUDE\\.md'",
+                  "scope": "pkg cmd",
+                  "hits": 0,
+                  "note": "No working-directory .env or instruction files are loaded."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The config path is limited to user scope; the response cache is uncontrolled.",
+              "gap": "The response cache, the only model-influenced store, has no write control.",
+              "evidence": [
+                {
+                  "file": "cmd/root.go",
+                  "lines": "93-102",
+                  "contains": "viper.AddConfigPath(configDir)",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/root.go#L93-L102"
+                },
+                {
+                  "file": "pkg/util/util.go",
+                  "lines": "181-186",
+                  "contains": "func GetCacheKey(provider string, language string, sEnc string) string",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/util/util.go#L181-L186"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The default file cache lives in the user's XDG cache directory with 0600 files; the model cannot choose keys.",
+              "gap": "Cache keys are not scoped to cluster/context, and remote caches (S3/GCS/Azure) can be shared across users once configured.",
+              "evidence": [
+                {
+                  "file": "pkg/cache/file_based.go",
+                  "lines": "100-107",
+                  "contains": "os.WriteFile(path, []byte(data), 0600)",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/cache/file_based.go#L100-L107"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A poisoned answer persists across the user's sessions with no TTL but only influences printed text.",
+              "gap": "Cache entries are not easily inspected (listing shows only hashed keys) and there is no review or rollback.",
+              "evidence": [
+                {
+                  "file": "pkg/analysis/analysis.go",
+                  "lines": "714-725",
+                  "contains": "a.Cache.Exists(cacheKey)",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L714-L725"
+                },
+                {
+                  "file": "pkg/cache/file_based.go",
+                  "lines": "26-47",
+                  "contains": "Name:      file.Name()",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/cache/file_based.go#L26-L47"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "Nothing third-party is enabled by default. There are two opt-in extension paths. The first is custom analyzers: remote gRPC services the operator registers and enables with the -z flag. They receive an empty request and no credentials, but the connection is unauthenticated plaintext and nothing pins or verifies the endpoint. The second is `integration activate keda`, which installs a version-pinned KEDA Helm chart from the official repository using the operator's kubeconfig, with no digest or signature check. The repository and version can be overridden through environment variables. A malicious chart would run in the cluster with whatever RBAC it declares.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.375,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The KEDA chart version is pinned (2.11.2) to the official chart repository; custom analyzers are network data sources, not code k8sgpt runs.",
+          "gap": "No chart digest or provenance verification, and custom analyzer endpoints have no identity check or TLS.",
+          "evidence": [
+            {
+              "file": "pkg/integration/keda/keda.go",
+              "lines": "22-23",
+              "contains": "getEnv(\"KEDA_VERSION\", \"2.11.2\")",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/integration/keda/keda.go#L22-L23"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only the KEDA install is pinned; custom analyzers are reached over insecure gRPC with no verification.",
+          "gap": "Custom analyzer endpoints are not verified (no TLS, no pinning of the service).",
+          "evidence": [
+            {
+              "file": "pkg/custom/client.go",
+              "lines": "21",
+              "contains": "grpc.WithTransportCredentials(insecure.NewCredentials())",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/custom/client.go#L21"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Custom analyzers require `custom-analyzer add` plus the -z flag; KEDA requires an explicit `integration activate keda`; neither shows the exact chart, image or permissions.",
+          "gap": "The install step does not show the repository, version and RBAC that will be applied.",
+          "evidence": [
+            {
+              "file": "cmd/analyze/analyze.go",
+              "lines": "221",
+              "contains": "\"custom-analysis\", \"z\", false",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/analyze/analyze.go#L221"
+            },
+            {
+              "file": "pkg/integration/integration.go",
+              "lines": "93-95",
+              "contains": "integrations[name].Deploy(namespace)",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/integration/integration.go#L93-L95"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The KEDA chart is installed with the operator's kubeconfig and runs cluster-wide with its own declared RBAC; custom analyzers get no credentials (empty RunRequest).",
+          "gap": "Installed charts are not confined to scoped credentials or limited RBAC.",
+          "evidence": [
+            {
+              "file": "pkg/integration/keda/keda.go",
+              "lines": "62-76",
+              "contains": "k.helm.InstallOrUpgradeChart(context.Background(), &chartSpec, nil)",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/integration/keda/keda.go#L62-L76"
+            },
+            {
+              "file": "pkg/custom/client.go",
+              "lines": "35",
+              "contains": "req := &schemav1.RunRequest{}",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/custom/client.go#L35"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.375,
+          "raw": 0.375,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The KEDA chart version is pinned (2.11.2) to the official chart repository; custom analyzers are network data sources, not code k8sgpt runs.",
+              "gap": "No chart digest or provenance verification, and custom analyzer endpoints have no identity check or TLS.",
+              "evidence": [
+                {
+                  "file": "pkg/integration/keda/keda.go",
+                  "lines": "22-23",
+                  "contains": "getEnv(\"KEDA_VERSION\", \"2.11.2\")",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/integration/keda/keda.go#L22-L23"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only the KEDA install is pinned; custom analyzers are reached over insecure gRPC with no verification.",
+              "gap": "Custom analyzer endpoints are not verified (no TLS, no pinning of the service).",
+              "evidence": [
+                {
+                  "file": "pkg/custom/client.go",
+                  "lines": "21",
+                  "contains": "grpc.WithTransportCredentials(insecure.NewCredentials())",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/custom/client.go#L21"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Custom analyzers require `custom-analyzer add` plus the -z flag; KEDA requires an explicit `integration activate keda`; neither shows the exact chart, image or permissions.",
+              "gap": "The install step does not show the repository, version and RBAC that will be applied.",
+              "evidence": [
+                {
+                  "file": "cmd/analyze/analyze.go",
+                  "lines": "221",
+                  "contains": "\"custom-analysis\", \"z\", false",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/analyze/analyze.go#L221"
+                },
+                {
+                  "file": "pkg/integration/integration.go",
+                  "lines": "93-95",
+                  "contains": "integrations[name].Deploy(namespace)",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/integration/integration.go#L93-L95"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The KEDA chart is installed with the operator's kubeconfig and runs cluster-wide with its own declared RBAC; custom analyzers get no credentials (empty RunRequest).",
+              "gap": "Installed charts are not confined to scoped credentials or limited RBAC.",
+              "evidence": [
+                {
+                  "file": "pkg/integration/keda/keda.go",
+                  "lines": "62-76",
+                  "contains": "k.helm.InstallOrUpgradeChart(context.Background(), &chartSpec, nil)",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/integration/keda/keda.go#L62-L76"
+                },
+                {
+                  "file": "pkg/custom/client.go",
+                  "lines": "35",
+                  "contains": "req := &schemav1.RunRequest{}",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/custom/client.go#L35"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "The AI provider key is written in plaintext to the user's k8sgpt.yaml through viper. No file mode is set, so viper's default world-readable 0644 likely applies (inferred from the library default, not verified). `k8sgpt dump` masks the key and `auth list` never prints it. There is no telemetry or crash reporting, verbose output prints only the base URL and model, and cached answers are stored 0600. Cluster object names and event text go to the provider unmasked unless the operator passes --anonymize, which is off by default and masks only identifiers.",
+      "max": 1.0,
+      "notes": "File permission of the config file is inferred from spf13/viper v1.19.0's default config permissions (0644); k8sgpt never calls SetConfigPermissions.",
+      "status": "scored",
+      "score": 0.375,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The key comes from a prompt or flag and is stored in plaintext YAML; the only masking is in `dump` and the opt-in --anonymize for model-bound identifiers.",
+          "gap": "No keychain/secret store or explicit restrictive permissions on the stored key.",
+          "evidence": [
+            {
+              "file": "cmd/auth/add.go",
+              "lines": "154-158",
+              "contains": "viper.WriteConfig()",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/auth/add.go#L154-L158"
+            },
+            {
+              "file": "cmd/dump/dump.go",
+              "lines": "62-68",
+              "contains": "config.Password = config.Password[:4] + \"***\"",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/dump/dump.go#L62-L68"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Logs (verbose), dumps, and stored transcripts do not carry the key; model-bound messages carry cluster identifiers unless --anonymize is set.",
+          "gap": "Model-bound messages are not redacted by default, and anonymization does not cover free-text secrets in event or log lines.",
+          "evidence": [
+            {
+              "file": "pkg/analysis/analysis.go",
+              "lines": "204-207",
+              "contains": "baseUrl=%s, model=%s",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L204-L207"
+            },
+            {
+              "file": "pkg/analysis/analysis.go",
+              "lines": "667-671",
+              "contains": "failure.Text = maskText(failure.Text, mapping)",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L667-L671"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No telemetry exists and verbose logging is off by default; model-bound anonymization is opt-in.",
+          "gap": "Anonymization is off by default and the config file holding the key is not written with restrictive permissions.",
+          "evidence": [
+            {
+              "file": "cmd/analyze/analyze.go",
+              "lines": "203",
+              "contains": "BoolVarP(&anonymize, \"anonymize\", \"a\", false",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/analyze/analyze.go#L203"
+            },
+            {
+              "file": "cmd/root.go",
+              "lines": "88",
+              "contains": "\"verbose\", \"v\", false",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/root.go#L88"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A leaked provider key is long-lived and as broad as the operator made it; the model never sees it.",
+          "gap": "Keys are long-lived and not scoped or rotated by the tool.",
+          "evidence": [
+            {
+              "file": "pkg/ai/openai.go",
+              "lines": "47-48",
+              "contains": "token := config.GetPassword()",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/openai.go#L47-L48"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.375,
+          "raw": 0.375,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The key comes from a prompt or flag and is stored in plaintext YAML; the only masking is in `dump` and the opt-in --anonymize for model-bound identifiers.",
+              "gap": "No keychain/secret store or explicit restrictive permissions on the stored key.",
+              "evidence": [
+                {
+                  "file": "cmd/auth/add.go",
+                  "lines": "154-158",
+                  "contains": "viper.WriteConfig()",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/auth/add.go#L154-L158"
+                },
+                {
+                  "file": "cmd/dump/dump.go",
+                  "lines": "62-68",
+                  "contains": "config.Password = config.Password[:4] + \"***\"",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/dump/dump.go#L62-L68"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Logs (verbose), dumps, and stored transcripts do not carry the key; model-bound messages carry cluster identifiers unless --anonymize is set.",
+              "gap": "Model-bound messages are not redacted by default, and anonymization does not cover free-text secrets in event or log lines.",
+              "evidence": [
+                {
+                  "file": "pkg/analysis/analysis.go",
+                  "lines": "204-207",
+                  "contains": "baseUrl=%s, model=%s",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L204-L207"
+                },
+                {
+                  "file": "pkg/analysis/analysis.go",
+                  "lines": "667-671",
+                  "contains": "failure.Text = maskText(failure.Text, mapping)",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L667-L671"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No telemetry exists and verbose logging is off by default; model-bound anonymization is opt-in.",
+              "gap": "Anonymization is off by default and the config file holding the key is not written with restrictive permissions.",
+              "evidence": [
+                {
+                  "file": "cmd/analyze/analyze.go",
+                  "lines": "203",
+                  "contains": "BoolVarP(&anonymize, \"anonymize\", \"a\", false",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/analyze/analyze.go#L203"
+                },
+                {
+                  "file": "cmd/root.go",
+                  "lines": "88",
+                  "contains": "\"verbose\", \"v\", false",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/root.go#L88"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A leaked provider key is long-lived and as broad as the operator made it; the model never sees it.",
+              "gap": "Keys are long-lived and not scoped or rotated by the tool.",
+              "evidence": [
+                {
+                  "file": "pkg/ai/openai.go",
+                  "lines": "47-48",
+                  "contains": "token := config.GetPassword()",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/openai.go#L47-L48"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "The CLI keeps no record of what it did: which resources it read, what text it sent to the AI provider, or what came back. The only output is the report on stdout, plus cached answers stored under hashed keys. Debug lines appear only with --verbose and go to stdout. The serve mode, which is not scored, does log each gRPC request with structured zap fields.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No record of analyzer reads or provider calls exists; debug prints only with --verbose.",
+          "gap": "No structured record of each provider call (prompt, provider, result, timestamp).",
+          "evidence": [
+            {
+              "search": "rg -n 'zap\\.|log\\.Print|logger\\.' --glob '!*_test.go'",
+              "scope": "pkg/analysis pkg/ai cmd/analyze",
+              "hits": 0,
+              "note": "Nothing on the CLI analyze path writes a log record."
+            },
+            {
+              "file": "cmd/analyze/analyze.go",
+              "lines": "85-88",
+              "contains": "verbose := viper.GetBool(\"verbose\")",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/analyze/analyze.go#L85-L88"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Nothing on the analyze path is recorded.",
+          "gap": "No path is recorded.",
+          "evidence": [
+            {
+              "search": "rg -n 'zap\\.|log\\.Print|logger\\.' --glob '!*_test.go'",
+              "scope": "pkg/analysis pkg/ai cmd/analyze",
+              "hits": 0,
+              "note": "Nothing on the CLI analyze path writes a log record."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "There is no audit record to turn on.",
+          "gap": "No default-on audit record.",
+          "evidence": [
+            {
+              "search": "rg -n 'zap\\.|log\\.Print|logger\\.' --glob '!*_test.go'",
+              "scope": "pkg/analysis pkg/ai cmd/analyze",
+              "hits": 0,
+              "note": "Nothing on the CLI analyze path writes a log record."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "With no records, nothing survives a crash or proves what was sent.",
+          "gap": "Records are not written or flushed at all.",
+          "evidence": [
+            {
+              "search": "rg -n 'zap\\.|log\\.Print|logger\\.' --glob '!*_test.go'",
+              "scope": "pkg/analysis pkg/ai cmd/analyze",
+              "hits": 0,
+              "note": "Nothing on the CLI analyze path writes a log record."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No record of analyzer reads or provider calls exists; debug prints only with --verbose.",
+              "gap": "No structured record of each provider call (prompt, provider, result, timestamp).",
+              "evidence": [
+                {
+                  "search": "rg -n 'zap\\.|log\\.Print|logger\\.' --glob '!*_test.go'",
+                  "scope": "pkg/analysis pkg/ai cmd/analyze",
+                  "hits": 0,
+                  "note": "Nothing on the CLI analyze path writes a log record."
+                },
+                {
+                  "file": "cmd/analyze/analyze.go",
+                  "lines": "85-88",
+                  "contains": "verbose := viper.GetBool(\"verbose\")",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/analyze/analyze.go#L85-L88"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Nothing on the analyze path is recorded.",
+              "gap": "No path is recorded.",
+              "evidence": [
+                {
+                  "search": "rg -n 'zap\\.|log\\.Print|logger\\.' --glob '!*_test.go'",
+                  "scope": "pkg/analysis pkg/ai cmd/analyze",
+                  "hits": 0,
+                  "note": "Nothing on the CLI analyze path writes a log record."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "There is no audit record to turn on.",
+              "gap": "No default-on audit record.",
+              "evidence": [
+                {
+                  "search": "rg -n 'zap\\.|log\\.Print|logger\\.' --glob '!*_test.go'",
+                  "scope": "pkg/analysis pkg/ai cmd/analyze",
+                  "hits": 0,
+                  "note": "Nothing on the CLI analyze path writes a log record."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "With no records, nothing survives a crash or proves what was sent.",
+              "gap": "Records are not written or flushed at all.",
+              "evidence": [
+                {
+                  "search": "rg -n 'zap\\.|log\\.Print|logger\\.' --glob '!*_test.go'",
+                  "scope": "pkg/analysis pkg/ai cmd/analyze",
+                  "hits": 0,
+                  "note": "Nothing on the CLI analyze path writes a log record."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "There is no agent loop to run away. Each run makes one completion per detected problem, each OpenAI completion is capped at 2,048 tokens, and Kubernetes concurrency is capped at 100. No limit applies to the number of calls per run or their total cost, and AI and Kubernetes requests use a background context with no timeout. Ctrl-C ends the process, which stops in-flight requests, and nothing keeps running in the background.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.5,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The call count is fixed by the deterministic analysis (not the model) and each completion is token-capped in code; Ctrl-C terminates the process.",
+          "gap": "No wall-clock limit or overall cost cap per run.",
+          "evidence": [
+            {
+              "file": "pkg/ai/openai.go",
+              "lines": "41",
+              "contains": "maxToken         = 2048",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/openai.go#L41"
+            },
+            {
+              "file": "pkg/ai/openai.go",
+              "lines": "100",
+              "contains": "MaxCompletionTokens: maxToken",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/openai.go#L100"
+            },
+            {
+              "file": "pkg/analysis/analysis.go",
+              "lines": "646",
+              "contains": "for index, analysis := range a.Results",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L646"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "There are no sub-agents, background tasks or spawned processes to escape the run's bounds.",
+          "gap": "No per-request timeouts on AI or Kubernetes calls (context.Background()).",
+          "evidence": [
+            {
+              "file": "pkg/analysis/analysis.go",
+              "lines": "130-131",
+              "contains": "Context:        context.Background()",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L130-L131"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Defaults are hard-coded (2048 tokens, concurrency 10 capped at 100) and the model cannot change them.",
+          "gap": "No hard ceiling on the number of provider calls per run.",
+          "evidence": [
+            {
+              "file": "pkg/analysis/analysis.go",
+              "lines": "403-410",
+              "contains": "const maxAllowedConcurrency = 100",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L403-L410"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Spend scales with the number of failing resources; stopping kills the whole process.",
+          "gap": "No tight per-run time or cost ceiling.",
+          "evidence": [
+            {
+              "file": "cmd/analyze/analyze.go",
+              "lines": "136-141",
+              "contains": "signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)",
+              "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/analyze/analyze.go#L136-L141"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.5,
+          "raw": 0.5,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The call count is fixed by the deterministic analysis (not the model) and each completion is token-capped in code; Ctrl-C terminates the process.",
+              "gap": "No wall-clock limit or overall cost cap per run.",
+              "evidence": [
+                {
+                  "file": "pkg/ai/openai.go",
+                  "lines": "41",
+                  "contains": "maxToken         = 2048",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/openai.go#L41"
+                },
+                {
+                  "file": "pkg/ai/openai.go",
+                  "lines": "100",
+                  "contains": "MaxCompletionTokens: maxToken",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/ai/openai.go#L100"
+                },
+                {
+                  "file": "pkg/analysis/analysis.go",
+                  "lines": "646",
+                  "contains": "for index, analysis := range a.Results",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L646"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "There are no sub-agents, background tasks or spawned processes to escape the run's bounds.",
+              "gap": "No per-request timeouts on AI or Kubernetes calls (context.Background()).",
+              "evidence": [
+                {
+                  "file": "pkg/analysis/analysis.go",
+                  "lines": "130-131",
+                  "contains": "Context:        context.Background()",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L130-L131"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Defaults are hard-coded (2048 tokens, concurrency 10 capped at 100) and the model cannot change them.",
+              "gap": "No hard ceiling on the number of provider calls per run.",
+              "evidence": [
+                {
+                  "file": "pkg/analysis/analysis.go",
+                  "lines": "403-410",
+                  "contains": "const maxAllowedConcurrency = 100",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/pkg/analysis/analysis.go#L403-L410"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Spend scales with the number of failing resources; stopping kills the whole process.",
+              "gap": "No tight per-run time or cost ceiling.",
+              "evidence": [
+                {
+                  "file": "cmd/analyze/analyze.go",
+                  "lines": "136-141",
+                  "contains": "signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)",
+                  "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/analyze/analyze.go#L136-L141"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [],
+  "rule_of_two": {
+    "untrusted_input": "workload-controlled event, status and probe messages enter the prompt (pkg/analyzer/pod.go:135-177)",
+    "sensitive_data": "cluster-wide reads with the operator's kubeconfig (pkg/analysis/analysis.go:97-100)",
+    "state_change_or_egress": "none reachable by the model; its answer is only cached and printed (pkg/analysis/analysis.go:752-760, pkg/analysis/output.go:103)",
+    "same_session": false
+  },
+  "fixes": [
+    {
+      "summary": "Write a structured local record of every run (resources analyzed, provider, prompt hash or text, response, timestamp) outside the working directory.",
+      "criterion": "C9",
+      "parameter": "S",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 1, step 3",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Default to a read-only identity: impersonate a view-only ServiceAccount (or ship a kubeconfig generator for one) unless the operator opts out.",
+      "criterion": "C1",
+      "parameter": "D",
+      "from_level": 0,
+      "to_level": 3,
+      "playbook": "Playbook 4, step 1",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Write the config file with 0600 permissions (viper.SetConfigPermissions) or store provider keys in the OS keychain.",
+      "criterion": "C8",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 4, step 2",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Give cache entries a TTL and scope cache keys by cluster/context and model, so a poisoned answer cannot persist indefinitely or bleed across clusters.",
+      "criterion": "C6",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 2, step 1",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Require TLS and an expected server identity for custom analyzers, and verify the KEDA chart digest before install.",
+      "criterion": "C7",
+      "parameter": "C",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 3, step 2",
+      "estimated_gain": 0.075
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was built, run or network-probed.",
+    "Only the CLI analyze --explain flow was scored. `k8sgpt serve` and `serve --mcp` (tools that list/get Secrets, a config tool that persists custom-analyzer URLs and remote cache endpoints) would score much lower and were not rated.",
+    "The k8sgpt-operator (separate repository) and its result sinks were not examined; the Helm chart in this repo grants get/list/watch on all resources (charts/k8sgpt/templates/role.yaml).",
+    "Config-file permissions (C8) are inferred from spf13/viper's default, not from k8sgpt code.",
+    "Individual AI backend clients other than OpenAI were not each reviewed for token caps and timeouts.",
+    "No reviewer-directed instructions were found in the repository (searched README, docs and source for reviewer/auditor/ignore-instructions text)."
+  ]
+}

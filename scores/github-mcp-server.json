@@ -1,0 +1,2607 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "github-mcp-server",
+  "name": "GitHub MCP Server",
+  "repo_url": "https://github.com/github/github-mcp-server",
+  "subpath": null,
+  "description": "GitHub's official MCP server (repos, issues, PRs, Actions, security)",
+  "category": "coding",
+  "pinned_commit": "f10e4e1f923d46b86f2e80e849aa74084c847184",
+  "version": "v1.14.0",
+  "scored_date": "2026-10-03",
+  "scored_configuration": "Local stdio server from the official Docker image with no flags: default toolsets (context, repos, issues, pull_requests, users, copilot), authenticated by the built-in OAuth login with its default scopes (including full 'repo') or by a user-supplied personal access token.",
+  "score": 6.4,
+  "max_score": 10.0,
+  "band": {
+    "id": "moderate",
+    "label": "Moderate",
+    "color": "amber"
+  },
+  "applicable": {
+    "count": 7,
+    "score": 3.35,
+    "max": 7.0,
+    "percent": 48
+  },
+  "capability_profile": {
+    "code_execution": "no",
+    "filesystem_write": "no",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "no",
+    "untrusted_input": "yes",
+    "third_party_extensions": "no",
+    "sub_agents": "yes",
+    "external_communication": "yes"
+  },
+  "headline": "The server acts on GitHub with the user's own token, which by default carries full 'repo' control of every private repository the user can reach, and its default tool set can push files, merge pull requests, post comments and open issues with no confirmation step of its own. Content from any public issue, pull request or file flows to the model alongside those write tools and private-repo reads, so a prompt-injected agent can leak private code into a public comment unattended: the server's lockdown mode, information-flow labels and read-only mode would break that chain but are all off by default. Risk annotations are accurate and enforced by a test, repository deletion needs a typed human confirmation, and the token is never sent off GitHub hosts, but there is no audit record of tool calls unless verbose stdio logging is switched on.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "The server uses one GitHub credential for everything: a personal access token, or by default an OAuth login that requests the full 'repo' scope (complete control of all the user's private repositories) plus packages, projects, gists and notifications. It narrows the default OAuth request by leaving out repository deletion, organization admin and workflow scopes, and it hides tools the token cannot use, but reads and writes share the same broad token and the server has no authorization layer of its own; GitHub's API is the only check. An opt-in GitHub App mode gives a dedicated, installation-scoped identity with short-lived tokens, which is the stronger option. In HTTP mode (not the scored default) the server forwards the client's bearer token to GitHub.",
+      "max": 1.0,
+      "notes": "HTTP mode (`github-mcp-server http`) takes the client's Authorization bearer token and forwards it to GitHub (pkg/http/middleware/token.go); had that mode been scored, C1-PASSTHRU would apply.",
+      "status": "scored",
+      "score": 0.5,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "GitHub App mode mints installation access tokens for a dedicated app identity whose permissions and repositories are set by the app installation; tokens expire and are refreshed.",
+          "gap": "The token request sends no permissions or repositories body, so the server never narrows the token below the installation's full permission set, and reads and writes share it.",
+          "evidence": [
+            {
+              "file": "internal/githubapp/githubapp.go",
+              "lines": "131-139",
+              "contains": "access_tokens",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/internal/githubapp/githubapp.go#L131-L139"
+            },
+            {
+              "file": "internal/githubapp/githubapp.go",
+              "lines": "171-178",
+              "contains": "body.ExpiresAt.Add(-refreshBuffer)",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/internal/githubapp/githubapp.go#L171-L178"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every tool uses the provider-backed token through the same transport.",
+          "gap": "No server-side per-request authorization layer.",
+          "evidence": [
+            {
+              "file": "internal/ghmcp/server.go",
+              "lines": "157-166",
+              "contains": "TokenProvider: cfg.TokenProvider",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/internal/ghmcp/server.go#L157-L166"
+            },
+            {
+              "file": "cmd/github-mcp-server/main.go",
+              "lines": "159-165",
+              "contains": "newGitHubAppTokenProvider",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L159-L165"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Requires explicit app configuration; widening means changing the app's permissions in GitHub.",
+          "gap": "Not the default; nothing forces a read-only installation.",
+          "evidence": [
+            {
+              "file": "cmd/github-mcp-server/main.go",
+              "lines": "54",
+              "contains": "appAuthRequested := appID != \"\"",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L54"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Blast radius is the repositories and permissions of one app installation, with tokens that expire within an hour.",
+          "gap": "Installation permissions may still include broad write access across the installation's repositories.",
+          "evidence": [
+            {
+              "file": "internal/githubapp/githubapp.go",
+              "lines": "161-164",
+              "contains": "ExpiresAt time.Time",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/internal/githubapp/githubapp.go#L161-L164"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.175,
+          "raw": 0.175,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default authority is the user's own token with the full 'repo' scope (OAuth default) or whatever scopes the user's PAT carries, shared by every read and write tool.",
+              "gap": "No dedicated or role-scoped identity by default; read and write tools are not given separate, narrower credentials.",
+              "evidence": [
+                {
+                  "file": "pkg/scopes/scopes.go",
+                  "lines": "84-85",
+                  "contains": "{scope: Repo, byDefault: true}",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/scopes/scopes.go#L84-L85"
+                },
+                {
+                  "file": "pkg/scopes/scopes.go",
+                  "lines": "16-17",
+                  "contains": "full control of private repositories",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/scopes/scopes.go#L16-L17"
+                },
+                {
+                  "file": "cmd/github-mcp-server/main.go",
+                  "lines": "49",
+                  "contains": "personal_access_token",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L49"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All tools reach GitHub through the same host-restricted client built from the one credential; the only per-request authorization is GitHub's own, and the token-scope filter only hides tools.",
+              "gap": "No server-side authorization layer that every tool passes through with a scoped identity.",
+              "evidence": [
+                {
+                  "file": "internal/ghmcp/server.go",
+                  "lines": "157-166",
+                  "contains": "TokenProvider: cfg.TokenProvider",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/internal/ghmcp/server.go#L157-L166"
+                },
+                {
+                  "file": "internal/ghmcp/server.go",
+                  "lines": "220-223",
+                  "contains": "CreateToolScopeFilter",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/internal/ghmcp/server.go#L220-L223"
+                },
+                {
+                  "file": "pkg/github/scope_filter.go",
+                  "lines": "31-37",
+                  "contains": "tool.ScopeAccess.Visible(tokenScopes)",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/scope_filter.go#L31-L37"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The default OAuth request omits delete_repo, admin:org and workflow, but still includes full 'repo', and GITHUB_OAUTH_SCOPES / --oauth-scopes or a broader PAT widens it without warning.",
+              "gap": "Default is not read-only or near-minimal; write access is granted without explicit operator elevation.",
+              "evidence": [
+                {
+                  "file": "pkg/scopes/scopes.go",
+                  "lines": "84-101",
+                  "contains": "{scope: DeleteRepo}",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/scopes/scopes.go#L84-L101"
+                },
+                {
+                  "file": "cmd/github-mcp-server/main.go",
+                  "lines": "142-147",
+                  "contains": "viper.IsSet(\"oauth-scopes\")",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L142-L147"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked session can write to every repository, issue and pull request across all orgs the user belongs to, plus gists and packages.",
+              "gap": "Authority is not confined to one project or tenant, and writes are not limited to non-destructive operations.",
+              "evidence": [
+                {
+                  "file": "pkg/scopes/scopes.go",
+                  "lines": "84-95",
+                  "contains": "{scope: WritePackages, byDefault: true}",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/scopes/scopes.go#L84-L95"
+                },
+                {
+                  "file": "pkg/github/tools.go",
+                  "lines": "40-45",
+                  "contains": "GitHub Repository related tools",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/tools.go#L40-L45"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in GitHub App installation tokens",
+          "score": 0.5,
+          "raw": 0.5,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "GitHub App mode mints installation access tokens for a dedicated app identity whose permissions and repositories are set by the app installation; tokens expire and are refreshed.",
+              "gap": "The token request sends no permissions or repositories body, so the server never narrows the token below the installation's full permission set, and reads and writes share it.",
+              "evidence": [
+                {
+                  "file": "internal/githubapp/githubapp.go",
+                  "lines": "131-139",
+                  "contains": "access_tokens",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/internal/githubapp/githubapp.go#L131-L139"
+                },
+                {
+                  "file": "internal/githubapp/githubapp.go",
+                  "lines": "171-178",
+                  "contains": "body.ExpiresAt.Add(-refreshBuffer)",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/internal/githubapp/githubapp.go#L171-L178"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every tool uses the provider-backed token through the same transport.",
+              "gap": "No server-side per-request authorization layer.",
+              "evidence": [
+                {
+                  "file": "internal/ghmcp/server.go",
+                  "lines": "157-166",
+                  "contains": "TokenProvider: cfg.TokenProvider",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/internal/ghmcp/server.go#L157-L166"
+                },
+                {
+                  "file": "cmd/github-mcp-server/main.go",
+                  "lines": "159-165",
+                  "contains": "newGitHubAppTokenProvider",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L159-L165"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Requires explicit app configuration; widening means changing the app's permissions in GitHub.",
+              "gap": "Not the default; nothing forces a read-only installation.",
+              "evidence": [
+                {
+                  "file": "cmd/github-mcp-server/main.go",
+                  "lines": "54",
+                  "contains": "appAuthRequested := appID != \"\"",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L54"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Blast radius is the repositories and permissions of one app installation, with tokens that expire within an hour.",
+              "gap": "Installation permissions may still include broad write access across the installation's repositories.",
+              "evidence": [
+                {
+                  "file": "internal/githubapp/githubapp.go",
+                  "lines": "161-164",
+                  "contains": "ExpiresAt time.Time",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/internal/githubapp/githubapp.go#L161-L164"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "The host, not the server, decides what to approve, so this criterion rates the signals the server gives it. Every tool explicitly declares whether it is read-only, a test enforces that the declaration is present, reads and writes are separate tools, and the opt-in read-only mode drops every write tool. Repository deletion is the one action with a server-enforced human confirmation: the user must type the exact repository name and the server re-checks the repository's identity before deleting. Other destructive or hard-to-undo actions (merging, deleting files, pushing files, posting comments) have no preview or confirmation, and the interactive forms some clients show for creating issues and pull requests are not an enforced gate.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.625,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Separate read and write tools with explicit, accurate readOnlyHint (destructive hint set on deletes); delete_repository additionally requires an elicited, typed confirmation bound to sealed state.",
+          "gap": "No preview or dry-run for destructive operations other than repository deletion (merge, delete_file, push_files have none).",
+          "evidence": [
+            {
+              "file": "pkg/github/repositories.go",
+              "lines": "768-772",
+              "contains": "DestructiveHint: new(true)",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/repositories.go#L768-L772"
+            },
+            {
+              "file": "pkg/github/repositories.go",
+              "lines": "879-884",
+              "contains": "confirmedName != fullName",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/repositories.go#L879-L884"
+            },
+            {
+              "file": "pkg/github/pullrequests.go",
+              "lines": "1530-1535",
+              "contains": "ReadOnlyHint: false",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/pullrequests.go#L1530-L1535"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every registered tool must declare ReadOnlyHint explicitly (enforced by an AST test over the package), and the read-only filter applies to every tool via the shared inventory.",
+          "gap": "Make the MCP Apps form step for create/update tools an enforced gate.",
+          "evidence": [
+            {
+              "file": "pkg/github/tools_static_validation_test.go",
+              "lines": "27-31",
+              "contains": "ScanReadOnlyHint(pkgDir)",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/tools_static_validation_test.go#L27-L31"
+            },
+            {
+              "file": "pkg/inventory/filters.go",
+              "lines": "37-40",
+              "contains": "r.readOnly && !tool.IsReadOnly()",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/inventory/filters.go#L37-L40"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Risk annotations ship on every tool and no config, env var or workspace file changes them; tool title/description overrides cannot alter the hints.",
+          "gap": "Read-only mode is off by default (--read-only defaults to false) and no confirmation comes from an authenticated principal except for repository deletion.",
+          "evidence": [
+            {
+              "file": "pkg/inventory/server_tool.go",
+              "lines": "121-124",
+              "contains": "st.Tool.Annotations.ReadOnlyHint",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/inventory/server_tool.go#L121-L124"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Most default writes are reversible on GitHub (commits can be reverted, issues reopened, force is disabled on ref updates), but comments, issues and PRs notify people immediately and merges can trigger deployments.",
+          "gap": "No checkpoint/preview for external actions such as comments and merges.",
+          "evidence": [
+            {
+              "file": "pkg/github/repositories.go",
+              "lines": "1457",
+              "contains": "Force: new(false)",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/repositories.go#L1457"
+            },
+            {
+              "file": "pkg/github/issues.go",
+              "lines": "1369-1374",
+              "contains": "add_issue_comment",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/issues.go#L1369-L1374"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.625,
+          "raw": 0.625,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Separate read and write tools with explicit, accurate readOnlyHint (destructive hint set on deletes); delete_repository additionally requires an elicited, typed confirmation bound to sealed state.",
+              "gap": "No preview or dry-run for destructive operations other than repository deletion (merge, delete_file, push_files have none).",
+              "evidence": [
+                {
+                  "file": "pkg/github/repositories.go",
+                  "lines": "768-772",
+                  "contains": "DestructiveHint: new(true)",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/repositories.go#L768-L772"
+                },
+                {
+                  "file": "pkg/github/repositories.go",
+                  "lines": "879-884",
+                  "contains": "confirmedName != fullName",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/repositories.go#L879-L884"
+                },
+                {
+                  "file": "pkg/github/pullrequests.go",
+                  "lines": "1530-1535",
+                  "contains": "ReadOnlyHint: false",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/pullrequests.go#L1530-L1535"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every registered tool must declare ReadOnlyHint explicitly (enforced by an AST test over the package), and the read-only filter applies to every tool via the shared inventory.",
+              "gap": "Make the MCP Apps form step for create/update tools an enforced gate.",
+              "evidence": [
+                {
+                  "file": "pkg/github/tools_static_validation_test.go",
+                  "lines": "27-31",
+                  "contains": "ScanReadOnlyHint(pkgDir)",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/tools_static_validation_test.go#L27-L31"
+                },
+                {
+                  "file": "pkg/inventory/filters.go",
+                  "lines": "37-40",
+                  "contains": "r.readOnly && !tool.IsReadOnly()",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/inventory/filters.go#L37-L40"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Risk annotations ship on every tool and no config, env var or workspace file changes them; tool title/description overrides cannot alter the hints.",
+              "gap": "Read-only mode is off by default (--read-only defaults to false) and no confirmation comes from an authenticated principal except for repository deletion.",
+              "evidence": [
+                {
+                  "file": "pkg/inventory/server_tool.go",
+                  "lines": "121-124",
+                  "contains": "st.Tool.Annotations.ReadOnlyHint",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/inventory/server_tool.go#L121-L124"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Most default writes are reversible on GitHub (commits can be reverted, issues reopened, force is disabled on ref updates), but comments, issues and PRs notify people immediately and merges can trigger deployments.",
+              "gap": "No checkpoint/preview for external actions such as comments and merges.",
+              "evidence": [
+                {
+                  "file": "pkg/github/repositories.go",
+                  "lines": "1457",
+                  "contains": "Force: new(false)",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/repositories.go#L1457"
+                },
+                {
+                  "file": "pkg/github/issues.go",
+                  "lines": "1369-1374",
+                  "contains": "add_issue_comment",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/issues.go#L1369-L1374"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "Tools are narrow, purpose-built GitHub operations rather than a generic HTTP or GraphQL passthrough. Write tools validate file paths (no absolute paths, backslashes or '..'), refuse to overwrite an existing file without its current SHA, refuse to write through symlinks, and never force-update branches. Read tools take paths and repository names without the same validation, and numeric limits such as page size live only in the schema. The default tool set includes many write tools (push files, delete files, create repositories, merge pull requests), and nothing limits which repositories or organizations the tools may touch.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.525,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Narrow tools with code-level validation on writes: relative-path checks rejecting traversal, SHA-guarded overwrites, symlink write blocking, and non-forced ref updates.",
+          "gap": "Owner/repo names and numeric bounds are not validated in handler code, and there is no repository/organization allowlist.",
+          "evidence": [
+            {
+              "file": "pkg/github/repository_path.go",
+              "lines": "14-34",
+              "contains": "parent directory traversal",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/repository_path.go#L14-L34"
+            },
+            {
+              "file": "pkg/github/repositories.go",
+              "lines": "596-603",
+              "contains": "prevent blind overwrites",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/repositories.go#L596-L603"
+            },
+            {
+              "file": "pkg/github/repositories.go",
+              "lines": "570-572",
+              "contains": "newSymlinkWriteBlockedResult",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/repositories.go#L570-L572"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Path validation is applied only in the three file-writing tools; get_file_contents and other read tools take paths unvalidated.",
+          "gap": "Read tools and other free-form arguments are not covered by a shared validation layer.",
+          "evidence": [
+            {
+              "search": "rg -n 'validateRelativePath\\(' --glob '!*_test.go'",
+              "scope": "pkg",
+              "hits": 6,
+              "note": "3 call sites (create_or_update_file, delete_file, push_files), the definition, and 2 uses inside scope-challenge helpers"
+            },
+            {
+              "file": "pkg/github/repositories.go",
+              "lines": "1009",
+              "contains": "path, err := OptionalParam[string](args, \"path\")",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/repositories.go#L1009"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Toolsets are selectable, but the default set includes repos, issues and pull_requests with their write tools.",
+          "gap": "The default tool set is not read-only; write tools are not opt-in.",
+          "evidence": [
+            {
+              "file": "pkg/github/tools.go",
+              "lines": "40-45",
+              "contains": "GitHub Repository related tools",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/tools.go#L40-L45"
+            },
+            {
+              "file": "cmd/github-mcp-server/main.go",
+              "lines": "247",
+              "contains": "Bool(\"read-only\", false",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L247"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A misused tool can write to any repository the token reaches, and push_files accepts an unbounded array of files per commit.",
+          "gap": "Not scoped to a project or bounded in quantity.",
+          "evidence": [
+            {
+              "file": "pkg/github/repositories.go",
+              "lines": "1639",
+              "contains": "Array of file objects to push",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/repositories.go#L1639"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.525,
+          "raw": 0.525,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Narrow tools with code-level validation on writes: relative-path checks rejecting traversal, SHA-guarded overwrites, symlink write blocking, and non-forced ref updates.",
+              "gap": "Owner/repo names and numeric bounds are not validated in handler code, and there is no repository/organization allowlist.",
+              "evidence": [
+                {
+                  "file": "pkg/github/repository_path.go",
+                  "lines": "14-34",
+                  "contains": "parent directory traversal",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/repository_path.go#L14-L34"
+                },
+                {
+                  "file": "pkg/github/repositories.go",
+                  "lines": "596-603",
+                  "contains": "prevent blind overwrites",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/repositories.go#L596-L603"
+                },
+                {
+                  "file": "pkg/github/repositories.go",
+                  "lines": "570-572",
+                  "contains": "newSymlinkWriteBlockedResult",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/repositories.go#L570-L572"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Path validation is applied only in the three file-writing tools; get_file_contents and other read tools take paths unvalidated.",
+              "gap": "Read tools and other free-form arguments are not covered by a shared validation layer.",
+              "evidence": [
+                {
+                  "search": "rg -n 'validateRelativePath\\(' --glob '!*_test.go'",
+                  "scope": "pkg",
+                  "hits": 6,
+                  "note": "3 call sites (create_or_update_file, delete_file, push_files), the definition, and 2 uses inside scope-challenge helpers"
+                },
+                {
+                  "file": "pkg/github/repositories.go",
+                  "lines": "1009",
+                  "contains": "path, err := OptionalParam[string](args, \"path\")",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/repositories.go#L1009"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Toolsets are selectable, but the default set includes repos, issues and pull_requests with their write tools.",
+              "gap": "The default tool set is not read-only; write tools are not opt-in.",
+              "evidence": [
+                {
+                  "file": "pkg/github/tools.go",
+                  "lines": "40-45",
+                  "contains": "GitHub Repository related tools",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/tools.go#L40-L45"
+                },
+                {
+                  "file": "cmd/github-mcp-server/main.go",
+                  "lines": "247",
+                  "contains": "Bool(\"read-only\", false",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L247"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A misused tool can write to any repository the token reaches, and push_files accepts an unbounded array of files per commit.",
+              "gap": "Not scoped to a project or bounded in quantity.",
+              "evidence": [
+                {
+                  "file": "pkg/github/repositories.go",
+                  "lines": "1639",
+                  "contains": "Array of file objects to push",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/repositories.go#L1639"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "The server never runs model-supplied code or commands. The only process it starts is the system browser opener for the OAuth login URL, and its only template rendering is the static OAuth result page. Actions it can trigger on GitHub (assigning the Copilot coding agent, or workflow runs in the non-default actions toolset) execute on GitHub's infrastructure and are scored as consequential actions under approval gates and untrusted input.",
+      "max": 1.0,
+      "notes": "With a token that carries the 'workflow' scope (not in the default OAuth set), push_files/create_or_update_file can write .github/workflows files that GitHub Actions then runs remotely; that is remote execution on GitHub, outside this server's process.",
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'os/exec|exec\\.Command' --glob '!*_test.go'",
+              "scope": "cmd/github-mcp-server internal pkg",
+              "hits": 4,
+              "note": "all in internal/oauth/env.go: opening the OAuth authorization URL in the system browser, not model-controlled code"
+            },
+            {
+              "search": "rg -n 'text/template|html/template|goja|yaegi|starlark' --glob '!*_test.go'",
+              "scope": "cmd/github-mcp-server internal pkg",
+              "hits": 2,
+              "note": "internal/oauth/callback.go renders a static, auto-escaped OAuth result page"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'os/exec|exec\\.Command' --glob '!*_test.go'",
+              "scope": "cmd/github-mcp-server internal pkg",
+              "hits": 4,
+              "note": "all in internal/oauth/env.go: opening the OAuth authorization URL in the system browser, not model-controlled code"
+            },
+            {
+              "search": "rg -n 'text/template|html/template|goja|yaegi|starlark' --glob '!*_test.go'",
+              "scope": "cmd/github-mcp-server internal pkg",
+              "hits": 2,
+              "note": "internal/oauth/callback.go renders a static, auto-escaped OAuth result page"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'os/exec|exec\\.Command' --glob '!*_test.go'",
+              "scope": "cmd/github-mcp-server internal pkg",
+              "hits": 4,
+              "note": "all in internal/oauth/env.go: opening the OAuth authorization URL in the system browser, not model-controlled code"
+            },
+            {
+              "search": "rg -n 'text/template|html/template|goja|yaegi|starlark' --glob '!*_test.go'",
+              "scope": "cmd/github-mcp-server internal pkg",
+              "hits": 2,
+              "note": "internal/oauth/callback.go renders a static, auto-escaped OAuth result page"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'os/exec|exec\\.Command' --glob '!*_test.go'",
+              "scope": "cmd/github-mcp-server internal pkg",
+              "hits": 4,
+              "note": "all in internal/oauth/env.go: opening the OAuth authorization URL in the system browser, not model-controlled code"
+            },
+            {
+              "search": "rg -n 'text/template|html/template|goja|yaegi|starlark' --glob '!*_test.go'",
+              "scope": "cmd/github-mcp-server internal pkg",
+              "hits": 2,
+              "note": "internal/oauth/callback.go renders a static, auto-escaped OAuth result page"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'os/exec|exec\\.Command' --glob '!*_test.go'",
+                  "scope": "cmd/github-mcp-server internal pkg",
+                  "hits": 4,
+                  "note": "all in internal/oauth/env.go: opening the OAuth authorization URL in the system browser, not model-controlled code"
+                },
+                {
+                  "search": "rg -n 'text/template|html/template|goja|yaegi|starlark' --glob '!*_test.go'",
+                  "scope": "cmd/github-mcp-server internal pkg",
+                  "hits": 2,
+                  "note": "internal/oauth/callback.go renders a static, auto-escaped OAuth result page"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'os/exec|exec\\.Command' --glob '!*_test.go'",
+                  "scope": "cmd/github-mcp-server internal pkg",
+                  "hits": 4,
+                  "note": "all in internal/oauth/env.go: opening the OAuth authorization URL in the system browser, not model-controlled code"
+                },
+                {
+                  "search": "rg -n 'text/template|html/template|goja|yaegi|starlark' --glob '!*_test.go'",
+                  "scope": "cmd/github-mcp-server internal pkg",
+                  "hits": 2,
+                  "note": "internal/oauth/callback.go renders a static, auto-escaped OAuth result page"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'os/exec|exec\\.Command' --glob '!*_test.go'",
+                  "scope": "cmd/github-mcp-server internal pkg",
+                  "hits": 4,
+                  "note": "all in internal/oauth/env.go: opening the OAuth authorization URL in the system browser, not model-controlled code"
+                },
+                {
+                  "search": "rg -n 'text/template|html/template|goja|yaegi|starlark' --glob '!*_test.go'",
+                  "scope": "cmd/github-mcp-server internal pkg",
+                  "hits": 2,
+                  "note": "internal/oauth/callback.go renders a static, auto-escaped OAuth result page"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'os/exec|exec\\.Command' --glob '!*_test.go'",
+                  "scope": "cmd/github-mcp-server internal pkg",
+                  "hits": 4,
+                  "note": "all in internal/oauth/env.go: opening the OAuth authorization URL in the system browser, not model-controlled code"
+                },
+                {
+                  "search": "rg -n 'text/template|html/template|goja|yaegi|starlark' --glob '!*_test.go'",
+                  "scope": "cmd/github-mcp-server internal pkg",
+                  "hits": 2,
+                  "note": "internal/oauth/callback.go renders a static, auto-escaped OAuth result page"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n 'os/exec|exec\\.Command' --glob '!*_test.go'",
+          "scope": "cmd/github-mcp-server internal pkg",
+          "hits": 4,
+          "note": "all in internal/oauth/env.go: opening the OAuth authorization URL in the system browser, not model-controlled code"
+        },
+        {
+          "search": "rg -n 'text/template|html/template|goja|yaegi|starlark' --glob '!*_test.go'",
+          "scope": "cmd/github-mcp-server internal pkg",
+          "hits": 2,
+          "note": "internal/oauth/callback.go renders a static, auto-escaped OAuth result page"
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "The server returns issue, pull request, comment, commit and file content from any repository, including public ones anyone can write to, and the same default session holds private-repository read access and write tools that post comments, open issues and push files. Results are structured JSON with authors and URLs, and issue and comment bodies are stripped of invisible characters, but nothing marks content as untrusted by default. The server already contains the right defenses — a lockdown mode that withholds public content from non-collaborators, information-flow labels that mark each result as trusted/untrusted and public/private, and a read-only mode — but all three are opt-in. As shipped, a hijacked agent can copy private code into a public comment with no human involved.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.5,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "IFC labels mark each result trusted/untrusted and public/private, lockdown fails closed on content from non-collaborators in public repos, and read-only mode removes every write tool (dropping the state-change/egress leg).",
+          "evidence": [
+            {
+              "file": "pkg/ifc/ifc.go",
+              "lines": "7-11",
+              "contains": "IntegrityUntrusted Integrity = \"untrusted\"",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/ifc/ifc.go#L7-L11"
+            },
+            {
+              "file": "pkg/github/lockdown.go",
+              "lines": "19-36",
+              "contains": "It fails closed",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/lockdown.go#L19-L36"
+            },
+            {
+              "file": "pkg/inventory/filters.go",
+              "lines": "37-40",
+              "contains": "r.readOnly && !tool.IsReadOnly()",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/inventory/filters.go#L37-L40"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "IFC labels are attached by many read tools and lockdown covers issue and pull request reads, but lockdown does not cover files, commits or code search.",
+          "gap": "Lockdown does not cover every untrusted source (file contents, commits, code search).",
+          "evidence": [
+            {
+              "search": "rg -n 'attachStaticIFCLabel\\(|attachRepoVisibilityIFCLabel\\(' --glob '!*_test.go'",
+              "scope": "pkg/github",
+              "hits": 45,
+              "note": "includes 2 function definitions; remaining hits are call sites across ~18 tool files"
+            },
+            {
+              "file": "pkg/github/lockdown.go",
+              "lines": "23-36",
+              "contains": "authorLockdownResult",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/lockdown.go#L23-L36"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All three are operator flags/feature flags, off by default; IFC labels are not even in the insiders set.",
+          "gap": "Not on by default.",
+          "evidence": [
+            {
+              "file": "cmd/github-mcp-server/main.go",
+              "lines": "247-253",
+              "contains": "Bool(\"lockdown-mode\", false",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L247-L253"
+            },
+            {
+              "file": "pkg/github/feature_flags.go",
+              "lines": "62-66",
+              "contains": "InsidersFeatureFlags",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/feature_flags.go#L62-L66"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "With read-only mode no write or egress tool exists, but private repository data remains readable alongside untrusted content.",
+          "gap": "Sensitive data still reachable from sessions that read untrusted content.",
+          "evidence": [
+            {
+              "file": "pkg/inventory/filters.go",
+              "lines": "37-40",
+              "contains": "r.readOnly && !tool.IsReadOnly()",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/inventory/filters.go#L37-L40"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.45,
+          "cap": {
+            "id": "C5-WORSTCASE",
+            "max": 0.25,
+            "reason": "In the default configuration a hijacked session can leak private repository data into public comments/issues and push changes unattended."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Structured JSON results separate content from metadata (author, URLs), with invisible-character stripping on bodies; untrusted/provenance labels exist only behind a feature flag.",
+              "gap": "No untrusted flag or provenance label on returned content in the default configuration.",
+              "evidence": [
+                {
+                  "file": "pkg/github/minimal_types.go",
+                  "lines": "817-818",
+                  "contains": "sanitize.Content(issue.GetBody())",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/minimal_types.go#L817-L818"
+                },
+                {
+                  "file": "pkg/github/ifc_labels.go",
+                  "lines": "20-22",
+                  "contains": "deps.IsFeatureEnabled(ctx, FeatureFlagIFCLabels)",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/ifc_labels.go#L20-L22"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Sanitization covers issue/PR/comment/release/commit text, but file contents, code search and job logs are returned as-is.",
+              "gap": "File contents, code search results and Actions logs carry no sanitization or provenance flag.",
+              "evidence": [
+                {
+                  "search": "rg -n 'sanitize\\.(Content|PlainText|Sanitize)\\(' --glob '!*_test.go'",
+                  "scope": "pkg/github",
+                  "hits": 35,
+                  "note": "all are field-level sanitization of titles/bodies/messages in minimal_types.go, issues.go, discussions.go, repositories.go, projects.go; none on file contents"
+                },
+                {
+                  "file": "pkg/github/repositories.go",
+                  "lines": "1009",
+                  "contains": "path, err := OptionalParam[string](args, \"path\")",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/repositories.go#L1009"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Output structuring and sanitization are always on and cannot be disabled by config or content; in HTTP mode a request header can only enable lockdown, not disable it.",
+              "gap": "The stronger controls (lockdown, IFC labels) are off by default, so nothing the server ships on by default flags untrusted content.",
+              "evidence": [
+                {
+                  "file": "pkg/github/minimal_types.go",
+                  "lines": "817-818",
+                  "contains": "sanitize.Content(issue.GetBody())",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/minimal_types.go#L817-L818"
+                },
+                {
+                  "file": "cmd/github-mcp-server/main.go",
+                  "lines": "253",
+                  "contains": "Bool(\"lockdown-mode\", false",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L253"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default session combines untrusted public content, private-repo data via the 'repo' scope, and unattended egress/state change (comments, issues, push_files, PRs) with no server-side gate.",
+              "gap": "Exfiltration and irreversible actions after reading untrusted content are not forced through human approval or disabled.",
+              "evidence": [
+                {
+                  "file": "pkg/scopes/scopes.go",
+                  "lines": "84-85",
+                  "contains": "{scope: Repo, byDefault: true}",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/scopes/scopes.go#L84-L85"
+                },
+                {
+                  "file": "pkg/github/issues.go",
+                  "lines": "1369-1374",
+                  "contains": "add_issue_comment",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/issues.go#L1369-L1374"
+                },
+                {
+                  "file": "pkg/github/repositories.go",
+                  "lines": "1639",
+                  "contains": "Array of file objects to push",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/repositories.go#L1639"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in lockdown mode + ifc_labels feature + read-only mode",
+          "score": 0.5,
+          "raw": 0.65,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "IFC labels mark each result trusted/untrusted and public/private, lockdown fails closed on content from non-collaborators in public repos, and read-only mode removes every write tool (dropping the state-change/egress leg).",
+              "evidence": [
+                {
+                  "file": "pkg/ifc/ifc.go",
+                  "lines": "7-11",
+                  "contains": "IntegrityUntrusted Integrity = \"untrusted\"",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/ifc/ifc.go#L7-L11"
+                },
+                {
+                  "file": "pkg/github/lockdown.go",
+                  "lines": "19-36",
+                  "contains": "It fails closed",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/lockdown.go#L19-L36"
+                },
+                {
+                  "file": "pkg/inventory/filters.go",
+                  "lines": "37-40",
+                  "contains": "r.readOnly && !tool.IsReadOnly()",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/inventory/filters.go#L37-L40"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "IFC labels are attached by many read tools and lockdown covers issue and pull request reads, but lockdown does not cover files, commits or code search.",
+              "gap": "Lockdown does not cover every untrusted source (file contents, commits, code search).",
+              "evidence": [
+                {
+                  "search": "rg -n 'attachStaticIFCLabel\\(|attachRepoVisibilityIFCLabel\\(' --glob '!*_test.go'",
+                  "scope": "pkg/github",
+                  "hits": 45,
+                  "note": "includes 2 function definitions; remaining hits are call sites across ~18 tool files"
+                },
+                {
+                  "file": "pkg/github/lockdown.go",
+                  "lines": "23-36",
+                  "contains": "authorLockdownResult",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/lockdown.go#L23-L36"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All three are operator flags/feature flags, off by default; IFC labels are not even in the insiders set.",
+              "gap": "Not on by default.",
+              "evidence": [
+                {
+                  "file": "cmd/github-mcp-server/main.go",
+                  "lines": "247-253",
+                  "contains": "Bool(\"lockdown-mode\", false",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L247-L253"
+                },
+                {
+                  "file": "pkg/github/feature_flags.go",
+                  "lines": "62-66",
+                  "contains": "InsidersFeatureFlags",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/feature_flags.go#L62-L66"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "With read-only mode no write or egress tool exists, but private repository data remains readable alongside untrusted content.",
+              "gap": "Sensitive data still reachable from sessions that read untrusted content.",
+              "evidence": [
+                {
+                  "file": "pkg/inventory/filters.go",
+                  "lines": "37-40",
+                  "contains": "r.readOnly && !tool.IsReadOnly()",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/inventory/filters.go#L37-L40"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "The server keeps no memory between sessions: OAuth tokens, caches and lockdown results live only in process memory, and configuration comes from flags and environment variables set by the operator. In the scored Docker deployment the working directory is inside the image, so no workspace file is loaded. In binary (non-Docker) installs, configuration loading is not integrity-protected.",
+      "max": 1.0,
+      "notes": "Not structurally absent for binary installs: configuration loading is not integrity-protected.",
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'os\\.(WriteFile|Create|OpenFile|MkdirAll)|AddConfigPath|godotenv|ReadInConfig|UserConfigDir|UserHomeDir' --glob '!*_test.go'",
+              "scope": "cmd/github-mcp-server internal pkg",
+              "hits": 11,
+              "note": "docs generators (generate_docs.go, feature_flag_docs.go), test snapshot helper (toolsnaps.go), operator log file (server.go x2), --export-translations dump, and the translations loader; nothing persists model-influenced state"
+            },
+            {
+              "search": "rg -n 'WORKDIR /server'",
+              "scope": "Dockerfile",
+              "hits": 1,
+              "note": "the default Docker image's working directory is image-controlled, so no workspace file is loaded in the scored deployment"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'os\\.(WriteFile|Create|OpenFile|MkdirAll)|AddConfigPath|godotenv|ReadInConfig|UserConfigDir|UserHomeDir' --glob '!*_test.go'",
+              "scope": "cmd/github-mcp-server internal pkg",
+              "hits": 11,
+              "note": "docs generators (generate_docs.go, feature_flag_docs.go), test snapshot helper (toolsnaps.go), operator log file (server.go x2), --export-translations dump, and the translations loader; nothing persists model-influenced state"
+            },
+            {
+              "search": "rg -n 'WORKDIR /server'",
+              "scope": "Dockerfile",
+              "hits": 1,
+              "note": "the default Docker image's working directory is image-controlled, so no workspace file is loaded in the scored deployment"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'os\\.(WriteFile|Create|OpenFile|MkdirAll)|AddConfigPath|godotenv|ReadInConfig|UserConfigDir|UserHomeDir' --glob '!*_test.go'",
+              "scope": "cmd/github-mcp-server internal pkg",
+              "hits": 11,
+              "note": "docs generators (generate_docs.go, feature_flag_docs.go), test snapshot helper (toolsnaps.go), operator log file (server.go x2), --export-translations dump, and the translations loader; nothing persists model-influenced state"
+            },
+            {
+              "search": "rg -n 'WORKDIR /server'",
+              "scope": "Dockerfile",
+              "hits": 1,
+              "note": "the default Docker image's working directory is image-controlled, so no workspace file is loaded in the scored deployment"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'os\\.(WriteFile|Create|OpenFile|MkdirAll)|AddConfigPath|godotenv|ReadInConfig|UserConfigDir|UserHomeDir' --glob '!*_test.go'",
+              "scope": "cmd/github-mcp-server internal pkg",
+              "hits": 11,
+              "note": "docs generators (generate_docs.go, feature_flag_docs.go), test snapshot helper (toolsnaps.go), operator log file (server.go x2), --export-translations dump, and the translations loader; nothing persists model-influenced state"
+            },
+            {
+              "search": "rg -n 'WORKDIR /server'",
+              "scope": "Dockerfile",
+              "hits": 1,
+              "note": "the default Docker image's working directory is image-controlled, so no workspace file is loaded in the scored deployment"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'os\\.(WriteFile|Create|OpenFile|MkdirAll)|AddConfigPath|godotenv|ReadInConfig|UserConfigDir|UserHomeDir' --glob '!*_test.go'",
+                  "scope": "cmd/github-mcp-server internal pkg",
+                  "hits": 11,
+                  "note": "docs generators (generate_docs.go, feature_flag_docs.go), test snapshot helper (toolsnaps.go), operator log file (server.go x2), --export-translations dump, and the translations loader; nothing persists model-influenced state"
+                },
+                {
+                  "search": "rg -n 'WORKDIR /server'",
+                  "scope": "Dockerfile",
+                  "hits": 1,
+                  "note": "the default Docker image's working directory is image-controlled, so no workspace file is loaded in the scored deployment"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'os\\.(WriteFile|Create|OpenFile|MkdirAll)|AddConfigPath|godotenv|ReadInConfig|UserConfigDir|UserHomeDir' --glob '!*_test.go'",
+                  "scope": "cmd/github-mcp-server internal pkg",
+                  "hits": 11,
+                  "note": "docs generators (generate_docs.go, feature_flag_docs.go), test snapshot helper (toolsnaps.go), operator log file (server.go x2), --export-translations dump, and the translations loader; nothing persists model-influenced state"
+                },
+                {
+                  "search": "rg -n 'WORKDIR /server'",
+                  "scope": "Dockerfile",
+                  "hits": 1,
+                  "note": "the default Docker image's working directory is image-controlled, so no workspace file is loaded in the scored deployment"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'os\\.(WriteFile|Create|OpenFile|MkdirAll)|AddConfigPath|godotenv|ReadInConfig|UserConfigDir|UserHomeDir' --glob '!*_test.go'",
+                  "scope": "cmd/github-mcp-server internal pkg",
+                  "hits": 11,
+                  "note": "docs generators (generate_docs.go, feature_flag_docs.go), test snapshot helper (toolsnaps.go), operator log file (server.go x2), --export-translations dump, and the translations loader; nothing persists model-influenced state"
+                },
+                {
+                  "search": "rg -n 'WORKDIR /server'",
+                  "scope": "Dockerfile",
+                  "hits": 1,
+                  "note": "the default Docker image's working directory is image-controlled, so no workspace file is loaded in the scored deployment"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'os\\.(WriteFile|Create|OpenFile|MkdirAll)|AddConfigPath|godotenv|ReadInConfig|UserConfigDir|UserHomeDir' --glob '!*_test.go'",
+                  "scope": "cmd/github-mcp-server internal pkg",
+                  "hits": 11,
+                  "note": "docs generators (generate_docs.go, feature_flag_docs.go), test snapshot helper (toolsnaps.go), operator log file (server.go x2), --export-translations dump, and the translations loader; nothing persists model-influenced state"
+                },
+                {
+                  "search": "rg -n 'WORKDIR /server'",
+                  "scope": "Dockerfile",
+                  "hits": 1,
+                  "note": "the default Docker image's working directory is image-controlled, so no workspace file is loaded in the scored deployment"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n 'os\\.(WriteFile|Create|OpenFile|MkdirAll)|AddConfigPath|godotenv|ReadInConfig|UserConfigDir|UserHomeDir' --glob '!*_test.go'",
+          "scope": "cmd/github-mcp-server internal pkg",
+          "hits": 11,
+          "note": "docs generators (generate_docs.go, feature_flag_docs.go), test snapshot helper (toolsnaps.go), operator log file (server.go x2), --export-translations dump, and the translations loader; nothing persists model-influenced state"
+        },
+        {
+          "search": "rg -n 'WORKDIR /server'",
+          "scope": "Dockerfile",
+          "hits": 1,
+          "note": "the default Docker image's working directory is image-controlled, so no workspace file is loaded in the scored deployment"
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "The server loads no third-party code at runtime: no plugins, no MCP servers of its own, no downloaded tools. Its UI resources are embedded into the binary at build time.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'plugin\\.Open|go-plugin|mcp\\.NewClient|CommandTransport|npx|pip install|go install' --glob '!*_test.go'",
+              "scope": "cmd/github-mcp-server internal pkg",
+              "hits": 0,
+              "note": "no plugin loading, MCP client, or package install path"
+            },
+            {
+              "file": "pkg/github/ui_embed.go",
+              "lines": "17",
+              "contains": "UIAssets.ReadFile",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/ui_embed.go#L17"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'plugin\\.Open|go-plugin|mcp\\.NewClient|CommandTransport|npx|pip install|go install' --glob '!*_test.go'",
+              "scope": "cmd/github-mcp-server internal pkg",
+              "hits": 0,
+              "note": "no plugin loading, MCP client, or package install path"
+            },
+            {
+              "file": "pkg/github/ui_embed.go",
+              "lines": "17",
+              "contains": "UIAssets.ReadFile",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/ui_embed.go#L17"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'plugin\\.Open|go-plugin|mcp\\.NewClient|CommandTransport|npx|pip install|go install' --glob '!*_test.go'",
+              "scope": "cmd/github-mcp-server internal pkg",
+              "hits": 0,
+              "note": "no plugin loading, MCP client, or package install path"
+            },
+            {
+              "file": "pkg/github/ui_embed.go",
+              "lines": "17",
+              "contains": "UIAssets.ReadFile",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/ui_embed.go#L17"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'plugin\\.Open|go-plugin|mcp\\.NewClient|CommandTransport|npx|pip install|go install' --glob '!*_test.go'",
+              "scope": "cmd/github-mcp-server internal pkg",
+              "hits": 0,
+              "note": "no plugin loading, MCP client, or package install path"
+            },
+            {
+              "file": "pkg/github/ui_embed.go",
+              "lines": "17",
+              "contains": "UIAssets.ReadFile",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/ui_embed.go#L17"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'plugin\\.Open|go-plugin|mcp\\.NewClient|CommandTransport|npx|pip install|go install' --glob '!*_test.go'",
+                  "scope": "cmd/github-mcp-server internal pkg",
+                  "hits": 0,
+                  "note": "no plugin loading, MCP client, or package install path"
+                },
+                {
+                  "file": "pkg/github/ui_embed.go",
+                  "lines": "17",
+                  "contains": "UIAssets.ReadFile",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/ui_embed.go#L17"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'plugin\\.Open|go-plugin|mcp\\.NewClient|CommandTransport|npx|pip install|go install' --glob '!*_test.go'",
+                  "scope": "cmd/github-mcp-server internal pkg",
+                  "hits": 0,
+                  "note": "no plugin loading, MCP client, or package install path"
+                },
+                {
+                  "file": "pkg/github/ui_embed.go",
+                  "lines": "17",
+                  "contains": "UIAssets.ReadFile",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/ui_embed.go#L17"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'plugin\\.Open|go-plugin|mcp\\.NewClient|CommandTransport|npx|pip install|go install' --glob '!*_test.go'",
+                  "scope": "cmd/github-mcp-server internal pkg",
+                  "hits": 0,
+                  "note": "no plugin loading, MCP client, or package install path"
+                },
+                {
+                  "file": "pkg/github/ui_embed.go",
+                  "lines": "17",
+                  "contains": "UIAssets.ReadFile",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/ui_embed.go#L17"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'plugin\\.Open|go-plugin|mcp\\.NewClient|CommandTransport|npx|pip install|go install' --glob '!*_test.go'",
+                  "scope": "cmd/github-mcp-server internal pkg",
+                  "hits": 0,
+                  "note": "no plugin loading, MCP client, or package install path"
+                },
+                {
+                  "file": "pkg/github/ui_embed.go",
+                  "lines": "17",
+                  "contains": "UIAssets.ReadFile",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/ui_embed.go#L17"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n 'plugin\\.Open|go-plugin|mcp\\.NewClient|CommandTransport|npx|pip install|go install' --glob '!*_test.go'",
+          "scope": "cmd/github-mcp-server internal pkg",
+          "hits": 0,
+          "note": "no plugin loading, MCP client, or package install path"
+        },
+        {
+          "file": "pkg/github/ui_embed.go",
+          "lines": "17",
+          "contains": "UIAssets.ReadFile",
+          "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/ui_embed.go#L17"
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "The GitHub token never reaches the model: tools have no way to read it, OAuth tokens are held only in memory, and the token is attached only to requests for the configured GitHub hosts, so a redirect cannot carry it elsewhere. There is no redaction layer, though: the opt-in command logging writes every request and response verbatim, and the non-default secret-scanning tools deliberately return leaked secret values to the model. Default telemetry is a no-op. The token itself is long-lived and broad (a PAT, or an OAuth token with 'repo').",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.45,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Credential kept in memory or env and confined by a host allowlist on the auth transport; no type-level masking or redaction filters.",
+          "gap": "No redaction of secrets before logs or model-bound results; no keychain or secret-manager integration.",
+          "evidence": [
+            {
+              "file": "pkg/http/transport/bearer.go",
+              "lines": "42-46",
+              "contains": "req.Header.Del(headers.AuthorizationHeader)",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/http/transport/bearer.go#L42-L46"
+            },
+            {
+              "file": "internal/ghmcp/server.go",
+              "lines": "65-73",
+              "contains": "allowedHosts := []string{",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/internal/ghmcp/server.go#L65-L73"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Token stays out of logs and model context by construction, but command logging records full payloads and secret-scanning results put secrets into model context; the browser-opener subprocess inherits the environment.",
+          "gap": "Model-bound tool results and verbose logs are not filtered for secrets.",
+          "evidence": [
+            {
+              "file": "pkg/log/io.go",
+              "lines": "35",
+              "contains": "\"data\", string(p[:n])",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/log/io.go#L35"
+            },
+            {
+              "file": "pkg/github/secret_scanning.go",
+              "lines": "88",
+              "contains": "intentionally returns the alert's secret",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/secret_scanning.go#L88"
+            },
+            {
+              "file": "internal/oauth/env.go",
+              "lines": "30",
+              "contains": "exec.Command(\"xdg-open\", url)",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/internal/oauth/env.go#L30"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Payload logging is off by default and metrics are a no-op sink in stdio mode.",
+          "gap": "No always-on redaction: enabling command logging writes unredacted payloads.",
+          "evidence": [
+            {
+              "file": "cmd/github-mcp-server/main.go",
+              "lines": "249",
+              "contains": "Bool(\"enable-command-logging\", false",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L249"
+            },
+            {
+              "file": "internal/ghmcp/server.go",
+              "lines": "189",
+              "contains": "metrics.NewNoopMetrics()",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/internal/ghmcp/server.go#L189"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A leaked token is long-lived (PAT) or a user OAuth grant with 'repo' scope, though it is never reachable by the model.",
+          "gap": "Default credentials are not narrowly scoped or short-lived.",
+          "evidence": [
+            {
+              "file": "pkg/scopes/scopes.go",
+              "lines": "84-85",
+              "contains": "{scope: Repo, byDefault: true}",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/scopes/scopes.go#L84-L85"
+            },
+            {
+              "file": "cmd/github-mcp-server/main.go",
+              "lines": "49",
+              "contains": "personal_access_token",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L49"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.45,
+          "raw": 0.45,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Credential kept in memory or env and confined by a host allowlist on the auth transport; no type-level masking or redaction filters.",
+              "gap": "No redaction of secrets before logs or model-bound results; no keychain or secret-manager integration.",
+              "evidence": [
+                {
+                  "file": "pkg/http/transport/bearer.go",
+                  "lines": "42-46",
+                  "contains": "req.Header.Del(headers.AuthorizationHeader)",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/http/transport/bearer.go#L42-L46"
+                },
+                {
+                  "file": "internal/ghmcp/server.go",
+                  "lines": "65-73",
+                  "contains": "allowedHosts := []string{",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/internal/ghmcp/server.go#L65-L73"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Token stays out of logs and model context by construction, but command logging records full payloads and secret-scanning results put secrets into model context; the browser-opener subprocess inherits the environment.",
+              "gap": "Model-bound tool results and verbose logs are not filtered for secrets.",
+              "evidence": [
+                {
+                  "file": "pkg/log/io.go",
+                  "lines": "35",
+                  "contains": "\"data\", string(p[:n])",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/log/io.go#L35"
+                },
+                {
+                  "file": "pkg/github/secret_scanning.go",
+                  "lines": "88",
+                  "contains": "intentionally returns the alert's secret",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/secret_scanning.go#L88"
+                },
+                {
+                  "file": "internal/oauth/env.go",
+                  "lines": "30",
+                  "contains": "exec.Command(\"xdg-open\", url)",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/internal/oauth/env.go#L30"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Payload logging is off by default and metrics are a no-op sink in stdio mode.",
+              "gap": "No always-on redaction: enabling command logging writes unredacted payloads.",
+              "evidence": [
+                {
+                  "file": "cmd/github-mcp-server/main.go",
+                  "lines": "249",
+                  "contains": "Bool(\"enable-command-logging\", false",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L249"
+                },
+                {
+                  "file": "internal/ghmcp/server.go",
+                  "lines": "189",
+                  "contains": "metrics.NewNoopMetrics()",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/internal/ghmcp/server.go#L189"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A leaked token is long-lived (PAT) or a user OAuth grant with 'repo' scope, though it is never reachable by the model.",
+              "gap": "Default credentials are not narrowly scoped or short-lived.",
+              "evidence": [
+                {
+                  "file": "pkg/scopes/scopes.go",
+                  "lines": "84-85",
+                  "contains": "{scope: Repo, byDefault: true}",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/scopes/scopes.go#L84-L85"
+                },
+                {
+                  "file": "cmd/github-mcp-server/main.go",
+                  "lines": "49",
+                  "contains": "personal_access_token",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L49"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "By default the server keeps no record of the tools it runs: it logs startup and authentication events only, and the per-tool logger it passes to handlers is never used. An opt-in command-logging flag writes the raw JSON-RPC traffic (every request and response) to stderr or a log file, which lets you reconstruct calls, but as unparsed byte chunks with no notion of who asked or who approved, written best-effort.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.375,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Raw stdin/stdout bytes are logged with timestamps via slog, chunked by read/write rather than per call.",
+          "gap": "Not a structured per-call record and no actor attribution.",
+          "evidence": [
+            {
+              "file": "pkg/log/io.go",
+              "lines": "29-46",
+              "contains": "[stdin]: received bytes",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/log/io.go#L29-L46"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All JSON-RPC traffic on stdio passes through the logger, so every tool call and result is captured.",
+          "gap": "No approvals, configuration or credential-use events.",
+          "evidence": [
+            {
+              "file": "internal/ghmcp/server.go",
+              "lines": "407-410",
+              "contains": "mcplog.NewIOLogger(in, out, logger)",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/internal/ghmcp/server.go#L407-L410"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Written to stderr or an operator-chosen file outside any workspace; the model has no local file tool, but the process can alter it.",
+          "gap": "Not written by a component separate from the server process.",
+          "evidence": [
+            {
+              "file": "internal/ghmcp/server.go",
+              "lines": "328-334",
+              "contains": "os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/internal/ghmcp/server.go#L328-L334"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "slog writes per chunk but handler errors are ignored and actions proceed regardless.",
+          "gap": "Logging failures are not surfaced and records are not durable per action.",
+          "evidence": [
+            {
+              "file": "pkg/log/io.go",
+              "lines": "45-46",
+              "contains": "l.writer.Write(p)",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/log/io.go#L45-L46"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No tool-call record in the default configuration; handlers never call the injected logger.",
+              "gap": "No structured per-call record (tool, arguments, status, timestamp).",
+              "evidence": [
+                {
+                  "search": "rg -n 'Logger\\(' --glob '!*_test.go'",
+                  "scope": "pkg/github",
+                  "hits": 5,
+                  "note": "all are the interface declaration and two Logger() implementations in dependencies.go; no tool calls them"
+                },
+                {
+                  "file": "internal/ghmcp/server.go",
+                  "lines": "340",
+                  "contains": "logger.Info(\"starting server\"",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/internal/ghmcp/server.go#L340"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Nothing about tool calls is recorded by default.",
+              "gap": "No tool path is recorded by default.",
+              "evidence": [
+                {
+                  "file": "internal/ghmcp/server.go",
+                  "lines": "407-410",
+                  "contains": "if cfg.EnableCommandLogging {",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/internal/ghmcp/server.go#L407-L410"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Command logging is opt-in.",
+              "gap": "Recording is not on by default.",
+              "evidence": [
+                {
+                  "file": "cmd/github-mcp-server/main.go",
+                  "lines": "249",
+                  "contains": "Bool(\"enable-command-logging\", false",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L249"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "With no record, nothing survives an incident.",
+              "gap": "No per-action record is written.",
+              "evidence": [
+                {
+                  "file": "internal/ghmcp/server.go",
+                  "lines": "407-414",
+                  "contains": "mcp.IOTransport{Reader: in, Writer: out}",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/internal/ghmcp/server.go#L407-L414"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in --enable-command-logging",
+          "score": 0.375,
+          "raw": 0.375,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Raw stdin/stdout bytes are logged with timestamps via slog, chunked by read/write rather than per call.",
+              "gap": "Not a structured per-call record and no actor attribution.",
+              "evidence": [
+                {
+                  "file": "pkg/log/io.go",
+                  "lines": "29-46",
+                  "contains": "[stdin]: received bytes",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/log/io.go#L29-L46"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All JSON-RPC traffic on stdio passes through the logger, so every tool call and result is captured.",
+              "gap": "No approvals, configuration or credential-use events.",
+              "evidence": [
+                {
+                  "file": "internal/ghmcp/server.go",
+                  "lines": "407-410",
+                  "contains": "mcplog.NewIOLogger(in, out, logger)",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/internal/ghmcp/server.go#L407-L410"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Written to stderr or an operator-chosen file outside any workspace; the model has no local file tool, but the process can alter it.",
+              "gap": "Not written by a component separate from the server process.",
+              "evidence": [
+                {
+                  "file": "internal/ghmcp/server.go",
+                  "lines": "328-334",
+                  "contains": "os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/internal/ghmcp/server.go#L328-L334"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "slog writes per chunk but handler errors are ignored and actions proceed regardless.",
+              "gap": "Logging failures are not surfaced and records are not durable per action.",
+              "evidence": [
+                {
+                  "file": "pkg/log/io.go",
+                  "lines": "45-46",
+                  "contains": "l.writer.Write(p)",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/log/io.go#L45-L46"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "Some of the server's work is bounded: Actions log downloads are capped by a 5,000-line content window and default to the last 500 lines, list tools default to 30 results, and GitHub's own API rate limits bound a runaway. But GitHub API calls have no timeouts of their own, the log download ignores cancellation, page-size limits live only in the schema, and the server has no rate limiting. Assigning the Copilot coding agent starts remote work that continues regardless of anything the server or host does next.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.375,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Server-enforced cap on job-log size (min of tail_lines and content window) and default page sizes; no timeouts or rate limits.",
+          "gap": "No caps on every operation (file reads, search) and no concurrency or rate limits.",
+          "evidence": [
+            {
+              "file": "pkg/github/actions.go",
+              "lines": "182",
+              "contains": "bufferSize := min(tailLines, maxLines)",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/actions.go#L182"
+            },
+            {
+              "file": "cmd/github-mcp-server/main.go",
+              "lines": "252",
+              "contains": "Int(\"content-window-size\", 5000",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L252"
+            },
+            {
+              "file": "pkg/github/actions.go",
+              "lines": "172",
+              "contains": "http.Get(logURL)",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/actions.go#L172"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Limits apply to individual tools only; delegated Copilot agent sessions run outside any server budget.",
+          "gap": "No HTTP timeouts on tool calls and delegated work does not count against any limit.",
+          "evidence": [
+            {
+              "file": "pkg/github/copilot.go",
+              "lines": "155-170",
+              "contains": "assign_copilot_to_issue",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/copilot.go#L155-L170"
+            },
+            {
+              "file": "internal/ghmcp/server.go",
+              "lines": "90-93",
+              "contains": "http.DefaultTransport",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/internal/ghmcp/server.go#L90-L93"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Sensible defaults (500 log lines, 5,000-line window, 30 per page) that the operator can change; the model cannot exceed the content window.",
+          "gap": "The model can still escape limits by delegating to the Copilot agent, and no hard ceiling exists.",
+          "evidence": [
+            {
+              "file": "pkg/github/actions.go",
+              "lines": "731-734",
+              "contains": "tailLines = 500",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/actions.go#L731-L734"
+            },
+            {
+              "file": "pkg/github/params.go",
+              "lines": "421",
+              "contains": "OptionalIntParamWithDefault(args, \"perPage\", 30)",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/params.go#L421"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Copilot agent sessions continue after the host stops, and downloads without context cannot be cancelled; GitHub API rate limits are the main external ceiling.",
+          "gap": "Stopping does not cancel delegated agent work or all in-flight requests.",
+          "evidence": [
+            {
+              "file": "pkg/github/copilot.go",
+              "lines": "158-160",
+              "contains": "a Pull Request created with source code changes",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/copilot.go#L158-L160"
+            },
+            {
+              "file": "pkg/github/actions.go",
+              "lines": "172",
+              "contains": "http.Get(logURL)",
+              "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/actions.go#L172"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.375,
+          "raw": 0.375,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Server-enforced cap on job-log size (min of tail_lines and content window) and default page sizes; no timeouts or rate limits.",
+              "gap": "No caps on every operation (file reads, search) and no concurrency or rate limits.",
+              "evidence": [
+                {
+                  "file": "pkg/github/actions.go",
+                  "lines": "182",
+                  "contains": "bufferSize := min(tailLines, maxLines)",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/actions.go#L182"
+                },
+                {
+                  "file": "cmd/github-mcp-server/main.go",
+                  "lines": "252",
+                  "contains": "Int(\"content-window-size\", 5000",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L252"
+                },
+                {
+                  "file": "pkg/github/actions.go",
+                  "lines": "172",
+                  "contains": "http.Get(logURL)",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/actions.go#L172"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Limits apply to individual tools only; delegated Copilot agent sessions run outside any server budget.",
+              "gap": "No HTTP timeouts on tool calls and delegated work does not count against any limit.",
+              "evidence": [
+                {
+                  "file": "pkg/github/copilot.go",
+                  "lines": "155-170",
+                  "contains": "assign_copilot_to_issue",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/copilot.go#L155-L170"
+                },
+                {
+                  "file": "internal/ghmcp/server.go",
+                  "lines": "90-93",
+                  "contains": "http.DefaultTransport",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/internal/ghmcp/server.go#L90-L93"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Sensible defaults (500 log lines, 5,000-line window, 30 per page) that the operator can change; the model cannot exceed the content window.",
+              "gap": "The model can still escape limits by delegating to the Copilot agent, and no hard ceiling exists.",
+              "evidence": [
+                {
+                  "file": "pkg/github/actions.go",
+                  "lines": "731-734",
+                  "contains": "tailLines = 500",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/actions.go#L731-L734"
+                },
+                {
+                  "file": "pkg/github/params.go",
+                  "lines": "421",
+                  "contains": "OptionalIntParamWithDefault(args, \"perPage\", 30)",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/params.go#L421"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Copilot agent sessions continue after the host stops, and downloads without context cannot be cancelled; GitHub API rate limits are the main external ceiling.",
+              "gap": "Stopping does not cancel delegated agent work or all in-flight requests.",
+              "evidence": [
+                {
+                  "file": "pkg/github/copilot.go",
+                  "lines": "158-160",
+                  "contains": "a Pull Request created with source code changes",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/copilot.go#L158-L160"
+                },
+                {
+                  "file": "pkg/github/actions.go",
+                  "lines": "172",
+                  "contains": "http.Get(logURL)",
+                  "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/actions.go#L172"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "In the default configuration, content from any public issue, PR or file reaches the model in the same session that holds full 'repo' access to private repositories and unattended write tools (comments, issues, push_files), so a prompt injection can exfiltrate private code publicly; lockdown, IFC labels and read-only mode are all opt-in.",
+      "criterion": "C5",
+      "owasp": [
+        "ASI01",
+        "ASI02",
+        "LLM01"
+      ],
+      "evidence": [
+        {
+          "file": "pkg/scopes/scopes.go",
+          "lines": "84-85",
+          "contains": "{scope: Repo, byDefault: true}",
+          "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/scopes/scopes.go#L84-L85"
+        },
+        {
+          "file": "pkg/github/issues.go",
+          "lines": "1369-1374",
+          "contains": "add_issue_comment",
+          "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/issues.go#L1369-L1374"
+        },
+        {
+          "file": "cmd/github-mcp-server/main.go",
+          "lines": "253",
+          "contains": "Bool(\"lockdown-mode\", false",
+          "url": "https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L253"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "issues, PRs, comments and files from any public repository (pkg/github/minimal_types.go:817-818, pkg/github/repositories.go:954)",
+    "sensitive_data": "private repositories via the default 'repo' OAuth scope or PAT (pkg/scopes/scopes.go:85)",
+    "state_change_or_egress": "add_issue_comment, issue_write, push_files, create_pull_request, merge_pull_request (pkg/github/issues.go:1369, pkg/github/repositories.go:1639, pkg/github/pullrequests.go:1530)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Record every tool call (tool, arguments, result status, timestamp, authenticated user) as a structured log line by default, using the logger already injected into handlers.",
+      "criterion": "C9",
+      "parameter": "S",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 1, step 3",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Request read-only scopes in the default OAuth login and elevate to 'repo' only through the existing per-tool scope challenge when a write tool is first used.",
+      "criterion": "C1",
+      "parameter": "D",
+      "from_level": 1,
+      "to_level": 3,
+      "playbook": "Playbook 4",
+      "estimated_gain": 0.1
+    },
+    {
+      "summary": "Turn the ifc_labels feature on by default so every result carries an untrusted/private label the host can act on.",
+      "criterion": "C5",
+      "parameter": "S",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 1, step 2",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Add preview/confirmation (as delete_repository already has) for merge_pull_request, delete_file and push_files, and make MCP App forms an enforced step.",
+      "criterion": "C2",
+      "parameter": "S",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 5, step 1",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Default to the read-only tool set and require an explicit flag to enable write toolsets.",
+      "criterion": "C3",
+      "parameter": "D",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 3, step 1",
+      "estimated_gain": 0.05
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was built, installed or run.",
+    "Scored the local stdio server from the official Docker image. The README leads with the GitHub-hosted remote server (api.githubcopilot.com), whose deployment and remote-only toolsets are not in this repository and were not scored.",
+    "HTTP mode forwards the client's bearer token to GitHub (token passthrough); C1-PASSTHRU would apply to that mode.",
+    "Running the binary directly (not via Docker) leaves configuration loading not integrity-protected, so C6 would not be structurally absent for that deployment.",
+    "Behaviour of the MCP go-sdk (whether raw AddTool validates input against the schema, cancellation on notifications/cancelled) and of go-github path escaping was not inspected; no rating depends on it above L2.",
+    "Whether the baked-in OAuth client issues expiring tokens could not be determined from source.",
+    "No text aimed at AI reviewers was found in the repository."
+  ]
+}

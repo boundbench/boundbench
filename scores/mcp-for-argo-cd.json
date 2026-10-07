@@ -1,0 +1,2541 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "mcp-for-argo-cd",
+  "name": "MCP for Argo CD",
+  "repo_url": "https://github.com/argoproj-labs/mcp-for-argocd",
+  "subpath": null,
+  "description": "MCP server for Argo CD applications, clusters and resources",
+  "category": "infrastructure_ops",
+  "pinned_commit": "28d15ca69b0c31387cc6ec73d201fd13c5d22b6a",
+  "version": null,
+  "scored_date": "2026-10-03",
+  "scored_configuration": "stdio transport launched via npx with ARGOCD_BASE_URL and ARGOCD_API_TOKEN set, as in the README's Cursor/VS Code/Claude Desktop instructions; MCP_READ_ONLY unset.",
+  "score": 3.1,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 9,
+    "score": 2.1,
+    "max": 9.0,
+    "percent": 23
+  },
+  "capability_profile": {
+    "code_execution": "yes",
+    "filesystem_write": "no",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "no",
+    "untrusted_input": "yes",
+    "third_party_extensions": "no",
+    "sub_agents": "no",
+    "external_communication": "no"
+  },
+  "headline": "As shipped, this server hands the model an Argo CD token with every write tool switched on: it can create Applications from any repository, sync with prune, run resource actions and delete with cascade, and it gives the MCP host no read-only or destructive markings to decide what needs approval. Tool results include pod logs and manifests other people control, so a prompt injection can turn into cluster changes. The token itself is well handled (never in tool arguments, bound to its host), and MCP_READ_ONLY=true removes all write tools, but it is opt-in. It also auto-loads a .env from the launch directory, and it keeps no record of tool calls.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "The server acts with a single Argo CD API token taken from the ARGOCD_API_TOKEN environment variable, and every tool, read or write, uses that same token. The server does not narrow it in any way: there is no separate read credential, no per-tool scoping and no authorization check of its own, so what the agent can do is whatever the operator's token can do in Argo CD. One good design choice is that the token is bound to the configured Argo CD host and is never sent to a different host the model names. Write tools are on by default, and the README does not steer users toward a read-only or project-scoped Argo CD account. In the HTTP transport (not the scored mode) the server also accepts the caller's token in a header and forwards it to Argo CD.",
+      "max": 1.0,
+      "notes": "S is L1 because the token is always used unnarrowed, not because a control is opt-in; D L0 reflects the default privilege, so G1 does not apply. C1-PASSTHRU not applied: the scored stdio mode takes the token only from the environment. In the http/sse transports the server forwards a client-supplied x-argocd-api-token header to Argo CD (src/server/transport.ts:82-83), which would trigger C1-PASSTHRU (<= 0.40, above this criterion's score).",
+      "status": "scored",
+      "score": 0.225,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "One static Argo CD bearer token from the environment is attached to every request; scope is whatever the operator's Argo CD account has, and the server neither narrows it nor separates read and write credentials.",
+          "gap": "No role scoping enforced or checked by the server and no separate read-only credential for read tools.",
+          "evidence": [
+            {
+              "file": "src/server/transport.ts",
+              "lines": "22-27",
+              "contains": "process.env.ARGOCD_API_TOKEN",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/transport.ts#L22-L27"
+            },
+            {
+              "file": "src/argocd/http.ts",
+              "lines": "17-20",
+              "contains": "Bearer ${this.apiToken}",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/argocd/http.ts#L17-L20"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every tool goes through the same addJsonOutputTool -> resolveClient path, so all built-in tools use the one configured token, and the default token is bound to the default base URL only; there are no subprocesses or extensions.",
+          "gap": "No authorization layer in code that every tool path traverses, and no per-principal check.",
+          "evidence": [
+            {
+              "file": "src/server/server.ts",
+              "lines": "459-466",
+              "contains": "const { argocdBaseUrl, ...toolArgs } = allArgs;",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L459-L466"
+            },
+            {
+              "file": "src/server/server.ts",
+              "lines": "418-422",
+              "contains": "const isDefaultBaseUrl =",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L418-L422"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Write tools (create/update/delete/sync/run_resource_action) are registered unless MCP_READ_ONLY=true is set, and the documented install passes an arbitrary Argo CD token; least privilege requires manual hardening.",
+          "gap": "No read-only or minimal default; write requires no explicit operator elevation.",
+          "evidence": [
+            {
+              "file": "src/server/server.ts",
+              "lines": "63-66",
+              "contains": "MCP_READ_ONLY",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L63-L66"
+            },
+            {
+              "file": "src/server/server.ts",
+              "lines": "278",
+              "contains": "if (!isReadOnly) {",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L278"
+            },
+            {
+              "file": "README.md",
+              "lines": "314",
+              "contains": "By default, all the tools will be available.",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/README.md#L314"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "The token can create Applications pointing at any repo and destination and delete or sync any Application the account can see, which in a typical Argo CD install means deploying arbitrary workloads to every managed cluster; only Argo CD's own RBAC and AppProject rules (outside this repo) bound it.",
+          "gap": "Credentials are not limited to one project, read-mostly, or short-lived.",
+          "evidence": [
+            {
+              "file": "src/server/server.ts",
+              "lines": "279-285",
+              "contains": "'create_application'",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L279-L285"
+            },
+            {
+              "file": "src/server/server.ts",
+              "lines": "293-321",
+              "contains": "'delete_application'",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L293-L321"
+            },
+            {
+              "file": "src/shared/models/schema.ts",
+              "lines": "27-33",
+              "contains": "repoURL: z.string(),",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/shared/models/schema.ts#L27-L33"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.225,
+          "raw": 0.225,
+          "cap": null,
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "One static Argo CD bearer token from the environment is attached to every request; scope is whatever the operator's Argo CD account has, and the server neither narrows it nor separates read and write credentials.",
+              "gap": "No role scoping enforced or checked by the server and no separate read-only credential for read tools.",
+              "evidence": [
+                {
+                  "file": "src/server/transport.ts",
+                  "lines": "22-27",
+                  "contains": "process.env.ARGOCD_API_TOKEN",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/transport.ts#L22-L27"
+                },
+                {
+                  "file": "src/argocd/http.ts",
+                  "lines": "17-20",
+                  "contains": "Bearer ${this.apiToken}",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/argocd/http.ts#L17-L20"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every tool goes through the same addJsonOutputTool -> resolveClient path, so all built-in tools use the one configured token, and the default token is bound to the default base URL only; there are no subprocesses or extensions.",
+              "gap": "No authorization layer in code that every tool path traverses, and no per-principal check.",
+              "evidence": [
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "459-466",
+                  "contains": "const { argocdBaseUrl, ...toolArgs } = allArgs;",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L459-L466"
+                },
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "418-422",
+                  "contains": "const isDefaultBaseUrl =",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L418-L422"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Write tools (create/update/delete/sync/run_resource_action) are registered unless MCP_READ_ONLY=true is set, and the documented install passes an arbitrary Argo CD token; least privilege requires manual hardening.",
+              "gap": "No read-only or minimal default; write requires no explicit operator elevation.",
+              "evidence": [
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "63-66",
+                  "contains": "MCP_READ_ONLY",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L63-L66"
+                },
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "278",
+                  "contains": "if (!isReadOnly) {",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L278"
+                },
+                {
+                  "file": "README.md",
+                  "lines": "314",
+                  "contains": "By default, all the tools will be available.",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/README.md#L314"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "The token can create Applications pointing at any repo and destination and delete or sync any Application the account can see, which in a typical Argo CD install means deploying arbitrary workloads to every managed cluster; only Argo CD's own RBAC and AppProject rules (outside this repo) bound it.",
+              "gap": "Credentials are not limited to one project, read-mostly, or short-lived.",
+              "evidence": [
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "279-285",
+                  "contains": "'create_application'",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L279-L285"
+                },
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "293-321",
+                  "contains": "'delete_application'",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L293-L321"
+                },
+                {
+                  "file": "src/shared/models/schema.ts",
+                  "lines": "27-33",
+                  "contains": "repoURL: z.string(),",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/shared/models/schema.ts#L27-L33"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "The server has no approval step of its own and relies on the MCP host. It gives the host little to work with: no tool carries read-only or destructive annotations, so a host cannot tell list_applications from delete_application by metadata. Only sync_application offers a dry-run option, and the model chooses whether to use it. The strongest control is an opt-in read-only mode (MCP_READ_ONLY=true) that removes all five mutating tools; without it, deletes with cascade, prunes and resource actions run immediately when called.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.425,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A server-enforced read-only mode exists and read and write operations are separate tools, but no tool carries annotations, so the mechanism misses the L2 element.",
+          "gap": "No readOnlyHint/destructiveHint annotations on every tool.",
+          "evidence": [
+            {
+              "file": "src/server/server.ts",
+              "lines": "63-66",
+              "contains": "MCP_READ_ONLY",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L63-L66"
+            },
+            {
+              "file": "src/server/server.ts",
+              "lines": "278",
+              "contains": "if (!isReadOnly) {",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L278"
+            },
+            {
+              "search": "rg -n -a -S -e 'annotations|readOnlyHint|destructiveHint|idempotentHint'",
+              "scope": "src",
+              "hits": 12,
+              "note": "all hits are in src/types/argocd.d.ts, generated Argo CD/Kubernetes API types (Kubernetes object annotations, ManagedFields, resourceVersion docs); none is a control; the server registers tools with this.tool(name, description, schema, cb) and passes no annotations"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "When enabled, all five mutating tools sit inside the if (!isReadOnly) block and are not registered; the remaining tools issue only GET requests.",
+          "gap": "No annotations or preview for the host to act on when write mode is on.",
+          "evidence": [
+            {
+              "file": "src/server/server.ts",
+              "lines": "278",
+              "contains": "if (!isReadOnly) {",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L278"
+            },
+            {
+              "file": "src/server/server.ts",
+              "lines": "366-383",
+              "contains": "'run_resource_action'",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L366-L383"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Read-only mode is off unless the operator sets MCP_READ_ONLY=true.",
+          "gap": "Read-only is not the default.",
+          "evidence": [
+            {
+              "file": "src/server/server.ts",
+              "lines": "63-66",
+              "contains": "MCP_READ_ONLY",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L63-L66"
+            },
+            {
+              "file": "README.md",
+              "lines": "314",
+              "contains": "By default, all the tools will be available.",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/README.md#L314"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "With read-only mode on, no consequential action is reachable: every remaining tool issues GET requests via HttpClient.get.",
+          "evidence": [
+            {
+              "file": "src/server/server.ts",
+              "lines": "278",
+              "contains": "if (!isReadOnly) {",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L278"
+            },
+            {
+              "file": "src/argocd/client.ts",
+              "lines": "83-90",
+              "contains": "this.client.get<V1alpha1Application>",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/argocd/client.ts#L83-L90"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No tool registration passes MCP annotations (readOnlyHint/destructiveHint), so the server gives the host no risk signal for its mutating tools.",
+              "gap": "No accurate read-only/destructive annotations on every tool.",
+              "evidence": [
+                {
+                  "search": "rg -n -a -S -e 'annotations|readOnlyHint|destructiveHint|idempotentHint'",
+                  "scope": "src",
+                  "hits": 12,
+                  "note": "all hits are in src/types/argocd.d.ts, generated Argo CD/Kubernetes API types (Kubernetes object annotations, ManagedFields, resourceVersion docs); none is a control; the server registers tools with this.tool(name, description, schema, cb) and passes no annotations"
+                },
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "459",
+                  "contains": "this.tool(name, description, mergedSchema",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L459"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every mutating tool, including delete_application with cascade and run_resource_action, is exposed without any server-side gate or signal.",
+              "gap": "No mutating tool is flagged or gated by the server.",
+              "evidence": [
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "293-321",
+                  "contains": "'delete_application'",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L293-L321"
+                },
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "366-382",
+                  "contains": "'run_resource_action'",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L366-L382"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The only safety mode, read-only, is opt-in via an environment variable; by default all write tools are registered.",
+              "gap": "No safety mode or gating is on by default.",
+              "evidence": [
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "63-66",
+                  "contains": "MCP_READ_ONLY",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L63-L66"
+                },
+                {
+                  "file": "README.md",
+                  "lines": "314",
+                  "contains": "By default, all the tools will be available.",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/README.md#L314"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "delete_application accepts cascade and propagationPolicy, so a single wrong call deletes an Application and all its Kubernetes resources (including stateful data) with no undo; sync has an optional dry-run but nothing forces it.",
+              "gap": "No preview or dry-run required for destructive operations and no undo.",
+              "evidence": [
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "301-308",
+                  "contains": "cascade: z",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L301-L308"
+                },
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "330-333",
+                  "contains": "dryRun: z",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L330-L333"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in read-only mode (MCP_READ_ONLY=true)",
+          "score": 0.425,
+          "raw": 0.425,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A server-enforced read-only mode exists and read and write operations are separate tools, but no tool carries annotations, so the mechanism misses the L2 element.",
+              "gap": "No readOnlyHint/destructiveHint annotations on every tool.",
+              "evidence": [
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "63-66",
+                  "contains": "MCP_READ_ONLY",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L63-L66"
+                },
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "278",
+                  "contains": "if (!isReadOnly) {",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L278"
+                },
+                {
+                  "search": "rg -n -a -S -e 'annotations|readOnlyHint|destructiveHint|idempotentHint'",
+                  "scope": "src",
+                  "hits": 12,
+                  "note": "all hits are in src/types/argocd.d.ts, generated Argo CD/Kubernetes API types (Kubernetes object annotations, ManagedFields, resourceVersion docs); none is a control; the server registers tools with this.tool(name, description, schema, cb) and passes no annotations"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "When enabled, all five mutating tools sit inside the if (!isReadOnly) block and are not registered; the remaining tools issue only GET requests.",
+              "gap": "No annotations or preview for the host to act on when write mode is on.",
+              "evidence": [
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "278",
+                  "contains": "if (!isReadOnly) {",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L278"
+                },
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "366-383",
+                  "contains": "'run_resource_action'",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L366-L383"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Read-only mode is off unless the operator sets MCP_READ_ONLY=true.",
+              "gap": "Read-only is not the default.",
+              "evidence": [
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "63-66",
+                  "contains": "MCP_READ_ONLY",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L63-L66"
+                },
+                {
+                  "file": "README.md",
+                  "lines": "314",
+                  "contains": "By default, all the tools will be available.",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/README.md#L314"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "With read-only mode on, no consequential action is reachable: every remaining tool issues GET requests via HttpClient.get.",
+              "evidence": [
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "278",
+                  "contains": "if (!isReadOnly) {",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L278"
+                },
+                {
+                  "file": "src/argocd/client.ts",
+                  "lines": "83-90",
+                  "contains": "this.client.get<V1alpha1Application>",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/argocd/client.ts#L83-L90"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "Tools are narrow and named for Argo CD operations rather than a generic HTTP client, and each has a typed schema. But almost nothing is validated beyond types: names in request paths are not strictly validated. Repository URLs, resource action names and sync options are passed through unchecked. All write tools are on by default; one environment variable removes them as a group.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.375,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Arguments are typed with zod but names in request paths are not strictly validated; repoURL, action and syncOptions are arbitrary strings; only two checks (namespace non-empty, destination server XOR name) exist.",
+          "gap": "No allowlist validation of names, repo URLs, or action names.",
+          "evidence": [
+            {
+              "file": "src/server/server.ts",
+              "lines": "373",
+              "contains": "action: z.string()",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L373"
+            },
+            {
+              "file": "src/shared/models/schema.ts",
+              "lines": "57",
+              "contains": "refine",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/shared/models/schema.ts#L57"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every tool's input is parsed by its zod schema through the shared addJsonOutputTool wrapper, but the schemas are type-only for the arguments that matter.",
+          "gap": "No shared validation layer beyond type checks.",
+          "evidence": [
+            {
+              "file": "src/server/server.ts",
+              "lines": "459-466",
+              "contains": "const { argocdBaseUrl, ...toolArgs } = allArgs;",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L459-L466"
+            },
+            {
+              "file": "src/server/server.ts",
+              "lines": "458",
+              "contains": "const mergedSchema = { ...paramsSchema, ...argoCDArgsSchema }",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L458"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tool groups are selectable (MCP_READ_ONLY removes all write tools), but the default set includes create, update, delete, sync and resource actions.",
+          "gap": "Default tool set is not read-only.",
+          "evidence": [
+            {
+              "file": "src/server/server.ts",
+              "lines": "63-66",
+              "contains": "MCP_READ_ONLY",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L63-L66"
+            },
+            {
+              "file": "src/server/server.ts",
+              "lines": "278",
+              "contains": "if (!isReadOnly) {",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L278"
+            },
+            {
+              "file": "README.md",
+              "lines": "314",
+              "contains": "By default, all the tools will be available.",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/README.md#L314"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A misused tool reaches every Application and cluster the token can see, can deploy any repository to any destination and can delete with cascade; the only bounds are Argo CD RBAC/AppProject policy outside this repo.",
+          "gap": "No project, namespace, or quantity bounds enforced by the server.",
+          "evidence": [
+            {
+              "file": "src/server/server.ts",
+              "lines": "279-285",
+              "contains": "'create_application'",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L279-L285"
+            },
+            {
+              "file": "src/server/server.ts",
+              "lines": "293-321",
+              "contains": "'delete_application'",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L293-L321"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.375,
+          "raw": 0.375,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Arguments are typed with zod but names in request paths are not strictly validated; repoURL, action and syncOptions are arbitrary strings; only two checks (namespace non-empty, destination server XOR name) exist.",
+              "gap": "No allowlist validation of names, repo URLs, or action names.",
+              "evidence": [
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "373",
+                  "contains": "action: z.string()",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L373"
+                },
+                {
+                  "file": "src/shared/models/schema.ts",
+                  "lines": "57",
+                  "contains": "refine",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/shared/models/schema.ts#L57"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every tool's input is parsed by its zod schema through the shared addJsonOutputTool wrapper, but the schemas are type-only for the arguments that matter.",
+              "gap": "No shared validation layer beyond type checks.",
+              "evidence": [
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "459-466",
+                  "contains": "const { argocdBaseUrl, ...toolArgs } = allArgs;",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L459-L466"
+                },
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "458",
+                  "contains": "const mergedSchema = { ...paramsSchema, ...argoCDArgsSchema }",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L458"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tool groups are selectable (MCP_READ_ONLY removes all write tools), but the default set includes create, update, delete, sync and resource actions.",
+              "gap": "Default tool set is not read-only.",
+              "evidence": [
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "63-66",
+                  "contains": "MCP_READ_ONLY",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L63-L66"
+                },
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "278",
+                  "contains": "if (!isReadOnly) {",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L278"
+                },
+                {
+                  "file": "README.md",
+                  "lines": "314",
+                  "contains": "By default, all the tools will be available.",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/README.md#L314"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A misused tool reaches every Application and cluster the token can see, can deploy any repository to any destination and can delete with cascade; the only bounds are Argo CD RBAC/AppProject policy outside this repo.",
+              "gap": "No project, namespace, or quantity bounds enforced by the server.",
+              "evidence": [
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "279-285",
+                  "contains": "'create_application'",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L279-L285"
+                },
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "293-321",
+                  "contains": "'delete_application'",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L293-L321"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "The server never runs a shell, eval, or subprocess on its own host. It can, however, cause model-chosen code to run elsewhere: create_application accepts any repository URL and destination, and sync_application then has Argo CD apply whatever manifests that repository contains, which can start any container in a managed cluster. Nothing in the server isolates or constrains this; only Argo CD's own project rules, configured outside this repo, stand in the way, and the write tools are on by default.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Model-supplied repoURL/path/destination are sent straight to Argo CD, which renders and applies that repository's manifests; the server applies no isolation or policy to what gets deployed.",
+          "gap": "No isolation boundary or deploy policy around model-chosen deployments.",
+          "evidence": [
+            {
+              "file": "src/server/server.ts",
+              "lines": "279-285",
+              "contains": "'create_application'",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L279-L285"
+            },
+            {
+              "file": "src/shared/models/schema.ts",
+              "lines": "27-33",
+              "contains": "repoURL: z.string(),",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/shared/models/schema.ts#L27-L33"
+            },
+            {
+              "file": "src/server/server.ts",
+              "lines": "322-365",
+              "contains": "'sync_application'",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L322-L365"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No execution path (create, update, sync, run_resource_action) is constrained by the server.",
+          "gap": "No path is sandboxed or policy-checked.",
+          "evidence": [
+            {
+              "file": "src/server/server.ts",
+              "lines": "279-285",
+              "contains": "'create_application'",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L279-L285"
+            },
+            {
+              "file": "src/server/server.ts",
+              "lines": "286-292",
+              "contains": "'update_application'",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L286-L292"
+            },
+            {
+              "file": "src/server/server.ts",
+              "lines": "366-382",
+              "contains": "'run_resource_action'",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L366-L382"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The deploy-capable tools are registered by default; only the opt-in read-only mode removes them.",
+          "gap": "Nothing restricts remote execution by default.",
+          "evidence": [
+            {
+              "file": "src/server/server.ts",
+              "lines": "63-66",
+              "contains": "MCP_READ_ONLY",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L63-L66"
+            },
+            {
+              "file": "src/server/server.ts",
+              "lines": "278",
+              "contains": "if (!isReadOnly) {",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L278"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "Deployed workloads run in production clusters with whatever service accounts, secrets and network the destination namespace offers; Argo CD AppProject rules are the only external bound.",
+          "gap": "No workspace-only, no-secret, or no-network confinement for model-chosen deployments.",
+          "evidence": [
+            {
+              "file": "src/server/server.ts",
+              "lines": "279-285",
+              "contains": "'create_application'",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L279-L285"
+            },
+            {
+              "file": "src/shared/models/schema.ts",
+              "lines": "51-62",
+              "contains": "destination: z",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/shared/models/schema.ts#L51-L62"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Model-supplied repoURL/path/destination are sent straight to Argo CD, which renders and applies that repository's manifests; the server applies no isolation or policy to what gets deployed.",
+              "gap": "No isolation boundary or deploy policy around model-chosen deployments.",
+              "evidence": [
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "279-285",
+                  "contains": "'create_application'",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L279-L285"
+                },
+                {
+                  "file": "src/shared/models/schema.ts",
+                  "lines": "27-33",
+                  "contains": "repoURL: z.string(),",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/shared/models/schema.ts#L27-L33"
+                },
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "322-365",
+                  "contains": "'sync_application'",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L322-L365"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No execution path (create, update, sync, run_resource_action) is constrained by the server.",
+              "gap": "No path is sandboxed or policy-checked.",
+              "evidence": [
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "279-285",
+                  "contains": "'create_application'",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L279-L285"
+                },
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "286-292",
+                  "contains": "'update_application'",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L286-L292"
+                },
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "366-382",
+                  "contains": "'run_resource_action'",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L366-L382"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The deploy-capable tools are registered by default; only the opt-in read-only mode removes them.",
+              "gap": "Nothing restricts remote execution by default.",
+              "evidence": [
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "63-66",
+                  "contains": "MCP_READ_ONLY",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L63-L66"
+                },
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "278",
+                  "contains": "if (!isReadOnly) {",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L278"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "Deployed workloads run in production clusters with whatever service accounts, secrets and network the destination namespace offers; Argo CD AppProject rules are the only external bound.",
+              "gap": "No workspace-only, no-secret, or no-network confinement for model-chosen deployments.",
+              "evidence": [
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "279-285",
+                  "contains": "'create_application'",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L279-L285"
+                },
+                {
+                  "file": "src/shared/models/schema.ts",
+                  "lines": "51-62",
+                  "contains": "destination: z",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/shared/models/schema.ts#L51-L62"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "Tool results include content that other people control: application logs, Kubernetes events, resource manifests and Application specs. The server returns them as one plain JSON text blob with no marking of what is untrusted and no separation between data and metadata. The only mode that would drop a dangerous capability, read-only, is off by default. A prompt-injected agent that reads a crafted log line can therefore delete or re-sync applications, deploy an attacker's repository to a cluster, and send data out through a repository URL Argo CD will fetch, all in the same session.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.075,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": {
+        "id": "C5-WORSTCASE",
+        "max": 0.25,
+        "reason": "Worst case (B L0): a hijacked agent can leak data and take irreversible actions unattended."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Results are JSON.stringify'd into a single text content item with no provenance or untrusted flag; tool descriptions contain no directives.",
+          "gap": "No structured separation of returned content from metadata.",
+          "evidence": [
+            {
+              "file": "src/server/server.ts",
+              "lines": "474-477",
+              "contains": "JSON.stringify(result)",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L474-L477"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Logs, events, manifests and app specs all enter the host's context the same way, with nothing distinguishing them.",
+          "gap": "No untrusted source is distinguished.",
+          "evidence": [
+            {
+              "file": "src/argocd/client.ts",
+              "lines": "219-242",
+              "contains": "tailLines: 100,",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/argocd/client.ts#L219-L242"
+            },
+            {
+              "file": "src/server/server.ts",
+              "lines": "474-477",
+              "contains": "JSON.stringify(result)",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L474-L477"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Read-only mode, the only Rule-of-Two leg the server can drop, is opt-in.",
+          "gap": "No limiting mode is on by default.",
+          "evidence": [
+            {
+              "file": "src/server/server.ts",
+              "lines": "63-66",
+              "contains": "MCP_READ_ONLY",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L63-L66"
+            },
+            {
+              "file": "README.md",
+              "lines": "314",
+              "contains": "By default, all the tools will be available.",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/README.md#L314"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "In the default config one session can read attacker-influenced pod logs, read cluster manifests, and then delete with cascade or create an Application whose repoURL points at an attacker host (an egress channel via Argo CD's repo fetch) with no server-side human step.",
+          "gap": "Exfiltration and irreversible actions are not forced through approval.",
+          "evidence": [
+            {
+              "file": "src/argocd/client.ts",
+              "lines": "219-242",
+              "contains": "tailLines: 100,",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/argocd/client.ts#L219-L242"
+            },
+            {
+              "file": "src/server/server.ts",
+              "lines": "293-321",
+              "contains": "'delete_application'",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L293-L321"
+            },
+            {
+              "file": "src/server/server.ts",
+              "lines": "279-285",
+              "contains": "'create_application'",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L279-L285"
+            },
+            {
+              "file": "src/shared/models/schema.ts",
+              "lines": "30",
+              "contains": "repoURL: z.string(),",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/shared/models/schema.ts#L30"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.075,
+          "raw": 0.075,
+          "cap": {
+            "id": "C5-WORSTCASE",
+            "max": 0.25,
+            "reason": "Worst case (B L0): a hijacked agent can leak data and take irreversible actions unattended."
+          },
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Results are JSON.stringify'd into a single text content item with no provenance or untrusted flag; tool descriptions contain no directives.",
+              "gap": "No structured separation of returned content from metadata.",
+              "evidence": [
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "474-477",
+                  "contains": "JSON.stringify(result)",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L474-L477"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Logs, events, manifests and app specs all enter the host's context the same way, with nothing distinguishing them.",
+              "gap": "No untrusted source is distinguished.",
+              "evidence": [
+                {
+                  "file": "src/argocd/client.ts",
+                  "lines": "219-242",
+                  "contains": "tailLines: 100,",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/argocd/client.ts#L219-L242"
+                },
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "474-477",
+                  "contains": "JSON.stringify(result)",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L474-L477"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Read-only mode, the only Rule-of-Two leg the server can drop, is opt-in.",
+              "gap": "No limiting mode is on by default.",
+              "evidence": [
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "63-66",
+                  "contains": "MCP_READ_ONLY",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L63-L66"
+                },
+                {
+                  "file": "README.md",
+                  "lines": "314",
+                  "contains": "By default, all the tools will be available.",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/README.md#L314"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "In the default config one session can read attacker-influenced pod logs, read cluster manifests, and then delete with cascade or create an Application whose repoURL points at an attacker host (an egress channel via Argo CD's repo fetch) with no server-side human step.",
+              "gap": "Exfiltration and irreversible actions are not forced through approval.",
+              "evidence": [
+                {
+                  "file": "src/argocd/client.ts",
+                  "lines": "219-242",
+                  "contains": "tailLines: 100,",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/argocd/client.ts#L219-L242"
+                },
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "293-321",
+                  "contains": "'delete_application'",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L293-L321"
+                },
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "279-285",
+                  "contains": "'create_application'",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L279-L285"
+                },
+                {
+                  "file": "src/shared/models/schema.ts",
+                  "lines": "30",
+                  "contains": "repoURL: z.string(),",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/shared/models/schema.ts#L30"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "The server keeps no memory, conversation store, or retrieval index. However, at startup it calls dotenv, which loads a .env file from whatever directory the server is launched in. MCP hosts commonly start stdio servers inside the user's project, so a .env committed to a cloned repository can set variables the operator left unset, such as the Argo CD base URL, the token-registry path, or NODE_TLS_REJECT_UNAUTHORIZED=0 to turn off certificate checks. This happens silently, with no trust prompt, and persists for every session started in that directory.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": {
+        "id": "C6-REPOCONFIG",
+        "max": 0.25,
+        "reason": "src/index.ts calls dotenv.config() at startup, auto-loading a .env from the working directory (often a cloned repo) that can redirect the Argo CD endpoint, the token registry, or TLS verification without a trust decision."
+      },
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "dotenv.config() reads .env from the current working directory at startup with no trust decision; it can supply ARGOCD_BASE_URL, ARGOCD_TOKEN_REGISTRY_PATH or NODE_TLS_REJECT_UNAUTHORIZED when the operator did not set them (dotenv 16 default: path = cwd/.env, override = false).",
+          "gap": "Security-relevant settings are not restricted to user/operator scope.",
+          "evidence": [
+            {
+              "file": "src/index.ts",
+              "lines": "1-5",
+              "contains": "dotenv.config();",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/index.ts#L1-L5"
+            },
+            {
+              "file": "src/server/transport.ts",
+              "lines": "20",
+              "contains": "const tokenRegistry = tokenRegistryFromEnv();",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/transport.ts#L20"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The single auto-loaded configuration path is uncontrolled.",
+          "gap": "No auto-loaded file is gated.",
+          "evidence": [
+            {
+              "file": "src/index.ts",
+              "lines": "1-5",
+              "contains": "dotenv.config();",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/index.ts#L1-L5"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "No memory or retrieval store exists, so there is no namespace isolation to configure.",
+          "evidence": [
+            {
+              "search": "rg -n -a -S -e 'memory|vector|AGENTS.md|CLAUDE.md'",
+              "scope": "src",
+              "hits": 0,
+              "note": "no memory, vector store or instruction-file loading"
+            },
+            {
+              "search": "rg -n -a -S -e 'writeFile|appendFile|createWriteStream'",
+              "scope": "src",
+              "hits": 2,
+              "note": "both hits are in src/server/tokenRegistry.test.ts (test fixture); the server itself writes no files"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "A poisoned .env persists on disk in the workspace and applies to every later session started there, redirecting where tool calls and credentials go or disabling TLS verification for them.",
+          "gap": "Poisoned configuration is not limited to text output or gated actions.",
+          "evidence": [
+            {
+              "file": "src/index.ts",
+              "lines": "1-5",
+              "contains": "dotenv.config();",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/index.ts#L1-L5"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.25,
+          "cap": {
+            "id": "C6-REPOCONFIG",
+            "max": 0.25,
+            "reason": "src/index.ts calls dotenv.config() at startup, auto-loading a .env from the working directory (often a cloned repo) that can redirect the Argo CD endpoint, the token registry, or TLS verification without a trust decision."
+          },
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "dotenv.config() reads .env from the current working directory at startup with no trust decision; it can supply ARGOCD_BASE_URL, ARGOCD_TOKEN_REGISTRY_PATH or NODE_TLS_REJECT_UNAUTHORIZED when the operator did not set them (dotenv 16 default: path = cwd/.env, override = false).",
+              "gap": "Security-relevant settings are not restricted to user/operator scope.",
+              "evidence": [
+                {
+                  "file": "src/index.ts",
+                  "lines": "1-5",
+                  "contains": "dotenv.config();",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/index.ts#L1-L5"
+                },
+                {
+                  "file": "src/server/transport.ts",
+                  "lines": "20",
+                  "contains": "const tokenRegistry = tokenRegistryFromEnv();",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/transport.ts#L20"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The single auto-loaded configuration path is uncontrolled.",
+              "gap": "No auto-loaded file is gated.",
+              "evidence": [
+                {
+                  "file": "src/index.ts",
+                  "lines": "1-5",
+                  "contains": "dotenv.config();",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/index.ts#L1-L5"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "No memory or retrieval store exists, so there is no namespace isolation to configure.",
+              "evidence": [
+                {
+                  "search": "rg -n -a -S -e 'memory|vector|AGENTS.md|CLAUDE.md'",
+                  "scope": "src",
+                  "hits": 0,
+                  "note": "no memory, vector store or instruction-file loading"
+                },
+                {
+                  "search": "rg -n -a -S -e 'writeFile|appendFile|createWriteStream'",
+                  "scope": "src",
+                  "hits": 2,
+                  "note": "both hits are in src/server/tokenRegistry.test.ts (test fixture); the server itself writes no files"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "A poisoned .env persists on disk in the workspace and applies to every later session started there, redirecting where tool calls and credentials go or disabling TLS verification for them.",
+              "gap": "Poisoned configuration is not limited to text output or gated actions.",
+              "evidence": [
+                {
+                  "file": "src/index.ts",
+                  "lines": "1-5",
+                  "contains": "dotenv.config();",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/index.ts#L1-L5"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "The server loads no third-party code at runtime: no plugins, no dynamic imports, no subprocesses and no package installs. Its dependencies are fixed at build time. The README's 'npx argocd-mcp@latest' install line is how users fetch this server itself and is general supply-chain hygiene, not an extension mechanism.",
+      "max": 1.0,
+      "notes": "The documented install uses an unpinned npx argocd-mcp@latest (README.md:14), which is the server's own supply chain and out of scope for this criterion.",
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -a -S -e 'import\\(|require\\('",
+              "scope": "src",
+              "hits": 0,
+              "note": "no dynamic module loading"
+            },
+            {
+              "search": "rg -n -a -S -e 'child_process|spawn\\(|execSync|eval\\(|new Function'",
+              "scope": "src",
+              "hits": 0,
+              "note": "no subprocess or code evaluation"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -a -S -e 'import\\(|require\\('",
+              "scope": "src",
+              "hits": 0,
+              "note": "no dynamic module loading"
+            },
+            {
+              "search": "rg -n -a -S -e 'child_process|spawn\\(|execSync|eval\\(|new Function'",
+              "scope": "src",
+              "hits": 0,
+              "note": "no subprocess or code evaluation"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -a -S -e 'import\\(|require\\('",
+              "scope": "src",
+              "hits": 0,
+              "note": "no dynamic module loading"
+            },
+            {
+              "search": "rg -n -a -S -e 'child_process|spawn\\(|execSync|eval\\(|new Function'",
+              "scope": "src",
+              "hits": 0,
+              "note": "no subprocess or code evaluation"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -a -S -e 'import\\(|require\\('",
+              "scope": "src",
+              "hits": 0,
+              "note": "no dynamic module loading"
+            },
+            {
+              "search": "rg -n -a -S -e 'child_process|spawn\\(|execSync|eval\\(|new Function'",
+              "scope": "src",
+              "hits": 0,
+              "note": "no subprocess or code evaluation"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -a -S -e 'import\\(|require\\('",
+                  "scope": "src",
+                  "hits": 0,
+                  "note": "no dynamic module loading"
+                },
+                {
+                  "search": "rg -n -a -S -e 'child_process|spawn\\(|execSync|eval\\(|new Function'",
+                  "scope": "src",
+                  "hits": 0,
+                  "note": "no subprocess or code evaluation"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -a -S -e 'import\\(|require\\('",
+                  "scope": "src",
+                  "hits": 0,
+                  "note": "no dynamic module loading"
+                },
+                {
+                  "search": "rg -n -a -S -e 'child_process|spawn\\(|execSync|eval\\(|new Function'",
+                  "scope": "src",
+                  "hits": 0,
+                  "note": "no subprocess or code evaluation"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -a -S -e 'import\\(|require\\('",
+                  "scope": "src",
+                  "hits": 0,
+                  "note": "no dynamic module loading"
+                },
+                {
+                  "search": "rg -n -a -S -e 'child_process|spawn\\(|execSync|eval\\(|new Function'",
+                  "scope": "src",
+                  "hits": 0,
+                  "note": "no subprocess or code evaluation"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -a -S -e 'import\\(|require\\('",
+                  "scope": "src",
+                  "hits": 0,
+                  "note": "no dynamic module loading"
+                },
+                {
+                  "search": "rg -n -a -S -e 'child_process|spawn\\(|execSync|eval\\(|new Function'",
+                  "scope": "src",
+                  "hits": 0,
+                  "note": "no subprocess or code evaluation"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n -a -S -e 'import\\(|require\\('",
+          "scope": "src",
+          "hits": 0,
+          "note": "no dynamic module loading"
+        },
+        {
+          "search": "rg -n -a -S -e 'child_process|spawn\\(|execSync|eval\\(|new Function'",
+          "scope": "src",
+          "hits": 0,
+          "note": "no subprocess or code evaluation"
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "The Argo CD token is read from an environment variable and is deliberately kept out of tool arguments, so it never passes through the model, and it is bound to the configured Argo CD host so the model cannot redirect it elsewhere. The server does not log requests, tokens or tool results, and has no telemetry. But nothing is redacted from tool output: logs and manifests returned to the model are passed through as-is. The token itself is a long-lived Argo CD credential, and the repository's own sample Cursor config ships with TLS verification disabled.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.375,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The token comes from an env var and is never a tool argument or log field, and the default token is bound to the default base URL; there is no masking or redaction of anything returned to the model.",
+          "gap": "No redaction on log or model-bound paths.",
+          "evidence": [
+            {
+              "file": "src/server/transport.ts",
+              "lines": "22-27",
+              "contains": "process.env.ARGOCD_API_TOKEN",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/transport.ts#L22-L27"
+            },
+            {
+              "file": "src/server/server.ts",
+              "lines": "418-422",
+              "contains": "const isDefaultBaseUrl =",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L418-L422"
+            },
+            {
+              "search": "rg -n -a -S -e 'redact|sanitiz'",
+              "scope": "src",
+              "hits": 0,
+              "note": "no redaction helpers"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Logs (7 pino call sites, none logs requests or tokens), errors (only error.message) and absent subprocesses are clean; model-bound tool results are not filtered.",
+          "gap": "Model-bound tool results are not covered.",
+          "evidence": [
+            {
+              "search": "rg -n -a -S -e 'logger\\.(info|warn|error|debug)'",
+              "scope": "src",
+              "hits": 7,
+              "note": "transport/startup messages only; none logs tool args, results, or tokens"
+            },
+            {
+              "file": "src/server/server.ts",
+              "lines": "478-482",
+              "contains": "error instanceof Error ? error.message : String(error)",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L478-L482"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No telemetry; pino logs startup events to stderr only. The repo's sample .cursor/mcp.json and README suggest NODE_TLS_REJECT_UNAUTHORIZED=0, which exposes the bearer token to interception when copied.",
+          "gap": "Redaction is not always on.",
+          "evidence": [
+            {
+              "file": "src/logging/logging.ts",
+              "lines": "4",
+              "contains": "pino(pino.destination(stderr))",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/logging/logging.ts#L4"
+            },
+            {
+              "search": "rg -n -a -S -e 'telemetry|sentry|posthog|opentelemetry'",
+              "scope": "src",
+              "hits": 5,
+              "note": "all hits are in src/types/argocd.d.ts, generated Argo CD/Kubernetes API types (Kubernetes object annotations, ManagedFields, resourceVersion docs); none is a control"
+            },
+            {
+              "file": ".cursor/mcp.json",
+              "lines": "10",
+              "contains": "NODE_TLS_REJECT_UNAUTHORIZED",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/.cursor/mcp.json#L10"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "A leaked token is a long-lived Argo CD API token with whatever (often broad) role the operator assigned; it is not reachable by the model or any subprocess.",
+          "gap": "Tokens are not scoped and short-lived by the server.",
+          "evidence": [
+            {
+              "file": "src/server/transport.ts",
+              "lines": "22-27",
+              "contains": "process.env.ARGOCD_API_TOKEN",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/transport.ts#L22-L27"
+            },
+            {
+              "file": "src/argocd/http.ts",
+              "lines": "17-20",
+              "contains": "Bearer ${this.apiToken}",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/argocd/http.ts#L17-L20"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.375,
+          "raw": 0.375,
+          "cap": null,
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The token comes from an env var and is never a tool argument or log field, and the default token is bound to the default base URL; there is no masking or redaction of anything returned to the model.",
+              "gap": "No redaction on log or model-bound paths.",
+              "evidence": [
+                {
+                  "file": "src/server/transport.ts",
+                  "lines": "22-27",
+                  "contains": "process.env.ARGOCD_API_TOKEN",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/transport.ts#L22-L27"
+                },
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "418-422",
+                  "contains": "const isDefaultBaseUrl =",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L418-L422"
+                },
+                {
+                  "search": "rg -n -a -S -e 'redact|sanitiz'",
+                  "scope": "src",
+                  "hits": 0,
+                  "note": "no redaction helpers"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Logs (7 pino call sites, none logs requests or tokens), errors (only error.message) and absent subprocesses are clean; model-bound tool results are not filtered.",
+              "gap": "Model-bound tool results are not covered.",
+              "evidence": [
+                {
+                  "search": "rg -n -a -S -e 'logger\\.(info|warn|error|debug)'",
+                  "scope": "src",
+                  "hits": 7,
+                  "note": "transport/startup messages only; none logs tool args, results, or tokens"
+                },
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "478-482",
+                  "contains": "error instanceof Error ? error.message : String(error)",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L478-L482"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No telemetry; pino logs startup events to stderr only. The repo's sample .cursor/mcp.json and README suggest NODE_TLS_REJECT_UNAUTHORIZED=0, which exposes the bearer token to interception when copied.",
+              "gap": "Redaction is not always on.",
+              "evidence": [
+                {
+                  "file": "src/logging/logging.ts",
+                  "lines": "4",
+                  "contains": "pino(pino.destination(stderr))",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/logging/logging.ts#L4"
+                },
+                {
+                  "search": "rg -n -a -S -e 'telemetry|sentry|posthog|opentelemetry'",
+                  "scope": "src",
+                  "hits": 5,
+                  "note": "all hits are in src/types/argocd.d.ts, generated Argo CD/Kubernetes API types (Kubernetes object annotations, ManagedFields, resourceVersion docs); none is a control"
+                },
+                {
+                  "file": ".cursor/mcp.json",
+                  "lines": "10",
+                  "contains": "NODE_TLS_REJECT_UNAUTHORIZED",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/.cursor/mcp.json#L10"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "A leaked token is a long-lived Argo CD API token with whatever (often broad) role the operator assigned; it is not reachable by the model or any subprocess.",
+              "gap": "Tokens are not scoped and short-lived by the server.",
+              "evidence": [
+                {
+                  "file": "src/server/transport.ts",
+                  "lines": "22-27",
+                  "contains": "process.env.ARGOCD_API_TOKEN",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/transport.ts#L22-L27"
+                },
+                {
+                  "file": "src/argocd/http.ts",
+                  "lines": "17-20",
+                  "contains": "Bearer ${this.apiToken}",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/argocd/http.ts#L17-L20"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "The server keeps no record of what it did. Its logger writes only startup and listener messages; tool calls, their arguments, and their results are never logged. After an incident the only trace would be whatever the MCP host or Argo CD's own audit events recorded.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No tool call is recorded by the server; the 7 logger calls are startup and listener messages.",
+          "gap": "No structured record of tool calls.",
+          "evidence": [
+            {
+              "search": "rg -n -a -S -e 'logger\\.(info|warn|error|debug)'",
+              "scope": "src",
+              "hits": 7,
+              "note": "none is in the tool path (server.ts has no logger import)"
+            },
+            {
+              "file": "src/server/server.ts",
+              "lines": "459-466",
+              "contains": "const { argocdBaseUrl, ...toolArgs } = allArgs;",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L459-L466"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No tool path is recorded.",
+          "gap": "Main tool path not recorded.",
+          "evidence": [
+            {
+              "file": "src/server/server.ts",
+              "lines": "459-484",
+              "contains": "this.tool(name, description, mergedSchema",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L459-L484"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "There is no audit record to enable.",
+          "gap": "No record on by default.",
+          "evidence": [
+            {
+              "file": "src/logging/logging.ts",
+              "lines": "4",
+              "contains": "pino(pino.destination(stderr))",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/logging/logging.ts#L4"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Actions proceed with no record.",
+          "gap": "No per-action record.",
+          "evidence": [
+            {
+              "file": "src/server/server.ts",
+              "lines": "459-466",
+              "contains": "const { argocdBaseUrl, ...toolArgs } = allArgs;",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L459-L466"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No tool call is recorded by the server; the 7 logger calls are startup and listener messages.",
+              "gap": "No structured record of tool calls.",
+              "evidence": [
+                {
+                  "search": "rg -n -a -S -e 'logger\\.(info|warn|error|debug)'",
+                  "scope": "src",
+                  "hits": 7,
+                  "note": "none is in the tool path (server.ts has no logger import)"
+                },
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "459-466",
+                  "contains": "const { argocdBaseUrl, ...toolArgs } = allArgs;",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L459-L466"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No tool path is recorded.",
+              "gap": "Main tool path not recorded.",
+              "evidence": [
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "459-484",
+                  "contains": "this.tool(name, description, mergedSchema",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L459-L484"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "There is no audit record to enable.",
+              "gap": "No record on by default.",
+              "evidence": [
+                {
+                  "file": "src/logging/logging.ts",
+                  "lines": "4",
+                  "contains": "pino(pino.destination(stderr))",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/logging/logging.ts#L4"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Actions proceed with no record.",
+              "gap": "No per-action record.",
+              "evidence": [
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "459-466",
+                  "contains": "const { argocdBaseUrl, ...toolArgs } = allArgs;",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L459-L466"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "Log tools always ask Argo CD for at most the last 100 lines and never follow the stream, which bounds one kind of output. Everything else is unbounded: listing applications fetches every application before applying the caller's optional limit, get_resources with no refs fetches every resource in the tree in parallel, and no HTTP request has a timeout or cancellation. There are no rate limits on the write tools.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.375,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Server-enforced cap on log output (tailLines 100, follow false); other operations are unbounded and no fetch has a timeout.",
+          "gap": "No caps on every operation and no rate or concurrency limits.",
+          "evidence": [
+            {
+              "file": "src/argocd/client.ts",
+              "lines": "219-242",
+              "contains": "tailLines: 100,",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/argocd/client.ts#L219-L242"
+            },
+            {
+              "file": "src/argocd/client.ts",
+              "lines": "206-217",
+              "contains": "tailLines: 100",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/argocd/client.ts#L206-L217"
+            },
+            {
+              "search": "rg -n -a -S -e 'AbortSignal|AbortController|setTimeout|signal:'",
+              "scope": "src",
+              "hits": 0,
+              "note": "no timeouts or cancellation on fetch"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only the three log methods are capped; get_resources fans out over the whole tree with Promise.all.",
+          "gap": "Caps do not cover listing, resource fetches, or request duration.",
+          "evidence": [
+            {
+              "file": "src/server/server.ts",
+              "lines": "242-259",
+              "contains": "Promise.all(",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L242-L259"
+            },
+            {
+              "file": "src/argocd/client.ts",
+              "lines": "54-57",
+              "contains": "strippedItems.slice(start, end)",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/argocd/client.ts#L54-L57"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The log cap is hard-coded and the model cannot raise it; list limit is caller-chosen and unbounded by default.",
+          "gap": "Most operations have no default bound.",
+          "evidence": [
+            {
+              "file": "src/argocd/client.ts",
+              "lines": "219-242",
+              "contains": "tailLines: 100,",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/argocd/client.ts#L219-L242"
+            },
+            {
+              "file": "src/server/server.ts",
+              "lines": "79-86",
+              "contains": "limit: z",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L79-L86"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hung Argo CD request has no timeout, and parallel resource fetches and write calls are unbounded in number.",
+          "gap": "No tight time ceiling or cancellation of in-flight requests.",
+          "evidence": [
+            {
+              "file": "src/argocd/http.ts",
+              "lines": "34-37",
+              "contains": "await fetch(urlObject",
+              "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/argocd/http.ts#L34-L37"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.375,
+          "raw": 0.375,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Server-enforced cap on log output (tailLines 100, follow false); other operations are unbounded and no fetch has a timeout.",
+              "gap": "No caps on every operation and no rate or concurrency limits.",
+              "evidence": [
+                {
+                  "file": "src/argocd/client.ts",
+                  "lines": "219-242",
+                  "contains": "tailLines: 100,",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/argocd/client.ts#L219-L242"
+                },
+                {
+                  "file": "src/argocd/client.ts",
+                  "lines": "206-217",
+                  "contains": "tailLines: 100",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/argocd/client.ts#L206-L217"
+                },
+                {
+                  "search": "rg -n -a -S -e 'AbortSignal|AbortController|setTimeout|signal:'",
+                  "scope": "src",
+                  "hits": 0,
+                  "note": "no timeouts or cancellation on fetch"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only the three log methods are capped; get_resources fans out over the whole tree with Promise.all.",
+              "gap": "Caps do not cover listing, resource fetches, or request duration.",
+              "evidence": [
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "242-259",
+                  "contains": "Promise.all(",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L242-L259"
+                },
+                {
+                  "file": "src/argocd/client.ts",
+                  "lines": "54-57",
+                  "contains": "strippedItems.slice(start, end)",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/argocd/client.ts#L54-L57"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The log cap is hard-coded and the model cannot raise it; list limit is caller-chosen and unbounded by default.",
+              "gap": "Most operations have no default bound.",
+              "evidence": [
+                {
+                  "file": "src/argocd/client.ts",
+                  "lines": "219-242",
+                  "contains": "tailLines: 100,",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/argocd/client.ts#L219-L242"
+                },
+                {
+                  "file": "src/server/server.ts",
+                  "lines": "79-86",
+                  "contains": "limit: z",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L79-L86"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hung Argo CD request has no timeout, and parallel resource fetches and write calls are unbounded in number.",
+              "gap": "No tight time ceiling or cancellation of in-flight requests.",
+              "evidence": [
+                {
+                  "file": "src/argocd/http.ts",
+                  "lines": "34-37",
+                  "contains": "await fetch(urlObject",
+                  "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/argocd/http.ts#L34-L37"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "The Argo CD token used for every tool can deploy any repository to any managed cluster and delete Applications with cascade; the server does not narrow it.",
+      "criterion": "C1",
+      "owasp": [
+        "ASI03",
+        "T3",
+        "LLM06"
+      ],
+      "evidence": [
+        {
+          "file": "src/server/server.ts",
+          "lines": "279-285",
+          "contains": "'create_application'",
+          "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L279-L285"
+        },
+        {
+          "file": "src/server/server.ts",
+          "lines": "293-321",
+          "contains": "'delete_application'",
+          "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L293-L321"
+        }
+      ]
+    },
+    {
+      "summary": "create_application plus sync lets the model have Argo CD deploy arbitrary manifests (any container) to production clusters with no isolation or policy in the server.",
+      "criterion": "C4",
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "evidence": [
+        {
+          "file": "src/server/server.ts",
+          "lines": "279-285",
+          "contains": "'create_application'",
+          "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L279-L285"
+        },
+        {
+          "file": "src/shared/models/schema.ts",
+          "lines": "30",
+          "contains": "repoURL: z.string(),",
+          "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/shared/models/schema.ts#L30"
+        }
+      ]
+    },
+    {
+      "summary": "A hijacked session can read attacker-influenced logs and then delete, sync or deploy (and leak data via an attacker repoURL) with no server-side human step; read-only mode is off by default (C5-WORSTCASE).",
+      "criterion": "C5",
+      "owasp": [
+        "ASI01",
+        "T6",
+        "LLM01"
+      ],
+      "evidence": [
+        {
+          "file": "src/argocd/client.ts",
+          "lines": "219-242",
+          "contains": "tailLines: 100,",
+          "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/argocd/client.ts#L219-L242"
+        },
+        {
+          "file": "src/server/server.ts",
+          "lines": "293-321",
+          "contains": "'delete_application'",
+          "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L293-L321"
+        },
+        {
+          "file": "src/server/server.ts",
+          "lines": "63-66",
+          "contains": "MCP_READ_ONLY",
+          "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L63-L66"
+        }
+      ]
+    },
+    {
+      "summary": "dotenv.config() auto-loads a .env from the working directory, letting a cloned repo redirect the Argo CD endpoint/token registry or disable TLS verification without a trust prompt (C6-REPOCONFIG).",
+      "criterion": "C6",
+      "owasp": [
+        "ASI06",
+        "ASI04",
+        "T1"
+      ],
+      "evidence": [
+        {
+          "file": "src/index.ts",
+          "lines": "1-5",
+          "contains": "dotenv.config();",
+          "url": "https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/index.ts#L1-L5"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "Pod logs, Kubernetes events and manifests returned verbatim (src/argocd/client.ts:219, src/server/server.ts:476)",
+    "sensitive_data": "Argo CD API token and cluster manifests (src/server/transport.ts:25, src/argocd/client.ts:266)",
+    "state_change_or_egress": "create/update/delete/sync/run_resource_action registered by default (src/server/server.ts:278)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Remove dotenv.config() or load only an explicit, operator-given env file path.",
+      "criterion": "C6",
+      "parameter": "S",
+      "from_level": 0,
+      "to_level": 4,
+      "estimated_gain": 0.3
+    },
+    {
+      "summary": "Add readOnlyHint/destructiveHint/idempotentHint annotations to every tool so hosts can gate writes.",
+      "criterion": "C2",
+      "parameter": "S",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 5",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Make read-only the default and require an explicit MCP_ALLOW_WRITE to register write tools.",
+      "criterion": "C3",
+      "parameter": "D",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.05
+    },
+    {
+      "summary": "Validate names against the Kubernetes name pattern; allowlist repoURL hosts and resource actions.",
+      "criterion": "C3",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Log a structured record (tool, arguments, target base URL, status, timestamp) for every tool call to stderr.",
+      "criterion": "C9",
+      "parameter": "S",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 1",
+      "estimated_gain": 0.15
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was installed, built, or run, and Argo CD itself was not exercised.",
+    "Scored the stdio transport the README leads with. The http/sse transports (Docker image default) add strong listener hardening (loopback default, refusal to bind wider without MCP_AUTH_TOKEN, Host/Origin checks) but also accept and forward a client's x-argocd-api-token header (token passthrough).",
+    "What the Argo CD token can do depends on the operator's Argo CD RBAC and AppProject configuration, which is outside this repo; blast-radius ratings assume a typical broadly privileged API account.",
+    "One request-path handling finding was not exercised against a live Argo CD.",
+    "The .env effect relies on dotenv 16 defaults (cwd/.env, no override of variables already set) and on the MCP host's choice of working directory.",
+    "No reviewer-injection text was found in the repository."
+  ]
+}

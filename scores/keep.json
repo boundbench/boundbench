@@ -1,0 +1,2408 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "keep",
+  "name": "Keep",
+  "repo_url": "https://github.com/keephq/keep",
+  "subpath": null,
+  "description": "Open-source AIOps and alert management platform with AI correlation and workflow automation that acts on monitoring/ticketing tools",
+  "category": "infrastructure_ops",
+  "pinned_commit": "465e99152e7586fcbe4c2732213d31c5c28def4b",
+  "version": null,
+  "scored_date": "2026-10-03",
+  "scored_configuration": "Shipped docker-compose.yml (AUTH_TYPE=NO_AUTH, file secret manager) with an OpenAI key supplied so the AI incident chat and workflow assistant are enabled.",
+  "score": 2.1,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 9,
+    "score": 1.05,
+    "max": 9.0,
+    "percent": 12
+  },
+  "capability_profile": {
+    "code_execution": "yes",
+    "filesystem_write": "yes",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "yes",
+    "untrusted_input": "yes",
+    "third_party_extensions": "no",
+    "sub_agents": "no",
+    "external_communication": "yes"
+  },
+  "headline": "Keep's AI incident chat can call methods on connected providers with no approval step and no allowlist, and the provider-invocation endpoint it uses is not locked down, which widens its reach. Alert text from monitoring tools goes into the same session, so a prompt injection in an alert could act on Kubernetes or ticketing systems and reach stored integration secrets. The default compose file also disables authentication and enables telemetry. Treat the AI features as unsafe to enable on a deployment with real integrations until the invoke endpoint is restricted and chat actions are gated.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "The shipped docker-compose runs with authentication disabled, and in that mode every request is treated as an administrator with every scope. The AI incident chat calls the backend with the user's session, so role checks do apply when authentication is turned on, but provider credentials are stored once per tenant and any installed provider's full credentials can be used through the chat. Gaps in access control on the provider-invocation endpoint also widen what the chat can reach on the API server, which holds every tenant's integration secrets. A hijacked assistant therefore acts with the full authority of every connected system.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.075,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Default AUTH_TYPE is NO_AUTH and the no-auth verifier returns the Admin role (all read/write/delete/execute scopes) for every caller; provider credentials are tenant-wide and unscoped per tool.",
+          "gap": "No dedicated, narrower identity for AI-initiated actions; the agent uses the same admin-equivalent session and tenant-wide provider credentials.",
+          "evidence": [
+            {
+              "file": "docker-compose.yml",
+              "lines": "21",
+              "contains": "AUTH_TYPE=NO_AUTH",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/docker-compose.yml#L21"
+            },
+            {
+              "file": "keep/identitymanager/identitymanagerfactory.py",
+              "lines": "55-57",
+              "contains": "default=IdentityManagerTypes.NOAUTH.value",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/identitymanager/identitymanagerfactory.py#L55-L57"
+            },
+            {
+              "file": "keep/identitymanager/identity_managers/noauth/noauth_authverifier.py",
+              "lines": "37-42",
+              "contains": "role=AdminRole.get_name()",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/identitymanager/identity_managers/noauth/noauth_authverifier.py#L37-L42"
+            },
+            {
+              "file": "keep/identitymanager/rbac.py",
+              "lines": "63",
+              "contains": "SCOPES = [\"read:*\", \"write:*\", \"delete:*\", \"update:*\", \"execute:*\"]",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/identitymanager/rbac.py#L63"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Chat actions go through the backend's scope check (write:providers on the invoke route), but code-executing provider paths then run as the API server process with access to every stored secret.",
+          "gap": "Paths that run code on the server bypass any per-principal narrowing because they inherit the server's full authority.",
+          "evidence": [
+            {
+              "file": "keep/api/routes/providers.py",
+              "lines": "682",
+              "contains": "get_auth_verifier([\"write:providers\"])",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/api/routes/providers.py#L682"
+            },
+            {
+              "file": "keep/providers/bash_provider/bash_provider.py",
+              "lines": "36-38",
+              "contains": "shell=True",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/bash_provider/bash_provider.py#L36-L38"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The shipped compose sets AUTH_TYPE=NO_AUTH, so the default install grants admin to every caller.",
+          "gap": "No least-privilege default role; authentication and RBAC require manual hardening.",
+          "evidence": [
+            {
+              "file": "docker-compose.yml",
+              "lines": "21",
+              "contains": "AUTH_TYPE=NO_AUTH",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/docker-compose.yml#L21"
+            },
+            {
+              "file": "keep/identitymanager/identity_managers/noauth/noauth_authverifier.py",
+              "lines": "37-42",
+              "contains": "role=AdminRole.get_name()",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/identitymanager/identity_managers/noauth/noauth_authverifier.py#L37-L42"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Installed providers carry credentials for Kubernetes/GKE (exec in pod, delete pod), ticketing, paging and cloud tools, and the server process can read all of them.",
+          "gap": "Blast radius would need per-tool scoped or short-lived credentials so a hijack can't reach every integrated system.",
+          "evidence": [
+            {
+              "file": "keep/providers/gke_provider/gke_provider.py",
+              "lines": "133-136",
+              "contains": "func_name=\"exec_command\"",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/gke_provider/gke_provider.py#L133-L136"
+            },
+            {
+              "file": "keep/providers/gke_provider/gke_provider.py",
+              "lines": "376",
+              "contains": "def restart_pod",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/gke_provider/gke_provider.py#L376"
+            },
+            {
+              "file": "keep/secretmanager/filesecretmanager.py",
+              "lines": "22-29",
+              "contains": "with open(path, \"w\") as f:",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/secretmanager/filesecretmanager.py#L22-L29"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.075,
+          "raw": 0.075,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default AUTH_TYPE is NO_AUTH and the no-auth verifier returns the Admin role (all read/write/delete/execute scopes) for every caller; provider credentials are tenant-wide and unscoped per tool.",
+              "gap": "No dedicated, narrower identity for AI-initiated actions; the agent uses the same admin-equivalent session and tenant-wide provider credentials.",
+              "evidence": [
+                {
+                  "file": "docker-compose.yml",
+                  "lines": "21",
+                  "contains": "AUTH_TYPE=NO_AUTH",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/docker-compose.yml#L21"
+                },
+                {
+                  "file": "keep/identitymanager/identitymanagerfactory.py",
+                  "lines": "55-57",
+                  "contains": "default=IdentityManagerTypes.NOAUTH.value",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/identitymanager/identitymanagerfactory.py#L55-L57"
+                },
+                {
+                  "file": "keep/identitymanager/identity_managers/noauth/noauth_authverifier.py",
+                  "lines": "37-42",
+                  "contains": "role=AdminRole.get_name()",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/identitymanager/identity_managers/noauth/noauth_authverifier.py#L37-L42"
+                },
+                {
+                  "file": "keep/identitymanager/rbac.py",
+                  "lines": "63",
+                  "contains": "SCOPES = [\"read:*\", \"write:*\", \"delete:*\", \"update:*\", \"execute:*\"]",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/identitymanager/rbac.py#L63"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Chat actions go through the backend's scope check (write:providers on the invoke route), but code-executing provider paths then run as the API server process with access to every stored secret.",
+              "gap": "Paths that run code on the server bypass any per-principal narrowing because they inherit the server's full authority.",
+              "evidence": [
+                {
+                  "file": "keep/api/routes/providers.py",
+                  "lines": "682",
+                  "contains": "get_auth_verifier([\"write:providers\"])",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/api/routes/providers.py#L682"
+                },
+                {
+                  "file": "keep/providers/bash_provider/bash_provider.py",
+                  "lines": "36-38",
+                  "contains": "shell=True",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/bash_provider/bash_provider.py#L36-L38"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The shipped compose sets AUTH_TYPE=NO_AUTH, so the default install grants admin to every caller.",
+              "gap": "No least-privilege default role; authentication and RBAC require manual hardening.",
+              "evidence": [
+                {
+                  "file": "docker-compose.yml",
+                  "lines": "21",
+                  "contains": "AUTH_TYPE=NO_AUTH",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/docker-compose.yml#L21"
+                },
+                {
+                  "file": "keep/identitymanager/identity_managers/noauth/noauth_authverifier.py",
+                  "lines": "37-42",
+                  "contains": "role=AdminRole.get_name()",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/identitymanager/identity_managers/noauth/noauth_authverifier.py#L37-L42"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Installed providers carry credentials for Kubernetes/GKE (exec in pod, delete pod), ticketing, paging and cloud tools, and the server process can read all of them.",
+              "gap": "Blast radius would need per-tool scoped or short-lived credentials so a hijack can't reach every integrated system.",
+              "evidence": [
+                {
+                  "file": "keep/providers/gke_provider/gke_provider.py",
+                  "lines": "133-136",
+                  "contains": "func_name=\"exec_command\"",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/gke_provider/gke_provider.py#L133-L136"
+                },
+                {
+                  "file": "keep/providers/gke_provider/gke_provider.py",
+                  "lines": "376",
+                  "contains": "def restart_pod",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/gke_provider/gke_provider.py#L376"
+                },
+                {
+                  "file": "keep/secretmanager/filesecretmanager.py",
+                  "lines": "22-29",
+                  "contains": "with open(path, \"w\") as f:",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/secretmanager/filesecretmanager.py#L22-L29"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "The AI workflow builder asks the user to accept each proposed step before it is added to the canvas, but that only edits an unsaved draft. The AI incident chat, which is the part that acts, has no approval step at all: its invokeProviderMethod, createIncident, enrichment and incident-update actions run as soon as the model calls them. invokeProviderMethod can call action methods on installed providers, such as executing commands in pods, restarting pods, or creating external incidents. Nothing the model does from the chat is shown to a human for approval before it happens.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.2,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C2-POWERBYPASS",
+        "max": 0.25,
+        "reason": "invokeProviderMethod, the most powerful agent action path, executes without any approval in the default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The workflow builder uses per-call renderAndWaitForResponse with a step preview the user accepts or rejects.",
+          "gap": "Approval UI doesn't show the exact executed call for consequential actions, and there is no argument-level policy or risk tiering.",
+          "evidence": [
+            {
+              "file": "keep-ui/features/workflows/ai-assistant/ui/WorkflowBuilderChat.tsx",
+              "lines": "610",
+              "contains": "renderAndWaitForResponse: ({ status, args, respond, result }) => {",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/features/workflows/ai-assistant/ui/WorkflowBuilderChat.tsx#L610"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The most powerful path, invokeProviderMethod in the incident chat, executes directly from a handler with no confirmation.",
+          "gap": "invokeProviderMethod, createIncident and incident updates need to pass through the same per-call approval as builder steps.",
+          "evidence": [
+            {
+              "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+              "lines": "194",
+              "contains": "name: \"invokeProviderMethod\",",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L194"
+            },
+            {
+              "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+              "lines": "215-220",
+              "contains": "const result = await invokeProviderMethod(",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L215-L220"
+            },
+            {
+              "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+              "lines": "291",
+              "contains": "invokeProviderMethod(providerId, \"create_incident\"",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L291"
+            },
+            {
+              "search": "rg -n 'renderAndWaitForResponse|confirm\\('",
+              "scope": "'keep-ui/app/(keep)/incidents/[id]/chat'",
+              "hits": 0,
+              "note": "no confirmation step on any incident-chat action"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The builder gate is hard-coded on, but the chat path has no gate to turn on, so consequential actions are effectively unapproved by default.",
+          "gap": "Approval for consequential chat actions isn't on by default because it doesn't exist.",
+          "evidence": [
+            {
+              "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+              "lines": "215-220",
+              "contains": "const result = await invokeProviderMethod(",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L215-L220"
+            },
+            {
+              "file": "keep-ui/features/workflows/ai-assistant/ui/WorkflowBuilderChat.tsx",
+              "lines": "610",
+              "contains": "renderAndWaitForResponse: ({ status, args, respond, result }) => {",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/features/workflows/ai-assistant/ui/WorkflowBuilderChat.tsx#L610"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Wrongly executed calls include pod exec/delete and external incident creation, with no undo.",
+          "gap": "Consequential actions have no preview, dry-run or rollback.",
+          "evidence": [
+            {
+              "file": "keep/providers/gke_provider/gke_provider.py",
+              "lines": "133-136",
+              "contains": "func_name=\"exec_command\"",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/gke_provider/gke_provider.py#L133-L136"
+            },
+            {
+              "file": "keep/providers/gke_provider/gke_provider.py",
+              "lines": "376",
+              "contains": "def restart_pod",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/gke_provider/gke_provider.py#L376"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.2,
+          "raw": 0.2,
+          "cap": {
+            "id": "C2-POWERBYPASS",
+            "max": 0.25,
+            "reason": "invokeProviderMethod, the most powerful agent action path, executes without any approval in the default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The workflow builder uses per-call renderAndWaitForResponse with a step preview the user accepts or rejects.",
+              "gap": "Approval UI doesn't show the exact executed call for consequential actions, and there is no argument-level policy or risk tiering.",
+              "evidence": [
+                {
+                  "file": "keep-ui/features/workflows/ai-assistant/ui/WorkflowBuilderChat.tsx",
+                  "lines": "610",
+                  "contains": "renderAndWaitForResponse: ({ status, args, respond, result }) => {",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/features/workflows/ai-assistant/ui/WorkflowBuilderChat.tsx#L610"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The most powerful path, invokeProviderMethod in the incident chat, executes directly from a handler with no confirmation.",
+              "gap": "invokeProviderMethod, createIncident and incident updates need to pass through the same per-call approval as builder steps.",
+              "evidence": [
+                {
+                  "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+                  "lines": "194",
+                  "contains": "name: \"invokeProviderMethod\",",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L194"
+                },
+                {
+                  "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+                  "lines": "215-220",
+                  "contains": "const result = await invokeProviderMethod(",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L215-L220"
+                },
+                {
+                  "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+                  "lines": "291",
+                  "contains": "invokeProviderMethod(providerId, \"create_incident\"",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L291"
+                },
+                {
+                  "search": "rg -n 'renderAndWaitForResponse|confirm\\('",
+                  "scope": "'keep-ui/app/(keep)/incidents/[id]/chat'",
+                  "hits": 0,
+                  "note": "no confirmation step on any incident-chat action"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The builder gate is hard-coded on, but the chat path has no gate to turn on, so consequential actions are effectively unapproved by default.",
+              "gap": "Approval for consequential chat actions isn't on by default because it doesn't exist.",
+              "evidence": [
+                {
+                  "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+                  "lines": "215-220",
+                  "contains": "const result = await invokeProviderMethod(",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L215-L220"
+                },
+                {
+                  "file": "keep-ui/features/workflows/ai-assistant/ui/WorkflowBuilderChat.tsx",
+                  "lines": "610",
+                  "contains": "renderAndWaitForResponse: ({ status, args, respond, result }) => {",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/features/workflows/ai-assistant/ui/WorkflowBuilderChat.tsx#L610"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Wrongly executed calls include pod exec/delete and external incident creation, with no undo.",
+              "gap": "Consequential actions have no preview, dry-run or rollback.",
+              "evidence": [
+                {
+                  "file": "keep/providers/gke_provider/gke_provider.py",
+                  "lines": "133-136",
+                  "contains": "func_name=\"exec_command\"",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/gke_provider/gke_provider.py#L133-L136"
+                },
+                {
+                  "file": "keep/providers/gke_provider/gke_provider.py",
+                  "lines": "376",
+                  "contains": "def restart_pod",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/gke_provider/gke_provider.py#L376"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "The chat's invokeProviderMethod tool takes a provider id, a method name and a free-form parameter object, and the backend passes the parameters straight through. Method and provider resolution on the invoke route is not locked down. The only argument filter found is a substring denylist of metadata hosts in the HTTP provider. In effect the assistant has general-purpose tools rather than narrow, validated ones.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.075,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The invoke route passes the raw request body to provider methods with no typed validation, and method/provider resolution is not locked down.",
+          "gap": "Method names need an allowlist and arguments need typed validation in code.",
+          "evidence": [
+            {
+              "file": "keep/providers/bash_provider/bash_provider.py",
+              "lines": "36-38",
+              "contains": "shell=True",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/bash_provider/bash_provider.py#L36-L38"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only the HTTP provider checks its URL, against a substring denylist; the invoke route itself validates nothing.",
+          "gap": "No shared validation layer applies to invoked provider methods.",
+          "evidence": [
+            {
+              "file": "keep/providers/http_provider/http_provider.py",
+              "lines": "20-24",
+              "contains": "BLACKLISTED_ENDPOINTS",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/http_provider/http_provider.py#L20-L24"
+            },
+            {
+              "file": "keep/providers/http_provider/http_provider.py",
+              "lines": "37-39",
+              "contains": "if endpoint in url",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/http_provider/http_provider.py#L37-L39"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All installed providers are reachable by default, and reachability of further provider types is not locked down.",
+          "gap": "Write/exec-capable providers need to be off for the assistant unless explicitly enabled.",
+          "evidence": [
+            {
+              "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+              "lines": "151-161",
+              "contains": "methods: provider.methods,",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L151-L161"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A misused tool can run any action method on any connected system, and server-side execution is reachable.",
+          "gap": "Tools need to be scoped and quantity-bounded rather than general-purpose.",
+          "evidence": [
+            {
+              "file": "keep/providers/bash_provider/bash_provider.py",
+              "lines": "36-38",
+              "contains": "shell=True",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/bash_provider/bash_provider.py#L36-L38"
+            },
+            {
+              "file": "keep/providers/python_provider/python_provider.py",
+              "lines": "52",
+              "contains": "output = eval(parsed_code, loaded_modules)",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/python_provider/python_provider.py#L52"
+            },
+            {
+              "file": "keep/providers/gke_provider/gke_provider.py",
+              "lines": "133-136",
+              "contains": "func_name=\"exec_command\"",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/gke_provider/gke_provider.py#L133-L136"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.075,
+          "raw": 0.075,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The invoke route passes the raw request body to provider methods with no typed validation, and method/provider resolution is not locked down.",
+              "gap": "Method names need an allowlist and arguments need typed validation in code.",
+              "evidence": [
+                {
+                  "file": "keep/providers/bash_provider/bash_provider.py",
+                  "lines": "36-38",
+                  "contains": "shell=True",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/bash_provider/bash_provider.py#L36-L38"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only the HTTP provider checks its URL, against a substring denylist; the invoke route itself validates nothing.",
+              "gap": "No shared validation layer applies to invoked provider methods.",
+              "evidence": [
+                {
+                  "file": "keep/providers/http_provider/http_provider.py",
+                  "lines": "20-24",
+                  "contains": "BLACKLISTED_ENDPOINTS",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/http_provider/http_provider.py#L20-L24"
+                },
+                {
+                  "file": "keep/providers/http_provider/http_provider.py",
+                  "lines": "37-39",
+                  "contains": "if endpoint in url",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/http_provider/http_provider.py#L37-L39"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All installed providers are reachable by default, and reachability of further provider types is not locked down.",
+              "gap": "Write/exec-capable providers need to be off for the assistant unless explicitly enabled.",
+              "evidence": [
+                {
+                  "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+                  "lines": "151-161",
+                  "contains": "methods: provider.methods,",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L151-L161"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A misused tool can run any action method on any connected system, and server-side execution is reachable.",
+              "gap": "Tools need to be scoped and quantity-bounded rather than general-purpose.",
+              "evidence": [
+                {
+                  "file": "keep/providers/bash_provider/bash_provider.py",
+                  "lines": "36-38",
+                  "contains": "shell=True",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/bash_provider/bash_provider.py#L36-L38"
+                },
+                {
+                  "file": "keep/providers/python_provider/python_provider.py",
+                  "lines": "52",
+                  "contains": "output = eval(parsed_code, loaded_modules)",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/python_provider/python_provider.py#L52"
+                },
+                {
+                  "file": "keep/providers/gke_provider/gke_provider.py",
+                  "lines": "133-136",
+                  "contains": "func_name=\"exec_command\"",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/gke_provider/gke_provider.py#L133-L136"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "Code can run through the bash provider (a shell subprocess) and the Python provider (eval inside the API worker), reachable from workflows and, because access control on the invoke endpoint is not locked down, from AI paths. Neither runs in any sandbox: they execute in the API server container as the same non-root user that holds the database, the file-based secret store and network access. Code that escapes nothing still has everything the server has.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Shell commands run as a same-user subprocess and Python runs via in-process eval; there is no isolation primitive.",
+          "gap": "No sandbox (container, OS profile or separate runtime) wraps model-reachable code execution.",
+          "evidence": [
+            {
+              "file": "keep/providers/bash_provider/bash_provider.py",
+              "lines": "36-38",
+              "contains": "shell=True",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/bash_provider/bash_provider.py#L36-L38"
+            },
+            {
+              "file": "keep/providers/python_provider/python_provider.py",
+              "lines": "52",
+              "contains": "output = eval(parsed_code, loaded_modules)",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/python_provider/python_provider.py#L52"
+            },
+            {
+              "search": "rg -n -i 'sandbox|seccomp|nsjail|gvisor|firecracker|no-new-privileges|cap_drop'",
+              "scope": "keep docker docker-compose.yml docker-compose.common.yml",
+              "hits": 3,
+              "note": "all 3 hits irrelevant: a Graylog test compose env var and a GCP project name default in db_utils.py"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Neither the invoke route nor workflow steps route execution through any sandbox.",
+          "gap": "Every exec path (invoke route, workflow steps) would need to go through a sandbox.",
+          "evidence": [],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No sandbox exists to be enabled; the API image simply runs as a non-root user.",
+          "gap": "Sandboxing isn't available, let alone on by default.",
+          "evidence": [
+            {
+              "file": "docker/Dockerfile.api",
+              "lines": "68",
+              "contains": "USER keep",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/docker/Dockerfile.api#L68"
+            },
+            {
+              "search": "rg -n -i 'sandbox|seccomp|nsjail|gvisor|firecracker|no-new-privileges|cap_drop'",
+              "scope": "keep docker docker-compose.yml docker-compose.common.yml",
+              "hits": 3,
+              "note": "all 3 hits irrelevant: a Graylog test compose env var and a GCP project name default in db_utils.py"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Executed code runs inside the API process environment, which can read the plaintext provider secrets in the state directory and reach the network.",
+          "gap": "Executed code needs to be kept away from secrets and the network.",
+          "evidence": [
+            {
+              "file": "keep/secretmanager/filesecretmanager.py",
+              "lines": "22-29",
+              "contains": "with open(path, \"w\") as f:",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/secretmanager/filesecretmanager.py#L22-L29"
+            },
+            {
+              "file": "docker-compose.common.yml",
+              "lines": "21-22",
+              "contains": "SECRET_MANAGER_TYPE=FILE",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/docker-compose.common.yml#L21-L22"
+            },
+            {
+              "file": "keep/providers/python_provider/python_provider.py",
+              "lines": "52",
+              "contains": "output = eval(parsed_code, loaded_modules)",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/python_provider/python_provider.py#L52"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Shell commands run as a same-user subprocess and Python runs via in-process eval; there is no isolation primitive.",
+              "gap": "No sandbox (container, OS profile or separate runtime) wraps model-reachable code execution.",
+              "evidence": [
+                {
+                  "file": "keep/providers/bash_provider/bash_provider.py",
+                  "lines": "36-38",
+                  "contains": "shell=True",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/bash_provider/bash_provider.py#L36-L38"
+                },
+                {
+                  "file": "keep/providers/python_provider/python_provider.py",
+                  "lines": "52",
+                  "contains": "output = eval(parsed_code, loaded_modules)",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/python_provider/python_provider.py#L52"
+                },
+                {
+                  "search": "rg -n -i 'sandbox|seccomp|nsjail|gvisor|firecracker|no-new-privileges|cap_drop'",
+                  "scope": "keep docker docker-compose.yml docker-compose.common.yml",
+                  "hits": 3,
+                  "note": "all 3 hits irrelevant: a Graylog test compose env var and a GCP project name default in db_utils.py"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Neither the invoke route nor workflow steps route execution through any sandbox.",
+              "gap": "Every exec path (invoke route, workflow steps) would need to go through a sandbox.",
+              "evidence": [],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No sandbox exists to be enabled; the API image simply runs as a non-root user.",
+              "gap": "Sandboxing isn't available, let alone on by default.",
+              "evidence": [
+                {
+                  "file": "docker/Dockerfile.api",
+                  "lines": "68",
+                  "contains": "USER keep",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/docker/Dockerfile.api#L68"
+                },
+                {
+                  "search": "rg -n -i 'sandbox|seccomp|nsjail|gvisor|firecracker|no-new-privileges|cap_drop'",
+                  "scope": "keep docker docker-compose.yml docker-compose.common.yml",
+                  "hits": 3,
+                  "note": "all 3 hits irrelevant: a Graylog test compose env var and a GCP project name default in db_utils.py"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Executed code runs inside the API process environment, which can read the plaintext provider secrets in the state directory and reach the network.",
+              "gap": "Executed code needs to be kept away from secrets and the network.",
+              "evidence": [
+                {
+                  "file": "keep/secretmanager/filesecretmanager.py",
+                  "lines": "22-29",
+                  "contains": "with open(path, \"w\") as f:",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/secretmanager/filesecretmanager.py#L22-L29"
+                },
+                {
+                  "file": "docker-compose.common.yml",
+                  "lines": "21-22",
+                  "contains": "SECRET_MANAGER_TYPE=FILE",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/docker-compose.common.yml#L21-L22"
+                },
+                {
+                  "file": "keep/providers/python_provider/python_provider.py",
+                  "lines": "52",
+                  "contains": "output = eval(parsed_code, loaded_modules)",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/python_provider/python_provider.py#L52"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "The incident chat puts the incident, its alerts and the results of provider calls into the model's context. Alerts arrive from monitoring tools and webhooks, so their names, descriptions and labels are third-party text, and nothing separates that text from the user's instructions. Because the same session can call provider methods without approval, injected text in an alert could make the assistant send data out or take irreversible actions on connected systems. There is no detection or Rule-of-Two control.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C5-WORSTCASE",
+        "max": 0.25,
+        "reason": "In the default configuration a hijacked incident chat can both leak secrets and take irreversible actions without a human."
+      },
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Alerts and tool results go into the copilot context as plain readables; the only guard is the system prompt.",
+          "gap": "No code-level restriction applies once untrusted alert content is in context.",
+          "evidence": [
+            {
+              "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+              "lines": "143-146",
+              "contains": "description: \"alerts\",",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L143-L146"
+            },
+            {
+              "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+              "lines": "139-142",
+              "contains": "description: \"incidentDetails\",",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L139-L142"
+            },
+            {
+              "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+              "lines": "215-220",
+              "contains": "const result = await invokeProviderMethod(",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L215-L220"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Alert content and provider method results enter context with the same standing as user messages.",
+          "gap": "Untrusted sources aren't distinguished from the principal's input.",
+          "evidence": [
+            {
+              "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+              "lines": "143-146",
+              "contains": "description: \"alerts\",",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L143-L146"
+            },
+            {
+              "file": "keep/api/routes/alerts.py",
+              "lines": "685-698",
+              "contains": "\"/event/{provider_type}\"",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/api/routes/alerts.py#L685-L698"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No control exists to be on by default.",
+          "gap": "Untrusted-content handling isn't present.",
+          "evidence": [
+            {
+              "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+              "lines": "143-146",
+              "contains": "description: \"alerts\",",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L143-L146"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked chat can exfiltrate data and act irreversibly via provider methods, with no human step.",
+          "gap": "Egress and irreversible actions need to require approval once alert content is read.",
+          "evidence": [
+            {
+              "file": "keep/providers/http_provider/http_provider.py",
+              "lines": "37-39",
+              "contains": "if endpoint in url",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/http_provider/http_provider.py#L37-L39"
+            },
+            {
+              "file": "keep/providers/bash_provider/bash_provider.py",
+              "lines": "36-38",
+              "contains": "shell=True",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/bash_provider/bash_provider.py#L36-L38"
+            },
+            {
+              "file": "keep/providers/gke_provider/gke_provider.py",
+              "lines": "376",
+              "contains": "def restart_pod",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/gke_provider/gke_provider.py#L376"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": {
+            "id": "C5-WORSTCASE",
+            "max": 0.25,
+            "reason": "In the default configuration a hijacked incident chat can both leak secrets and take irreversible actions without a human."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Alerts and tool results go into the copilot context as plain readables; the only guard is the system prompt.",
+              "gap": "No code-level restriction applies once untrusted alert content is in context.",
+              "evidence": [
+                {
+                  "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+                  "lines": "143-146",
+                  "contains": "description: \"alerts\",",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L143-L146"
+                },
+                {
+                  "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+                  "lines": "139-142",
+                  "contains": "description: \"incidentDetails\",",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L139-L142"
+                },
+                {
+                  "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+                  "lines": "215-220",
+                  "contains": "const result = await invokeProviderMethod(",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L215-L220"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Alert content and provider method results enter context with the same standing as user messages.",
+              "gap": "Untrusted sources aren't distinguished from the principal's input.",
+              "evidence": [
+                {
+                  "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+                  "lines": "143-146",
+                  "contains": "description: \"alerts\",",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L143-L146"
+                },
+                {
+                  "file": "keep/api/routes/alerts.py",
+                  "lines": "685-698",
+                  "contains": "\"/event/{provider_type}\"",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/api/routes/alerts.py#L685-L698"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No control exists to be on by default.",
+              "gap": "Untrusted-content handling isn't present.",
+              "evidence": [
+                {
+                  "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+                  "lines": "143-146",
+                  "contains": "description: \"alerts\",",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L143-L146"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked chat can exfiltrate data and act irreversibly via provider methods, with no human step.",
+              "gap": "Egress and irreversible actions need to require approval once alert content is read.",
+              "evidence": [
+                {
+                  "file": "keep/providers/http_provider/http_provider.py",
+                  "lines": "37-39",
+                  "contains": "if endpoint in url",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/http_provider/http_provider.py#L37-L39"
+                },
+                {
+                  "file": "keep/providers/bash_provider/bash_provider.py",
+                  "lines": "36-38",
+                  "contains": "shell=True",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/bash_provider/bash_provider.py#L36-L38"
+                },
+                {
+                  "file": "keep/providers/gke_provider/gke_provider.py",
+                  "lines": "376",
+                  "contains": "def restart_pod",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/gke_provider/gke_provider.py#L376"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "Whatever the assistant writes into an incident persists and is fed back to every later chat about that incident, for every user in the tenant. The enrichRCA action appends model text to the incident's root-cause list, and every invokeProviderMethod result is stored as an incident enrichment; the whole incident, including enrichments, is supplied to the model as context. Chat history, including past tool calls and results, is also saved in the browser and reloaded. None of this is validated, labelled as untrusted or gated, so a single injection can persist and steer later sessions into tool use.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Model output and tool results are written to incident enrichments without validation and re-injected as incidentDetails context.",
+          "gap": "Writes to persistent incident context need gating or provenance tagging.",
+          "evidence": [
+            {
+              "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+              "lines": "182-189",
+              "contains": "rca_points: [",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L182-L189"
+            },
+            {
+              "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+              "lines": "222-226",
+              "contains": "[func_name]: result,",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L222-L226"
+            },
+            {
+              "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+              "lines": "139-142",
+              "contains": "description: \"incidentDetails\",",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L139-L142"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Neither the enrichment store nor the browser-stored chat history is controlled.",
+          "gap": "No persistence path has validation or provenance.",
+          "evidence": [
+            {
+              "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+              "lines": "57-63",
+              "contains": "localStorage.setItem(",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L57-L63"
+            },
+            {
+              "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+              "lines": "67-68",
+              "contains": "localStorage.getItem(",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L67-L68"
+            },
+            {
+              "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+              "lines": "182-189",
+              "contains": "rca_points: [",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L182-L189"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Incidents and their enrichments are shared across all users of a tenant, and in the default single-tenant NO_AUTH install across every user.",
+          "gap": "Agent-written context isn't namespaced per user or session.",
+          "evidence": [
+            {
+              "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+              "lines": "139-142",
+              "contains": "description: \"incidentDetails\",",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L139-L142"
+            },
+            {
+              "file": "docker-compose.yml",
+              "lines": "21",
+              "contains": "AUTH_TYPE=NO_AUTH",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/docker-compose.yml#L21"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Poisoned enrichments persist across sessions and users and the chat that reads them can invoke any provider method.",
+          "gap": "Persistent agent-written content needs review before it influences tool use.",
+          "evidence": [
+            {
+              "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+              "lines": "222-226",
+              "contains": "[func_name]: result,",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L222-L226"
+            },
+            {
+              "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+              "lines": "215-220",
+              "contains": "const result = await invokeProviderMethod(",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L215-L220"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Model output and tool results are written to incident enrichments without validation and re-injected as incidentDetails context.",
+              "gap": "Writes to persistent incident context need gating or provenance tagging.",
+              "evidence": [
+                {
+                  "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+                  "lines": "182-189",
+                  "contains": "rca_points: [",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L182-L189"
+                },
+                {
+                  "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+                  "lines": "222-226",
+                  "contains": "[func_name]: result,",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L222-L226"
+                },
+                {
+                  "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+                  "lines": "139-142",
+                  "contains": "description: \"incidentDetails\",",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L139-L142"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Neither the enrichment store nor the browser-stored chat history is controlled.",
+              "gap": "No persistence path has validation or provenance.",
+              "evidence": [
+                {
+                  "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+                  "lines": "57-63",
+                  "contains": "localStorage.setItem(",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L57-L63"
+                },
+                {
+                  "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+                  "lines": "67-68",
+                  "contains": "localStorage.getItem(",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L67-L68"
+                },
+                {
+                  "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+                  "lines": "182-189",
+                  "contains": "rca_points: [",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L182-L189"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Incidents and their enrichments are shared across all users of a tenant, and in the default single-tenant NO_AUTH install across every user.",
+              "gap": "Agent-written context isn't namespaced per user or session.",
+              "evidence": [
+                {
+                  "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+                  "lines": "139-142",
+                  "contains": "description: \"incidentDetails\",",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L139-L142"
+                },
+                {
+                  "file": "docker-compose.yml",
+                  "lines": "21",
+                  "contains": "AUTH_TYPE=NO_AUTH",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/docker-compose.yml#L21"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Poisoned enrichments persist across sessions and users and the chat that reads them can invoke any provider method.",
+              "gap": "Persistent agent-written content needs review before it influences tool use.",
+              "evidence": [
+                {
+                  "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+                  "lines": "222-226",
+                  "contains": "[func_name]: result,",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L222-L226"
+                },
+                {
+                  "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+                  "lines": "215-220",
+                  "contains": "const result = await invokeProviderMethod(",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L215-L220"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "Keep does not load third-party code at runtime for its AI features. There is no MCP client, plugin loader, model download or package install path; providers are first-party modules shipped in the image. The search for such loaders found only documentation and developer scripts.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'modelcontextprotocol|trust_remote_code|pip install|torch\\.load|pickle\\.load|npx |raw\\.githubusercontent'",
+              "scope": "keep keep-ui/app keep-ui/features keep-ui/shared keep-ui/entities keep-ui/widgets",
+              "hits": 10,
+              "note": "all 10 hits irrelevant: provider README setup commands, a dev-time protobuf generator script, and a Wazuh-side integration script hint; none is a runtime loader"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'modelcontextprotocol|trust_remote_code|pip install|torch\\.load|pickle\\.load|npx |raw\\.githubusercontent'",
+              "scope": "keep keep-ui/app keep-ui/features keep-ui/shared keep-ui/entities keep-ui/widgets",
+              "hits": 10,
+              "note": "all 10 hits irrelevant: provider README setup commands, a dev-time protobuf generator script, and a Wazuh-side integration script hint; none is a runtime loader"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'modelcontextprotocol|trust_remote_code|pip install|torch\\.load|pickle\\.load|npx |raw\\.githubusercontent'",
+              "scope": "keep keep-ui/app keep-ui/features keep-ui/shared keep-ui/entities keep-ui/widgets",
+              "hits": 10,
+              "note": "all 10 hits irrelevant: provider README setup commands, a dev-time protobuf generator script, and a Wazuh-side integration script hint; none is a runtime loader"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'modelcontextprotocol|trust_remote_code|pip install|torch\\.load|pickle\\.load|npx |raw\\.githubusercontent'",
+              "scope": "keep keep-ui/app keep-ui/features keep-ui/shared keep-ui/entities keep-ui/widgets",
+              "hits": 10,
+              "note": "all 10 hits irrelevant: provider README setup commands, a dev-time protobuf generator script, and a Wazuh-side integration script hint; none is a runtime loader"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'modelcontextprotocol|trust_remote_code|pip install|torch\\.load|pickle\\.load|npx |raw\\.githubusercontent'",
+                  "scope": "keep keep-ui/app keep-ui/features keep-ui/shared keep-ui/entities keep-ui/widgets",
+                  "hits": 10,
+                  "note": "all 10 hits irrelevant: provider README setup commands, a dev-time protobuf generator script, and a Wazuh-side integration script hint; none is a runtime loader"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'modelcontextprotocol|trust_remote_code|pip install|torch\\.load|pickle\\.load|npx |raw\\.githubusercontent'",
+                  "scope": "keep keep-ui/app keep-ui/features keep-ui/shared keep-ui/entities keep-ui/widgets",
+                  "hits": 10,
+                  "note": "all 10 hits irrelevant: provider README setup commands, a dev-time protobuf generator script, and a Wazuh-side integration script hint; none is a runtime loader"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'modelcontextprotocol|trust_remote_code|pip install|torch\\.load|pickle\\.load|npx |raw\\.githubusercontent'",
+                  "scope": "keep keep-ui/app keep-ui/features keep-ui/shared keep-ui/entities keep-ui/widgets",
+                  "hits": 10,
+                  "note": "all 10 hits irrelevant: provider README setup commands, a dev-time protobuf generator script, and a Wazuh-side integration script hint; none is a runtime loader"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'modelcontextprotocol|trust_remote_code|pip install|torch\\.load|pickle\\.load|npx |raw\\.githubusercontent'",
+                  "scope": "keep keep-ui/app keep-ui/features keep-ui/shared keep-ui/entities keep-ui/widgets",
+                  "hits": 10,
+                  "note": "all 10 hits irrelevant: provider README setup commands, a dev-time protobuf generator script, and a Wazuh-side integration script hint; none is a runtime loader"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n -i 'modelcontextprotocol|trust_remote_code|pip install|torch\\.load|pickle\\.load|npx |raw\\.githubusercontent'",
+          "scope": "keep keep-ui/app keep-ui/features keep-ui/shared keep-ui/entities keep-ui/widgets",
+          "hits": 10,
+          "note": "all 10 hits irrelevant: provider README setup commands, a dev-time protobuf generator script, and a Wazuh-side integration script hint; none is a runtime loader"
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "Provider credentials are stored by default as plaintext JSON files in the state directory, and API-side secret handling is not locked down. The incident chat only passes provider ids, types and methods to the model, so credentials are not routinely in prompts, but server-side execution paths reachable from the model can read the secret files. Telemetry is on by default: the backend sends usage events to PostHog with a built-in key, the frontend identifies users to PostHog by email, and the compose file sets a Sentry DSN. There is no redaction filter in logging.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.15,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Secrets come from env vars and plaintext files; the chat's provider readable omits credentials, which is the only masking path.",
+          "gap": "No encryption at rest or log redaction.",
+          "evidence": [
+            {
+              "file": "keep/secretmanager/filesecretmanager.py",
+              "lines": "22-29",
+              "contains": "with open(path, \"w\") as f:",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/secretmanager/filesecretmanager.py#L22-L29"
+            },
+            {
+              "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+              "lines": "151-161",
+              "contains": "methods: provider.methods,",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L151-L161"
+            },
+            {
+              "search": "rg -n -i 'redact|mask|sensitive|secret'",
+              "scope": "keep/api/logging.py",
+              "hits": 0,
+              "note": "no redaction filter in the logging configuration"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Model-bound context excludes credentials, but logs, telemetry and subprocess environments are unprotected.",
+          "gap": "Logs and telemetry need redaction.",
+          "evidence": [
+            {
+              "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+              "lines": "151-161",
+              "contains": "methods: provider.methods,",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L151-L161"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "PostHog is on by default with a hard-coded key, the UI identifies users by email, and Sentry is configured in compose.",
+          "gap": "Telemetry needs to be opt-in by default.",
+          "evidence": [
+            {
+              "file": "keep/api/core/posthog.py",
+              "lines": "17-31",
+              "contains": "POSTHOG_DISABLED = os.getenv(\"POSTHOG_DISABLED\", \"false\")",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/api/core/posthog.py#L17-L31"
+            },
+            {
+              "file": "keep-ui/shared/ui/PostHogPageView.tsx",
+              "lines": "44-48",
+              "contains": "posthog.identify(posthog_id",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/shared/ui/PostHogPageView.tsx#L44-L48"
+            },
+            {
+              "file": "docker-compose.common.yml",
+              "lines": "11",
+              "contains": "NEXT_PUBLIC_SENTRY_DSN=",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/docker-compose.common.yml#L11"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Long-lived, high-privilege provider credentials sit in files readable by server-side shell and Python execution.",
+          "gap": "Credentials would need to be scoped, short-lived or kept out of reach of executed code.",
+          "evidence": [
+            {
+              "file": "keep/secretmanager/filesecretmanager.py",
+              "lines": "22-29",
+              "contains": "with open(path, \"w\") as f:",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/secretmanager/filesecretmanager.py#L22-L29"
+            },
+            {
+              "file": "keep/providers/bash_provider/bash_provider.py",
+              "lines": "36-38",
+              "contains": "shell=True",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/bash_provider/bash_provider.py#L36-L38"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.15,
+          "raw": 0.15,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Secrets come from env vars and plaintext files; the chat's provider readable omits credentials, which is the only masking path.",
+              "gap": "No encryption at rest or log redaction.",
+              "evidence": [
+                {
+                  "file": "keep/secretmanager/filesecretmanager.py",
+                  "lines": "22-29",
+                  "contains": "with open(path, \"w\") as f:",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/secretmanager/filesecretmanager.py#L22-L29"
+                },
+                {
+                  "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+                  "lines": "151-161",
+                  "contains": "methods: provider.methods,",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L151-L161"
+                },
+                {
+                  "search": "rg -n -i 'redact|mask|sensitive|secret'",
+                  "scope": "keep/api/logging.py",
+                  "hits": 0,
+                  "note": "no redaction filter in the logging configuration"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Model-bound context excludes credentials, but logs, telemetry and subprocess environments are unprotected.",
+              "gap": "Logs and telemetry need redaction.",
+              "evidence": [
+                {
+                  "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+                  "lines": "151-161",
+                  "contains": "methods: provider.methods,",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L151-L161"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "PostHog is on by default with a hard-coded key, the UI identifies users by email, and Sentry is configured in compose.",
+              "gap": "Telemetry needs to be opt-in by default.",
+              "evidence": [
+                {
+                  "file": "keep/api/core/posthog.py",
+                  "lines": "17-31",
+                  "contains": "POSTHOG_DISABLED = os.getenv(\"POSTHOG_DISABLED\", \"false\")",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/api/core/posthog.py#L17-L31"
+                },
+                {
+                  "file": "keep-ui/shared/ui/PostHogPageView.tsx",
+                  "lines": "44-48",
+                  "contains": "posthog.identify(posthog_id",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/shared/ui/PostHogPageView.tsx#L44-L48"
+                },
+                {
+                  "file": "docker-compose.common.yml",
+                  "lines": "11",
+                  "contains": "NEXT_PUBLIC_SENTRY_DSN=",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/docker-compose.common.yml#L11"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Long-lived, high-privilege provider credentials sit in files readable by server-side shell and Python execution.",
+              "gap": "Credentials would need to be scoped, short-lived or kept out of reach of executed code.",
+              "evidence": [
+                {
+                  "file": "keep/secretmanager/filesecretmanager.py",
+                  "lines": "22-29",
+                  "contains": "with open(path, \"w\") as f:",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/secretmanager/filesecretmanager.py#L22-L29"
+                },
+                {
+                  "file": "keep/providers/bash_provider/bash_provider.py",
+                  "lines": "36-38",
+                  "contains": "shell=True",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/bash_provider/bash_provider.py#L36-L38"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "When the chat invokes a provider method, the backend logs the provider id and method name, but not the arguments or who asked for it. Incident enrichments go into an audit table that records the user's email, so an AI-made change looks the same as one the user made. The chat conversation itself is kept only in the user's browser. Records go to standard logs and the database, outside any workspace, but code running through the bash provider in the same container could alter the database.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.35,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Invoke logs record provider_id and method only; enrichment audit records the session email without distinguishing AI from human.",
+          "gap": "Tool-call records need arguments, result status and agent-vs-human attribution.",
+          "evidence": [
+            {
+              "file": "keep/api/routes/providers.py",
+              "lines": "687-689",
+              "contains": "\"Invoking provider method\", extra={\"provider_id\": provider_id, \"method\": method}",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/api/routes/providers.py#L687-L689"
+            },
+            {
+              "file": "keep/api/routes/incidents.py",
+              "lines": "1074-1080",
+              "contains": "action_callee=authenticated_entity.email",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/api/routes/incidents.py#L1074-L1080"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only the backend invoke and enrich paths leave a server-side trace; chat turns and model decisions are browser-only.",
+          "gap": "Chat turns and every AI action need to be recorded server-side.",
+          "evidence": [
+            {
+              "file": "keep/api/routes/providers.py",
+              "lines": "687-689",
+              "contains": "\"Invoking provider method\", extra={\"provider_id\": provider_id, \"method\": method}",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/api/routes/providers.py#L687-L689"
+            },
+            {
+              "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+              "lines": "57-63",
+              "contains": "localStorage.setItem(",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L57-L63"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Logging is on by default and lives outside any workspace, but model-reachable code in the API container can alter the database.",
+          "gap": "Records need to be written by a component the agent's executed code can't touch.",
+          "evidence": [
+            {
+              "file": "keep/api/routes/providers.py",
+              "lines": "687-689",
+              "contains": "\"Invoking provider method\", extra={\"provider_id\": provider_id, \"method\": method}",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/api/routes/providers.py#L687-L689"
+            },
+            {
+              "file": "keep/providers/bash_provider/bash_provider.py",
+              "lines": "36-38",
+              "contains": "shell=True",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/bash_provider/bash_provider.py#L36-L38"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The invoke log line is emitted before execution, per action, through standard logging.",
+          "gap": "No durable, replayable trajectory; arguments are missing.",
+          "evidence": [
+            {
+              "file": "keep/api/routes/providers.py",
+              "lines": "687-689",
+              "contains": "\"Invoking provider method\", extra={\"provider_id\": provider_id, \"method\": method}",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/api/routes/providers.py#L687-L689"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.35,
+          "raw": 0.35,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Invoke logs record provider_id and method only; enrichment audit records the session email without distinguishing AI from human.",
+              "gap": "Tool-call records need arguments, result status and agent-vs-human attribution.",
+              "evidence": [
+                {
+                  "file": "keep/api/routes/providers.py",
+                  "lines": "687-689",
+                  "contains": "\"Invoking provider method\", extra={\"provider_id\": provider_id, \"method\": method}",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/api/routes/providers.py#L687-L689"
+                },
+                {
+                  "file": "keep/api/routes/incidents.py",
+                  "lines": "1074-1080",
+                  "contains": "action_callee=authenticated_entity.email",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/api/routes/incidents.py#L1074-L1080"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only the backend invoke and enrich paths leave a server-side trace; chat turns and model decisions are browser-only.",
+              "gap": "Chat turns and every AI action need to be recorded server-side.",
+              "evidence": [
+                {
+                  "file": "keep/api/routes/providers.py",
+                  "lines": "687-689",
+                  "contains": "\"Invoking provider method\", extra={\"provider_id\": provider_id, \"method\": method}",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/api/routes/providers.py#L687-L689"
+                },
+                {
+                  "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+                  "lines": "57-63",
+                  "contains": "localStorage.setItem(",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L57-L63"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Logging is on by default and lives outside any workspace, but model-reachable code in the API container can alter the database.",
+              "gap": "Records need to be written by a component the agent's executed code can't touch.",
+              "evidence": [
+                {
+                  "file": "keep/api/routes/providers.py",
+                  "lines": "687-689",
+                  "contains": "\"Invoking provider method\", extra={\"provider_id\": provider_id, \"method\": method}",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/api/routes/providers.py#L687-L689"
+                },
+                {
+                  "file": "keep/providers/bash_provider/bash_provider.py",
+                  "lines": "36-38",
+                  "contains": "shell=True",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/bash_provider/bash_provider.py#L36-L38"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The invoke log line is emitted before execution, per action, through standard logging.",
+              "gap": "No durable, replayable trajectory; arguments are missing.",
+              "evidence": [
+                {
+                  "file": "keep/api/routes/providers.py",
+                  "lines": "687-689",
+                  "contains": "\"Invoking provider method\", extra={\"provider_id\": provider_id, \"method\": method}",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/api/routes/providers.py#L687-L689"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "Keep's own code sets no step, token or cost limit on the chat assistant, and the API rate limiter is disabled by default. The bash provider has a 60-second default timeout, but the caller sets it, so the model can raise it through the parameters it passes. Stopping the chat in the browser doesn't stop server-side commands already started. CopilotKit's internal loop limits were not examined.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.2,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The only limit is the bash provider's per-call timeout, which is a caller-supplied argument.",
+          "gap": "Needs an iteration cap plus a wall-clock or token/cost cap enforced in code.",
+          "evidence": [
+            {
+              "file": "keep/providers/bash_provider/bash_provider.py",
+              "lines": "24",
+              "contains": "timeout: int = 60",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/bash_provider/bash_provider.py#L24"
+            },
+            {
+              "search": "rg -n -i 'max_steps|maxSteps|max_iterations|recursion_limit|maxIterations'",
+              "scope": "keep-ui/app keep-ui/features keep/api",
+              "hits": 0,
+              "note": "no step cap on the copilot loop in Keep's own code"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The timeout covers only the bash provider; other provider calls and the chat loop are unbounded in Keep's code.",
+          "gap": "Limits should cover the loop and every tool call.",
+          "evidence": [
+            {
+              "file": "keep/providers/bash_provider/bash_provider.py",
+              "lines": "24",
+              "contains": "timeout: int = 60",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/bash_provider/bash_provider.py#L24"
+            },
+            {
+              "file": "keep-ui/app/api/copilotkit/route.ts",
+              "lines": "16-22",
+              "contains": "new CopilotRuntime()",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/api/copilotkit/route.ts#L16-L22"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The timeout default exists but the model can override it, and the rate limiter is off by default.",
+          "gap": "The model shouldn't be able to raise its own limits.",
+          "evidence": [
+            {
+              "file": "keep/providers/bash_provider/bash_provider.py",
+              "lines": "24",
+              "contains": "timeout: int = 60",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/bash_provider/bash_provider.py#L24"
+            },
+            {
+              "file": "keep/api/core/limiter.py",
+              "lines": "10",
+              "contains": "limiter_enabled = config(\"KEEP_USE_LIMITER\", default=\"false\", cast=bool)",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/api/core/limiter.py#L10"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No ceiling on chat iterations or spend in Keep's code; started subprocesses aren't cancelled by stopping the chat.",
+          "gap": "Needs per-run time and cost ceilings and cancellation of in-flight calls.",
+          "evidence": [
+            {
+              "file": "keep/api/core/limiter.py",
+              "lines": "10",
+              "contains": "limiter_enabled = config(\"KEEP_USE_LIMITER\", default=\"false\", cast=bool)",
+              "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/api/core/limiter.py#L10"
+            },
+            {
+              "search": "rg -n -i 'max_steps|maxSteps|max_iterations|recursion_limit|maxIterations'",
+              "scope": "keep-ui/app keep-ui/features keep/api",
+              "hits": 0,
+              "note": "no step cap on the copilot loop in Keep's own code"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.2,
+          "raw": 0.2,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The only limit is the bash provider's per-call timeout, which is a caller-supplied argument.",
+              "gap": "Needs an iteration cap plus a wall-clock or token/cost cap enforced in code.",
+              "evidence": [
+                {
+                  "file": "keep/providers/bash_provider/bash_provider.py",
+                  "lines": "24",
+                  "contains": "timeout: int = 60",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/bash_provider/bash_provider.py#L24"
+                },
+                {
+                  "search": "rg -n -i 'max_steps|maxSteps|max_iterations|recursion_limit|maxIterations'",
+                  "scope": "keep-ui/app keep-ui/features keep/api",
+                  "hits": 0,
+                  "note": "no step cap on the copilot loop in Keep's own code"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The timeout covers only the bash provider; other provider calls and the chat loop are unbounded in Keep's code.",
+              "gap": "Limits should cover the loop and every tool call.",
+              "evidence": [
+                {
+                  "file": "keep/providers/bash_provider/bash_provider.py",
+                  "lines": "24",
+                  "contains": "timeout: int = 60",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/bash_provider/bash_provider.py#L24"
+                },
+                {
+                  "file": "keep-ui/app/api/copilotkit/route.ts",
+                  "lines": "16-22",
+                  "contains": "new CopilotRuntime()",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/api/copilotkit/route.ts#L16-L22"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The timeout default exists but the model can override it, and the rate limiter is off by default.",
+              "gap": "The model shouldn't be able to raise its own limits.",
+              "evidence": [
+                {
+                  "file": "keep/providers/bash_provider/bash_provider.py",
+                  "lines": "24",
+                  "contains": "timeout: int = 60",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/bash_provider/bash_provider.py#L24"
+                },
+                {
+                  "file": "keep/api/core/limiter.py",
+                  "lines": "10",
+                  "contains": "limiter_enabled = config(\"KEEP_USE_LIMITER\", default=\"false\", cast=bool)",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/api/core/limiter.py#L10"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No ceiling on chat iterations or spend in Keep's code; started subprocesses aren't cancelled by stopping the chat.",
+              "gap": "Needs per-run time and cost ceilings and cancellation of in-flight calls.",
+              "evidence": [
+                {
+                  "file": "keep/api/core/limiter.py",
+                  "lines": "10",
+                  "contains": "limiter_enabled = config(\"KEEP_USE_LIMITER\", default=\"false\", cast=bool)",
+                  "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/api/core/limiter.py#L10"
+                },
+                {
+                  "search": "rg -n -i 'max_steps|maxSteps|max_iterations|recursion_limit|maxIterations'",
+                  "scope": "keep-ui/app keep-ui/features keep/api",
+                  "hits": 0,
+                  "note": "no step cap on the copilot loop in Keep's own code"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "The AI chat's invokeProviderMethod runs provider methods with no approval, and the invocation endpoint is not locked down.",
+      "criterion": "C2",
+      "owasp": [
+        "ASI02",
+        "ASI09"
+      ],
+      "evidence": [
+        {
+          "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+          "lines": "215-220",
+          "contains": "const result = await invokeProviderMethod(",
+          "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L215-L220"
+        }
+      ]
+    },
+    {
+      "summary": "A hijacked chat can read secrets and exfiltrate them or take irreversible actions without a human, because untrusted alert text shares the session with ungated provider calls.",
+      "criterion": "C5",
+      "owasp": [
+        "ASI01",
+        "LLM01"
+      ],
+      "evidence": [
+        {
+          "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+          "lines": "143-146",
+          "contains": "description: \"alerts\",",
+          "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L143-L146"
+        },
+        {
+          "file": "keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx",
+          "lines": "215-220",
+          "contains": "const result = await invokeProviderMethod(",
+          "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L215-L220"
+        },
+        {
+          "file": "keep/providers/http_provider/http_provider.py",
+          "lines": "37-39",
+          "contains": "if endpoint in url",
+          "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/http_provider/http_provider.py#L37-L39"
+        }
+      ]
+    },
+    {
+      "summary": "Shell and Python provider execution runs unsandboxed in the API container, next to plaintext provider secrets, and is reachable from AI paths.",
+      "criterion": "C4",
+      "owasp": [
+        "ASI05"
+      ],
+      "evidence": [
+        {
+          "file": "keep/providers/bash_provider/bash_provider.py",
+          "lines": "36-38",
+          "contains": "shell=True",
+          "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/bash_provider/bash_provider.py#L36-L38"
+        },
+        {
+          "file": "keep/providers/python_provider/python_provider.py",
+          "lines": "52",
+          "contains": "output = eval(parsed_code, loaded_modules)",
+          "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/python_provider/python_provider.py#L52"
+        },
+        {
+          "file": "keep/secretmanager/filesecretmanager.py",
+          "lines": "22-29",
+          "contains": "with open(path, \"w\") as f:",
+          "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/secretmanager/filesecretmanager.py#L22-L29"
+        }
+      ]
+    },
+    {
+      "summary": "Default install grants every caller the Admin role, and the agent can use every tenant-wide provider credential.",
+      "criterion": "C1",
+      "owasp": [
+        "ASI03"
+      ],
+      "evidence": [
+        {
+          "file": "docker-compose.yml",
+          "lines": "21",
+          "contains": "AUTH_TYPE=NO_AUTH",
+          "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/docker-compose.yml#L21"
+        },
+        {
+          "file": "keep/identitymanager/identity_managers/noauth/noauth_authverifier.py",
+          "lines": "37-42",
+          "contains": "role=AdminRole.get_name()",
+          "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/identitymanager/identity_managers/noauth/noauth_authverifier.py#L37-L42"
+        },
+        {
+          "file": "keep/providers/gke_provider/gke_provider.py",
+          "lines": "133-136",
+          "contains": "func_name=\"exec_command\"",
+          "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/gke_provider/gke_provider.py#L133-L136"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "webhook/monitoring alerts (alerts.py:685) passed into chat context (incident-chat.tsx:143)",
+    "sensitive_data": "tenant provider credentials in plaintext state files (filesecretmanager.py:22-29)",
+    "state_change_or_egress": "invokeProviderMethod to provider methods with no gate (incident-chat.tsx:215-220)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Restrict /providers/{id}/invoke to an explicit allowlist of provider methods and provider types.",
+      "criterion": "C3",
+      "parameter": "S",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Wrap invokeProviderMethod, createIncident and incident updates in renderAndWaitForResponse showing the exact provider, method and parameters.",
+      "criterion": "C2",
+      "parameter": "C",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 5",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Ship the compose file with DB authentication and a non-admin default role instead of NO_AUTH.",
+      "criterion": "C1",
+      "parameter": "D",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 4",
+      "estimated_gain": 0.1
+    },
+    {
+      "summary": "Make PostHog and Sentry opt-in and review what authentication-failure logging records.",
+      "criterion": "C8",
+      "parameter": "D",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 4",
+      "estimated_gain": 0.1
+    },
+    {
+      "summary": "Log invoke arguments and mark AI-initiated actions distinctly from human ones.",
+      "criterion": "C9",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 3,
+      "playbook": "Playbook 1, step 3",
+      "estimated_gain": 0.15
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was installed, built or run.",
+    "The commit is 5 commits after tag v0.54.3 and has no tag of its own, so version is null.",
+    "CopilotKit runtime internals (loop limits, stop behaviour) are third-party and weren't examined; C10 credits only Keep's own code.",
+    "The Helm chart lives in a separate repository and wasn't reviewed; the docker-compose defaults were scored.",
+    "The workflow engine was reviewed only where it overlaps the AI paths (bash/python providers); workflow YAML is operator-authored.",
+    "No text aimed at AI reviewers was found in the repository."
+  ]
+}

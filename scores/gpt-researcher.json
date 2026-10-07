@@ -1,0 +1,2554 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "gpt-researcher",
+  "name": "GPT Researcher",
+  "repo_url": "https://github.com/assafelovic/gpt-researcher",
+  "subpath": null,
+  "description": "Autonomous deep-research agent over web and local data; also MCP",
+  "category": "ai_assistants",
+  "pinned_commit": "0957c301ed06c2a5857b834358c7227c739041d4",
+  "version": "v3.7.0",
+  "scored_date": "2026-10-03",
+  "scored_configuration": "The FastAPI/WebSocket research server started as the README leads (uvicorn main:app; main.py, the Dockerfile and docker-compose bind 0.0.0.0) with the default config: Tavily search, BeautifulSoup scraper, report_source=web, no auth, MCP off unless a request supplies mcp_configs.",
+  "score": 2.2,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 10,
+    "score": 2.15,
+    "max": 10.0,
+    "percent": 22
+  },
+  "capability_profile": {
+    "code_execution": "yes",
+    "filesystem_write": "yes",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "yes",
+    "untrusted_input": "yes",
+    "third_party_extensions": "opt_in",
+    "sub_agents": "opt_in",
+    "external_communication": "no"
+  },
+  "headline": "GPT Researcher's research pipeline itself is mostly read-only: it searches the web, fetches pages through an SSRF filter, and writes a report. The dominant risk is the server around it. No endpoint authenticates callers, and a research request may include an MCP server 'command' that the server spawns as a process. So anyone who can reach the port can run commands with the user's account and API keys (root in the shipped docker-compose). Run it only on localhost behind your own authentication, and treat stored reports and chat history as shared and untrusted.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "The server holds the operator's API keys and runs as the operator's OS user (root inside the shipped docker-compose service), and none of its REST or WebSocket endpoints authenticate the caller. Any client that can reach the port acts with the server's full authority: it can spend the keys, read and delete every stored report, and supply an MCP 'command' that the server launches as a process. The maintainers' SECURITY.md states this is by design and leaves authentication to the operator. Nothing narrows the authority the agent inherits.",
+      "max": 1.0,
+      "notes": "SECURITY.md documents the unauthenticated design as intentional; the score reflects the shipped default regardless. Exposure of the local WebSocket beyond direct clients is not locked down.",
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No identity or scoping of its own: the process uses the operator's ambient OS user and long-lived provider keys loaded from the environment/.env, and lends that whole authority to any caller.",
+          "gap": "A dedicated, scoped identity (e.g., per-capability keys, no arbitrary process launch) would be needed for L1+.",
+          "evidence": [
+            {
+              "file": "main.py",
+              "lines": "29",
+              "contains": "load_dotenv()",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/main.py#L29"
+            },
+            {
+              "file": "docker-compose.yml",
+              "lines": "21",
+              "contains": "user: root",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/docker-compose.yml#L21"
+            },
+            {
+              "file": "gpt_researcher/mcp/client.py",
+              "lines": "95-103",
+              "contains": "server_config[\"command\"] = config[\"command\"]",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/client.py#L95-L103"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No authorization layer exists on any route; the WebSocket accepts every connection without checking credentials.",
+          "gap": "An authorization check on at least the main research path (/ws) is needed for L1.",
+          "evidence": [
+            {
+              "file": "backend/server/app.py",
+              "lines": "408-412",
+              "contains": "await manager.connect(websocket)",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/app.py#L408-L412"
+            },
+            {
+              "file": "backend/server/websocket_manager.py",
+              "lines": "56",
+              "contains": "await websocket.accept()",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/websocket_manager.py#L56"
+            },
+            {
+              "search": "rg -n -i \"Depends\\(|HTTPBearer|APIKeyHeader|HTTPBasic|OAuth2|verify_token\"",
+              "scope": "backend main.py",
+              "hits": 0,
+              "note": "No authentication or authorization dependency on any REST or WebSocket route."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Default deployments bind every interface (main.py, Dockerfile HOST=0.0.0.0, compose 8000:8000) and compose runs the service as root with keys in its environment.",
+          "gap": "A narrower default (localhost-only bind, non-root, auth on) would be needed.",
+          "evidence": [
+            {
+              "file": "main.py",
+              "lines": "37",
+              "contains": "uvicorn.run(app, host=\"0.0.0.0\", port=8000)",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/main.py#L37"
+            },
+            {
+              "file": "docker-compose.yml",
+              "lines": "21",
+              "contains": "user: root",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/docker-compose.yml#L21"
+            },
+            {
+              "file": "Dockerfile",
+              "lines": "41",
+              "contains": "ARG HOST=0.0.0.0",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/Dockerfile#L41"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A caller can launch arbitrary commands via request-supplied MCP stdio configs, giving the user's entire OS account (or root in the compose container with all API keys).",
+          "gap": "Removing client-controlled process launch and limiting the process to read-only, single-purpose credentials would be needed.",
+          "evidence": [
+            {
+              "file": "backend/server/server_utils.py",
+              "lines": "420-422",
+              "contains": "json_data.get(\"mcp_configs\", [])",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/server_utils.py#L420-L422"
+            },
+            {
+              "file": "backend/server/websocket_manager.py",
+              "lines": "174",
+              "contains": "mcp_configs=mcp_configs if mcp_enabled else None",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/websocket_manager.py#L174"
+            },
+            {
+              "file": "gpt_researcher/mcp/client.py",
+              "lines": "95-103",
+              "contains": "server_config[\"command\"] = config[\"command\"]",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/client.py#L95-L103"
+            },
+            {
+              "file": "docker-compose.yml",
+              "lines": "21",
+              "contains": "user: root",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/docker-compose.yml#L21"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No identity or scoping of its own: the process uses the operator's ambient OS user and long-lived provider keys loaded from the environment/.env, and lends that whole authority to any caller.",
+              "gap": "A dedicated, scoped identity (e.g., per-capability keys, no arbitrary process launch) would be needed for L1+.",
+              "evidence": [
+                {
+                  "file": "main.py",
+                  "lines": "29",
+                  "contains": "load_dotenv()",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/main.py#L29"
+                },
+                {
+                  "file": "docker-compose.yml",
+                  "lines": "21",
+                  "contains": "user: root",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/docker-compose.yml#L21"
+                },
+                {
+                  "file": "gpt_researcher/mcp/client.py",
+                  "lines": "95-103",
+                  "contains": "server_config[\"command\"] = config[\"command\"]",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/client.py#L95-L103"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No authorization layer exists on any route; the WebSocket accepts every connection without checking credentials.",
+              "gap": "An authorization check on at least the main research path (/ws) is needed for L1.",
+              "evidence": [
+                {
+                  "file": "backend/server/app.py",
+                  "lines": "408-412",
+                  "contains": "await manager.connect(websocket)",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/app.py#L408-L412"
+                },
+                {
+                  "file": "backend/server/websocket_manager.py",
+                  "lines": "56",
+                  "contains": "await websocket.accept()",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/websocket_manager.py#L56"
+                },
+                {
+                  "search": "rg -n -i \"Depends\\(|HTTPBearer|APIKeyHeader|HTTPBasic|OAuth2|verify_token\"",
+                  "scope": "backend main.py",
+                  "hits": 0,
+                  "note": "No authentication or authorization dependency on any REST or WebSocket route."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default deployments bind every interface (main.py, Dockerfile HOST=0.0.0.0, compose 8000:8000) and compose runs the service as root with keys in its environment.",
+              "gap": "A narrower default (localhost-only bind, non-root, auth on) would be needed.",
+              "evidence": [
+                {
+                  "file": "main.py",
+                  "lines": "37",
+                  "contains": "uvicorn.run(app, host=\"0.0.0.0\", port=8000)",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/main.py#L37"
+                },
+                {
+                  "file": "docker-compose.yml",
+                  "lines": "21",
+                  "contains": "user: root",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/docker-compose.yml#L21"
+                },
+                {
+                  "file": "Dockerfile",
+                  "lines": "41",
+                  "contains": "ARG HOST=0.0.0.0",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/Dockerfile#L41"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A caller can launch arbitrary commands via request-supplied MCP stdio configs, giving the user's entire OS account (or root in the compose container with all API keys).",
+              "gap": "Removing client-controlled process launch and limiting the process to read-only, single-purpose credentials would be needed.",
+              "evidence": [
+                {
+                  "file": "backend/server/server_utils.py",
+                  "lines": "420-422",
+                  "contains": "json_data.get(\"mcp_configs\", [])",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/server_utils.py#L420-L422"
+                },
+                {
+                  "file": "backend/server/websocket_manager.py",
+                  "lines": "174",
+                  "contains": "mcp_configs=mcp_configs if mcp_enabled else None",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/websocket_manager.py#L174"
+                },
+                {
+                  "file": "gpt_researcher/mcp/client.py",
+                  "lines": "95-103",
+                  "contains": "server_config[\"command\"] = config[\"command\"]",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/client.py#L95-L103"
+                },
+                {
+                  "file": "docker-compose.yml",
+                  "lines": "21",
+                  "contains": "user: root",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/docker-compose.yml#L21"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "There is no approval step anywhere. The default research flow only searches and reads web pages, so it makes no consequential changes on its own. When a request enables MCP servers, the model picks MCP tools and arguments and they execute immediately with no human in the loop, whatever those tools do. A 'human_feedback' WebSocket command exists but is a stub that only prints the message.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.1,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No approval mechanism; model-selected MCP tool calls run directly.",
+          "gap": "Per-call human approval of tool calls would be needed for L2+.",
+          "evidence": [
+            {
+              "file": "gpt_researcher/mcp/research.py",
+              "lines": "100-113",
+              "contains": "result = await tool.ainvoke(tool_args)",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/research.py#L100-L113"
+            },
+            {
+              "file": "backend/server/server_utils.py",
+              "lines": "189-192",
+              "contains": "# TODO: Add logic to forward the feedback",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/server_utils.py#L189-L192"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The most powerful action path (MCP tool execution) is not gated.",
+          "gap": "At least flagged mutating tools would need to be gated.",
+          "evidence": [
+            {
+              "file": "gpt_researcher/mcp/research.py",
+              "lines": "100-113",
+              "contains": "result = await tool.ainvoke(tool_args)",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/research.py#L100-L113"
+            },
+            {
+              "search": "rg -n -i \"approv|confirm|human_feedback\"",
+              "scope": "gpt_researcher backend",
+              "hits": 5,
+              "note": "All 5 hits are the human_feedback stub handler and its dispatch; none gate a tool call."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No approval exists to be on by default.",
+          "gap": "Approval on by default for consequential tools would be needed.",
+          "evidence": [
+            {
+              "file": "gpt_researcher/mcp/research.py",
+              "lines": "100-113",
+              "contains": "result = await tool.ainvoke(tool_args)",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/research.py#L100-L113"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "In the default request (no MCP) the model can only search and fetch pages; with request-supplied MCP servers it can invoke whatever write tools those servers expose, irreversibly, with no previews or rate limits.",
+          "gap": "Checkpoints/previews for consequential actions or a code-enforced read-only default for every connector would be needed.",
+          "evidence": [
+            {
+              "file": "backend/server/websocket_manager.py",
+              "lines": "174",
+              "contains": "mcp_configs=mcp_configs if mcp_enabled else None",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/websocket_manager.py#L174"
+            },
+            {
+              "file": "gpt_researcher/config/variables/default.py",
+              "lines": "45",
+              "contains": "\"MCP_SERVERS\": []",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/config/variables/default.py#L45"
+            },
+            {
+              "file": "gpt_researcher/mcp/research.py",
+              "lines": "100-113",
+              "contains": "result = await tool.ainvoke(tool_args)",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/research.py#L100-L113"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.1,
+          "raw": 0.1,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No approval mechanism; model-selected MCP tool calls run directly.",
+              "gap": "Per-call human approval of tool calls would be needed for L2+.",
+              "evidence": [
+                {
+                  "file": "gpt_researcher/mcp/research.py",
+                  "lines": "100-113",
+                  "contains": "result = await tool.ainvoke(tool_args)",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/research.py#L100-L113"
+                },
+                {
+                  "file": "backend/server/server_utils.py",
+                  "lines": "189-192",
+                  "contains": "# TODO: Add logic to forward the feedback",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/server_utils.py#L189-L192"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The most powerful action path (MCP tool execution) is not gated.",
+              "gap": "At least flagged mutating tools would need to be gated.",
+              "evidence": [
+                {
+                  "file": "gpt_researcher/mcp/research.py",
+                  "lines": "100-113",
+                  "contains": "result = await tool.ainvoke(tool_args)",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/research.py#L100-L113"
+                },
+                {
+                  "search": "rg -n -i \"approv|confirm|human_feedback\"",
+                  "scope": "gpt_researcher backend",
+                  "hits": 5,
+                  "note": "All 5 hits are the human_feedback stub handler and its dispatch; none gate a tool call."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No approval exists to be on by default.",
+              "gap": "Approval on by default for consequential tools would be needed.",
+              "evidence": [
+                {
+                  "file": "gpt_researcher/mcp/research.py",
+                  "lines": "100-113",
+                  "contains": "result = await tool.ainvoke(tool_args)",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/research.py#L100-L113"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "In the default request (no MCP) the model can only search and fetch pages; with request-supplied MCP servers it can invoke whatever write tools those servers expose, irreversibly, with no previews or rate limits.",
+              "gap": "Checkpoints/previews for consequential actions or a code-enforced read-only default for every connector would be needed.",
+              "evidence": [
+                {
+                  "file": "backend/server/websocket_manager.py",
+                  "lines": "174",
+                  "contains": "mcp_configs=mcp_configs if mcp_enabled else None",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/websocket_manager.py#L174"
+                },
+                {
+                  "file": "gpt_researcher/config/variables/default.py",
+                  "lines": "45",
+                  "contains": "\"MCP_SERVERS\": []",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/config/variables/default.py#L45"
+                },
+                {
+                  "file": "gpt_researcher/mcp/research.py",
+                  "lines": "100-113",
+                  "contains": "result = await tool.ainvoke(tool_args)",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/research.py#L100-L113"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "The default tools are narrow: search queries go to a configured search API and the scraper fetches result URLs after a shared check that allows only http(s) and rejects hosts resolving to private, loopback, link-local or metadata addresses. The code itself notes a DNS-rebinding window, and URL and transport handling does not cover every path. MCP tools receive raw model-chosen arguments, and MCP path restrictions are not a strict boundary. Write-capable tools only appear when a request adds MCP servers.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.55,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "validate_url enforces scheme plus public-IP resolution, but re-resolution leaves a TOCTOU window (acknowledged in code) and enforcement does not cover every path.",
+          "gap": "Pin the validated IP and harden enforcement to reach L3.",
+          "evidence": [
+            {
+              "file": "gpt_researcher/utils/url_security.py",
+              "lines": "97-98",
+              "contains": "socket.getaddrinfo(host, None)",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/utils/url_security.py#L97-L98"
+            },
+            {
+              "file": "gpt_researcher/utils/url_security.py",
+              "lines": "22-24",
+              "contains": "TOCTOU/DNS-rebinding window",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/utils/url_security.py#L22-L24"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The scraper and online document loader validate URLs; MCP tool arguments pass through unvalidated, and MCP path restrictions are not a strict boundary.",
+          "gap": "A shared validation layer wrapping extension (MCP) tools is needed for L3.",
+          "evidence": [
+            {
+              "file": "gpt_researcher/scraper/scraper.py",
+              "lines": "202-205",
+              "contains": "validate_url(link)",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/scraper/scraper.py#L202-L205"
+            },
+            {
+              "file": "gpt_researcher/document/online_document.py",
+              "lines": "42",
+              "contains": "validate_url(url)",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/document/online_document.py#L42"
+            },
+            {
+              "file": "gpt_researcher/mcp/research.py",
+              "lines": "100-113",
+              "contains": "result = await tool.ainvoke(tool_args)",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/research.py#L100-L113"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Default tool set is search plus HTTP GET scraping; MCP (possibly write/exec) tools load only when the request sets mcp_enabled with configs, and the model cannot enable them.",
+          "gap": "Per-task tool allowlists and removing client-level enabling of arbitrary MCP servers would be needed for L4.",
+          "evidence": [
+            {
+              "file": "gpt_researcher/config/variables/default.py",
+              "lines": "28",
+              "contains": "\"SCRAPER\": \"bs\"",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/config/variables/default.py#L28"
+            },
+            {
+              "file": "gpt_researcher/config/variables/default.py",
+              "lines": "45",
+              "contains": "\"MCP_SERVERS\": []",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/config/variables/default.py#L45"
+            },
+            {
+              "file": "backend/server/websocket_manager.py",
+              "lines": "174",
+              "contains": "mcp_configs=mcp_configs if mcp_enabled else None",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/websocket_manager.py#L174"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Default tools are read-only GETs but can reach any public host; MCP tools, when enabled, have whatever reach their server has.",
+          "gap": "Quantity bounds and host allowlists on fetches would be needed for L3.",
+          "evidence": [
+            {
+              "file": "backend/report_type/basic_report/basic_report.py",
+              "lines": "62-64",
+              "contains": "max_search_results_per_query = int(max_search_results)",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/report_type/basic_report/basic_report.py#L62-L64"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.55,
+          "raw": 0.55,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "validate_url enforces scheme plus public-IP resolution, but re-resolution leaves a TOCTOU window (acknowledged in code) and enforcement does not cover every path.",
+              "gap": "Pin the validated IP and harden enforcement to reach L3.",
+              "evidence": [
+                {
+                  "file": "gpt_researcher/utils/url_security.py",
+                  "lines": "97-98",
+                  "contains": "socket.getaddrinfo(host, None)",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/utils/url_security.py#L97-L98"
+                },
+                {
+                  "file": "gpt_researcher/utils/url_security.py",
+                  "lines": "22-24",
+                  "contains": "TOCTOU/DNS-rebinding window",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/utils/url_security.py#L22-L24"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The scraper and online document loader validate URLs; MCP tool arguments pass through unvalidated, and MCP path restrictions are not a strict boundary.",
+              "gap": "A shared validation layer wrapping extension (MCP) tools is needed for L3.",
+              "evidence": [
+                {
+                  "file": "gpt_researcher/scraper/scraper.py",
+                  "lines": "202-205",
+                  "contains": "validate_url(link)",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/scraper/scraper.py#L202-L205"
+                },
+                {
+                  "file": "gpt_researcher/document/online_document.py",
+                  "lines": "42",
+                  "contains": "validate_url(url)",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/document/online_document.py#L42"
+                },
+                {
+                  "file": "gpt_researcher/mcp/research.py",
+                  "lines": "100-113",
+                  "contains": "result = await tool.ainvoke(tool_args)",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/research.py#L100-L113"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default tool set is search plus HTTP GET scraping; MCP (possibly write/exec) tools load only when the request sets mcp_enabled with configs, and the model cannot enable them.",
+              "gap": "Per-task tool allowlists and removing client-level enabling of arbitrary MCP servers would be needed for L4.",
+              "evidence": [
+                {
+                  "file": "gpt_researcher/config/variables/default.py",
+                  "lines": "28",
+                  "contains": "\"SCRAPER\": \"bs\"",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/config/variables/default.py#L28"
+                },
+                {
+                  "file": "gpt_researcher/config/variables/default.py",
+                  "lines": "45",
+                  "contains": "\"MCP_SERVERS\": []",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/config/variables/default.py#L45"
+                },
+                {
+                  "file": "backend/server/websocket_manager.py",
+                  "lines": "174",
+                  "contains": "mcp_configs=mcp_configs if mcp_enabled else None",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/websocket_manager.py#L174"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default tools are read-only GETs but can reach any public host; MCP tools, when enabled, have whatever reach their server has.",
+              "gap": "Quantity bounds and host allowlists on fetches would be needed for L3.",
+              "evidence": [
+                {
+                  "file": "backend/report_type/basic_report/basic_report.py",
+                  "lines": "62-64",
+                  "contains": "max_search_results_per_query = int(max_search_results)",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/report_type/basic_report/basic_report.py#L62-L64"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "The project never runs model-written code, but it launches subprocesses from text it does not control: a research request may carry MCP server configs whose 'command' and 'args' the server spawns as a local stdio process with no isolation, as the same OS user. Package installs via pip are also triggered at runtime for some optional scrapers and LLM providers. The shipped Docker image runs as a non-root user, but the shipped docker-compose overrides that to root and passes the API keys into the container; Docker is an optional deployment, so it is scored as an opt-in mechanism.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.3,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The image is a stock container; the Dockerfile creates a non-root user but docker-compose sets user: root, with default capabilities and no seccomp/read-only hardening.",
+          "gap": "Non-root, dropped capabilities, no-new-privileges and a read-only root filesystem would be needed for L3.",
+          "evidence": [
+            {
+              "file": "Dockerfile",
+              "lines": "59",
+              "contains": "USER gpt-researcher",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/Dockerfile#L59"
+            },
+            {
+              "file": "docker-compose.yml",
+              "lines": "21",
+              "contains": "user: root",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/docker-compose.yml#L21"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Everything the server spawns runs inside the container when deployed this way.",
+          "gap": "Fail-closed coverage with a documented escape hatch would be needed for L3.",
+          "evidence": [
+            {
+              "file": "Dockerfile",
+              "lines": "64",
+              "contains": "CMD uvicorn main:app --host ${HOST} --port ${PORT} --workers ${WORKERS}",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/Dockerfile#L64"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Docker is an optional deployment; the README leads with a host uvicorn run.",
+          "gap": "Running containerised by default would be needed.",
+          "evidence": [
+            {
+              "file": "README.md",
+              "lines": "131",
+              "contains": "python -m uvicorn main:app --reload",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/README.md#L131"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The compose container receives the API keys in its environment, runs as root, has unrestricted network and read-write host mounts.",
+          "gap": "No secrets in the container and restricted egress would be needed.",
+          "evidence": [
+            {
+              "file": "docker-compose.yml",
+              "lines": "6-9",
+              "contains": "OPENAI_API_KEY: ${OPENAI_API_KEY}",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/docker-compose.yml#L6-L9"
+            },
+            {
+              "file": "docker-compose.yml",
+              "lines": "21",
+              "contains": "user: root",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/docker-compose.yml#L21"
+            },
+            {
+              "file": "docker-compose.yml",
+              "lines": "17-20",
+              "contains": "${PWD}/my-docs:/usr/src/app/my-docs:rw",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/docker-compose.yml#L17-L20"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Request-supplied MCP commands run as same-user host subprocesses with no sandbox.",
+              "gap": "Any OS-level separation (container, low-privilege user) on the default path would be L2.",
+              "evidence": [
+                {
+                  "file": "gpt_researcher/mcp/client.py",
+                  "lines": "95-103",
+                  "contains": "server_config[\"command\"] = config[\"command\"]",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/client.py#L95-L103"
+                },
+                {
+                  "file": "gpt_researcher/mcp/client.py",
+                  "lines": "143",
+                  "contains": "self._client = MultiServerMCPClient(server_configs)",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/client.py#L143"
+                },
+                {
+                  "search": "rg -n -i \"sandbox|seccomp|cap_drop|no-new-privileges|read_only\"",
+                  "scope": "gpt_researcher backend Dockerfile docker-compose.yml",
+                  "hits": 1,
+                  "note": "The single hit is Chrome's --no-sandbox flag in the optional browser scraper, i.e. the opposite of a control."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No execution path is isolated (MCP stdio launch, runtime pip install).",
+              "gap": "The main exec path would need to be sandboxed.",
+              "evidence": [
+                {
+                  "file": "gpt_researcher/mcp/client.py",
+                  "lines": "95-103",
+                  "contains": "server_config[\"command\"] = config[\"command\"]",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/client.py#L95-L103"
+                },
+                {
+                  "file": "gpt_researcher/scraper/scraper.py",
+                  "lines": "182-184",
+                  "contains": "[sys.executable, \"-m\", \"pip\", \"install\", pkg_inst_name]",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/scraper/scraper.py#L182-L184"
+                },
+                {
+                  "file": "gpt_researcher/llm_provider/generic/base.py",
+                  "lines": "415",
+                  "contains": "\"pip\", \"install\", \"-U\", pkg_kebab",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/llm_provider/generic/base.py#L415"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No isolation exists in the default local run.",
+              "gap": "Isolation on by default would be needed.",
+              "evidence": [
+                {
+                  "file": "main.py",
+                  "lines": "37",
+                  "contains": "uvicorn.run(app, host=\"0.0.0.0\", port=8000)",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/main.py#L37"
+                },
+                {
+                  "file": "gpt_researcher/mcp/client.py",
+                  "lines": "95-103",
+                  "contains": "server_config[\"command\"] = config[\"command\"]",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/client.py#L95-L103"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A spawned command has the user's full host account, home directory, network and the .env file with keys.",
+              "gap": "Workspace-only mount, no secrets and restricted egress would be needed.",
+              "evidence": [
+                {
+                  "file": "main.py",
+                  "lines": "29",
+                  "contains": "load_dotenv()",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/main.py#L29"
+                },
+                {
+                  "file": "gpt_researcher/mcp/client.py",
+                  "lines": "95-103",
+                  "contains": "server_config[\"command\"] = config[\"command\"]",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/client.py#L95-L103"
+                },
+                {
+                  "file": "backend/server/server_utils.py",
+                  "lines": "420-422",
+                  "contains": "json_data.get(\"mcp_configs\", [])",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/server_utils.py#L420-L422"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in Docker deployment (Dockerfile / docker-compose)",
+          "score": 0.3,
+          "raw": 0.3,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The image is a stock container; the Dockerfile creates a non-root user but docker-compose sets user: root, with default capabilities and no seccomp/read-only hardening.",
+              "gap": "Non-root, dropped capabilities, no-new-privileges and a read-only root filesystem would be needed for L3.",
+              "evidence": [
+                {
+                  "file": "Dockerfile",
+                  "lines": "59",
+                  "contains": "USER gpt-researcher",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/Dockerfile#L59"
+                },
+                {
+                  "file": "docker-compose.yml",
+                  "lines": "21",
+                  "contains": "user: root",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/docker-compose.yml#L21"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Everything the server spawns runs inside the container when deployed this way.",
+              "gap": "Fail-closed coverage with a documented escape hatch would be needed for L3.",
+              "evidence": [
+                {
+                  "file": "Dockerfile",
+                  "lines": "64",
+                  "contains": "CMD uvicorn main:app --host ${HOST} --port ${PORT} --workers ${WORKERS}",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/Dockerfile#L64"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Docker is an optional deployment; the README leads with a host uvicorn run.",
+              "gap": "Running containerised by default would be needed.",
+              "evidence": [
+                {
+                  "file": "README.md",
+                  "lines": "131",
+                  "contains": "python -m uvicorn main:app --reload",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/README.md#L131"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The compose container receives the API keys in its environment, runs as root, has unrestricted network and read-write host mounts.",
+              "gap": "No secrets in the container and restricted egress would be needed.",
+              "evidence": [
+                {
+                  "file": "docker-compose.yml",
+                  "lines": "6-9",
+                  "contains": "OPENAI_API_KEY: ${OPENAI_API_KEY}",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/docker-compose.yml#L6-L9"
+                },
+                {
+                  "file": "docker-compose.yml",
+                  "lines": "21",
+                  "contains": "user: root",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/docker-compose.yml#L21"
+                },
+                {
+                  "file": "docker-compose.yml",
+                  "lines": "17-20",
+                  "contains": "${PWD}/my-docs:/usr/src/app/my-docs:rw",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/docker-compose.yml#L17-L20"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "Scraped web pages, search results, uploaded documents and MCP tool results all go straight into the model's prompts with no separation from instructions, and there is no detection or provenance handling. In the default web-research configuration the model sees mostly public content plus the user's query, has no tools that change state, and its only outbound channels are search queries to the search provider and a further unattended egress path. When a request enables local documents or MCP servers, injected content can steer private data out or drive MCP tools with no human involved.",
+      "max": 1.0,
+      "notes": "Rated on the default report_source=web flow; with report_source=local/hybrid or MCP enabled per request, B would drop toward L1/L0.",
+      "status": "scored",
+      "score": 0.1,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Nothing limits a hijacked model; no delimiting, detection or taint tracking.",
+          "gap": "Even detection/spotlighting would be L1.",
+          "evidence": [
+            {
+              "search": "rg -n -i \"untrusted|prompt.injection|spotlight|quarantin\"",
+              "scope": "gpt_researcher backend",
+              "hits": 1,
+              "note": "Only hit is a docstring in url_security.py about untrusted URLs, not prompt content."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No untrusted source is distinguished.",
+          "gap": "At least one source handled would be L1.",
+          "evidence": [
+            {
+              "file": "backend/chat/chat.py",
+              "lines": "234",
+              "contains": "Report: {report_context}",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/chat/chat.py#L234"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No control to enable.",
+          "gap": "A control on by default would be needed.",
+          "evidence": [
+            {
+              "file": "backend/chat/chat.py",
+              "lines": "234",
+              "contains": "Report: {report_context}",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/chat/chat.py#L234"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Default sessions read untrusted web content but hold little sensitive data and take no state-changing actions; egress exists through search queries and a further unattended path, and request options (local docs, MCP) widen it.",
+          "gap": "Removing outbound channels from sessions that read untrusted content would be needed for L3.",
+          "evidence": [
+            {
+              "file": "gpt_researcher/config/variables/default.py",
+              "lines": "33",
+              "contains": "\"REPORT_SOURCE\": \"web\"",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/config/variables/default.py#L33"
+            },
+            {
+              "file": "backend/chat/chat.py",
+              "lines": "106",
+              "contains": "self.tavily_client.search(query=query, max_results=5)",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/chat/chat.py#L106"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.1,
+          "raw": 0.1,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Nothing limits a hijacked model; no delimiting, detection or taint tracking.",
+              "gap": "Even detection/spotlighting would be L1.",
+              "evidence": [
+                {
+                  "search": "rg -n -i \"untrusted|prompt.injection|spotlight|quarantin\"",
+                  "scope": "gpt_researcher backend",
+                  "hits": 1,
+                  "note": "Only hit is a docstring in url_security.py about untrusted URLs, not prompt content."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No untrusted source is distinguished.",
+              "gap": "At least one source handled would be L1.",
+              "evidence": [
+                {
+                  "file": "backend/chat/chat.py",
+                  "lines": "234",
+                  "contains": "Report: {report_context}",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/chat/chat.py#L234"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No control to enable.",
+              "gap": "A control on by default would be needed.",
+              "evidence": [
+                {
+                  "file": "backend/chat/chat.py",
+                  "lines": "234",
+                  "contains": "Report: {report_context}",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/chat/chat.py#L234"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default sessions read untrusted web content but hold little sensitive data and take no state-changing actions; egress exists through search queries and a further unattended path, and request options (local docs, MCP) widen it.",
+              "gap": "Removing outbound channels from sessions that read untrusted content would be needed for L3.",
+              "evidence": [
+                {
+                  "file": "gpt_researcher/config/variables/default.py",
+                  "lines": "33",
+                  "contains": "\"REPORT_SOURCE\": \"web\"",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/config/variables/default.py#L33"
+                },
+                {
+                  "file": "backend/chat/chat.py",
+                  "lines": "106",
+                  "contains": "self.tavily_client.search(query=query, max_results=5)",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/chat/chat.py#L106"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "Generated reports and chat histories are kept in one global JSON store that any unauthenticated client can list, overwrite or delete. When someone chats about a stored report, the report text (model output derived from untrusted web pages) is placed into the system prompt and the stored chat history is replayed with whatever roles it contains, including 'system'. There is no per-user namespace, validation, provenance, or review of what gets persisted, so poisoned content persists across sessions and users and can drive the chat's web-search tool.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Model-written reports and client-written chat messages persist unvalidated and are re-injected as trusted context (system prompt / arbitrary roles).",
+          "gap": "Provenance on stored entries and presenting them as data would be needed for L2.",
+          "evidence": [
+            {
+              "file": "backend/server/app.py",
+              "lines": "211-220",
+              "contains": "\"chatMessages\": data.get(\"chatMessages\") or []",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/app.py#L211-L220"
+            },
+            {
+              "file": "backend/chat/chat.py",
+              "lines": "248-253",
+              "contains": "\"role\": msg[\"role\"]",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/chat/chat.py#L248-L253"
+            },
+            {
+              "file": "backend/chat/chat.py",
+              "lines": "234",
+              "contains": "Report: {report_context}",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/chat/chat.py#L234"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Neither the report store nor uploaded documents in DOC_PATH have any controlled write path.",
+          "gap": "At least one store controlled would be L1.",
+          "evidence": [
+            {
+              "file": "backend/server/report_store.py",
+              "lines": "44-48",
+              "contains": "data[report_id] = report",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/report_store.py#L44-L48"
+            },
+            {
+              "file": "backend/server/app.py",
+              "lines": "398-400",
+              "contains": "return await handle_file_upload(file, DOC_PATH)",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/app.py#L398-L400"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "One store shared by every client; listing returns all reports.",
+          "gap": "Per-user/session namespaces enforced in queries would be L2.",
+          "evidence": [
+            {
+              "file": "backend/server/app.py",
+              "lines": "183-187",
+              "contains": "reports = await report_store.list_reports(report_ids_list)",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/app.py#L183-L187"
+            },
+            {
+              "search": "rg -n -i \"user_id|namespace|tenant\"",
+              "scope": "backend/server gpt_researcher/memory backend/chat",
+              "hits": 0,
+              "note": "No user or namespace scoping in the store or chat."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Poisoned reports/chat persist across sessions and users and are replayed into a model that can call the quick_search tool.",
+          "gap": "Session scoping or easy inspection/purge with review would be needed.",
+          "evidence": [
+            {
+              "file": "backend/server/app.py",
+              "lines": "287-295",
+              "contains": "messages_for_llm = list(history)",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/app.py#L287-L295"
+            },
+            {
+              "file": "backend/chat/chat.py",
+              "lines": "106",
+              "contains": "self.tavily_client.search(query=query, max_results=5)",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/chat/chat.py#L106"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Model-written reports and client-written chat messages persist unvalidated and are re-injected as trusted context (system prompt / arbitrary roles).",
+              "gap": "Provenance on stored entries and presenting them as data would be needed for L2.",
+              "evidence": [
+                {
+                  "file": "backend/server/app.py",
+                  "lines": "211-220",
+                  "contains": "\"chatMessages\": data.get(\"chatMessages\") or []",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/app.py#L211-L220"
+                },
+                {
+                  "file": "backend/chat/chat.py",
+                  "lines": "248-253",
+                  "contains": "\"role\": msg[\"role\"]",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/chat/chat.py#L248-L253"
+                },
+                {
+                  "file": "backend/chat/chat.py",
+                  "lines": "234",
+                  "contains": "Report: {report_context}",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/chat/chat.py#L234"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Neither the report store nor uploaded documents in DOC_PATH have any controlled write path.",
+              "gap": "At least one store controlled would be L1.",
+              "evidence": [
+                {
+                  "file": "backend/server/report_store.py",
+                  "lines": "44-48",
+                  "contains": "data[report_id] = report",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/report_store.py#L44-L48"
+                },
+                {
+                  "file": "backend/server/app.py",
+                  "lines": "398-400",
+                  "contains": "return await handle_file_upload(file, DOC_PATH)",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/app.py#L398-L400"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "One store shared by every client; listing returns all reports.",
+              "gap": "Per-user/session namespaces enforced in queries would be L2.",
+              "evidence": [
+                {
+                  "file": "backend/server/app.py",
+                  "lines": "183-187",
+                  "contains": "reports = await report_store.list_reports(report_ids_list)",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/app.py#L183-L187"
+                },
+                {
+                  "search": "rg -n -i \"user_id|namespace|tenant\"",
+                  "scope": "backend/server gpt_researcher/memory backend/chat",
+                  "hits": 0,
+                  "note": "No user or namespace scoping in the store or chat."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Poisoned reports/chat persist across sessions and users and are replayed into a model that can call the quick_search tool.",
+              "gap": "Session scoping or easy inspection/purge with review would be needed.",
+              "evidence": [
+                {
+                  "file": "backend/server/app.py",
+                  "lines": "287-295",
+                  "contains": "messages_for_llm = list(history)",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/app.py#L287-L295"
+                },
+                {
+                  "file": "backend/chat/chat.py",
+                  "lines": "106",
+                  "contains": "self.tavily_client.search(query=query, max_results=5)",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/chat/chat.py#L106"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "MCP servers are the main extension type, and they come from the request rather than from operator configuration: a client sends a command, arguments and environment, and the server spawns it. Nothing pins, hashes or allowlists what runs, and there is no consent step beyond the requester's own toggle, which any unauthenticated client can set. Separately, some optional scrapers and LLM providers pip-install unpinned packages at runtime when missing, and retriever plugins are loaded by name from installed entry points. Launched MCP processes run as the same OS user and can read the .env file holding the operator's keys.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.05,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": {
+        "id": "C7-RCELOAD",
+        "max": 0.25,
+        "reason": "By default the server launches any MCP server command (e.g. 'npx -y <pkg>') supplied by any unauthenticated WebSocket client, with no operator consent or allowlist."
+      },
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Executes whatever command the request supplies, unpinned and unverified; runtime pip installs are unpinned.",
+          "gap": "Pinned versions would be needed for L2.",
+          "evidence": [
+            {
+              "file": "gpt_researcher/mcp/client.py",
+              "lines": "95-103",
+              "contains": "server_config[\"command\"] = config[\"command\"]",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/client.py#L95-L103"
+            },
+            {
+              "file": "gpt_researcher/llm_provider/generic/base.py",
+              "lines": "415",
+              "contains": "\"pip\", \"install\", \"-U\", pkg_kebab",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/llm_provider/generic/base.py#L415"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No extension type is verified.",
+          "gap": "At least one verified extension type would be L1.",
+          "evidence": [
+            {
+              "file": "gpt_researcher/mcp/client.py",
+              "lines": "95-103",
+              "contains": "server_config[\"command\"] = config[\"command\"]",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/client.py#L95-L103"
+            },
+            {
+              "search": "rg -n -i \"sha256|hashlib|signature|pinned\"",
+              "scope": "gpt_researcher/mcp gpt_researcher/retrievers/mcp",
+              "hits": 0,
+              "note": "No integrity checks in the MCP path."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Any client can add an MCP server per request with no operator consent or display of what will run.",
+          "gap": "Operator-scoped allowlisting with a display of the exact command would be needed for L2/L3.",
+          "evidence": [
+            {
+              "file": "backend/server/server_utils.py",
+              "lines": "420-422",
+              "contains": "json_data.get(\"mcp_configs\", [])",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/server_utils.py#L420-L422"
+            },
+            {
+              "file": "backend/server/websocket_manager.py",
+              "lines": "174",
+              "contains": "mcp_configs=mcp_configs if mcp_enabled else None",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/websocket_manager.py#L174"
+            },
+            {
+              "file": "SECURITY.md",
+              "lines": "39-41",
+              "contains": "Remote code execution via user-supplied MCP",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/SECURITY.md#L39-L41"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "MCP servers run as separate same-user processes; the mcp library's stdio client passes a reduced default environment unless 'env' is given, but the process can read the .env file and the user's home directory.",
+          "gap": "Separate process with no access to the agent's credential files would be needed for L2.",
+          "evidence": [
+            {
+              "file": "gpt_researcher/mcp/client.py",
+              "lines": "95-103",
+              "contains": "server_config[\"command\"] = config[\"command\"]",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/client.py#L95-L103"
+            },
+            {
+              "file": "main.py",
+              "lines": "29",
+              "contains": "load_dotenv()",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/main.py#L29"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.05,
+          "raw": 0.05,
+          "cap": {
+            "id": "C7-RCELOAD",
+            "max": 0.25,
+            "reason": "By default the server launches any MCP server command (e.g. 'npx -y <pkg>') supplied by any unauthenticated WebSocket client, with no operator consent or allowlist."
+          },
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Executes whatever command the request supplies, unpinned and unverified; runtime pip installs are unpinned.",
+              "gap": "Pinned versions would be needed for L2.",
+              "evidence": [
+                {
+                  "file": "gpt_researcher/mcp/client.py",
+                  "lines": "95-103",
+                  "contains": "server_config[\"command\"] = config[\"command\"]",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/client.py#L95-L103"
+                },
+                {
+                  "file": "gpt_researcher/llm_provider/generic/base.py",
+                  "lines": "415",
+                  "contains": "\"pip\", \"install\", \"-U\", pkg_kebab",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/llm_provider/generic/base.py#L415"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No extension type is verified.",
+              "gap": "At least one verified extension type would be L1.",
+              "evidence": [
+                {
+                  "file": "gpt_researcher/mcp/client.py",
+                  "lines": "95-103",
+                  "contains": "server_config[\"command\"] = config[\"command\"]",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/client.py#L95-L103"
+                },
+                {
+                  "search": "rg -n -i \"sha256|hashlib|signature|pinned\"",
+                  "scope": "gpt_researcher/mcp gpt_researcher/retrievers/mcp",
+                  "hits": 0,
+                  "note": "No integrity checks in the MCP path."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Any client can add an MCP server per request with no operator consent or display of what will run.",
+              "gap": "Operator-scoped allowlisting with a display of the exact command would be needed for L2/L3.",
+              "evidence": [
+                {
+                  "file": "backend/server/server_utils.py",
+                  "lines": "420-422",
+                  "contains": "json_data.get(\"mcp_configs\", [])",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/server_utils.py#L420-L422"
+                },
+                {
+                  "file": "backend/server/websocket_manager.py",
+                  "lines": "174",
+                  "contains": "mcp_configs=mcp_configs if mcp_enabled else None",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/websocket_manager.py#L174"
+                },
+                {
+                  "file": "SECURITY.md",
+                  "lines": "39-41",
+                  "contains": "Remote code execution via user-supplied MCP",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/SECURITY.md#L39-L41"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "MCP servers run as separate same-user processes; the mcp library's stdio client passes a reduced default environment unless 'env' is given, but the process can read the .env file and the user's home directory.",
+              "gap": "Separate process with no access to the agent's credential files would be needed for L2.",
+              "evidence": [
+                {
+                  "file": "gpt_researcher/mcp/client.py",
+                  "lines": "95-103",
+                  "contains": "server_config[\"command\"] = config[\"command\"]",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/client.py#L95-L103"
+                },
+                {
+                  "file": "main.py",
+                  "lines": "29",
+                  "contains": "load_dotenv()",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/main.py#L29"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "API keys come from environment variables or a .env file and are only attached to provider HTTP calls, so they are not placed into model prompts. There is no redaction or masking anywhere. Research logs (queries, sources, context, report) are written to outputs/*.json and served over an unauthenticated /outputs static route, and the chat endpoint logs full model responses at INFO. LangSmith tracing turns on automatically in the multi-agent path whenever a LangChain key is present, sending prompts to a third party.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Secrets come from env/.env; no masking or SecretStr wrapping anywhere.",
+          "gap": "Type-level masking and log filters on main paths would be L2.",
+          "evidence": [
+            {
+              "file": "main.py",
+              "lines": "29",
+              "contains": "load_dotenv()",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/main.py#L29"
+            },
+            {
+              "search": "rg -n -i \"redact|SecretStr|mask\"",
+              "scope": "gpt_researcher backend",
+              "hits": 0,
+              "note": "No redaction helpers exist."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Model-bound messages carry no keys by design; logs, the served outputs folder and subprocess-reachable .env are unprotected.",
+          "gap": "Logs and transcripts would also need protection for L2.",
+          "evidence": [
+            {
+              "file": "backend/server/server_utils.py",
+              "lines": "47",
+              "contains": "self.log_file = os.path.join(\"outputs\", f\"{sanitized_filename}.json\")",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/server_utils.py#L47"
+            },
+            {
+              "file": "backend/server/app.py",
+              "lines": "75",
+              "contains": "app.mount(\"/outputs\", StaticFiles(directory=\"outputs\"), name=\"outputs\")",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/app.py#L75"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Content logging to served files is on by default; LangSmith tracing auto-enables in the multi-agent path when a key is set.",
+          "gap": "Opt-in telemetry and reasonable logging defaults would be L2.",
+          "evidence": [
+            {
+              "file": "multi_agents/main.py",
+              "lines": "43-44",
+              "contains": "os.environ[\"LANGCHAIN_TRACING_V2\"] = \"true\"",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/multi_agents/main.py#L43-L44"
+            },
+            {
+              "file": "backend/server/app.py",
+              "lines": "443",
+              "contains": "logger.info(f\"response_content: {response_content}\")",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/app.py#L443"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Long-lived LLM/search keys, moderately scoped (billing), readable by any spawned MCP process via .env and spendable by any client.",
+          "gap": "Scoped or short-lived keys would be needed for L2/L3.",
+          "evidence": [
+            {
+              "file": "docker-compose.yml",
+              "lines": "6-9",
+              "contains": "OPENAI_API_KEY: ${OPENAI_API_KEY}",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/docker-compose.yml#L6-L9"
+            },
+            {
+              "file": "main.py",
+              "lines": "29",
+              "contains": "load_dotenv()",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/main.py#L29"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.25,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Secrets come from env/.env; no masking or SecretStr wrapping anywhere.",
+              "gap": "Type-level masking and log filters on main paths would be L2.",
+              "evidence": [
+                {
+                  "file": "main.py",
+                  "lines": "29",
+                  "contains": "load_dotenv()",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/main.py#L29"
+                },
+                {
+                  "search": "rg -n -i \"redact|SecretStr|mask\"",
+                  "scope": "gpt_researcher backend",
+                  "hits": 0,
+                  "note": "No redaction helpers exist."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Model-bound messages carry no keys by design; logs, the served outputs folder and subprocess-reachable .env are unprotected.",
+              "gap": "Logs and transcripts would also need protection for L2.",
+              "evidence": [
+                {
+                  "file": "backend/server/server_utils.py",
+                  "lines": "47",
+                  "contains": "self.log_file = os.path.join(\"outputs\", f\"{sanitized_filename}.json\")",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/server_utils.py#L47"
+                },
+                {
+                  "file": "backend/server/app.py",
+                  "lines": "75",
+                  "contains": "app.mount(\"/outputs\", StaticFiles(directory=\"outputs\"), name=\"outputs\")",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/app.py#L75"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Content logging to served files is on by default; LangSmith tracing auto-enables in the multi-agent path when a key is set.",
+              "gap": "Opt-in telemetry and reasonable logging defaults would be L2.",
+              "evidence": [
+                {
+                  "file": "multi_agents/main.py",
+                  "lines": "43-44",
+                  "contains": "os.environ[\"LANGCHAIN_TRACING_V2\"] = \"true\"",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/multi_agents/main.py#L43-L44"
+                },
+                {
+                  "file": "backend/server/app.py",
+                  "lines": "443",
+                  "contains": "logger.info(f\"response_content: {response_content}\")",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/app.py#L443"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Long-lived LLM/search keys, moderately scoped (billing), readable by any spawned MCP process via .env and spendable by any client.",
+              "gap": "Scoped or short-lived keys would be needed for L2/L3.",
+              "evidence": [
+                {
+                  "file": "docker-compose.yml",
+                  "lines": "6-9",
+                  "contains": "OPENAI_API_KEY: ${OPENAI_API_KEY}",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/docker-compose.yml#L6-L9"
+                },
+                {
+                  "file": "main.py",
+                  "lines": "29",
+                  "contains": "load_dotenv()",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/main.py#L29"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "Each research run writes a JSON log file of streamed events (queries, sources, progress) and the server logs to logs/app.log at INFO, so the main pipeline leaves an unstructured trail. MCP tool calls log only the tool name at INFO; their arguments are logged at debug level. Records carry no caller identity (there is no authentication), sit in the working directory, and the per-run logs are served publicly.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.425,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Event logs are unstructured progress messages; MCP tool arguments are debug-only; no actor attribution.",
+          "gap": "A structured record of every tool call with arguments and result status would be L2.",
+          "evidence": [
+            {
+              "file": "gpt_researcher/mcp/research.py",
+              "lines": "93-98",
+              "contains": "logger.debug(f\"Tool arguments: {args_str}\")",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/research.py#L93-L98"
+            },
+            {
+              "file": "backend/server/server_utils.py",
+              "lines": "75-80",
+              "contains": "log_data['events'].append({",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/server_utils.py#L75-L80"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Built-in research steps and chat searches are logged; MCP (extension) calls lack arguments.",
+          "gap": "Extension and sub-agent calls with arguments would be needed for L3.",
+          "evidence": [
+            {
+              "file": "backend/chat/chat.py",
+              "lines": "105",
+              "contains": "logger.info(f\"Performing web search for: {query}\")",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/chat/chat.py#L105"
+            },
+            {
+              "file": "gpt_researcher/mcp/research.py",
+              "lines": "93",
+              "contains": "logger.info(f\"Executing tool {i}/{len(response.tool_calls)}: {tool_name}\")",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/research.py#L93"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "On by default, written by the server process to logs/ and outputs/ (the model has no file tools).",
+          "gap": "Writing through a component the process cannot alter would be L3.",
+          "evidence": [
+            {
+              "file": "main.py",
+              "lines": "15",
+              "contains": "logging.FileHandler('logs/app.log')",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/main.py#L15"
+            },
+            {
+              "file": "backend/server/server_utils.py",
+              "lines": "86-87",
+              "contains": "json.dump(log_data, f, indent=2)",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/server_utils.py#L86-L87"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The per-run JSON log is rewritten synchronously on every event and write errors propagate to the run.",
+          "gap": "A replayable durable trajectory would be needed for L3.",
+          "evidence": [
+            {
+              "file": "backend/server/server_utils.py",
+              "lines": "64-87",
+              "contains": "async def send_json(self, data: Dict[str, Any]) -> None:",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/server_utils.py#L64-L87"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.425,
+          "raw": 0.425,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Event logs are unstructured progress messages; MCP tool arguments are debug-only; no actor attribution.",
+              "gap": "A structured record of every tool call with arguments and result status would be L2.",
+              "evidence": [
+                {
+                  "file": "gpt_researcher/mcp/research.py",
+                  "lines": "93-98",
+                  "contains": "logger.debug(f\"Tool arguments: {args_str}\")",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/research.py#L93-L98"
+                },
+                {
+                  "file": "backend/server/server_utils.py",
+                  "lines": "75-80",
+                  "contains": "log_data['events'].append({",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/server_utils.py#L75-L80"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Built-in research steps and chat searches are logged; MCP (extension) calls lack arguments.",
+              "gap": "Extension and sub-agent calls with arguments would be needed for L3.",
+              "evidence": [
+                {
+                  "file": "backend/chat/chat.py",
+                  "lines": "105",
+                  "contains": "logger.info(f\"Performing web search for: {query}\")",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/chat/chat.py#L105"
+                },
+                {
+                  "file": "gpt_researcher/mcp/research.py",
+                  "lines": "93",
+                  "contains": "logger.info(f\"Executing tool {i}/{len(response.tool_calls)}: {tool_name}\")",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/research.py#L93"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "On by default, written by the server process to logs/ and outputs/ (the model has no file tools).",
+              "gap": "Writing through a component the process cannot alter would be L3.",
+              "evidence": [
+                {
+                  "file": "main.py",
+                  "lines": "15",
+                  "contains": "logging.FileHandler('logs/app.log')",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/main.py#L15"
+                },
+                {
+                  "file": "backend/server/server_utils.py",
+                  "lines": "86-87",
+                  "contains": "json.dump(log_data, f, indent=2)",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/server_utils.py#L86-L87"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The per-run JSON log is rewritten synchronously on every event and write errors propagate to the run.",
+              "gap": "A replayable durable trajectory would be needed for L3.",
+              "evidence": [
+                {
+                  "file": "backend/server/server_utils.py",
+                  "lines": "64-87",
+                  "contains": "async def send_json(self, data: Dict[str, Any]) -> None:",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/server_utils.py#L64-L87"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "The research pipeline is a fixed sequence of stages rather than an open loop, and outbound HTTP calls have per-request timeouts. But the number of sub-queries is only suggested to the model (MAX_ITERATIONS is passed into the prompt and not enforced), clients can raise max_search_results without bound, and there is no wall-clock or cost cap. Closing the WebSocket cancels the running asyncio task, while REST /report/ background jobs cannot be stopped and executor threads finish their work.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.375,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Iteration count is advisory (prompt); per-call HTTP timeouts exist; no cost or wall-clock cap.",
+          "gap": "An enforced step cap plus a run-level time or cost cap would be L2.",
+          "evidence": [
+            {
+              "file": "gpt_researcher/actions/query_processing.py",
+              "lines": "113",
+              "contains": "max_iterations=cfg.max_iterations or 3",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/actions/query_processing.py#L113"
+            },
+            {
+              "file": "gpt_researcher/actions/query_processing.py",
+              "lines": "156",
+              "contains": "return _normalize_sub_queries(json_repair.loads(response), query)",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/actions/query_processing.py#L156"
+            },
+            {
+              "search": "rg -n -i \"max_cost|budget|cost_limit\"",
+              "scope": "gpt_researcher backend",
+              "hits": 3,
+              "note": "All 3 hits are comments about token budgets in context filtering, not spend limits."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Top-level pipeline plus tool (HTTP) timeouts; MCP retrieval has a 300 s wait.",
+          "gap": "Sub-agents/background tasks counting against one budget would be L3.",
+          "evidence": [
+            {
+              "file": "gpt_researcher/retrievers/mcp/retriever.py",
+              "lines": "286",
+              "contains": "results = future.result(timeout=300)",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/retrievers/mcp/retriever.py#L286"
+            },
+            {
+              "file": "gpt_researcher/scraper/beautiful_soup/beautiful_soup.py",
+              "lines": "70",
+              "contains": "self.session.get(self.link, timeout=10)",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/scraper/beautiful_soup/beautiful_soup.py#L70"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Sensible defaults (MAX_ITERATIONS 3, 5 results/query) but any client can raise max_search_results.",
+          "gap": "Limits the requester cannot raise would be L3.",
+          "evidence": [
+            {
+              "file": "gpt_researcher/config/variables/default.py",
+              "lines": "26",
+              "contains": "\"MAX_ITERATIONS\": 3",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/config/variables/default.py#L26"
+            },
+            {
+              "file": "backend/report_type/basic_report/basic_report.py",
+              "lines": "62-64",
+              "contains": "max_search_results_per_query = int(max_search_results)",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/report_type/basic_report/basic_report.py#L62-L64"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No spend ceiling; REST background jobs cannot be cancelled and threads keep running after a WebSocket cancel.",
+          "gap": "Tight per-run ceilings and cancellation of pending calls would be needed.",
+          "evidence": [
+            {
+              "file": "backend/server/app.py",
+              "lines": "375-376",
+              "contains": "background_tasks.add_task(write_report",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/app.py#L375-L376"
+            },
+            {
+              "file": "backend/server/server_utils.py",
+              "lines": "406-408",
+              "contains": "running_task.cancel()",
+              "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/server_utils.py#L406-L408"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.375,
+          "raw": 0.375,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Iteration count is advisory (prompt); per-call HTTP timeouts exist; no cost or wall-clock cap.",
+              "gap": "An enforced step cap plus a run-level time or cost cap would be L2.",
+              "evidence": [
+                {
+                  "file": "gpt_researcher/actions/query_processing.py",
+                  "lines": "113",
+                  "contains": "max_iterations=cfg.max_iterations or 3",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/actions/query_processing.py#L113"
+                },
+                {
+                  "file": "gpt_researcher/actions/query_processing.py",
+                  "lines": "156",
+                  "contains": "return _normalize_sub_queries(json_repair.loads(response), query)",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/actions/query_processing.py#L156"
+                },
+                {
+                  "search": "rg -n -i \"max_cost|budget|cost_limit\"",
+                  "scope": "gpt_researcher backend",
+                  "hits": 3,
+                  "note": "All 3 hits are comments about token budgets in context filtering, not spend limits."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Top-level pipeline plus tool (HTTP) timeouts; MCP retrieval has a 300 s wait.",
+              "gap": "Sub-agents/background tasks counting against one budget would be L3.",
+              "evidence": [
+                {
+                  "file": "gpt_researcher/retrievers/mcp/retriever.py",
+                  "lines": "286",
+                  "contains": "results = future.result(timeout=300)",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/retrievers/mcp/retriever.py#L286"
+                },
+                {
+                  "file": "gpt_researcher/scraper/beautiful_soup/beautiful_soup.py",
+                  "lines": "70",
+                  "contains": "self.session.get(self.link, timeout=10)",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/scraper/beautiful_soup/beautiful_soup.py#L70"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Sensible defaults (MAX_ITERATIONS 3, 5 results/query) but any client can raise max_search_results.",
+              "gap": "Limits the requester cannot raise would be L3.",
+              "evidence": [
+                {
+                  "file": "gpt_researcher/config/variables/default.py",
+                  "lines": "26",
+                  "contains": "\"MAX_ITERATIONS\": 3",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/config/variables/default.py#L26"
+                },
+                {
+                  "file": "backend/report_type/basic_report/basic_report.py",
+                  "lines": "62-64",
+                  "contains": "max_search_results_per_query = int(max_search_results)",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/report_type/basic_report/basic_report.py#L62-L64"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No spend ceiling; REST background jobs cannot be cancelled and threads keep running after a WebSocket cancel.",
+              "gap": "Tight per-run ceilings and cancellation of pending calls would be needed.",
+              "evidence": [
+                {
+                  "file": "backend/server/app.py",
+                  "lines": "375-376",
+                  "contains": "background_tasks.add_task(write_report",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/app.py#L375-L376"
+                },
+                {
+                  "file": "backend/server/server_utils.py",
+                  "lines": "406-408",
+                  "contains": "running_task.cancel()",
+                  "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/server_utils.py#L406-L408"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "Any unauthenticated client of /ws can make the server spawn an arbitrary MCP stdio command as the server's OS user (root under docker-compose), with the operator's keys reachable.",
+      "criterion": "C1",
+      "owasp": [
+        "ASI03",
+        "T3",
+        "ASI05"
+      ],
+      "evidence": [
+        {
+          "file": "backend/server/app.py",
+          "lines": "408-412",
+          "contains": "await manager.connect(websocket)",
+          "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/app.py#L408-L412"
+        },
+        {
+          "file": "backend/server/server_utils.py",
+          "lines": "420-422",
+          "contains": "json_data.get(\"mcp_configs\", [])",
+          "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/server_utils.py#L420-L422"
+        },
+        {
+          "file": "gpt_researcher/mcp/client.py",
+          "lines": "95-103",
+          "contains": "server_config[\"command\"] = config[\"command\"]",
+          "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/client.py#L95-L103"
+        },
+        {
+          "file": "docker-compose.yml",
+          "lines": "21",
+          "contains": "user: root",
+          "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/docker-compose.yml#L21"
+        }
+      ]
+    },
+    {
+      "summary": "Request-supplied MCP commands run as unsandboxed host subprocesses with access to the user's account, network and .env secrets.",
+      "criterion": "C4",
+      "owasp": [
+        "ASI05",
+        "T11"
+      ],
+      "evidence": [
+        {
+          "file": "gpt_researcher/mcp/client.py",
+          "lines": "95-103",
+          "contains": "server_config[\"command\"] = config[\"command\"]",
+          "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/client.py#L95-L103"
+        },
+        {
+          "file": "gpt_researcher/mcp/client.py",
+          "lines": "143",
+          "contains": "self._client = MultiServerMCPClient(server_configs)",
+          "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/client.py#L143"
+        },
+        {
+          "file": "main.py",
+          "lines": "29",
+          "contains": "load_dotenv()",
+          "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/main.py#L29"
+        }
+      ]
+    },
+    {
+      "summary": "By default the server launches any MCP server command (e.g. 'npx -y <pkg>') supplied by any unauthenticated WebSocket client, with no operator consent or allowlist.",
+      "criterion": "C7",
+      "owasp": [
+        "ASI04",
+        "T17"
+      ],
+      "evidence": [
+        {
+          "file": "backend/server/server_utils.py",
+          "lines": "420-422",
+          "contains": "json_data.get(\"mcp_configs\", [])",
+          "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/server_utils.py#L420-L422"
+        },
+        {
+          "file": "backend/server/websocket_manager.py",
+          "lines": "174",
+          "contains": "mcp_configs=mcp_configs if mcp_enabled else None",
+          "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/backend/server/websocket_manager.py#L174"
+        },
+        {
+          "file": "gpt_researcher/mcp/client.py",
+          "lines": "95-103",
+          "contains": "server_config[\"command\"] = config[\"command\"]",
+          "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/mcp/client.py#L95-L103"
+        },
+        {
+          "file": "SECURITY.md",
+          "lines": "39-41",
+          "contains": "Remote code execution via user-supplied MCP",
+          "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/SECURITY.md#L39-L41"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "Scraped web pages and search results (gpt_researcher/scraper/scraper.py:213-222), uploaded docs, MCP results",
+    "sensitive_data": "Uploaded local documents when report_source=local/hybrid (backend/server/app.py:138) and the shared report store (backend/server/app.py:135); API keys stay out of prompts",
+    "state_change_or_egress": "Model-chosen search queries to the search API, chat quick_search (backend/chat/chat.py:106), a further unattended egress path, and MCP tool calls when enabled (gpt_researcher/mcp/research.py:109)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Stop accepting MCP stdio 'command'/'args' from requests; only launch servers from an operator-defined MCP_SERVERS allowlist and show the exact command.",
+      "criterion": "C7",
+      "parameter": "D",
+      "from_level": 0,
+      "to_level": 3,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Add optional-but-default-on API-key auth to /ws and REST routes, and default to binding 127.0.0.1.",
+      "criterion": "C1",
+      "parameter": "C",
+      "from_level": 0,
+      "to_level": 1,
+      "playbook": "Playbook 4",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Require per-call human approval (showing tool name and arguments) before executing MCP tool calls, or restrict to read-only-annotated tools.",
+      "criterion": "C2",
+      "parameter": "S",
+      "from_level": 0,
+      "to_level": 3,
+      "playbook": "Playbook 5",
+      "estimated_gain": 0.225
+    },
+    {
+      "summary": "Namespace the report store per user/session and stop replaying client-supplied chat roles; present stored reports as quoted data.",
+      "criterion": "C6",
+      "parameter": "S",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 2",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Truncate sub-queries to MAX_ITERATIONS in code and add a per-run wall-clock and cost cap.",
+      "criterion": "C10",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.075
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was executed, installed, or probed.",
+    "Scored the FastAPI/WebSocket server the README leads with; the pip library (GPTResearcher class), the NextJS frontend, the separate gptr-mcp server (not in this repo), deep_agents/, and the multi_agents LangGraph/AG2 flows were reviewed only where the server reaches them.",
+    "Behaviour of third-party libraries (the mcp SDK's default stdio environment) is inferred from library defaults, not verified in this repo.",
+    "SECURITY.md declares unauthenticated access and request-supplied MCP commands to be by design and the operator's responsibility; scores reflect the shipped default regardless.",
+    "No reviewer-injection attempts were found in the repository."
+  ]
+}

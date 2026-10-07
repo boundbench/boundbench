@@ -1,0 +1,2830 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "dbt-mcp",
+  "name": "dbt MCP",
+  "repo_url": "https://github.com/dbt-labs/dbt-mcp",
+  "subpath": null,
+  "description": "MCP server for dbt (CLI, semantic layer, discovery, admin APIs)",
+  "category": "data_analytics",
+  "pinned_commit": "8e7022bae4cc6a0dc6f708fe9d95de8ac952661e",
+  "version": null,
+  "scored_date": "2026-10-03",
+  "scored_configuration": "Local stdio server (default MCP_TRANSPORT) with DBT_PROJECT_DIR/DBT_PATH and dbt Platform credentials (DBT_TOKEN or OAuth) set and no toolset flags, so CLI, admin API, discovery, semantic layer, LSP, product docs and MCP Apps are on while SQL, codegen and server-metadata toolsets are off.",
+  "score": 1.8,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 10,
+    "score": 1.8,
+    "max": 10.0,
+    "percent": 18
+  },
+  "capability_profile": {
+    "code_execution": "yes",
+    "filesystem_write": "yes",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "no",
+    "untrusted_input": "yes",
+    "third_party_extensions": "yes",
+    "sub_agents": "no",
+    "external_communication": "no"
+  },
+  "headline": "dbt-mcp gives an AI host the operator's full dbt Platform identity and warehouse profile, with dbt build/run/clone, arbitrary SQL through 'show', and production job triggers turned on by default. Its only safety signal is MCP annotations, and these mark arbitrary SQL as read-only and job step overrides as non-destructive. The server auto-loads a .env from its working directory, so a cloned repository can change which binary runs, where the token is sent, and which tools are enabled. Run it with an explicit DBT_MCP_ENABLE_TOOLS allowlist, a scoped read-only token and warehouse role, and a working directory you control.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "Every dbt Platform tool (job triggers, discovery, semantic layer, proxied SQL) shares one credential: either a token from DBT_TOKEN or an OAuth grant requesting the broad 'user_access' scope, so the server acts with the full rights of whoever configured it. The dbt CLI tools run the dbt binary with the operator's whole environment and the warehouse credentials in their dbt profile. There is no per-tool credential, no read/write split, and no authorization check in code; the only narrowing is that the account and environment ids come from configuration rather than from the model. If the model is steered, it can use the user's full dbt Platform access and the warehouse role.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.125,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "One static credential (DBT_TOKEN, or OAuth with scope 'user_access offline_access') is used for all platform tools, and the dbt subprocess runs with the operator's ambient warehouse profile.",
+          "gap": "Read tools and write tools (trigger/cancel/retry, build/run) would need separate, narrower credentials or a code-level authorization gate.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/oauth/login.py",
+              "lines": "30",
+              "contains": "scope = \"user_access offline_access\"",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/oauth/login.py#L30"
+            },
+            {
+              "file": "src/dbt_mcp/config/credentials.py",
+              "lines": "340",
+              "contains": "StaticTokenProvider(token=self.settings.dbt_token)",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/credentials.py#L340"
+            },
+            {
+              "file": "src/dbt_mcp/config/headers.py",
+              "lines": "22-24",
+              "contains": "{\"Authorization\": f\"Bearer {token}\"}",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/headers.py#L22-L24"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Admin tools always use the configured account id rather than a model-chosen one, but the dbt CLI, codegen, and LSP subprocesses inherit the full os.environ including DBT_TOKEN.",
+          "gap": "Spawned processes would need a scrubbed environment and every tool would need to pass a shared authorization layer.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/dbt_admin/tools.py",
+              "lines": "175-177",
+              "contains": "admin_api_config.account_id, job_id, cause, **kwargs",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L175-L177"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "134-141",
+              "contains": "process = subprocess.Popen(",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L134-L141"
+            },
+            {
+              "search": "rg -n env=",
+              "scope": "src/dbt_mcp",
+              "hits": 0,
+              "note": "No subprocess call in the server passes an explicit env; every child inherits os.environ."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The default OAuth login requests the user's full 'user_access' scope; least privilege depends on the operator choosing a scoped service token by hand.",
+          "gap": "The default identity would need to be read-only or minimal, with writes requiring explicit elevation.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/oauth/login.py",
+              "lines": "30",
+              "contains": "scope = \"user_access offline_access\"",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/oauth/login.py#L30"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked server can write to two systems: dbt Platform (trigger, cancel, and retry any job in the account, including production jobs) and the data warehouse through the dbt profile.",
+          "gap": "Authority would need to be confined to one project/tenant with mostly read access and non-destructive writes.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/dbt_admin/tools.py",
+              "lines": "175-177",
+              "contains": "admin_api_config.account_id, job_id, cause, **kwargs",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L175-L177"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_admin/tools.py",
+              "lines": "155-157",
+              "contains": "steps_override: Annotated[",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L155-L157"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "134-141",
+              "contains": "process = subprocess.Popen(",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L134-L141"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.125,
+          "raw": 0.125,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "One static credential (DBT_TOKEN, or OAuth with scope 'user_access offline_access') is used for all platform tools, and the dbt subprocess runs with the operator's ambient warehouse profile.",
+              "gap": "Read tools and write tools (trigger/cancel/retry, build/run) would need separate, narrower credentials or a code-level authorization gate.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/oauth/login.py",
+                  "lines": "30",
+                  "contains": "scope = \"user_access offline_access\"",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/oauth/login.py#L30"
+                },
+                {
+                  "file": "src/dbt_mcp/config/credentials.py",
+                  "lines": "340",
+                  "contains": "StaticTokenProvider(token=self.settings.dbt_token)",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/credentials.py#L340"
+                },
+                {
+                  "file": "src/dbt_mcp/config/headers.py",
+                  "lines": "22-24",
+                  "contains": "{\"Authorization\": f\"Bearer {token}\"}",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/headers.py#L22-L24"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Admin tools always use the configured account id rather than a model-chosen one, but the dbt CLI, codegen, and LSP subprocesses inherit the full os.environ including DBT_TOKEN.",
+              "gap": "Spawned processes would need a scrubbed environment and every tool would need to pass a shared authorization layer.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/dbt_admin/tools.py",
+                  "lines": "175-177",
+                  "contains": "admin_api_config.account_id, job_id, cause, **kwargs",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L175-L177"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "134-141",
+                  "contains": "process = subprocess.Popen(",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L134-L141"
+                },
+                {
+                  "search": "rg -n env=",
+                  "scope": "src/dbt_mcp",
+                  "hits": 0,
+                  "note": "No subprocess call in the server passes an explicit env; every child inherits os.environ."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The default OAuth login requests the user's full 'user_access' scope; least privilege depends on the operator choosing a scoped service token by hand.",
+              "gap": "The default identity would need to be read-only or minimal, with writes requiring explicit elevation.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/oauth/login.py",
+                  "lines": "30",
+                  "contains": "scope = \"user_access offline_access\"",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/oauth/login.py#L30"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked server can write to two systems: dbt Platform (trigger, cancel, and retry any job in the account, including production jobs) and the data warehouse through the dbt profile.",
+              "gap": "Authority would need to be confined to one project/tenant with mostly read access and non-destructive writes.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/dbt_admin/tools.py",
+                  "lines": "175-177",
+                  "contains": "admin_api_config.account_id, job_id, cause, **kwargs",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L175-L177"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_admin/tools.py",
+                  "lines": "155-157",
+                  "contains": "steps_override: Annotated[",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L155-L157"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "134-141",
+                  "contains": "process = subprocess.Popen(",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L134-L141"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "As a tool server, dbt-mcp relies on the host to ask for approval and gives it MCP annotations to decide. Build, run, test, and clone are correctly marked destructive, but the 'show' tool, whose own description says it executes an arbitrary SQL statement, is marked read-only, and 'trigger_job_run', which can override a job's steps and target schema, is marked non-destructive. A host that auto-approves read-only tools will therefore let arbitrary warehouse SQL through without asking. The server has no dry-run, no read-only mode, and no confirmation step of its own, and the actions it exposes (warehouse SQL, full-refresh rebuilds, production job runs) are largely irreversible.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C2-POWERBYPASS",
+        "max": 0.25,
+        "reason": "The most general action path, arbitrary SQL through 'show', is advertised as read-only, so a host gate keyed on annotations skips it in the default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Annotations exist on every tool, but they are wrong on mutating tools: 'show' runs arbitrary SQL yet is readOnlyHint=True, and trigger_job_run with steps_override is destructiveHint=False.",
+          "gap": "Every mutating tool would need an accurate readOnlyHint/destructiveHint, with reads and writes in separate tools.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "279",
+              "contains": "\"show\", \"--inline\", sql_query",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L279"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "510-515",
+              "contains": "read_only_hint=True",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L510-L515"
+            },
+            {
+              "file": "src/dbt_mcp/prompts/dbt_cli/show.md",
+              "lines": "1",
+              "contains": "executes an arbitrary SQL statement",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/prompts/dbt_cli/show.md#L1"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_admin/tools.py",
+              "lines": "139-145",
+              "contains": "destructive_hint=False",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L139-L145"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_admin/tools.py",
+              "lines": "155-157",
+              "contains": "steps_override: Annotated[",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L155-L157"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Correct annotations cover build/run/test/clone only; the most general write path (arbitrary SQL via show) and job overrides escape the destructive signal.",
+          "gap": "Every consequential path would need to carry a correct risk signal so a host gate is reached.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "431-440",
+              "contains": "destructive_hint=True",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L431-L440"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "510-515",
+              "contains": "read_only_hint=True",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L510-L515"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_admin/tools.py",
+              "lines": "139-145",
+              "contains": "destructive_hint=False",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L139-L145"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Annotations are fixed in code and cannot be changed by the model at runtime; proxied tools take their annotations from the vendor's remote server.",
+          "gap": "The server would need to make disabling its risk signalling require an explicit, loudly named operator flag, and offer a server-side confirmation it controls.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "510-515",
+              "contains": "read_only_hint=True",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L510-L515"
+            },
+            {
+              "file": "src/dbt_mcp/proxy/tools.py",
+              "lines": "197-203",
+              "contains": "description=tool.description or \"\",",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/proxy/tools.py#L197-L203"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "In the default toolsets a wrongly approved call can run arbitrary warehouse SQL, rebuild tables with --full-refresh, or run a production dbt Platform job with arbitrary steps, with no preview or undo.",
+          "gap": "Destructive operations would need previews/dry-runs or rollback.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "279",
+              "contains": "\"show\", \"--inline\", sql_query",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L279"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "283-285",
+              "contains": "cli_limit = -1",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L283-L285"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "87-88",
+              "contains": "\"--full-refresh\"",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L87-L88"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_admin/tools.py",
+              "lines": "155-157",
+              "contains": "steps_override: Annotated[",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L155-L157"
+            },
+            {
+              "search": "rg -n -i elicit|sandbox|seccomp|docker",
+              "scope": "src/dbt_mcp",
+              "hits": 0,
+              "note": "No sandbox, container, or MCP elicitation/confirmation step in server code."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.25,
+          "cap": {
+            "id": "C2-POWERBYPASS",
+            "max": 0.25,
+            "reason": "The most general action path, arbitrary SQL through 'show', is advertised as read-only, so a host gate keyed on annotations skips it in the default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Annotations exist on every tool, but they are wrong on mutating tools: 'show' runs arbitrary SQL yet is readOnlyHint=True, and trigger_job_run with steps_override is destructiveHint=False.",
+              "gap": "Every mutating tool would need an accurate readOnlyHint/destructiveHint, with reads and writes in separate tools.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "279",
+                  "contains": "\"show\", \"--inline\", sql_query",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L279"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "510-515",
+                  "contains": "read_only_hint=True",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L510-L515"
+                },
+                {
+                  "file": "src/dbt_mcp/prompts/dbt_cli/show.md",
+                  "lines": "1",
+                  "contains": "executes an arbitrary SQL statement",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/prompts/dbt_cli/show.md#L1"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_admin/tools.py",
+                  "lines": "139-145",
+                  "contains": "destructive_hint=False",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L139-L145"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_admin/tools.py",
+                  "lines": "155-157",
+                  "contains": "steps_override: Annotated[",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L155-L157"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Correct annotations cover build/run/test/clone only; the most general write path (arbitrary SQL via show) and job overrides escape the destructive signal.",
+              "gap": "Every consequential path would need to carry a correct risk signal so a host gate is reached.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "431-440",
+                  "contains": "destructive_hint=True",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L431-L440"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "510-515",
+                  "contains": "read_only_hint=True",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L510-L515"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_admin/tools.py",
+                  "lines": "139-145",
+                  "contains": "destructive_hint=False",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L139-L145"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Annotations are fixed in code and cannot be changed by the model at runtime; proxied tools take their annotations from the vendor's remote server.",
+              "gap": "The server would need to make disabling its risk signalling require an explicit, loudly named operator flag, and offer a server-side confirmation it controls.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "510-515",
+                  "contains": "read_only_hint=True",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L510-L515"
+                },
+                {
+                  "file": "src/dbt_mcp/proxy/tools.py",
+                  "lines": "197-203",
+                  "contains": "description=tool.description or \"\",",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/proxy/tools.py#L197-L203"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "In the default toolsets a wrongly approved call can run arbitrary warehouse SQL, rebuild tables with --full-refresh, or run a production dbt Platform job with arbitrary steps, with no preview or undo.",
+              "gap": "Destructive operations would need previews/dry-runs or rollback.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "279",
+                  "contains": "\"show\", \"--inline\", sql_query",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L279"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "283-285",
+                  "contains": "cli_limit = -1",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L283-L285"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "87-88",
+                  "contains": "\"--full-refresh\"",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L87-L88"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_admin/tools.py",
+                  "lines": "155-157",
+                  "contains": "steps_override: Annotated[",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L155-L157"
+                },
+                {
+                  "search": "rg -n -i elicit|sandbox|seccomp|docker",
+                  "scope": "src/dbt_mcp",
+                  "hits": 0,
+                  "note": "No sandbox, container, or MCP elicitation/confirmation step in server code."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "Some arguments are checked in code: dbt selector tokens may not start with '-', resource types come from an allowlist, run-artifact paths match a strict character pattern, and documentation fetches are pinned to docs.getdbt.com. But the most powerful inputs pass through raw: the 'show' tool forwards any SQL text to the warehouse, '--vars' takes free YAML, and trigger_job_run accepts arbitrary job steps and schema overrides. All toolsets except SQL, codegen, and server metadata are on by default, including write tools. Operators can disable toolsets, but a .env file in the server's working directory can turn them back on.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "G2",
+        "max": 0.25,
+        "reason": "A .env file in the working directory, which may be a cloned repository, is auto-loaded and can enable disabled toolsets (e.g. DBT_MCP_ENABLE_SQL) or point DBT_PATH at another binary, bypassing the operator's tool selection."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Validation is a denylist on selector tokens plus a few allowlists, while 'show' passes arbitrary SQL and trigger_job_run passes arbitrary steps_override through unchanged.",
+          "gap": "Powerful inputs would need allowlist validation (e.g. read-only SQL enforced by parsing or a read-only warehouse role, an allowlist of job steps).",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "96-102",
+              "contains": "Tokens must not start with '-'",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L96-L102"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "279",
+              "contains": "\"show\", \"--inline\", sql_query",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L279"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "93-94",
+              "contains": "\"--vars\", vars",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L93-L94"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_admin/tools.py",
+              "lines": "155-157",
+              "contains": "steps_override: Annotated[",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L155-L157"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Most built-in tools use typed schemas and several validate (resource_type allowlist, artifact path regex, docs URL host), but proxied remote tools are registered with untyped string arguments and no local validation.",
+          "gap": "Proxied/remote tools would need to go through a shared validation layer.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "107-116",
+              "contains": "_VALID_RESOURCE_TYPES",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L107-L116"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_admin/client.py",
+              "lines": "28",
+              "contains": "ARTIFACT_PATH_PATTERN = re.compile",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/client.py#L28"
+            },
+            {
+              "file": "src/dbt_mcp/product_docs/client.py",
+              "lines": "246-247",
+              "contains": "URL must be on docs.getdbt.com",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/product_docs/client.py#L246-L247"
+            },
+            {
+              "file": "src/dbt_mcp/proxy/tools.py",
+              "lines": "197-203",
+              "contains": "description=tool.description or \"\",",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/proxy/tools.py#L197-L203"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Toolsets are selectable by env flags and the SQL and codegen toolsets are off by default, but the default set still includes dbt build/run/clone/show and job triggers.",
+          "gap": "The default tool set would need to be read-only, with write and exec tools requiring explicit enabling.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/tools/register.py",
+              "lines": "64-65",
+              "contains": "return not has_explicit_enables",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/tools/register.py#L64-L65"
+            },
+            {
+              "file": "src/dbt_mcp/config/settings.py",
+              "lines": "175-181",
+              "contains": "def actual_disable_sql",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L175-L181"
+            },
+            {
+              "file": "src/dbt_mcp/config/settings.py",
+              "lines": "74",
+              "contains": "disable_dbt_codegen: bool = Field(True, alias=\"DISABLE_DBT_CODEGEN\")",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L74"
+            },
+            {
+              "file": "src/dbt_mcp/config/settings.py",
+              "lines": "72-85",
+              "contains": "# Disable tool settings",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L72-L85"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A misused 'show' call reaches any table the warehouse profile can reach, and trigger_job_run can run any job in the account with arbitrary steps.",
+          "gap": "Tools would need to be scoped to a project with quantity bounds (rows, jobs) instead of arbitrary SQL against the warehouse.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "279",
+              "contains": "\"show\", \"--inline\", sql_query",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L279"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_admin/tools.py",
+              "lines": "175-177",
+              "contains": "admin_api_config.account_id, job_id, cause, **kwargs",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L175-L177"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.325,
+          "cap": {
+            "id": "G2",
+            "max": 0.25,
+            "reason": "A .env file in the working directory, which may be a cloned repository, is auto-loaded and can enable disabled toolsets (e.g. DBT_MCP_ENABLE_SQL) or point DBT_PATH at another binary, bypassing the operator's tool selection."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Validation is a denylist on selector tokens plus a few allowlists, while 'show' passes arbitrary SQL and trigger_job_run passes arbitrary steps_override through unchanged.",
+              "gap": "Powerful inputs would need allowlist validation (e.g. read-only SQL enforced by parsing or a read-only warehouse role, an allowlist of job steps).",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "96-102",
+                  "contains": "Tokens must not start with '-'",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L96-L102"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "279",
+                  "contains": "\"show\", \"--inline\", sql_query",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L279"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "93-94",
+                  "contains": "\"--vars\", vars",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L93-L94"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_admin/tools.py",
+                  "lines": "155-157",
+                  "contains": "steps_override: Annotated[",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L155-L157"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Most built-in tools use typed schemas and several validate (resource_type allowlist, artifact path regex, docs URL host), but proxied remote tools are registered with untyped string arguments and no local validation.",
+              "gap": "Proxied/remote tools would need to go through a shared validation layer.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "107-116",
+                  "contains": "_VALID_RESOURCE_TYPES",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L107-L116"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_admin/client.py",
+                  "lines": "28",
+                  "contains": "ARTIFACT_PATH_PATTERN = re.compile",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/client.py#L28"
+                },
+                {
+                  "file": "src/dbt_mcp/product_docs/client.py",
+                  "lines": "246-247",
+                  "contains": "URL must be on docs.getdbt.com",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/product_docs/client.py#L246-L247"
+                },
+                {
+                  "file": "src/dbt_mcp/proxy/tools.py",
+                  "lines": "197-203",
+                  "contains": "description=tool.description or \"\",",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/proxy/tools.py#L197-L203"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Toolsets are selectable by env flags and the SQL and codegen toolsets are off by default, but the default set still includes dbt build/run/clone/show and job triggers.",
+              "gap": "The default tool set would need to be read-only, with write and exec tools requiring explicit enabling.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/tools/register.py",
+                  "lines": "64-65",
+                  "contains": "return not has_explicit_enables",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/tools/register.py#L64-L65"
+                },
+                {
+                  "file": "src/dbt_mcp/config/settings.py",
+                  "lines": "175-181",
+                  "contains": "def actual_disable_sql",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L175-L181"
+                },
+                {
+                  "file": "src/dbt_mcp/config/settings.py",
+                  "lines": "74",
+                  "contains": "disable_dbt_codegen: bool = Field(True, alias=\"DISABLE_DBT_CODEGEN\")",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L74"
+                },
+                {
+                  "file": "src/dbt_mcp/config/settings.py",
+                  "lines": "72-85",
+                  "contains": "# Disable tool settings",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L72-L85"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A misused 'show' call reaches any table the warehouse profile can reach, and trigger_job_run can run any job in the account with arbitrary steps.",
+              "gap": "Tools would need to be scoped to a project with quantity bounds (rows, jobs) instead of arbitrary SQL against the warehouse.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "279",
+                  "contains": "\"show\", \"--inline\", sql_query",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L279"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_admin/tools.py",
+                  "lines": "175-177",
+                  "contains": "admin_api_config.account_id, job_id, cause, **kwargs",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L175-L177"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "The dbt CLI tools run the dbt binary as a plain subprocess of the user, with no container, sandbox, or reduced privileges, and with the full parent environment. Those runs execute the project's own models, macros, and hooks, plus any SQL and Jinja the model passes to 'show'. Nothing separates that execution from the user's files, network, or credentials. If the project or the model's input is malicious, it runs with everything the user has.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "dbt is launched with subprocess.Popen as the same user with no isolation primitive.",
+          "gap": "Execution would need at least OS-level separation (dedicated low-privilege user or container).",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "134-141",
+              "contains": "process = subprocess.Popen(",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L134-L141"
+            },
+            {
+              "search": "rg -n -i elicit|sandbox|seccomp|docker",
+              "scope": "src/dbt_mcp",
+              "hits": 0,
+              "note": "No sandbox, container, or MCP elicitation/confirmation step in server code."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No execution path is isolated: dbt CLI, codegen, and the LSP binary all run directly on the host; only the jq filter runs in a separate process with a cleared environment.",
+          "gap": "The main dbt execution path would need to run inside the isolation boundary.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "134-141",
+              "contains": "process = subprocess.Popen(",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L134-L141"
+            },
+            {
+              "file": "src/dbt_mcp/lsp/lsp_connection.py",
+              "lines": "218",
+              "contains": "asyncio.create_subprocess_exec(*cmd)",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/lsp/lsp_connection.py#L218"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_admin/tools.py",
+              "lines": "62-65",
+              "contains": "os.environ.clear()",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L62-L65"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No isolation mechanism exists to turn on.",
+          "gap": "An isolation boundary would need to be on by default.",
+          "evidence": [
+            {
+              "search": "rg -n -i elicit|sandbox|seccomp|docker",
+              "scope": "src/dbt_mcp",
+              "hits": 0,
+              "note": "No sandbox, container, or MCP elicitation/confirmation step in server code."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The dbt child inherits the full environment (including DBT_TOKEN when set), the user's home directory and dbt profiles, and unrestricted network.",
+          "gap": "The execution environment would need to exclude credentials and restrict filesystem and network.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "134-141",
+              "contains": "process = subprocess.Popen(",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L134-L141"
+            },
+            {
+              "search": "rg -n env=",
+              "scope": "src/dbt_mcp",
+              "hits": 0,
+              "note": "No subprocess call in the server passes an explicit env; every child inherits os.environ."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "dbt is launched with subprocess.Popen as the same user with no isolation primitive.",
+              "gap": "Execution would need at least OS-level separation (dedicated low-privilege user or container).",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "134-141",
+                  "contains": "process = subprocess.Popen(",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L134-L141"
+                },
+                {
+                  "search": "rg -n -i elicit|sandbox|seccomp|docker",
+                  "scope": "src/dbt_mcp",
+                  "hits": 0,
+                  "note": "No sandbox, container, or MCP elicitation/confirmation step in server code."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No execution path is isolated: dbt CLI, codegen, and the LSP binary all run directly on the host; only the jq filter runs in a separate process with a cleared environment.",
+              "gap": "The main dbt execution path would need to run inside the isolation boundary.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "134-141",
+                  "contains": "process = subprocess.Popen(",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L134-L141"
+                },
+                {
+                  "file": "src/dbt_mcp/lsp/lsp_connection.py",
+                  "lines": "218",
+                  "contains": "asyncio.create_subprocess_exec(*cmd)",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/lsp/lsp_connection.py#L218"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_admin/tools.py",
+                  "lines": "62-65",
+                  "contains": "os.environ.clear()",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L62-L65"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No isolation mechanism exists to turn on.",
+              "gap": "An isolation boundary would need to be on by default.",
+              "evidence": [
+                {
+                  "search": "rg -n -i elicit|sandbox|seccomp|docker",
+                  "scope": "src/dbt_mcp",
+                  "hits": 0,
+                  "note": "No sandbox, container, or MCP elicitation/confirmation step in server code."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The dbt child inherits the full environment (including DBT_TOKEN when set), the user's home directory and dbt profiles, and unrestricted network.",
+              "gap": "The execution environment would need to exclude credentials and restrict filesystem and network.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "134-141",
+                  "contains": "process = subprocess.Popen(",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L134-L141"
+                },
+                {
+                  "search": "rg -n env=",
+                  "scope": "src/dbt_mcp",
+                  "hits": 0,
+                  "note": "No subprocess call in the server passes an explicit env; every child inherits os.environ."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "The server feeds the model content written by others, such as model and column descriptions from the dbt project and its packages, dbt Platform job logs and artifacts, and documentation pages. It returns this as plain text or JSON with no provenance or 'untrusted' marking. The same server also exposes warehouse data and irreversible actions (arbitrary SQL, full-refresh runs, production job triggers), so one session covers all three legs of the Rule of Two. The server offers no mode that drops a leg automatically; an operator can only hand-pick toolsets. Prompt injection in a model description can therefore drive destructive or exfiltrating actions with no approval required by the server.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.075,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": {
+        "id": "C5-WORSTCASE",
+        "max": 0.25,
+        "reason": "Worst case (B L0): a hijacked agent can leak data and take irreversible actions unattended."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "dbt CLI tools return raw stdout text and other tools return JSON, with no provenance or untrusted flag on project- or log-derived content.",
+          "gap": "Outputs would need to be structured so returned content is separated from metadata, with provenance the host can act on.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "147-148",
+              "contains": "return stdout or \"OK\"",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L147-L148"
+            },
+            {
+              "search": "rg -n -i untrusted|provenance",
+              "scope": "src/dbt_mcp",
+              "hits": 0,
+              "note": "No provenance or untrusted-content marking anywhere in the server."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No untrusted source is distinguished: descriptions, job logs, artifacts, docs pages, and remote proxied tool descriptions all reach the model with equal standing.",
+          "gap": "At least the main untrusted sources (project metadata, job logs) would need to be marked or contained.",
+          "evidence": [
+            {
+              "search": "rg -n -i untrusted|provenance",
+              "scope": "src/dbt_mcp",
+              "hits": 0,
+              "note": "No provenance or untrusted-content marking anywhere in the server."
+            },
+            {
+              "file": "src/dbt_mcp/proxy/tools.py",
+              "lines": "197-203",
+              "contains": "description=tool.description or \"\",",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/proxy/tools.py#L197-L203"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No containment control exists, so nothing is on by default.",
+          "gap": "A containment mode (e.g. read-only/no-write when untrusted content is returned) would need to be on by default.",
+          "evidence": [
+            {
+              "search": "rg -n -i untrusted|provenance",
+              "scope": "src/dbt_mcp",
+              "hits": 0,
+              "note": "No provenance or untrusted-content marking anywhere in the server."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "In one session a hijacked host can read warehouse data and run irreversible actions through this server unattended; exfiltration via arbitrary warehouse SQL (e.g. unloading to external storage) depends on adapter features and is inferred.",
+          "gap": "Either exfiltration or irreversible actions would need to be impossible or approval-gated in the default configuration.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "279",
+              "contains": "\"show\", \"--inline\", sql_query",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L279"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_admin/tools.py",
+              "lines": "155-157",
+              "contains": "steps_override: Annotated[",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L155-L157"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "87-88",
+              "contains": "\"--full-refresh\"",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L87-L88"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.075,
+          "raw": 0.075,
+          "cap": {
+            "id": "C5-WORSTCASE",
+            "max": 0.25,
+            "reason": "Worst case (B L0): a hijacked agent can leak data and take irreversible actions unattended."
+          },
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "dbt CLI tools return raw stdout text and other tools return JSON, with no provenance or untrusted flag on project- or log-derived content.",
+              "gap": "Outputs would need to be structured so returned content is separated from metadata, with provenance the host can act on.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "147-148",
+                  "contains": "return stdout or \"OK\"",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L147-L148"
+                },
+                {
+                  "search": "rg -n -i untrusted|provenance",
+                  "scope": "src/dbt_mcp",
+                  "hits": 0,
+                  "note": "No provenance or untrusted-content marking anywhere in the server."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No untrusted source is distinguished: descriptions, job logs, artifacts, docs pages, and remote proxied tool descriptions all reach the model with equal standing.",
+              "gap": "At least the main untrusted sources (project metadata, job logs) would need to be marked or contained.",
+              "evidence": [
+                {
+                  "search": "rg -n -i untrusted|provenance",
+                  "scope": "src/dbt_mcp",
+                  "hits": 0,
+                  "note": "No provenance or untrusted-content marking anywhere in the server."
+                },
+                {
+                  "file": "src/dbt_mcp/proxy/tools.py",
+                  "lines": "197-203",
+                  "contains": "description=tool.description or \"\",",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/proxy/tools.py#L197-L203"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No containment control exists, so nothing is on by default.",
+              "gap": "A containment mode (e.g. read-only/no-write when untrusted content is returned) would need to be on by default.",
+              "evidence": [
+                {
+                  "search": "rg -n -i untrusted|provenance",
+                  "scope": "src/dbt_mcp",
+                  "hits": 0,
+                  "note": "No provenance or untrusted-content marking anywhere in the server."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "In one session a hijacked host can read warehouse data and run irreversible actions through this server unattended; exfiltration via arbitrary warehouse SQL (e.g. unloading to external storage) depends on adapter features and is inferred.",
+              "gap": "Either exfiltration or irreversible actions would need to be impossible or approval-gated in the default configuration.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "279",
+                  "contains": "\"show\", \"--inline\", sql_query",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L279"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_admin/tools.py",
+                  "lines": "155-157",
+                  "contains": "steps_override: Annotated[",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L155-L157"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "87-88",
+                  "contains": "\"--full-refresh\"",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L87-L88"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "dbt-mcp has no memory store, but its settings loader automatically reads a .env file from its current working directory. When an IDE or coding host starts the server inside a project, that file comes from the repository. Such a file can set DBT_PATH (which binary is run), DBT_HOST (where the dbt token is sent), the MCP Apps CDN base, the tool-enable flags, the log level, and the CLI timeout, with no prompt or trust decision. Operator-set environment variables take precedence, but any value the operator left unset is open to the repository.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.05,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C6-REPOCONFIG",
+        "max": 0.25,
+        "reason": "An auto-loaded .env in the working directory can enable toolsets, change the executed dbt binary, and redirect DBT_HOST (where the token is sent) without any user trust decision."
+      },
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "pydantic-settings env_file='.env' is resolved against the current working directory, so a repository-controlled file can add tools, change the executed binary, and redirect credential endpoints with no prompt.",
+          "gap": "Security-relevant settings would need to come only from user/operator scope, or require an explicit workspace-trust decision.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/config/settings.py",
+              "lines": "38-45",
+              "contains": "env_file=\".env\"",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L38-L45"
+            },
+            {
+              "file": "src/dbt_mcp/config/settings.py",
+              "lines": "22-29",
+              "contains": "env_file=\".env\"",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L22-L29"
+            },
+            {
+              "file": "src/dbt_mcp/config/settings.py",
+              "lines": "67",
+              "contains": "dbt_path: str = Field(\"dbt\", alias=\"DBT_PATH\")",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L67"
+            },
+            {
+              "file": "src/dbt_mcp/config/settings.py",
+              "lines": "48",
+              "contains": "dbt_host: str | None = Field(None, alias=\"DBT_HOST\")",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L48"
+            },
+            {
+              "file": "src/dbt_mcp/config/settings.py",
+              "lines": "108-111",
+              "contains": "cdn_base: str = Field(",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L108-L111"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Both settings classes (main and logging) load the .env file; no path is controlled.",
+          "gap": "All auto-loaded configuration paths would need to be controlled.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/config/settings.py",
+              "lines": "38-45",
+              "contains": "env_file=\".env\"",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L38-L45"
+            },
+            {
+              "file": "src/dbt_mcp/config/settings.py",
+              "lines": "22-29",
+              "contains": "env_file=\".env\"",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L22-L29"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "There is no shared memory to isolate, but the workspace .env can alter the server's own configuration at startup.",
+          "gap": "The model and workspace would need to be unable to change security-relevant configuration.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/config/settings.py",
+              "lines": "38-45",
+              "contains": "env_file=\".env\"",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L38-L45"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A poisoned .env persists in the repository, affects every user and session that launches the server from it, and can trigger code execution through DBT_PATH.",
+          "gap": "Poisoned configuration would need to be confined to a session or require human review before taking effect.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/config/settings.py",
+              "lines": "67",
+              "contains": "dbt_path: str = Field(\"dbt\", alias=\"DBT_PATH\")",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L67"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "134-141",
+              "contains": "process = subprocess.Popen(",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L134-L141"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.05,
+          "raw": 0.05,
+          "cap": {
+            "id": "C6-REPOCONFIG",
+            "max": 0.25,
+            "reason": "An auto-loaded .env in the working directory can enable toolsets, change the executed dbt binary, and redirect DBT_HOST (where the token is sent) without any user trust decision."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "pydantic-settings env_file='.env' is resolved against the current working directory, so a repository-controlled file can add tools, change the executed binary, and redirect credential endpoints with no prompt.",
+              "gap": "Security-relevant settings would need to come only from user/operator scope, or require an explicit workspace-trust decision.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/config/settings.py",
+                  "lines": "38-45",
+                  "contains": "env_file=\".env\"",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L38-L45"
+                },
+                {
+                  "file": "src/dbt_mcp/config/settings.py",
+                  "lines": "22-29",
+                  "contains": "env_file=\".env\"",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L22-L29"
+                },
+                {
+                  "file": "src/dbt_mcp/config/settings.py",
+                  "lines": "67",
+                  "contains": "dbt_path: str = Field(\"dbt\", alias=\"DBT_PATH\")",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L67"
+                },
+                {
+                  "file": "src/dbt_mcp/config/settings.py",
+                  "lines": "48",
+                  "contains": "dbt_host: str | None = Field(None, alias=\"DBT_HOST\")",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L48"
+                },
+                {
+                  "file": "src/dbt_mcp/config/settings.py",
+                  "lines": "108-111",
+                  "contains": "cdn_base: str = Field(",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L108-L111"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Both settings classes (main and logging) load the .env file; no path is controlled.",
+              "gap": "All auto-loaded configuration paths would need to be controlled.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/config/settings.py",
+                  "lines": "38-45",
+                  "contains": "env_file=\".env\"",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L38-L45"
+                },
+                {
+                  "file": "src/dbt_mcp/config/settings.py",
+                  "lines": "22-29",
+                  "contains": "env_file=\".env\"",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L22-L29"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "There is no shared memory to isolate, but the workspace .env can alter the server's own configuration at startup.",
+              "gap": "The model and workspace would need to be unable to change security-relevant configuration.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/config/settings.py",
+                  "lines": "38-45",
+                  "contains": "env_file=\".env\"",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L38-L45"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A poisoned .env persists in the repository, affects every user and session that launches the server from it, and can trigger code execution through DBT_PATH.",
+              "gap": "Poisoned configuration would need to be confined to a session or require human review before taking effect.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/config/settings.py",
+                  "lines": "67",
+                  "contains": "dbt_path: str = Field(\"dbt\", alias=\"DBT_PATH\")",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L67"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "134-141",
+                  "contains": "process = subprocess.Popen(",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L134-L141"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "dbt-mcp does not load plugins, but it pulls two kinds of remote content at runtime. The first is the HTML/JavaScript bundle for its MCP App UI, fetched fresh from a dbt Labs CDN on every read with no version pin or hash. The second is tool definitions from the dbt Platform remote MCP endpoint, filtered only by tool name. Both are on by default, and the CDN base URL can be changed through configuration, including a workspace .env. The server never executes this code itself; the host renders the app in its own context.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The UI bundle is fetched from a configurable CDN URL on every read with no pin or integrity check (the project's own contract snapshot deliberately excludes it from hashing).",
+          "gap": "Remote content would need to be version-pinned.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/apps/register.py",
+              "lines": "33-39",
+              "contains": "response = await client.get(app_url)",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/apps/register.py#L33-L39"
+            },
+            {
+              "file": "src/dbt_mcp/contract/snapshot.py",
+              "lines": "31-35",
+              "contains": "left out of the content hash",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/contract/snapshot.py#L31-L35"
+            },
+            {
+              "file": "src/dbt_mcp/config/settings.py",
+              "lines": "108-111",
+              "contains": "cdn_base: str = Field(",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L108-L111"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Remote proxied tools are restricted to an allowlist of names, but the UI bundle and the remote tool descriptions/annotations are not verified.",
+          "gap": "Most remote content types would need verification (pins or hashes).",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/proxy/tools.py",
+              "lines": "89-97",
+              "contains": "normalized_configured_proxied_tools",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/proxy/tools.py#L89-L97"
+            },
+            {
+              "file": "src/dbt_mcp/proxy/tools.py",
+              "lines": "197-203",
+              "contains": "description=tool.description or \"\",",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/proxy/tools.py#L197-L203"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "MCP Apps are enabled by default (DISABLE_MCP_APPS=False) and proxied discovery tools load automatically, with no consent step showing what will run.",
+          "gap": "Nothing remote would be enabled by default, and adding it would show exactly what loads.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/config/settings.py",
+              "lines": "107-111",
+              "contains": "disable_mcp_apps: bool = Field(False, alias=\"DISABLE_MCP_APPS\")",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L107-L111"
+            },
+            {
+              "file": "src/dbt_mcp/config/config_providers/proxied_tool.py",
+              "lines": "16-22",
+              "contains": "path = \"/v1/mcp/\" if is_local else \"/api/ai/v1/mcp/\"",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/config_providers/proxied_tool.py#L16-L22"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "The fetched bundle is returned to the host as a resource and is not executed in the server process, so it does not get the server's environment or token; it can still ask the host to call tools.",
+          "gap": "Remote content would need its own sandbox with scoped access enforced by the server.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/apps/register.py",
+              "lines": "33-39",
+              "contains": "response = await client.get(app_url)",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/apps/register.py#L33-L39"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.25,
+          "cap": null,
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The UI bundle is fetched from a configurable CDN URL on every read with no pin or integrity check (the project's own contract snapshot deliberately excludes it from hashing).",
+              "gap": "Remote content would need to be version-pinned.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/apps/register.py",
+                  "lines": "33-39",
+                  "contains": "response = await client.get(app_url)",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/apps/register.py#L33-L39"
+                },
+                {
+                  "file": "src/dbt_mcp/contract/snapshot.py",
+                  "lines": "31-35",
+                  "contains": "left out of the content hash",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/contract/snapshot.py#L31-L35"
+                },
+                {
+                  "file": "src/dbt_mcp/config/settings.py",
+                  "lines": "108-111",
+                  "contains": "cdn_base: str = Field(",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L108-L111"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Remote proxied tools are restricted to an allowlist of names, but the UI bundle and the remote tool descriptions/annotations are not verified.",
+              "gap": "Most remote content types would need verification (pins or hashes).",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/proxy/tools.py",
+                  "lines": "89-97",
+                  "contains": "normalized_configured_proxied_tools",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/proxy/tools.py#L89-L97"
+                },
+                {
+                  "file": "src/dbt_mcp/proxy/tools.py",
+                  "lines": "197-203",
+                  "contains": "description=tool.description or \"\",",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/proxy/tools.py#L197-L203"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "MCP Apps are enabled by default (DISABLE_MCP_APPS=False) and proxied discovery tools load automatically, with no consent step showing what will run.",
+              "gap": "Nothing remote would be enabled by default, and adding it would show exactly what loads.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/config/settings.py",
+                  "lines": "107-111",
+                  "contains": "disable_mcp_apps: bool = Field(False, alias=\"DISABLE_MCP_APPS\")",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L107-L111"
+                },
+                {
+                  "file": "src/dbt_mcp/config/config_providers/proxied_tool.py",
+                  "lines": "16-22",
+                  "contains": "path = \"/v1/mcp/\" if is_local else \"/api/ai/v1/mcp/\"",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/config_providers/proxied_tool.py#L16-L22"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "The fetched bundle is returned to the host as a resource and is not executed in the server process, so it does not get the server's environment or token; it can still ask the host to call tools.",
+              "gap": "Remote content would need its own sandbox with scoped access enforced by the server.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/apps/register.py",
+                  "lines": "33-39",
+                  "contains": "response = await client.get(app_url)",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/apps/register.py#L33-L39"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "The dbt token is masked in settings logs and reprs. HTTP error messages are scrubbed of URLs, OAuth tokens are stored at 0600, and the jq worker runs with an empty environment. But the token sits in the environment that every dbt and LSP subprocess inherits, and dbt Jinja passed through 'show' can read environment variables. Usage telemetry is on by default and sends dbt Labs each tool's arguments, apart from sql_query and vars. Those arguments include semantic-layer filters and job step overrides, together with account, environment, and user IDs. Tool output sent to the model is not redacted.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.3,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Custom repr and settings logging redact dbt_token, and OAuth tokens are written as plaintext YAML with 0600 permissions.",
+          "gap": "Credentials would need to live in an OS keychain/secret manager and be redacted before model-bound output.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/config/settings.py",
+              "lines": "160",
+              "contains": "dbt_token={'***redacted***' if self.dbt_token else None}",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L160"
+            },
+            {
+              "file": "src/dbt_mcp/config/credentials.py",
+              "lines": "249-253",
+              "contains": "\"***redacted***\"",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/credentials.py#L249-L253"
+            },
+            {
+              "file": "src/dbt_mcp/oauth/context_manager.py",
+              "lines": "57-66",
+              "contains": "touch(mode=0o600)",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/oauth/context_manager.py#L57-L66"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Logs and telemetry redact the token and the sql_query/vars arguments, and the jq child clears its environment, but subprocess environments and model-bound tool output are unprotected.",
+          "gap": "Subprocess environments and model-bound messages would need the same protection.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/mcp/server.py",
+              "lines": "41-42",
+              "contains": "def _safe_args",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/mcp/server.py#L41-L42"
+            },
+            {
+              "file": "src/dbt_mcp/tracking/tracking.py",
+              "lines": "30",
+              "contains": "REDACT_ARGS: frozenset[str] = frozenset({\"sql_query\", \"vars\"})",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/tracking/tracking.py#L30"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_admin/tools.py",
+              "lines": "62-65",
+              "contains": "os.environ.clear()",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L62-L65"
+            },
+            {
+              "search": "rg -n env=",
+              "scope": "src/dbt_mcp",
+              "hits": 0,
+              "note": "No subprocess call in the server passes an explicit env; every child inherits os.environ."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Usage tracking defaults to on and ships tool arguments (other than sql_query and vars) to dbt Labs telemetry.",
+          "gap": "Telemetry would need to be content-free or opt-in.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/config/settings.py",
+              "lines": "224-244",
+              "contains": "def usage_tracking_enabled",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L224-L244"
+            },
+            {
+              "file": "src/dbt_mcp/tracking/tracking.py",
+              "lines": "113-116",
+              "contains": "arguments_mapping: Mapping[str, str] = {",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/tracking/tracking.py#L113-L116"
+            },
+            {
+              "file": "src/dbt_mcp/tracking/tracking.py",
+              "lines": "142-148",
+              "contains": "log_proto(",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/tracking/tracking.py#L142-L148"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "A long-lived DBT_TOKEN, often a personal or service token with broad scope, is inherited by every dbt subprocess, where model-supplied Jinja can read environment variables (dbt behaviour, inferred).",
+          "gap": "Keys reachable from tool processes would need to be scoped and short-lived.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/config/credentials.py",
+              "lines": "340",
+              "contains": "StaticTokenProvider(token=self.settings.dbt_token)",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/credentials.py#L340"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "134-141",
+              "contains": "process = subprocess.Popen(",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L134-L141"
+            },
+            {
+              "search": "rg -n env=",
+              "scope": "src/dbt_mcp",
+              "hits": 0,
+              "note": "No subprocess call in the server passes an explicit env; every child inherits os.environ."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.3,
+          "raw": 0.3,
+          "cap": null,
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Custom repr and settings logging redact dbt_token, and OAuth tokens are written as plaintext YAML with 0600 permissions.",
+              "gap": "Credentials would need to live in an OS keychain/secret manager and be redacted before model-bound output.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/config/settings.py",
+                  "lines": "160",
+                  "contains": "dbt_token={'***redacted***' if self.dbt_token else None}",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L160"
+                },
+                {
+                  "file": "src/dbt_mcp/config/credentials.py",
+                  "lines": "249-253",
+                  "contains": "\"***redacted***\"",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/credentials.py#L249-L253"
+                },
+                {
+                  "file": "src/dbt_mcp/oauth/context_manager.py",
+                  "lines": "57-66",
+                  "contains": "touch(mode=0o600)",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/oauth/context_manager.py#L57-L66"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Logs and telemetry redact the token and the sql_query/vars arguments, and the jq child clears its environment, but subprocess environments and model-bound tool output are unprotected.",
+              "gap": "Subprocess environments and model-bound messages would need the same protection.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/mcp/server.py",
+                  "lines": "41-42",
+                  "contains": "def _safe_args",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/mcp/server.py#L41-L42"
+                },
+                {
+                  "file": "src/dbt_mcp/tracking/tracking.py",
+                  "lines": "30",
+                  "contains": "REDACT_ARGS: frozenset[str] = frozenset({\"sql_query\", \"vars\"})",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/tracking/tracking.py#L30"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_admin/tools.py",
+                  "lines": "62-65",
+                  "contains": "os.environ.clear()",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L62-L65"
+                },
+                {
+                  "search": "rg -n env=",
+                  "scope": "src/dbt_mcp",
+                  "hits": 0,
+                  "note": "No subprocess call in the server passes an explicit env; every child inherits os.environ."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Usage tracking defaults to on and ships tool arguments (other than sql_query and vars) to dbt Labs telemetry.",
+              "gap": "Telemetry would need to be content-free or opt-in.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/config/settings.py",
+                  "lines": "224-244",
+                  "contains": "def usage_tracking_enabled",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L224-L244"
+                },
+                {
+                  "file": "src/dbt_mcp/tracking/tracking.py",
+                  "lines": "113-116",
+                  "contains": "arguments_mapping: Mapping[str, str] = {",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/tracking/tracking.py#L113-L116"
+                },
+                {
+                  "file": "src/dbt_mcp/tracking/tracking.py",
+                  "lines": "142-148",
+                  "contains": "log_proto(",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/tracking/tracking.py#L142-L148"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "A long-lived DBT_TOKEN, often a personal or service token with broad scope, is inherited by every dbt subprocess, where model-supplied Jinja can read environment variables (dbt behaviour, inferred).",
+              "gap": "Keys reachable from tool processes would need to be scoped and short-lived.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/config/credentials.py",
+                  "lines": "340",
+                  "contains": "StaticTokenProvider(token=self.settings.dbt_token)",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/credentials.py#L340"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "134-141",
+                  "contains": "process = subprocess.Popen(",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L134-L141"
+                },
+                {
+                  "search": "rg -n env=",
+                  "scope": "src/dbt_mcp",
+                  "hits": 0,
+                  "note": "No subprocess call in the server passes an explicit env; every child inherits os.environ."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "Every tool call passes through one dispatcher. It logs the tool name and arguments (with SQL and vars masked), then logs success or error with the duration. The output is plain text on stderr with no timestamps in the default format, and it reaches durable storage only if the host captures it. File logging is opt-in. There is no record of who requested a call and nothing tamper-evident. A .env file in the working directory can raise the log level and silence tool-call logging.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "G2",
+        "max": 0.25,
+        "reason": "DBT_MCP_LOG_LEVEL can be set from an auto-loaded workspace .env to suppress the INFO-level tool-call log."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tool calls are logged as unstructured INFO lines with arguments and duration but no timestamp or requesting identity.",
+          "gap": "The record would need to be structured with arguments, result status, and timestamps for every call.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/mcp/server.py",
+              "lines": "98",
+              "contains": "logger.info(f\"Calling tool: {name} with arguments: {_safe_args(arguments)}\")",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/mcp/server.py#L98"
+            },
+            {
+              "file": "src/dbt_mcp/telemetry/logging.py",
+              "lines": "51-53",
+              "contains": "\"%(levelname)s [%(name)s] %(message)s\"",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/telemetry/logging.py#L51-L53"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All tools, including proxied remote tools, go through DbtMCP.call_tool, so every call is logged.",
+          "gap": "Approvals/denials and configuration changes would need to be recorded too.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/mcp/server.py",
+              "lines": "95-106",
+              "contains": "async def call_tool(",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/mcp/server.py#L95-L106"
+            },
+            {
+              "file": "src/dbt_mcp/mcp/server.py",
+              "lines": "98",
+              "contains": "logger.info(f\"Calling tool: {name} with arguments: {_safe_args(arguments)}\")",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/mcp/server.py#L98"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Logging to stderr is on by default, but a durable server-owned record is opt-in (file logging defaults to False) and the log level is settable from the workspace .env.",
+          "gap": "A durable record would need to be on by default, outside anything the workspace can change.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/config/settings.py",
+              "lines": "31",
+              "contains": "file_logging: bool = Field(False, alias=\"DBT_MCP_SERVER_FILE_LOGGING\")",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L31"
+            },
+            {
+              "file": "src/dbt_mcp/config/settings.py",
+              "lines": "32",
+              "contains": "log_level: str | int | None = Field(None, alias=\"DBT_MCP_LOG_LEVEL\")",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L32"
+            },
+            {
+              "file": "src/dbt_mcp/config/settings.py",
+              "lines": "22-29",
+              "contains": "env_file=\".env\"",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L22-L29"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Logging is best-effort through the standard library; actions proceed regardless of whether the record is written or kept.",
+          "gap": "Records would need to be flushed durably per action with errors surfaced.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/mcp/server.py",
+              "lines": "98",
+              "contains": "logger.info(f\"Calling tool: {name} with arguments: {_safe_args(arguments)}\")",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/mcp/server.py#L98"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.325,
+          "cap": {
+            "id": "G2",
+            "max": 0.25,
+            "reason": "DBT_MCP_LOG_LEVEL can be set from an auto-loaded workspace .env to suppress the INFO-level tool-call log."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tool calls are logged as unstructured INFO lines with arguments and duration but no timestamp or requesting identity.",
+              "gap": "The record would need to be structured with arguments, result status, and timestamps for every call.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/mcp/server.py",
+                  "lines": "98",
+                  "contains": "logger.info(f\"Calling tool: {name} with arguments: {_safe_args(arguments)}\")",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/mcp/server.py#L98"
+                },
+                {
+                  "file": "src/dbt_mcp/telemetry/logging.py",
+                  "lines": "51-53",
+                  "contains": "\"%(levelname)s [%(name)s] %(message)s\"",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/telemetry/logging.py#L51-L53"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All tools, including proxied remote tools, go through DbtMCP.call_tool, so every call is logged.",
+              "gap": "Approvals/denials and configuration changes would need to be recorded too.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/mcp/server.py",
+                  "lines": "95-106",
+                  "contains": "async def call_tool(",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/mcp/server.py#L95-L106"
+                },
+                {
+                  "file": "src/dbt_mcp/mcp/server.py",
+                  "lines": "98",
+                  "contains": "logger.info(f\"Calling tool: {name} with arguments: {_safe_args(arguments)}\")",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/mcp/server.py#L98"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Logging to stderr is on by default, but a durable server-owned record is opt-in (file logging defaults to False) and the log level is settable from the workspace .env.",
+              "gap": "A durable record would need to be on by default, outside anything the workspace can change.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/config/settings.py",
+                  "lines": "31",
+                  "contains": "file_logging: bool = Field(False, alias=\"DBT_MCP_SERVER_FILE_LOGGING\")",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L31"
+                },
+                {
+                  "file": "src/dbt_mcp/config/settings.py",
+                  "lines": "32",
+                  "contains": "log_level: str | int | None = Field(None, alias=\"DBT_MCP_LOG_LEVEL\")",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L32"
+                },
+                {
+                  "file": "src/dbt_mcp/config/settings.py",
+                  "lines": "22-29",
+                  "contains": "env_file=\".env\"",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L22-L29"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Logging is best-effort through the standard library; actions proceed regardless of whether the record is written or kept.",
+              "gap": "Records would need to be flushed durably per action with errors surfaced.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/mcp/server.py",
+                  "lines": "98",
+                  "contains": "logger.info(f\"Calling tool: {name} with arguments: {_safe_args(arguments)}\")",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/mcp/server.py#L98"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "The server sets timeouts on most of its own work. dbt CLI calls default to 60 seconds, platform API calls to 15 seconds, and semantic-layer calls to 30 seconds. jq filters are capped at 120 seconds and at four concurrent runs, and some responses have size caps. But when a dbt command times out, the server only stops waiting: the dbt process is never killed and keeps running against the warehouse. dbt CLI output is not size-capped, there is no rate limit on job triggers or runs, and the CLI timeout can be raised from a workspace .env.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "G2",
+        "max": 0.25,
+        "reason": "The primary limit, DBT_CLI_TIMEOUT, can be raised by an auto-loaded .env in the working directory."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Server-enforced timeouts exist for dbt CLI, platform HTTP and jq, plus caps on artifact size and semantic-layer response size, but concurrency limits cover only jq.",
+          "gap": "Every operation would need caps plus concurrency or rate limits on side-effecting tools.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/config/settings.py",
+              "lines": "17",
+              "contains": "DEFAULT_DBT_CLI_TIMEOUT = 60",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L17"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "142",
+              "contains": "process.communicate(timeout=config.dbt_cli_timeout)",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L142"
+            },
+            {
+              "file": "src/dbt_mcp/config/settings.py",
+              "lines": "18-19",
+              "contains": "PLATFORM_API_TIMEOUT = 15.0",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L18-L19"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_admin/tools.py",
+              "lines": "52",
+              "contains": "INLINE_CONTENT_LIMIT = 500 * 1024",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L52"
+            },
+            {
+              "file": "src/dbt_mcp/config/settings.py",
+              "lines": "120-125",
+              "contains": "sl_metrics_max_response_chars: int = Field(",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L120-L125"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_admin/tools.py",
+              "lines": "56-59",
+              "contains": "_jq_semaphore = asyncio.Semaphore(_JQ_CONCURRENCY_LIMIT)",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L56-L59"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Timeouts apply to the main tool paths (CLI, HTTP, jq), but spawned dbt processes keep running past the timeout and outside any budget.",
+          "gap": "Spawned processes would need to count against, and be stopped by, the same limits.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "142",
+              "contains": "process.communicate(timeout=config.dbt_cli_timeout)",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L142"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "157-158",
+              "contains": "except subprocess.TimeoutExpired:",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L157-L158"
+            },
+            {
+              "search": "rg -n kill|terminate",
+              "scope": "src/dbt_mcp/dbt_cli src/dbt_mcp/dbt_codegen",
+              "hits": 0,
+              "note": "The dbt CLI and codegen executors never kill or terminate the child after a timeout."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Defaults are sensible (60s CLI) but DBT_CLI_TIMEOUT can be raised from an auto-loaded workspace .env, not only by the operator.",
+          "gap": "Limits would need to be operator-only, with ceilings configuration can't exceed.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/config/settings.py",
+              "lines": "68",
+              "contains": "dbt_cli_timeout: int = Field(DEFAULT_DBT_CLI_TIMEOUT",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L68"
+            },
+            {
+              "file": "src/dbt_mcp/config/settings.py",
+              "lines": "38-45",
+              "contains": "env_file=\".env\"",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L38-L45"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "On timeout the dbt child is left running (communicate(timeout) raises without kill), so a long build or full refresh continues after the tool returns.",
+          "gap": "Stopping would need to cancel in-flight work and kill the dbt process.",
+          "evidence": [
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "142",
+              "contains": "process.communicate(timeout=config.dbt_cli_timeout)",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L142"
+            },
+            {
+              "file": "src/dbt_mcp/dbt_cli/tools.py",
+              "lines": "157-158",
+              "contains": "except subprocess.TimeoutExpired:",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L157-L158"
+            },
+            {
+              "search": "rg -n kill|terminate",
+              "scope": "src/dbt_mcp/dbt_cli src/dbt_mcp/dbt_codegen",
+              "hits": 0,
+              "note": "The dbt CLI and codegen executors never kill or terminate the child after a timeout."
+            },
+            {
+              "file": "src/dbt_mcp/dbt_admin/tools.py",
+              "lines": "306-314",
+              "contains": "pool.terminate()",
+              "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L306-L314"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.4,
+          "cap": {
+            "id": "G2",
+            "max": 0.25,
+            "reason": "The primary limit, DBT_CLI_TIMEOUT, can be raised by an auto-loaded .env in the working directory."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Server-enforced timeouts exist for dbt CLI, platform HTTP and jq, plus caps on artifact size and semantic-layer response size, but concurrency limits cover only jq.",
+              "gap": "Every operation would need caps plus concurrency or rate limits on side-effecting tools.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/config/settings.py",
+                  "lines": "17",
+                  "contains": "DEFAULT_DBT_CLI_TIMEOUT = 60",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L17"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "142",
+                  "contains": "process.communicate(timeout=config.dbt_cli_timeout)",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L142"
+                },
+                {
+                  "file": "src/dbt_mcp/config/settings.py",
+                  "lines": "18-19",
+                  "contains": "PLATFORM_API_TIMEOUT = 15.0",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L18-L19"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_admin/tools.py",
+                  "lines": "52",
+                  "contains": "INLINE_CONTENT_LIMIT = 500 * 1024",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L52"
+                },
+                {
+                  "file": "src/dbt_mcp/config/settings.py",
+                  "lines": "120-125",
+                  "contains": "sl_metrics_max_response_chars: int = Field(",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L120-L125"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_admin/tools.py",
+                  "lines": "56-59",
+                  "contains": "_jq_semaphore = asyncio.Semaphore(_JQ_CONCURRENCY_LIMIT)",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L56-L59"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Timeouts apply to the main tool paths (CLI, HTTP, jq), but spawned dbt processes keep running past the timeout and outside any budget.",
+              "gap": "Spawned processes would need to count against, and be stopped by, the same limits.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "142",
+                  "contains": "process.communicate(timeout=config.dbt_cli_timeout)",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L142"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "157-158",
+                  "contains": "except subprocess.TimeoutExpired:",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L157-L158"
+                },
+                {
+                  "search": "rg -n kill|terminate",
+                  "scope": "src/dbt_mcp/dbt_cli src/dbt_mcp/dbt_codegen",
+                  "hits": 0,
+                  "note": "The dbt CLI and codegen executors never kill or terminate the child after a timeout."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Defaults are sensible (60s CLI) but DBT_CLI_TIMEOUT can be raised from an auto-loaded workspace .env, not only by the operator.",
+              "gap": "Limits would need to be operator-only, with ceilings configuration can't exceed.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/config/settings.py",
+                  "lines": "68",
+                  "contains": "dbt_cli_timeout: int = Field(DEFAULT_DBT_CLI_TIMEOUT",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L68"
+                },
+                {
+                  "file": "src/dbt_mcp/config/settings.py",
+                  "lines": "38-45",
+                  "contains": "env_file=\".env\"",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L38-L45"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "On timeout the dbt child is left running (communicate(timeout) raises without kill), so a long build or full refresh continues after the tool returns.",
+              "gap": "Stopping would need to cancel in-flight work and kill the dbt process.",
+              "evidence": [
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "142",
+                  "contains": "process.communicate(timeout=config.dbt_cli_timeout)",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L142"
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_cli/tools.py",
+                  "lines": "157-158",
+                  "contains": "except subprocess.TimeoutExpired:",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L157-L158"
+                },
+                {
+                  "search": "rg -n kill|terminate",
+                  "scope": "src/dbt_mcp/dbt_cli src/dbt_mcp/dbt_codegen",
+                  "hits": 0,
+                  "note": "The dbt CLI and codegen executors never kill or terminate the child after a timeout."
+                },
+                {
+                  "file": "src/dbt_mcp/dbt_admin/tools.py",
+                  "lines": "306-314",
+                  "contains": "pool.terminate()",
+                  "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L306-L314"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "The 'show' tool executes arbitrary model-supplied SQL against the warehouse but is annotated readOnlyHint=True, so hosts that auto-approve read-only tools skip their gate.",
+      "criterion": "C2",
+      "owasp": [
+        "ASI02",
+        "ASI09",
+        "T2"
+      ],
+      "evidence": [
+        {
+          "file": "src/dbt_mcp/dbt_cli/tools.py",
+          "lines": "279",
+          "contains": "\"show\", \"--inline\", sql_query",
+          "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L279"
+        },
+        {
+          "file": "src/dbt_mcp/dbt_cli/tools.py",
+          "lines": "510-515",
+          "contains": "read_only_hint=True",
+          "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L510-L515"
+        },
+        {
+          "file": "src/dbt_mcp/prompts/dbt_cli/show.md",
+          "lines": "1",
+          "contains": "executes an arbitrary SQL statement",
+          "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/prompts/dbt_cli/show.md#L1"
+        }
+      ]
+    },
+    {
+      "summary": "Tool enablement can be loosened by an auto-loaded workspace .env (e.g. enabling the SQL toolset or swapping DBT_PATH).",
+      "criterion": "C3",
+      "owasp": [
+        "ASI02",
+        "LLM06"
+      ],
+      "evidence": [
+        {
+          "file": "src/dbt_mcp/config/settings.py",
+          "lines": "38-45",
+          "contains": "env_file=\".env\"",
+          "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L38-L45"
+        },
+        {
+          "file": "src/dbt_mcp/config/settings.py",
+          "lines": "67",
+          "contains": "dbt_path: str = Field(\"dbt\", alias=\"DBT_PATH\")",
+          "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L67"
+        }
+      ]
+    },
+    {
+      "summary": "dbt runs as a same-user subprocess with the full environment and no isolation, executing project code and model-supplied SQL/Jinja.",
+      "criterion": "C4",
+      "owasp": [
+        "ASI05",
+        "T11"
+      ],
+      "evidence": [
+        {
+          "file": "src/dbt_mcp/dbt_cli/tools.py",
+          "lines": "134-141",
+          "contains": "process = subprocess.Popen(",
+          "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L134-L141"
+        }
+      ]
+    },
+    {
+      "summary": "One server session combines untrusted project metadata/logs, warehouse data, and irreversible actions with no server-side containment.",
+      "criterion": "C5",
+      "owasp": [
+        "ASI01",
+        "LLM01",
+        "T6"
+      ],
+      "evidence": [
+        {
+          "file": "src/dbt_mcp/dbt_cli/tools.py",
+          "lines": "279",
+          "contains": "\"show\", \"--inline\", sql_query",
+          "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L279"
+        },
+        {
+          "file": "src/dbt_mcp/dbt_admin/tools.py",
+          "lines": "155-157",
+          "contains": "steps_override: Annotated[",
+          "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_admin/tools.py#L155-L157"
+        }
+      ]
+    },
+    {
+      "summary": "A .env file in the working directory is auto-loaded and can set DBT_PATH, DBT_HOST, CDN base and tool flags with no trust decision.",
+      "criterion": "C6",
+      "owasp": [
+        "ASI06",
+        "ASI04",
+        "T1"
+      ],
+      "evidence": [
+        {
+          "file": "src/dbt_mcp/config/settings.py",
+          "lines": "38-45",
+          "contains": "env_file=\".env\"",
+          "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L38-L45"
+        },
+        {
+          "file": "src/dbt_mcp/config/settings.py",
+          "lines": "67",
+          "contains": "dbt_path: str = Field(\"dbt\", alias=\"DBT_PATH\")",
+          "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L67"
+        },
+        {
+          "file": "src/dbt_mcp/config/settings.py",
+          "lines": "48",
+          "contains": "dbt_host: str | None = Field(None, alias=\"DBT_HOST\")",
+          "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L48"
+        }
+      ]
+    },
+    {
+      "summary": "Tool-call logging can be silenced through DBT_MCP_LOG_LEVEL from the auto-loaded workspace .env.",
+      "criterion": "C9",
+      "owasp": [
+        "T8"
+      ],
+      "evidence": [
+        {
+          "file": "src/dbt_mcp/config/settings.py",
+          "lines": "32",
+          "contains": "log_level: str | int | None = Field(None, alias=\"DBT_MCP_LOG_LEVEL\")",
+          "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L32"
+        },
+        {
+          "file": "src/dbt_mcp/config/settings.py",
+          "lines": "22-29",
+          "contains": "env_file=\".env\"",
+          "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L22-L29"
+        }
+      ]
+    },
+    {
+      "summary": "dbt CLI timeouts stop waiting but never kill the dbt process, and the timeout itself can be raised from the workspace .env.",
+      "criterion": "C10",
+      "owasp": [
+        "ASI08",
+        "T4",
+        "LLM10"
+      ],
+      "evidence": [
+        {
+          "file": "src/dbt_mcp/dbt_cli/tools.py",
+          "lines": "142",
+          "contains": "process.communicate(timeout=config.dbt_cli_timeout)",
+          "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L142"
+        },
+        {
+          "file": "src/dbt_mcp/dbt_cli/tools.py",
+          "lines": "157-158",
+          "contains": "except subprocess.TimeoutExpired:",
+          "url": "https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L157-L158"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "Project/package model descriptions, dbt Platform job logs and artifacts, docs pages and remote tool descriptions returned as plain content (src/dbt_mcp/dbt_cli/tools.py:147, src/dbt_mcp/proxy/tools.py:202)",
+    "sensitive_data": "Warehouse rows via show/query_metrics and the dbt Platform token in the subprocess environment (src/dbt_mcp/dbt_cli/tools.py:279, src/dbt_mcp/dbt_cli/tools.py:134)",
+    "state_change_or_egress": "dbt build/run/clone --full-refresh, arbitrary SQL, trigger/cancel/retry production jobs with steps_override (src/dbt_mcp/dbt_cli/tools.py:87, src/dbt_mcp/dbt_admin/tools.py:155)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Annotate 'show' (and compile) as non-read-only/destructive and mark trigger_job_run destructive when steps_override or schema_override is used; split read and write variants.",
+      "criterion": "C2",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 5",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Stop loading .env from the working directory (or only from an explicit operator path) so the repository cannot set DBT_PATH, DBT_HOST, tool flags, log level or timeouts.",
+      "criterion": "C6",
+      "parameter": "S",
+      "from_level": 0,
+      "to_level": 3,
+      "playbook": "Playbook 2",
+      "estimated_gain": 0.225
+    },
+    {
+      "summary": "Kill the dbt process group on timeout and add a concurrency/rate limit on build/run/trigger tools.",
+      "criterion": "C10",
+      "parameter": "B",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 3 step 3",
+      "estimated_gain": 0.05
+    },
+    {
+      "summary": "Pass a minimal environment to dbt/LSP subprocesses (drop DBT_TOKEN and unrelated secrets).",
+      "criterion": "C1",
+      "parameter": "C",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 4",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Ship a read-only default toolset (discovery, semantic layer reads, list/parse) and require explicit enabling for build/run/clone/show and job triggers.",
+      "criterion": "C3",
+      "parameter": "D",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.05
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was executed, installed, or probed.",
+    "Behaviour of third-party components is inferred, not verified: dbt's handling of inline SQL/Jinja in 'show' (including env_var access and running SQL at compile time), pydantic-settings precedence (OS env vars override .env values), and how MCP hosts render ui:// app resources.",
+    "Remote proxied tools (execute_sql, text_to_sql, search, get_related_models) are defined on dbt Platform and were not reviewed; only the local proxy code was.",
+    "Version is null: HEAD is 5 commits after tag v2.5.0 and carries no tag.",
+    "Tests, examples/ and evals were not scored; no reviewer-steering text was found (search for auditor/AI-reviewer/ignore-instructions phrases returned no hits)."
+  ]
+}

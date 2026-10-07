@@ -1,0 +1,2319 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "terraform-mcp-server",
+  "name": "Terraform MCP Server",
+  "repo_url": "https://github.com/hashicorp/terraform-mcp-server",
+  "subpath": null,
+  "description": "HashiCorp MCP server for Terraform Registry and HCP Terraform workspace operations",
+  "category": "infrastructure_ops",
+  "pinned_commit": "1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81",
+  "version": null,
+  "scored_date": "2026-10-03",
+  "scored_configuration": "Local stdio server (no subcommand, as in the README's docker run -i examples) with TFE_TOKEN set, default --toolsets=all, ENABLE_TF_OPERATIONS unset, info-level logging, telemetry off.",
+  "score": 4.3,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 8,
+    "score": 2.27,
+    "max": 8.0,
+    "percent": 28
+  },
+  "capability_profile": {
+    "code_execution": "yes",
+    "filesystem_write": "no",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "no",
+    "untrusted_input": "yes",
+    "third_party_extensions": "no",
+    "sub_agents": "no",
+    "external_communication": "no"
+  },
+  "headline": "Despite the documentation saying only registry tools are on by default, the code enables every tool group, so giving the server a Terraform token hands the model write access to workspaces, variables, teams and access grants across every organization that token reaches. Delete and apply tools sit behind ENABLE_TF_OPERATIONS, though enforcement of that gate does not cover every path, and the model can point a workspace at any repository and run its code with attached credentials. Handling of sensitive values on the logging path is also not locked down. Run it with --toolsets=registry or a read-only, narrowly scoped team token.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "The server acts with one long-lived Terraform API token taken from TFE_TOKEN or, if that is unset, silently from the user's Terraform CLI credentials file. Every tool uses that same token for reads and writes, and in the default stdio mode there is no server-side authorization layer: whatever the token can do, the model can do. The token is typically a user token, so the agent holds the user's full HCP Terraform authority across organizations, and tools such as grant_team_access (including 'admin') and add_team_member let it widen access for its own team.",
+      "max": 1.0,
+      "notes": "Streamable-HTTP mode (opt-in) passes each client's bearer token through to HCP Terraform (C1-PASSTHRU pattern); its client authentication is not locked down.",
+      "status": "scored",
+      "score": 0.125,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C1-SELFESC",
+        "max": 0.25,
+        "reason": "grant_team_access and add_team_member are enabled by default with a token and let the agent raise its own team's access (up to workspace/project admin) or add members to privileged teams."
+      },
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A single ambient token (env var or ~/.terraform.d/credentials.tfrc.json) is used for all operations, and team tools let the agent grant its own team admin access.",
+          "gap": "Use separate read and write tokens or a narrowly scoped team token, and remove or gate self-escalation tools.",
+          "evidence": [
+            {
+              "file": "pkg/client/tfe_client.go",
+              "lines": "209-216",
+              "contains": "ReadCredentialsFile(extractHostname(terraformAddress), logger)",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/tfe_client.go#L209-L216"
+            },
+            {
+              "file": "pkg/client/credentials.go",
+              "lines": "40",
+              "contains": "credentials.tfrc.json",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/credentials.go#L40"
+            },
+            {
+              "file": "pkg/client/tfe_client.go",
+              "lines": "83-86",
+              "contains": "Token:             terraformToken",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/tfe_client.go#L83-L86"
+            },
+            {
+              "file": "pkg/tools/tfe/grant_team_access.go",
+              "lines": "54",
+              "contains": "var validTeamAccessLevels = []string{\"admin\", \"read\", \"write\", \"plan\"}",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/grant_team_access.go#L54"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All tools obtain the same per-session go-tfe client, so every call is checked only by HCP Terraform's RBAC on that token; no server-side check exists in stdio mode.",
+          "gap": "Route every tool call through a server-side authorization layer (e.g., an org/workspace allowlist) in all transports, failing closed.",
+          "evidence": [
+            {
+              "file": "pkg/client/tfe_client.go",
+              "lines": "157-163",
+              "contains": "func GetTfeClientFromContext",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/tfe_client.go#L157-L163"
+            },
+            {
+              "search": "rg -n 'rganizationAllowlist'",
+              "scope": "pkg/mcp-mark3labs/stdio.go",
+              "hits": 0,
+              "note": "The organization allowlist (the only server-side authorization layer) is wired only into the streamable-HTTP server, not stdio."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Destructive tools are off unless ENABLE_TF_OPERATIONS=true, but the default --toolsets value is 'all', so supplying a token alone exposes write, team and permission tools.",
+          "gap": "Default to a read-only tool set and require explicit operator elevation for any write tool.",
+          "evidence": [
+            {
+              "file": "pkg/cli/commands.go",
+              "lines": "121",
+              "contains": "String(\"toolsets\", toolsets.All",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/cli/commands.go#L121"
+            },
+            {
+              "file": "pkg/tools/dynamic_tool.go",
+              "lines": "109",
+              "contains": "if td.RequiresTFOps && !tfOpsEnabled",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/dynamic_tool.go#L109"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked session holds the user's token: org-wide writes to workspaces, variables, teams and access grants across every organization the token reaches.",
+          "gap": "Narrow the token's reach (single org/project, mostly read) so a compromise is confined to one tenant.",
+          "evidence": [
+            {
+              "file": "pkg/toolsets/registry.go",
+              "lines": "53-55",
+              "contains": "{Name: \"grant_team_access\", Toolset: Terraform, RequiresTFE: true}",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/toolsets/registry.go#L53-L55"
+            },
+            {
+              "file": "pkg/toolsets/registry.go",
+              "lines": "89",
+              "contains": "{Name: \"delete_variable_in_variable_set\", Toolset: Terraform, RequiresTFE: true}",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/toolsets/registry.go#L89"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.125,
+          "raw": 0.125,
+          "cap": {
+            "id": "C1-SELFESC",
+            "max": 0.25,
+            "reason": "grant_team_access and add_team_member are enabled by default with a token and let the agent raise its own team's access (up to workspace/project admin) or add members to privileged teams."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A single ambient token (env var or ~/.terraform.d/credentials.tfrc.json) is used for all operations, and team tools let the agent grant its own team admin access.",
+              "gap": "Use separate read and write tokens or a narrowly scoped team token, and remove or gate self-escalation tools.",
+              "evidence": [
+                {
+                  "file": "pkg/client/tfe_client.go",
+                  "lines": "209-216",
+                  "contains": "ReadCredentialsFile(extractHostname(terraformAddress), logger)",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/tfe_client.go#L209-L216"
+                },
+                {
+                  "file": "pkg/client/credentials.go",
+                  "lines": "40",
+                  "contains": "credentials.tfrc.json",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/credentials.go#L40"
+                },
+                {
+                  "file": "pkg/client/tfe_client.go",
+                  "lines": "83-86",
+                  "contains": "Token:             terraformToken",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/tfe_client.go#L83-L86"
+                },
+                {
+                  "file": "pkg/tools/tfe/grant_team_access.go",
+                  "lines": "54",
+                  "contains": "var validTeamAccessLevels = []string{\"admin\", \"read\", \"write\", \"plan\"}",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/grant_team_access.go#L54"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All tools obtain the same per-session go-tfe client, so every call is checked only by HCP Terraform's RBAC on that token; no server-side check exists in stdio mode.",
+              "gap": "Route every tool call through a server-side authorization layer (e.g., an org/workspace allowlist) in all transports, failing closed.",
+              "evidence": [
+                {
+                  "file": "pkg/client/tfe_client.go",
+                  "lines": "157-163",
+                  "contains": "func GetTfeClientFromContext",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/tfe_client.go#L157-L163"
+                },
+                {
+                  "search": "rg -n 'rganizationAllowlist'",
+                  "scope": "pkg/mcp-mark3labs/stdio.go",
+                  "hits": 0,
+                  "note": "The organization allowlist (the only server-side authorization layer) is wired only into the streamable-HTTP server, not stdio."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Destructive tools are off unless ENABLE_TF_OPERATIONS=true, but the default --toolsets value is 'all', so supplying a token alone exposes write, team and permission tools.",
+              "gap": "Default to a read-only tool set and require explicit operator elevation for any write tool.",
+              "evidence": [
+                {
+                  "file": "pkg/cli/commands.go",
+                  "lines": "121",
+                  "contains": "String(\"toolsets\", toolsets.All",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/cli/commands.go#L121"
+                },
+                {
+                  "file": "pkg/tools/dynamic_tool.go",
+                  "lines": "109",
+                  "contains": "if td.RequiresTFOps && !tfOpsEnabled",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/dynamic_tool.go#L109"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked session holds the user's token: org-wide writes to workspaces, variables, teams and access grants across every organization the token reaches.",
+              "gap": "Narrow the token's reach (single org/project, mostly read) so a compromise is confined to one tenant.",
+              "evidence": [
+                {
+                  "file": "pkg/toolsets/registry.go",
+                  "lines": "53-55",
+                  "contains": "{Name: \"grant_team_access\", Toolset: Terraform, RequiresTFE: true}",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/toolsets/registry.go#L53-L55"
+                },
+                {
+                  "file": "pkg/toolsets/registry.go",
+                  "lines": "89",
+                  "contains": "{Name: \"delete_variable_in_variable_set\", Toolset: Terraform, RequiresTFE: true}",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/toolsets/registry.go#L89"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "The server does not ask for approval itself; it relies on the host. It tags tools with read-only/destructive hints, and the deletes, force-unlock, run apply/discard and destroy runs are not registered unless the operator sets ENABLE_TF_OPERATIONS=true. But several powerful tools are tagged non-destructive (update_workspace, grant_team_access, add_team_member), there is no dry-run or read-only mode, and enforcement of the gate does not cover every path. The only 'confirm first' rule is a sentence in the server instructions.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C2-POWERBYPASS",
+        "max": 0.25,
+        "reason": "The most powerful action, applying infrastructure changes, is reachable in the default configuration without reliably crossing the ENABLE_TF_OPERATIONS gate."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Annotations exist on most tools, but update_workspace (described in its own text as 'potentially destructive'), grant_team_access and add_team_member are marked destructiveHint=false.",
+          "gap": "Give every mutating tool an accurate destructive hint and separate configuration-changing tools from safe ones.",
+          "evidence": [
+            {
+              "file": "pkg/tools/tfe/update_workspace.go",
+              "lines": "24-28",
+              "contains": "potentially destructive operation",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/update_workspace.go#L24-L28"
+            },
+            {
+              "file": "pkg/tools/tfe/grant_team_access.go",
+              "lines": "30",
+              "contains": "WithDestructiveHintAnnotation(false)",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/grant_team_access.go#L30"
+            },
+            {
+              "file": "pkg/tools/tfe/add_team_member.go",
+              "lines": "27",
+              "contains": "WithDestructiveHintAnnotation(false)",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/add_team_member.go#L27"
+            },
+            {
+              "search": "rg -n -g '!*_test.go' 'DestructiveHintAnnotation'",
+              "scope": "pkg/tools",
+              "hits": 50,
+              "note": "12 tool definitions set no explicit destructive hint (variable, variable-set, tag and policy-set tools); mcp-go v0.58.0 NewTool then defaults destructiveHint=true (library behaviour), which over-warns rather than under-warns."
+            },
+            {
+              "search": "rg -n -g '!*_test.go' 'mcp.NewTool\\('",
+              "scope": "pkg/tools",
+              "hits": 62,
+              "note": "62 tool definitions (create_run has two variants)."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only tools flagged RequiresTFOps are withheld, and enforcement of that gate does not cover every path.",
+          "gap": "Make every path to an apply cross the gate, and gate execution-mode changes.",
+          "evidence": [
+            {
+              "file": "pkg/tools/dynamic_tool.go",
+              "lines": "109",
+              "contains": "if td.RequiresTFOps && !tfOpsEnabled",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/dynamic_tool.go#L109"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The destructive-tool gate is on by default but a single env var (ENABLE_TF_OPERATIONS) turns it off with no warning; the confirmation rule in the instructions is prompt-only.",
+          "gap": "Require an explicit, loudly named operator flag and log/warn when destructive tools are enabled.",
+          "evidence": [
+            {
+              "file": "pkg/tools/dynamic_tool.go",
+              "lines": "95",
+              "contains": "utils.GetEnv(\"ENABLE_TF_OPERATIONS\", \"false\")",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/dynamic_tool.go#L95"
+            },
+            {
+              "file": "pkg/instructions/instructions.md",
+              "lines": "13",
+              "contains": "ALWAYS get explicit yes/no confirmation",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/instructions/instructions.md#L13"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A wrongly approved or bypassing call can delete variables in shared variable sets, grant admin access, or apply irreversible infrastructure changes, with no preview or rollback from the server.",
+          "gap": "Offer plan previews/dry-runs for every state change and bound how much a session can change.",
+          "evidence": [
+            {
+              "file": "pkg/toolsets/registry.go",
+              "lines": "89",
+              "contains": "{Name: \"delete_variable_in_variable_set\", Toolset: Terraform, RequiresTFE: true}",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/toolsets/registry.go#L89"
+            },
+            {
+              "search": "rg -n -g '!*_test.go' 'dry_run|dryRun|DryRun|READ_ONLY|ReadOnlyMode'",
+              "scope": "pkg cmd",
+              "hits": 0,
+              "note": "No dry-run parameter or read-only mode in shipped code (the only hits are in test files, excluded)."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.25,
+          "cap": {
+            "id": "C2-POWERBYPASS",
+            "max": 0.25,
+            "reason": "The most powerful action, applying infrastructure changes, is reachable in the default configuration without reliably crossing the ENABLE_TF_OPERATIONS gate."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Annotations exist on most tools, but update_workspace (described in its own text as 'potentially destructive'), grant_team_access and add_team_member are marked destructiveHint=false.",
+              "gap": "Give every mutating tool an accurate destructive hint and separate configuration-changing tools from safe ones.",
+              "evidence": [
+                {
+                  "file": "pkg/tools/tfe/update_workspace.go",
+                  "lines": "24-28",
+                  "contains": "potentially destructive operation",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/update_workspace.go#L24-L28"
+                },
+                {
+                  "file": "pkg/tools/tfe/grant_team_access.go",
+                  "lines": "30",
+                  "contains": "WithDestructiveHintAnnotation(false)",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/grant_team_access.go#L30"
+                },
+                {
+                  "file": "pkg/tools/tfe/add_team_member.go",
+                  "lines": "27",
+                  "contains": "WithDestructiveHintAnnotation(false)",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/add_team_member.go#L27"
+                },
+                {
+                  "search": "rg -n -g '!*_test.go' 'DestructiveHintAnnotation'",
+                  "scope": "pkg/tools",
+                  "hits": 50,
+                  "note": "12 tool definitions set no explicit destructive hint (variable, variable-set, tag and policy-set tools); mcp-go v0.58.0 NewTool then defaults destructiveHint=true (library behaviour), which over-warns rather than under-warns."
+                },
+                {
+                  "search": "rg -n -g '!*_test.go' 'mcp.NewTool\\('",
+                  "scope": "pkg/tools",
+                  "hits": 62,
+                  "note": "62 tool definitions (create_run has two variants)."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only tools flagged RequiresTFOps are withheld, and enforcement of that gate does not cover every path.",
+              "gap": "Make every path to an apply cross the gate, and gate execution-mode changes.",
+              "evidence": [
+                {
+                  "file": "pkg/tools/dynamic_tool.go",
+                  "lines": "109",
+                  "contains": "if td.RequiresTFOps && !tfOpsEnabled",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/dynamic_tool.go#L109"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The destructive-tool gate is on by default but a single env var (ENABLE_TF_OPERATIONS) turns it off with no warning; the confirmation rule in the instructions is prompt-only.",
+              "gap": "Require an explicit, loudly named operator flag and log/warn when destructive tools are enabled.",
+              "evidence": [
+                {
+                  "file": "pkg/tools/dynamic_tool.go",
+                  "lines": "95",
+                  "contains": "utils.GetEnv(\"ENABLE_TF_OPERATIONS\", \"false\")",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/dynamic_tool.go#L95"
+                },
+                {
+                  "file": "pkg/instructions/instructions.md",
+                  "lines": "13",
+                  "contains": "ALWAYS get explicit yes/no confirmation",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/instructions/instructions.md#L13"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A wrongly approved or bypassing call can delete variables in shared variable sets, grant admin access, or apply irreversible infrastructure changes, with no preview or rollback from the server.",
+              "gap": "Offer plan previews/dry-runs for every state change and bound how much a session can change.",
+              "evidence": [
+                {
+                  "file": "pkg/toolsets/registry.go",
+                  "lines": "89",
+                  "contains": "{Name: \"delete_variable_in_variable_set\", Toolset: Terraform, RequiresTFE: true}",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/toolsets/registry.go#L89"
+                },
+                {
+                  "search": "rg -n -g '!*_test.go' 'dry_run|dryRun|DryRun|READ_ONLY|ReadOnlyMode'",
+                  "scope": "pkg cmd",
+                  "hits": 0,
+                  "note": "No dry-run parameter or read-only mode in shipped code (the only hits are in test files, excluded)."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "Tools are narrow, purpose-built wrappers over the HCP Terraform API (no shell, no generic HTTP), with typed parameters and some value checks (access levels, execution modes). But schema enums and page-size limits are advertised to the model rather than enforced, VCS repository identifiers are unrestricted, and the default enables every tool group once a token is present, so a misused tool reaches every workspace, team and variable set the token can touch.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.45,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Typed parameters with some in-code checks (team access levels, execution_mode switch), but run_type enums and pageSize max are schema-only and repository identifiers are unchecked.",
+          "gap": "Enforce allowlists and bounds in code for every argument (run types, repositories, org/workspace scope).",
+          "evidence": [
+            {
+              "file": "pkg/tools/tfe/grant_team_access.go",
+              "lines": "54",
+              "contains": "var validTeamAccessLevels = []string{\"admin\", \"read\", \"write\", \"plan\"}",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/grant_team_access.go#L54"
+            },
+            {
+              "file": "pkg/tools/tfe/update_workspace.go",
+              "lines": "138-145",
+              "contains": "options.ExecutionMode = tfe.String(\"agent\")",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/update_workspace.go#L138-L145"
+            },
+            {
+              "file": "pkg/utils/pagination.go",
+              "lines": "90-94",
+              "contains": "mcp.Max(100)",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/utils/pagination.go#L90-L94"
+            },
+            {
+              "file": "pkg/tools/tfe/create_workspace.go",
+              "lines": "160-174",
+              "contains": "options.VCSRepo = vcsRepo",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/create_workspace.go#L160-L174"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Most tools validate required strings and some values; nothing validates centrally.",
+          "gap": "Validate every tool's arguments in one shared layer.",
+          "evidence": [
+            {
+              "file": "pkg/tools/tfe/create_run.go",
+              "lines": "66",
+              "contains": "runType := request.GetString",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/create_run.go#L66"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tool groups and individual tools are selectable, but the default --toolsets is 'all', which includes write tools (destructive ones need ENABLE_TF_OPERATIONS).",
+          "gap": "Ship a read-only default (the registry group the docs describe) and require explicit enabling of write tools.",
+          "evidence": [
+            {
+              "file": "pkg/cli/commands.go",
+              "lines": "121",
+              "contains": "String(\"toolsets\", toolsets.All",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/cli/commands.go#L121"
+            },
+            {
+              "file": "README.md",
+              "lines": "643",
+              "contains": "default: registry",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/README.md#L643"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Misuse reaches every organization and workspace the token can access, with only API page-size limits.",
+          "gap": "Scope tools to configured organizations/workspaces and bound quantities per call.",
+          "evidence": [
+            {
+              "file": "pkg/tools/tfe/variable_sets.go",
+              "lines": "275",
+              "contains": "attach_variable_set_to_workspaces",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/variable_sets.go#L275"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.45,
+          "raw": 0.45,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Typed parameters with some in-code checks (team access levels, execution_mode switch), but run_type enums and pageSize max are schema-only and repository identifiers are unchecked.",
+              "gap": "Enforce allowlists and bounds in code for every argument (run types, repositories, org/workspace scope).",
+              "evidence": [
+                {
+                  "file": "pkg/tools/tfe/grant_team_access.go",
+                  "lines": "54",
+                  "contains": "var validTeamAccessLevels = []string{\"admin\", \"read\", \"write\", \"plan\"}",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/grant_team_access.go#L54"
+                },
+                {
+                  "file": "pkg/tools/tfe/update_workspace.go",
+                  "lines": "138-145",
+                  "contains": "options.ExecutionMode = tfe.String(\"agent\")",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/update_workspace.go#L138-L145"
+                },
+                {
+                  "file": "pkg/utils/pagination.go",
+                  "lines": "90-94",
+                  "contains": "mcp.Max(100)",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/utils/pagination.go#L90-L94"
+                },
+                {
+                  "file": "pkg/tools/tfe/create_workspace.go",
+                  "lines": "160-174",
+                  "contains": "options.VCSRepo = vcsRepo",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/create_workspace.go#L160-L174"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Most tools validate required strings and some values; nothing validates centrally.",
+              "gap": "Validate every tool's arguments in one shared layer.",
+              "evidence": [
+                {
+                  "file": "pkg/tools/tfe/create_run.go",
+                  "lines": "66",
+                  "contains": "runType := request.GetString",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/create_run.go#L66"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tool groups and individual tools are selectable, but the default --toolsets is 'all', which includes write tools (destructive ones need ENABLE_TF_OPERATIONS).",
+              "gap": "Ship a read-only default (the registry group the docs describe) and require explicit enabling of write tools.",
+              "evidence": [
+                {
+                  "file": "pkg/cli/commands.go",
+                  "lines": "121",
+                  "contains": "String(\"toolsets\", toolsets.All",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/cli/commands.go#L121"
+                },
+                {
+                  "file": "README.md",
+                  "lines": "643",
+                  "contains": "default: registry",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/README.md#L643"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Misuse reaches every organization and workspace the token can access, with only API page-size limits.",
+              "gap": "Scope tools to configured organizations/workspaces and bound quantities per call.",
+              "evidence": [
+                {
+                  "file": "pkg/tools/tfe/variable_sets.go",
+                  "lines": "275",
+                  "contains": "attach_variable_set_to_workspaces",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/variable_sets.go#L275"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "The server runs nothing locally, but its purpose is to trigger Terraform runs, and a Terraform plan executes provider and data-source code on HCP Terraform workers. The model can create a workspace backed by any repository the org's VCS connection can read, attach variable sets (often cloud credentials) and queue a plan, all without the destructive-operations switch. How those workers are isolated is outside this repo, and the model can also switch a workspace to self-hosted agent or local execution.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": {
+        "id": "G2",
+        "max": 0.25,
+        "reason": "The model can bypass the remote-runner boundary at runtime by setting a workspace's execution_mode to 'agent' or 'local' via update_workspace (pkg/tools/tfe/update_workspace.go:138-145)."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "Execution happens on HCP Terraform's remote run environment, not in the server process; its isolation is provider-side and cannot be verified from this repo.",
+          "gap": "Isolation the server can rely on and document (e.g., refusing execution modes other than remote).",
+          "evidence": [
+            {
+              "search": "rg -n -g '!*_test.go' 'exec\\.Command|os/exec|plugin\\.Open|go-plugin'",
+              "scope": "pkg cmd go.mod",
+              "hits": 0,
+              "note": "No local process execution or plugin loading anywhere in the server."
+            },
+            {
+              "file": "pkg/tools/tfe/create_run.go",
+              "lines": "101",
+              "contains": "tfeClient.Runs.Create(ctx, *options)",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/create_run.go#L101"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "Remote runs go through HCP Terraform's workers, but the model can move a workspace to 'agent' execution (self-hosted agents) or 'local'.",
+          "gap": "Keep every model-triggered run on the provider's remote workers and refuse execution-mode changes.",
+          "evidence": [
+            {
+              "file": "pkg/tools/tfe/update_workspace.go",
+              "lines": "138-145",
+              "contains": "options.ExecutionMode = tfe.String(\"agent\")",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/update_workspace.go#L138-L145"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "update_workspace lets the model change execution_mode with no human step or operator flag.",
+          "gap": "Make execution-mode changes an operator-only setting or gate them behind ENABLE_TF_OPERATIONS.",
+          "evidence": [
+            {
+              "file": "pkg/tools/tfe/update_workspace.go",
+              "lines": "138-145",
+              "contains": "options.ExecutionMode = tfe.String(\"agent\")",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/update_workspace.go#L138-L145"
+            },
+            {
+              "file": "pkg/tools/tfe/update_workspace.go",
+              "lines": "52",
+              "contains": "mcp.WithString(\"execution_mode\"",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/update_workspace.go#L52"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Code in a model-chosen repository runs with whatever variable sets the model attaches, which commonly hold cloud provider credentials, plus full network egress from the worker.",
+          "gap": "Prevent the model from attaching credential-bearing variable sets or choosing arbitrary repositories.",
+          "evidence": [
+            {
+              "file": "pkg/tools/tfe/create_workspace.go",
+              "lines": "160-174",
+              "contains": "options.VCSRepo = vcsRepo",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/create_workspace.go#L160-L174"
+            },
+            {
+              "file": "pkg/tools/tfe/variable_sets.go",
+              "lines": "275",
+              "contains": "attach_variable_set_to_workspaces",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/variable_sets.go#L275"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.275,
+          "cap": {
+            "id": "G2",
+            "max": 0.25,
+            "reason": "The model can bypass the remote-runner boundary at runtime by setting a workspace's execution_mode to 'agent' or 'local' via update_workspace (pkg/tools/tfe/update_workspace.go:138-145)."
+          },
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "Execution happens on HCP Terraform's remote run environment, not in the server process; its isolation is provider-side and cannot be verified from this repo.",
+              "gap": "Isolation the server can rely on and document (e.g., refusing execution modes other than remote).",
+              "evidence": [
+                {
+                  "search": "rg -n -g '!*_test.go' 'exec\\.Command|os/exec|plugin\\.Open|go-plugin'",
+                  "scope": "pkg cmd go.mod",
+                  "hits": 0,
+                  "note": "No local process execution or plugin loading anywhere in the server."
+                },
+                {
+                  "file": "pkg/tools/tfe/create_run.go",
+                  "lines": "101",
+                  "contains": "tfeClient.Runs.Create(ctx, *options)",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/create_run.go#L101"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "Remote runs go through HCP Terraform's workers, but the model can move a workspace to 'agent' execution (self-hosted agents) or 'local'.",
+              "gap": "Keep every model-triggered run on the provider's remote workers and refuse execution-mode changes.",
+              "evidence": [
+                {
+                  "file": "pkg/tools/tfe/update_workspace.go",
+                  "lines": "138-145",
+                  "contains": "options.ExecutionMode = tfe.String(\"agent\")",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/update_workspace.go#L138-L145"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "update_workspace lets the model change execution_mode with no human step or operator flag.",
+              "gap": "Make execution-mode changes an operator-only setting or gate them behind ENABLE_TF_OPERATIONS.",
+              "evidence": [
+                {
+                  "file": "pkg/tools/tfe/update_workspace.go",
+                  "lines": "138-145",
+                  "contains": "options.ExecutionMode = tfe.String(\"agent\")",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/update_workspace.go#L138-L145"
+                },
+                {
+                  "file": "pkg/tools/tfe/update_workspace.go",
+                  "lines": "52",
+                  "contains": "mcp.WithString(\"execution_mode\"",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/update_workspace.go#L52"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Code in a model-chosen repository runs with whatever variable sets the model attaches, which commonly hold cloud provider credentials, plus full network egress from the worker.",
+              "gap": "Prevent the model from attaching credential-bearing variable sets or choosing arbitrary repositories.",
+              "evidence": [
+                {
+                  "file": "pkg/tools/tfe/create_workspace.go",
+                  "lines": "160-174",
+                  "contains": "options.VCSRepo = vcsRepo",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/create_workspace.go#L160-L174"
+                },
+                {
+                  "file": "pkg/tools/tfe/variable_sets.go",
+                  "lines": "275",
+                  "contains": "attach_variable_set_to_workspaces",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/variable_sets.go#L275"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "The server returns raw third-party content (public registry provider and module documentation anyone can publish, plan and apply logs, run comments) as plain text with no marking of where it came from, and offers no read-only or no-egress mode. In the default configuration a hijacked host model can read secrets-bearing data, change access, delete variables and push changes to infrastructure through the same session, with nothing in the server separating untrusted input from those actions.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.075,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C5-WORSTCASE",
+        "max": 0.25,
+        "reason": "Worst case (B L0): a hijacked agent can leak data and take irreversible actions unattended."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Outputs are plain text (raw registry markdown or JSON:API payloads) with no provenance; tool descriptions carry only static tool-sequencing hints.",
+          "gap": "Return structured content that separates third-party text from metadata and flag it as untrusted.",
+          "evidence": [
+            {
+              "file": "pkg/tools/registry/get_provider_details.go",
+              "lines": "65",
+              "contains": "return mcp.NewToolResultText(details.Data.Attributes.Content), nil",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/registry/get_provider_details.go#L65"
+            },
+            {
+              "search": "rg -n -g '!*_test.go' 'untrusted|provenance|redact|Redact'",
+              "scope": "pkg cmd",
+              "hits": 0,
+              "note": "No provenance tagging of returned content and no redaction helpers."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No source of untrusted content (registry docs, logs, run comments) is distinguished from any other output.",
+          "gap": "Mark every third-party content source the same way.",
+          "evidence": [
+            {
+              "search": "rg -n -g '!*_test.go' 'untrusted|provenance|redact|Redact'",
+              "scope": "pkg cmd",
+              "hits": 0,
+              "note": "No provenance tagging of returned content and no redaction helpers."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "There is no provenance or Rule-of-Two mode to turn on.",
+          "gap": "Ship a default read-only mode that drops the state-change leg.",
+          "evidence": [
+            {
+              "search": "rg -n -g '!*_test.go' 'dry_run|dryRun|DryRun|READ_ONLY|ReadOnlyMode'",
+              "scope": "pkg cmd",
+              "hits": 0,
+              "note": "No dry-run parameter or read-only mode in shipped code (the only hits are in test files, excluded)."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked session can both leak (plan JSON output, variable values, code run on workers) and make irreversible changes (variable deletion, access grants, triggered runs) unattended by the server.",
+          "gap": "Drop one leg by default: no write tools when untrusted registry content is served, or no sensitive reads.",
+          "evidence": [
+            {
+              "file": "pkg/tools/tfe/get_plan_json_output.go",
+              "lines": "45",
+              "contains": "tfeClient.Plans.ReadJSONOutput(ctx, planID)",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/get_plan_json_output.go#L45"
+            },
+            {
+              "file": "pkg/toolsets/registry.go",
+              "lines": "89",
+              "contains": "{Name: \"delete_variable_in_variable_set\", Toolset: Terraform, RequiresTFE: true}",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/toolsets/registry.go#L89"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.075,
+          "raw": 0.075,
+          "cap": {
+            "id": "C5-WORSTCASE",
+            "max": 0.25,
+            "reason": "Worst case (B L0): a hijacked agent can leak data and take irreversible actions unattended."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Outputs are plain text (raw registry markdown or JSON:API payloads) with no provenance; tool descriptions carry only static tool-sequencing hints.",
+              "gap": "Return structured content that separates third-party text from metadata and flag it as untrusted.",
+              "evidence": [
+                {
+                  "file": "pkg/tools/registry/get_provider_details.go",
+                  "lines": "65",
+                  "contains": "return mcp.NewToolResultText(details.Data.Attributes.Content), nil",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/registry/get_provider_details.go#L65"
+                },
+                {
+                  "search": "rg -n -g '!*_test.go' 'untrusted|provenance|redact|Redact'",
+                  "scope": "pkg cmd",
+                  "hits": 0,
+                  "note": "No provenance tagging of returned content and no redaction helpers."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No source of untrusted content (registry docs, logs, run comments) is distinguished from any other output.",
+              "gap": "Mark every third-party content source the same way.",
+              "evidence": [
+                {
+                  "search": "rg -n -g '!*_test.go' 'untrusted|provenance|redact|Redact'",
+                  "scope": "pkg cmd",
+                  "hits": 0,
+                  "note": "No provenance tagging of returned content and no redaction helpers."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "There is no provenance or Rule-of-Two mode to turn on.",
+              "gap": "Ship a default read-only mode that drops the state-change leg.",
+              "evidence": [
+                {
+                  "search": "rg -n -g '!*_test.go' 'dry_run|dryRun|DryRun|READ_ONLY|ReadOnlyMode'",
+                  "scope": "pkg cmd",
+                  "hits": 0,
+                  "note": "No dry-run parameter or read-only mode in shipped code (the only hits are in test files, excluded)."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked session can both leak (plan JSON output, variable values, code run on workers) and make irreversible changes (variable deletion, access grants, triggered runs) unattended by the server.",
+              "gap": "Drop one leg by default: no write tools when untrusted registry content is served, or no sensitive reads.",
+              "evidence": [
+                {
+                  "file": "pkg/tools/tfe/get_plan_json_output.go",
+                  "lines": "45",
+                  "contains": "tfeClient.Plans.ReadJSONOutput(ctx, planID)",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/get_plan_json_output.go#L45"
+                },
+                {
+                  "file": "pkg/toolsets/registry.go",
+                  "lines": "89",
+                  "contains": "{Name: \"delete_variable_in_variable_set\", Toolset: Terraform, RequiresTFE: true}",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/toolsets/registry.go#L89"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "The server keeps no memory, vector store or persistent context, and loads no configuration from the working directory: settings come from environment variables and flags, credentials from the user-scope Terraform CLI file, and its instructions are compiled into the binary. Nothing the model reads can persist into later sessions through the server.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -g '!*_test.go' 'godotenv|dotenv|ReadInConfig|SetConfigFile|AGENTS\\.md|os\\.WriteFile'",
+              "scope": "pkg cmd",
+              "hits": 0,
+              "note": "No dotenv loading, config-file discovery, instruction-file loading or file writes (viper only reads env via AutomaticEnv)."
+            },
+            {
+              "file": "pkg/instructions/instructions.go",
+              "lines": "9-12",
+              "contains": "go:embed instructions.md",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/instructions/instructions.go#L9-L12"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -g '!*_test.go' 'godotenv|dotenv|ReadInConfig|SetConfigFile|AGENTS\\.md|os\\.WriteFile'",
+              "scope": "pkg cmd",
+              "hits": 0,
+              "note": "No dotenv loading, config-file discovery, instruction-file loading or file writes (viper only reads env via AutomaticEnv)."
+            },
+            {
+              "file": "pkg/instructions/instructions.go",
+              "lines": "9-12",
+              "contains": "go:embed instructions.md",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/instructions/instructions.go#L9-L12"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -g '!*_test.go' 'godotenv|dotenv|ReadInConfig|SetConfigFile|AGENTS\\.md|os\\.WriteFile'",
+              "scope": "pkg cmd",
+              "hits": 0,
+              "note": "No dotenv loading, config-file discovery, instruction-file loading or file writes (viper only reads env via AutomaticEnv)."
+            },
+            {
+              "file": "pkg/instructions/instructions.go",
+              "lines": "9-12",
+              "contains": "go:embed instructions.md",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/instructions/instructions.go#L9-L12"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -g '!*_test.go' 'godotenv|dotenv|ReadInConfig|SetConfigFile|AGENTS\\.md|os\\.WriteFile'",
+              "scope": "pkg cmd",
+              "hits": 0,
+              "note": "No dotenv loading, config-file discovery, instruction-file loading or file writes (viper only reads env via AutomaticEnv)."
+            },
+            {
+              "file": "pkg/instructions/instructions.go",
+              "lines": "9-12",
+              "contains": "go:embed instructions.md",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/instructions/instructions.go#L9-L12"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -g '!*_test.go' 'godotenv|dotenv|ReadInConfig|SetConfigFile|AGENTS\\.md|os\\.WriteFile'",
+                  "scope": "pkg cmd",
+                  "hits": 0,
+                  "note": "No dotenv loading, config-file discovery, instruction-file loading or file writes (viper only reads env via AutomaticEnv)."
+                },
+                {
+                  "file": "pkg/instructions/instructions.go",
+                  "lines": "9-12",
+                  "contains": "go:embed instructions.md",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/instructions/instructions.go#L9-L12"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -g '!*_test.go' 'godotenv|dotenv|ReadInConfig|SetConfigFile|AGENTS\\.md|os\\.WriteFile'",
+                  "scope": "pkg cmd",
+                  "hits": 0,
+                  "note": "No dotenv loading, config-file discovery, instruction-file loading or file writes (viper only reads env via AutomaticEnv)."
+                },
+                {
+                  "file": "pkg/instructions/instructions.go",
+                  "lines": "9-12",
+                  "contains": "go:embed instructions.md",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/instructions/instructions.go#L9-L12"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -g '!*_test.go' 'godotenv|dotenv|ReadInConfig|SetConfigFile|AGENTS\\.md|os\\.WriteFile'",
+                  "scope": "pkg cmd",
+                  "hits": 0,
+                  "note": "No dotenv loading, config-file discovery, instruction-file loading or file writes (viper only reads env via AutomaticEnv)."
+                },
+                {
+                  "file": "pkg/instructions/instructions.go",
+                  "lines": "9-12",
+                  "contains": "go:embed instructions.md",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/instructions/instructions.go#L9-L12"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -g '!*_test.go' 'godotenv|dotenv|ReadInConfig|SetConfigFile|AGENTS\\.md|os\\.WriteFile'",
+                  "scope": "pkg cmd",
+                  "hits": 0,
+                  "note": "No dotenv loading, config-file discovery, instruction-file loading or file writes (viper only reads env via AutomaticEnv)."
+                },
+                {
+                  "file": "pkg/instructions/instructions.go",
+                  "lines": "9-12",
+                  "contains": "go:embed instructions.md",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/instructions/instructions.go#L9-L12"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n -g '!*_test.go' 'godotenv|dotenv|ReadInConfig|SetConfigFile|AGENTS\\.md|os\\.WriteFile'",
+          "scope": "pkg cmd",
+          "hits": 0,
+          "note": "No dotenv loading, config-file discovery, instruction-file loading or file writes (viper only reads env via AutomaticEnv)."
+        },
+        {
+          "file": "pkg/instructions/instructions.go",
+          "lines": "9-12",
+          "contains": "go:embed instructions.md",
+          "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/instructions/instructions.go#L9-L12"
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "The server loads no plugins, launches no other MCP servers and executes no downloaded code in its own process. Third-party Terraform providers and modules are only fetched and run by HCP Terraform workers, which is covered under code execution.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -g '!*_test.go' 'exec\\.Command|os/exec|plugin\\.Open|go-plugin'",
+              "scope": "pkg cmd go.mod",
+              "hits": 0,
+              "note": "No local process execution or plugin loading anywhere in the server."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -g '!*_test.go' 'exec\\.Command|os/exec|plugin\\.Open|go-plugin'",
+              "scope": "pkg cmd go.mod",
+              "hits": 0,
+              "note": "No local process execution or plugin loading anywhere in the server."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -g '!*_test.go' 'exec\\.Command|os/exec|plugin\\.Open|go-plugin'",
+              "scope": "pkg cmd go.mod",
+              "hits": 0,
+              "note": "No local process execution or plugin loading anywhere in the server."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -g '!*_test.go' 'exec\\.Command|os/exec|plugin\\.Open|go-plugin'",
+              "scope": "pkg cmd go.mod",
+              "hits": 0,
+              "note": "No local process execution or plugin loading anywhere in the server."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -g '!*_test.go' 'exec\\.Command|os/exec|plugin\\.Open|go-plugin'",
+                  "scope": "pkg cmd go.mod",
+                  "hits": 0,
+                  "note": "No local process execution or plugin loading anywhere in the server."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -g '!*_test.go' 'exec\\.Command|os/exec|plugin\\.Open|go-plugin'",
+                  "scope": "pkg cmd go.mod",
+                  "hits": 0,
+                  "note": "No local process execution or plugin loading anywhere in the server."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -g '!*_test.go' 'exec\\.Command|os/exec|plugin\\.Open|go-plugin'",
+                  "scope": "pkg cmd go.mod",
+                  "hits": 0,
+                  "note": "No local process execution or plugin loading anywhere in the server."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -g '!*_test.go' 'exec\\.Command|os/exec|plugin\\.Open|go-plugin'",
+                  "scope": "pkg cmd go.mod",
+                  "hits": 0,
+                  "note": "No local process execution or plugin loading anywhere in the server."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n -g '!*_test.go' 'exec\\.Command|os/exec|plugin\\.Open|go-plugin'",
+          "scope": "pkg cmd go.mod",
+          "hits": 0,
+          "note": "No local process execution or plugin loading anywhere in the server."
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "The API token is read from the environment or the user's Terraform credentials file, never returned to the model, and only a hash of it is kept for cache comparison. But sensitive values on the server's logging path are not fully protected. Plan JSON output, which can contain sensitive values, is returned to the model unredacted. Telemetry is off by default and content-free.",
+      "max": 1.0,
+      "notes": "Plan JSON output containing unredacted sensitive values is HCP Terraform API behaviour (json-output vs json-output-redacted), not verified in this repo.",
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Token comes from env/credentials file and is not logged, but there is no redaction of tool arguments or results.",
+          "gap": "Redact sensitive fields in logs and model-bound results on all main paths.",
+          "evidence": [
+            {
+              "file": "pkg/client/tfe_client.go",
+              "lines": "209-216",
+              "contains": "ReadCredentialsFile(extractHostname(terraformAddress), logger)",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/tfe_client.go#L209-L216"
+            },
+            {
+              "search": "rg -n -g '!*_test.go' 'untrusted|provenance|redact|Redact'",
+              "scope": "pkg cmd",
+              "hits": 0,
+              "note": "No provenance tagging of returned content and no redaction helpers."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only the token's own handling is protected; logs, model-bound results and errors are not filtered.",
+          "gap": "Protect logs and transcripts as well as the token.",
+          "evidence": [
+            {
+              "file": "pkg/tools/tfe/workspace_variables.go",
+              "lines": "121",
+              "contains": "sensitive := request.GetBool(\"sensitive\", false)",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/workspace_variables.go#L121"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Telemetry (OTEL, Instana) is opt-in and content-free, but default logging does not fully protect sensitive values.",
+          "gap": "Make default logging content-free or redacted.",
+          "evidence": [
+            {
+              "file": "pkg/otelmetrics/otelmetrics.go",
+              "lines": "26",
+              "contains": "if !metricsConfig.Enabled",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/otelmetrics/otelmetrics.go#L26"
+            },
+            {
+              "file": "pkg/instana/instana.go",
+              "lines": "17",
+              "contains": "os.Getenv(\"INSTANA_ENABLED\") != \"true\"",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/instana/instana.go#L17"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A leak exposes a long-lived HCP Terraform token or sensitive workspace values, usually scoped to a user's organizations.",
+          "gap": "Use short-lived, narrowly scoped tokens.",
+          "evidence": [
+            {
+              "file": "pkg/client/tfe_client.go",
+              "lines": "83-86",
+              "contains": "Token:             terraformToken",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/tfe_client.go#L83-L86"
+            },
+            {
+              "file": "pkg/tools/tfe/get_plan_json_output.go",
+              "lines": "45",
+              "contains": "tfeClient.Plans.ReadJSONOutput(ctx, planID)",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/get_plan_json_output.go#L45"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.25,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Token comes from env/credentials file and is not logged, but there is no redaction of tool arguments or results.",
+              "gap": "Redact sensitive fields in logs and model-bound results on all main paths.",
+              "evidence": [
+                {
+                  "file": "pkg/client/tfe_client.go",
+                  "lines": "209-216",
+                  "contains": "ReadCredentialsFile(extractHostname(terraformAddress), logger)",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/tfe_client.go#L209-L216"
+                },
+                {
+                  "search": "rg -n -g '!*_test.go' 'untrusted|provenance|redact|Redact'",
+                  "scope": "pkg cmd",
+                  "hits": 0,
+                  "note": "No provenance tagging of returned content and no redaction helpers."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only the token's own handling is protected; logs, model-bound results and errors are not filtered.",
+              "gap": "Protect logs and transcripts as well as the token.",
+              "evidence": [
+                {
+                  "file": "pkg/tools/tfe/workspace_variables.go",
+                  "lines": "121",
+                  "contains": "sensitive := request.GetBool(\"sensitive\", false)",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/workspace_variables.go#L121"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Telemetry (OTEL, Instana) is opt-in and content-free, but default logging does not fully protect sensitive values.",
+              "gap": "Make default logging content-free or redacted.",
+              "evidence": [
+                {
+                  "file": "pkg/otelmetrics/otelmetrics.go",
+                  "lines": "26",
+                  "contains": "if !metricsConfig.Enabled",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/otelmetrics/otelmetrics.go#L26"
+                },
+                {
+                  "file": "pkg/instana/instana.go",
+                  "lines": "17",
+                  "contains": "os.Getenv(\"INSTANA_ENABLED\") != \"true\"",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/instana/instana.go#L17"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A leak exposes a long-lived HCP Terraform token or sensitive workspace values, usually scoped to a user's organizations.",
+              "gap": "Use short-lived, narrowly scoped tokens.",
+              "evidence": [
+                {
+                  "file": "pkg/client/tfe_client.go",
+                  "lines": "83-86",
+                  "contains": "Token:             terraformToken",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/tfe_client.go#L83-L86"
+                },
+                {
+                  "file": "pkg/tools/tfe/get_plan_json_output.go",
+                  "lines": "45",
+                  "contains": "tfeClient.Plans.ReadJSONOutput(ctx, planID)",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/get_plan_json_output.go#L45"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "Every tool call is written to the server log with its name and arguments before it runs, through a middleware registered for all tools. The record is plain text by default, has no result status or caller identity in stdio mode, and goes to stderr where the host decides what to keep. HCP Terraform keeps its own audit trail, which is independent of this server.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.375,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "An unstructured logrus line per tool call (name and arguments) with timestamp; no result status or actor fields.",
+          "gap": "Write a structured record per call with result status and requesting principal.",
+          "evidence": [
+            {
+              "file": "pkg/client/tool_logging_middleware.go",
+              "lines": "18",
+              "contains": "Tool call %q executed with args: %v",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/tool_logging_middleware.go#L18"
+            },
+            {
+              "file": "pkg/logging/logging.go",
+              "lines": "103-117",
+              "contains": "logger := log.New()",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/logging/logging.go#L103-L117"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The logging middleware wraps every registered tool.",
+          "gap": "Also record approvals/denials and authorization decisions.",
+          "evidence": [
+            {
+              "file": "pkg/mcp-mark3labs/server.go",
+              "lines": "28-29",
+              "contains": "server.WithToolHandlerMiddleware(client.ToolLoggingMiddleware(logger))",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/mcp-mark3labs/server.go#L28-L29"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "On by default and written by the server to stderr/log file, outside anything the tools can touch, but configurable by env.",
+          "gap": "Write to a sink the server process cannot alter.",
+          "evidence": [
+            {
+              "file": "pkg/logging/logging.go",
+              "lines": "103-117",
+              "contains": "logger := log.New()",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/logging/logging.go#L103-L117"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The line is written synchronously before the call, but write failures are ignored and actions proceed.",
+          "gap": "Surface logging failures and flush durably per action.",
+          "evidence": [
+            {
+              "file": "pkg/client/tool_logging_middleware.go",
+              "lines": "18",
+              "contains": "Tool call %q executed with args: %v",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/tool_logging_middleware.go#L18"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.375,
+          "raw": 0.375,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "An unstructured logrus line per tool call (name and arguments) with timestamp; no result status or actor fields.",
+              "gap": "Write a structured record per call with result status and requesting principal.",
+              "evidence": [
+                {
+                  "file": "pkg/client/tool_logging_middleware.go",
+                  "lines": "18",
+                  "contains": "Tool call %q executed with args: %v",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/tool_logging_middleware.go#L18"
+                },
+                {
+                  "file": "pkg/logging/logging.go",
+                  "lines": "103-117",
+                  "contains": "logger := log.New()",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/logging/logging.go#L103-L117"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The logging middleware wraps every registered tool.",
+              "gap": "Also record approvals/denials and authorization decisions.",
+              "evidence": [
+                {
+                  "file": "pkg/mcp-mark3labs/server.go",
+                  "lines": "28-29",
+                  "contains": "server.WithToolHandlerMiddleware(client.ToolLoggingMiddleware(logger))",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/mcp-mark3labs/server.go#L28-L29"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "On by default and written by the server to stderr/log file, outside anything the tools can touch, but configurable by env.",
+              "gap": "Write to a sink the server process cannot alter.",
+              "evidence": [
+                {
+                  "file": "pkg/logging/logging.go",
+                  "lines": "103-117",
+                  "contains": "logger := log.New()",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/logging/logging.go#L103-L117"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The line is written synchronously before the call, but write failures are ignored and actions proceed.",
+              "gap": "Surface logging failures and flush durably per action.",
+              "evidence": [
+                {
+                  "file": "pkg/client/tool_logging_middleware.go",
+                  "lines": "18",
+                  "contains": "Tool call %q executed with args: %v",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/tool_logging_middleware.go#L18"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "All tool calls pass a rate limiter (10 per second globally, 5 per second per session by default), and HTTP requests to the registry and HCP Terraform have a 10-second timeout with three retries. But registry pagination loops have no page limit, registry requests are not tied to the caller's cancellation, and runs the server starts keep executing on HCP Terraform after the session ends.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.5,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Server-enforced per-request timeouts and global/per-session rate limits; no cap on paginated loops and no cancellation of in-flight registry calls.",
+          "gap": "Cap every operation (page counts, output size) and propagate cancellation.",
+          "evidence": [
+            {
+              "file": "pkg/client/ratelimit.go",
+              "lines": "32-34",
+              "contains": "rate.Every(time.Second / 5)",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/ratelimit.go#L32-L34"
+            },
+            {
+              "file": "pkg/client/registry.go",
+              "lines": "37-39",
+              "contains": "retryClient.HTTPClient.Timeout = 10 * time.Second",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/registry.go#L37-L39"
+            },
+            {
+              "file": "pkg/client/registry.go",
+              "lines": "107-111",
+              "contains": "func SendPaginatedRegistryCall",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/registry.go#L107-L111"
+            },
+            {
+              "file": "pkg/client/registry.go",
+              "lines": "77",
+              "contains": "http.NewRequest(method, url.String(), nil)",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/registry.go#L77"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The rate limiter wraps every tool; timeouts cover every outbound HTTP call; remote runs are not bounded.",
+          "gap": "Bound or cancel remote work the server starts.",
+          "evidence": [
+            {
+              "file": "pkg/mcp-mark3labs/server.go",
+              "lines": "28",
+              "contains": "server.WithToolHandlerMiddleware(rateLimitMiddleware.Middleware())",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/mcp-mark3labs/server.go#L28"
+            },
+            {
+              "file": "pkg/client/registry.go",
+              "lines": "37-39",
+              "contains": "retryClient.HTTPClient.Timeout = 10 * time.Second",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/registry.go#L37-L39"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Sensible rate-limit defaults that only the operator can change via environment variables.",
+          "gap": "Enforce hard ceilings that configuration cannot exceed.",
+          "evidence": [
+            {
+              "file": "pkg/client/ratelimit.go",
+              "lines": "40-46",
+              "contains": "os.Getenv(\"MCP_RATE_LIMIT_GLOBAL\")",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/ratelimit.go#L40-L46"
+            },
+            {
+              "file": "pkg/client/ratelimit.go",
+              "lines": "32-34",
+              "contains": "rate.Every(time.Second / 5)",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/ratelimit.go#L32-L34"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "At 5 calls per second a runaway session can make hundreds of changes a minute, and triggered runs continue after stop.",
+          "gap": "Tighter per-session ceilings on mutating calls and cancellation of runs on stop.",
+          "evidence": [
+            {
+              "file": "pkg/client/ratelimit.go",
+              "lines": "32-34",
+              "contains": "rate.Every(time.Second / 5)",
+              "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/ratelimit.go#L32-L34"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.5,
+          "raw": 0.5,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Server-enforced per-request timeouts and global/per-session rate limits; no cap on paginated loops and no cancellation of in-flight registry calls.",
+              "gap": "Cap every operation (page counts, output size) and propagate cancellation.",
+              "evidence": [
+                {
+                  "file": "pkg/client/ratelimit.go",
+                  "lines": "32-34",
+                  "contains": "rate.Every(time.Second / 5)",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/ratelimit.go#L32-L34"
+                },
+                {
+                  "file": "pkg/client/registry.go",
+                  "lines": "37-39",
+                  "contains": "retryClient.HTTPClient.Timeout = 10 * time.Second",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/registry.go#L37-L39"
+                },
+                {
+                  "file": "pkg/client/registry.go",
+                  "lines": "107-111",
+                  "contains": "func SendPaginatedRegistryCall",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/registry.go#L107-L111"
+                },
+                {
+                  "file": "pkg/client/registry.go",
+                  "lines": "77",
+                  "contains": "http.NewRequest(method, url.String(), nil)",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/registry.go#L77"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The rate limiter wraps every tool; timeouts cover every outbound HTTP call; remote runs are not bounded.",
+              "gap": "Bound or cancel remote work the server starts.",
+              "evidence": [
+                {
+                  "file": "pkg/mcp-mark3labs/server.go",
+                  "lines": "28",
+                  "contains": "server.WithToolHandlerMiddleware(rateLimitMiddleware.Middleware())",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/mcp-mark3labs/server.go#L28"
+                },
+                {
+                  "file": "pkg/client/registry.go",
+                  "lines": "37-39",
+                  "contains": "retryClient.HTTPClient.Timeout = 10 * time.Second",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/registry.go#L37-L39"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Sensible rate-limit defaults that only the operator can change via environment variables.",
+              "gap": "Enforce hard ceilings that configuration cannot exceed.",
+              "evidence": [
+                {
+                  "file": "pkg/client/ratelimit.go",
+                  "lines": "40-46",
+                  "contains": "os.Getenv(\"MCP_RATE_LIMIT_GLOBAL\")",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/ratelimit.go#L40-L46"
+                },
+                {
+                  "file": "pkg/client/ratelimit.go",
+                  "lines": "32-34",
+                  "contains": "rate.Every(time.Second / 5)",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/ratelimit.go#L32-L34"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "At 5 calls per second a runaway session can make hundreds of changes a minute, and triggered runs continue after stop.",
+              "gap": "Tighter per-session ceilings on mutating calls and cancellation of runs on stop.",
+              "evidence": [
+                {
+                  "file": "pkg/client/ratelimit.go",
+                  "lines": "32-34",
+                  "contains": "rate.Every(time.Second / 5)",
+                  "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/ratelimit.go#L32-L34"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "The default tool set exposes grant_team_access and add_team_member, letting a hijacked session raise its own team's access with the user's org-wide token.",
+      "criterion": "C1",
+      "owasp": [
+        "ASI03",
+        "T3"
+      ],
+      "evidence": [
+        {
+          "file": "pkg/cli/commands.go",
+          "lines": "121",
+          "contains": "String(\"toolsets\", toolsets.All",
+          "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/cli/commands.go#L121"
+        },
+        {
+          "file": "pkg/tools/tfe/grant_team_access.go",
+          "lines": "54",
+          "contains": "var validTeamAccessLevels = []string{\"admin\", \"read\", \"write\", \"plan\"}",
+          "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/grant_team_access.go#L54"
+        },
+        {
+          "file": "pkg/client/tfe_client.go",
+          "lines": "209-216",
+          "contains": "ReadCredentialsFile(extractHostname(terraformAddress), logger)",
+          "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/tfe_client.go#L209-L216"
+        }
+      ]
+    },
+    {
+      "summary": "The model can create a workspace from any VCS repository, attach credential-bearing variable sets and queue a plan, running chosen code with those credentials, and can switch execution off the remote runners.",
+      "criterion": "C4",
+      "owasp": [
+        "ASI05",
+        "T11"
+      ],
+      "evidence": [
+        {
+          "file": "pkg/tools/tfe/create_workspace.go",
+          "lines": "160-174",
+          "contains": "options.VCSRepo = vcsRepo",
+          "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/create_workspace.go#L160-L174"
+        },
+        {
+          "file": "pkg/tools/tfe/variable_sets.go",
+          "lines": "275",
+          "contains": "attach_variable_set_to_workspaces",
+          "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/variable_sets.go#L275"
+        },
+        {
+          "file": "pkg/tools/tfe/update_workspace.go",
+          "lines": "138-145",
+          "contains": "options.ExecutionMode = tfe.String(\"agent\")",
+          "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/update_workspace.go#L138-L145"
+        }
+      ]
+    },
+    {
+      "summary": "Untrusted registry content reaches the model in the same session as sensitive reads and irreversible writes, with no server-side separation.",
+      "criterion": "C5",
+      "owasp": [
+        "ASI01",
+        "LLM01",
+        "T6"
+      ],
+      "evidence": [
+        {
+          "file": "pkg/tools/registry/get_provider_details.go",
+          "lines": "65",
+          "contains": "return mcp.NewToolResultText(details.Data.Attributes.Content), nil",
+          "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/registry/get_provider_details.go#L65"
+        },
+        {
+          "file": "pkg/toolsets/registry.go",
+          "lines": "89",
+          "contains": "{Name: \"delete_variable_in_variable_set\", Toolset: Terraform, RequiresTFE: true}",
+          "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/toolsets/registry.go#L89"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "Public registry docs and module READMEs returned raw (pkg/tools/registry/get_provider_details.go:65); plan/apply logs and run comments.",
+    "sensitive_data": "HCP Terraform token (pkg/client/tfe_client.go:211-214), workspace variables and plan JSON output (pkg/tools/tfe/get_plan_json_output.go:45).",
+    "state_change_or_egress": "update_workspace, create_run, variable and access tools; remote runs with network egress.",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Change the --toolsets default from 'all' to 'default' (registry only), matching the README and CHANGELOG.",
+      "criterion": "C3",
+      "parameter": "D",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 3 step 1",
+      "estimated_gain": 0.05
+    },
+    {
+      "summary": "Mark update_workspace, grant_team_access, add_team_member and create_team destructive, and set explicit hints on every tool.",
+      "criterion": "C2",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 5",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Route every path that can lead to an applied run through ENABLE_TF_OPERATIONS, and move execution_mode and VCS-repo changes behind it.",
+      "criterion": "C2",
+      "parameter": "C",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 5",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Add redaction of sensitive values on all logging paths.",
+      "criterion": "C8",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 4",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Stop the model from changing execution_mode so runs always stay on remote workers.",
+      "criterion": "C4",
+      "parameter": "D",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.05
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was executed, installed, or probed.",
+    "Pinned commit is 35 commits after tag v1.3.0 and is not itself tagged, so version is null.",
+    "Scored the default stdio mode. Streamable-HTTP mode (opt-in) was reviewed for footnotes only: it passes client tokens through; its client authentication and TLS handling are not locked down.",
+    "The experimental official go-sdk server (TF_X_OFFICIAL_SDK_ENABLED, HTTP mode only) was not scored in detail.",
+    "Several downstream effects are HCP Terraform/go-tfe behaviour inferred from library docs, not verified here: plan json-output containing unredacted sensitive values, and the isolation of HCP Terraform remote workers.",
+    "No attempts to steer AI reviewers were found in the repository."
+  ]
+}

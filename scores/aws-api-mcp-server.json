@@ -1,0 +1,2715 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "aws-api-mcp-server",
+  "name": "AWS API MCP Server",
+  "repo_url": "https://github.com/awslabs/mcp",
+  "subpath": "src/aws-api-mcp-server",
+  "description": "MCP server letting agents run arbitrary AWS CLI commands",
+  "category": "infrastructure_ops",
+  "pinned_commit": "93991b85acfe8d139abc069547973241f88c12e2",
+  "version": null,
+  "scored_date": "2026-10-03",
+  "scored_configuration": "Local stdio server with default environment: READ_OPERATIONS_ONLY=false, REQUIRE_MUTATION_CONSENT=false, file access 'workdir', telemetry on, agent scripts off, ambient AWS credential chain.",
+  "score": 4.5,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 8,
+    "score": 2.53,
+    "max": 8.0,
+    "percent": 32
+  },
+  "capability_profile": {
+    "code_execution": "yes",
+    "filesystem_write": "yes",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "no",
+    "untrusted_input": "yes",
+    "third_party_extensions": "no",
+    "sub_agents": "no",
+    "external_communication": "yes"
+  },
+  "headline": "As shipped, this server runs any AWS API the model asks for, with the operator's own AWS credentials and no confirmation, including IAM changes, deletions and remote shell commands through SSM. AWS IAM is the only real limit, so deploy it with a scoped-down role. The opt-in read-only mode and per-write consent are well built, mapping every request to AWS's own permission data and failing closed, but both are off by default. File access is confined to a working directory by default, and there is no local shell.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "The server runs every AWS call with the operator's ambient credentials (the boto3 default chain or a configured profile), and the model may switch to any other locally configured profile with --profile. By default there is no authorization layer: every operation, including IAM changes to the server's own identity, is allowed. An opt-in read-only mode maps each request to AWS's own Service Authorization data and denies writes, failing closed on unknown services or fetch errors, but it still lets the model mint EKS, ECR and RDS tokens and pick a more privileged profile. IAM policy on the operator's credentials is the only real bound.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.375,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Each request is mapped to AWS's own permission model (embedded metadata, then the official Service Authorization Reference IsWrite flag over HTTPS) and writes are denied before credentials are attached; unknown services and fetch errors fail closed.",
+          "gap": "The model can still pick any local profile with --profile, and token-minting operations (eks get-token, ecr get-login-password, rds generate-db-auth-token) are allowlisted as read-only, so the bound leaks credentials for other systems.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py",
+              "lines": "79-93",
+              "contains": "if service not in self._service_reference_urls_by_service:",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py#L79-L93"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py",
+              "lines": "95-106",
+              "contains": "if not action['Annotations']['Properties']['IsWrite']:",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py#L95-L106"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py",
+              "lines": "22",
+              "contains": "SERVICE_REFERENCE_URL = 'https://servicereference.us-east-1.amazonaws.com/'",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py#L22"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py",
+              "lines": "25-44",
+              "contains": "'CreateAccessKey': False",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py#L25-L44"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+              "lines": "329-335",
+              "contains": "security policy '",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L329-L335"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/driver.py",
+              "lines": "108-110",
+              "contains": "profile=translation.command.profile or AWS_API_MCP_PROFILE_NAME",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/driver.py#L108-L110"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py",
+              "lines": "132-138",
+              "contains": "'eks': ['get-token']",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py#L132-L138"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every call_aws path (service operations, CLI customizations and help) passes check_security_policy before execution; suggest_aws_commands uses no AWS credentials.",
+          "gap": "No per-principal authorization: in HTTP mode one credential serves every client.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+              "lines": "337-344",
+              "contains": "policy_decision = check_security_policy(ir, READ_OPERATIONS_INDEX, ctx)",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L337-L344"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+              "lines": "346-362",
+              "contains": "execute_awscli_customization(",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L346-L362"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Read-only mode is off unless the operator sets READ_OPERATIONS_ONLY.",
+          "gap": "Not on by default.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+              "lines": "171",
+              "contains": "READ_OPERATIONS_ONLY_MODE = get_env_bool(READ_ONLY_KEY, False)",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L171"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "If the read-only gate is bypassed the operator's full ambient credentials remain usable.",
+          "gap": "No narrower credential behind the gate.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/driver.py",
+              "lines": "31-37",
+              "contains": "session = boto3.Session()",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/driver.py#L31-L37"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": {
+            "id": "C1-SELFESC",
+            "max": 0.25,
+            "reason": "With the default ALLOW policy the model can call IAM write APIs (attach-role-policy, put-user-policy, create-access-key) against the server's own identity, and can switch credential scope with --profile."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Requests use the operator's ambient AWS credentials from the default chain or AWS_API_MCP_PROFILE_NAME, with no narrowing, and the model may pick any local profile.",
+              "gap": "No deterministic per-request authorization in the default configuration; nothing narrows the credential.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/driver.py",
+                  "lines": "31-37",
+                  "contains": "session = boto3.Session()",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/driver.py#L31-L37"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/driver.py",
+                  "lines": "108-110",
+                  "contains": "profile=translation.command.profile or AWS_API_MCP_PROFILE_NAME",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/driver.py#L108-L110"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "In the default configuration no tool path checks authorization; the policy falls through to ALLOW for every operation.",
+              "gap": "No authorization layer applied to tool paths by default.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+                  "lines": "131-138",
+                  "contains": "Default behavior: allow all operations",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L131-L138"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The default install runs with whatever the operator's credentials permit, often admin; read-only mode is opt-in.",
+              "gap": "Default is not read-only; least privilege needs manual IAM hardening or READ_OPERATIONS_ONLY.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+                  "lines": "171",
+                  "contains": "READ_OPERATIONS_ONLY_MODE = get_env_bool(READ_ONLY_KEY, False)",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L171"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+                  "lines": "131-138",
+                  "contains": "Default behavior: allow all operations",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L131-L138"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked server holds the operator's full AWS authority, including IAM writes, across every enabled region.",
+              "gap": "No scoping of the credential to a project, tenant or read-only role.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/driver.py",
+                  "lines": "31-37",
+                  "contains": "session = boto3.Session()",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/driver.py#L31-L37"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/service.py",
+                  "lines": "287-295",
+                  "contains": "region_wildcard.sub(f'--region {region}', cli_command) for region in active_regions",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/service.py#L287-L295"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in READ_OPERATIONS_ONLY authorization gate",
+          "score": 0.375,
+          "raw": 0.375,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Each request is mapped to AWS's own permission model (embedded metadata, then the official Service Authorization Reference IsWrite flag over HTTPS) and writes are denied before credentials are attached; unknown services and fetch errors fail closed.",
+              "gap": "The model can still pick any local profile with --profile, and token-minting operations (eks get-token, ecr get-login-password, rds generate-db-auth-token) are allowlisted as read-only, so the bound leaks credentials for other systems.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py",
+                  "lines": "79-93",
+                  "contains": "if service not in self._service_reference_urls_by_service:",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py#L79-L93"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py",
+                  "lines": "95-106",
+                  "contains": "if not action['Annotations']['Properties']['IsWrite']:",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py#L95-L106"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py",
+                  "lines": "22",
+                  "contains": "SERVICE_REFERENCE_URL = 'https://servicereference.us-east-1.amazonaws.com/'",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py#L22"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py",
+                  "lines": "25-44",
+                  "contains": "'CreateAccessKey': False",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py#L25-L44"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+                  "lines": "329-335",
+                  "contains": "security policy '",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L329-L335"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/driver.py",
+                  "lines": "108-110",
+                  "contains": "profile=translation.command.profile or AWS_API_MCP_PROFILE_NAME",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/driver.py#L108-L110"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py",
+                  "lines": "132-138",
+                  "contains": "'eks': ['get-token']",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py#L132-L138"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every call_aws path (service operations, CLI customizations and help) passes check_security_policy before execution; suggest_aws_commands uses no AWS credentials.",
+              "gap": "No per-principal authorization: in HTTP mode one credential serves every client.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+                  "lines": "337-344",
+                  "contains": "policy_decision = check_security_policy(ir, READ_OPERATIONS_INDEX, ctx)",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L337-L344"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+                  "lines": "346-362",
+                  "contains": "execute_awscli_customization(",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L346-L362"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Read-only mode is off unless the operator sets READ_OPERATIONS_ONLY.",
+              "gap": "Not on by default.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+                  "lines": "171",
+                  "contains": "READ_OPERATIONS_ONLY_MODE = get_env_bool(READ_ONLY_KEY, False)",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L171"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "If the read-only gate is bypassed the operator's full ambient credentials remain usable.",
+              "gap": "No narrower credential behind the gate.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/driver.py",
+                  "lines": "31-37",
+                  "contains": "session = boto3.Session()",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/driver.py#L31-L37"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "Everything goes through one call_aws tool that mixes reads and writes; by default it is simply annotated destructive, so the host must gate every call because it can't tell reads from writes. The server offers an opt-in consent mode that, for every operation AWS classes as a write, shows the user the exact CLI command through MCP elicitation and refuses if the client can't ask. It is off by default, and when it is off every AWS action, including deletes and terminations, runs without any server-side confirmation. AWS actions cannot be rolled back by the server.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.45,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Each non-read-only operation (per AWS's own classification) triggers an elicitation that shows the exact CLI command; rejection, or a client without elicitation, aborts the call.",
+          "gap": "No argument-level allow/deny/escalate policy; decisions are per operation only.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/service.py",
+              "lines": "52-66",
+              "contains": "requires explicit consent",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/service.py#L52-L66"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+              "lines": "134-135",
+              "contains": "if REQUIRE_MUTATION_CONSENT and not is_read_only:",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L134-L135"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every call_aws command, including CLI customizations and each region of a --region * fan-out, passes the policy before execution, and auto-approved calls are AWS-classified read-only operations.",
+          "gap": "Read-only auto-approval still includes credential-minting and local-file-writing operations; no rejection of unknown commands beyond non-read-only classification.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+              "lines": "337-344",
+              "contains": "policy_decision = check_security_policy(ir, READ_OPERATIONS_INDEX, ctx)",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L337-L344"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py",
+              "lines": "79-93",
+              "contains": "if service not in self._service_reference_urls_by_service:",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py#L79-L93"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/service.py",
+              "lines": "287-295",
+              "contains": "region_wildcard.sub(f'--region {region}', cli_command) for region in active_regions",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/service.py#L287-L295"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Consent mode is off unless the operator sets REQUIRE_MUTATION_CONSENT.",
+          "gap": "Not on by default.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+              "lines": "174",
+              "contains": "REQUIRE_MUTATION_CONSENT = get_env_bool(REQUIRE_MUTATION_CONSENT_KEY, False)",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L174"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A wrongly approved AWS action is still irreversible and unbounded.",
+          "gap": "No rollback, dry-run or quantity limits.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+              "lines": "131-138",
+              "contains": "Default behavior: allow all operations",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L131-L138"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.325,
+          "raw": 0.325,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Risk signalling is a single destructiveHint on the one call_aws tool that performs both reads and writes; there are no separate read and write tools.",
+              "gap": "Split read and write operations into separately annotated tools or modes.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+                  "lines": "242-247",
+                  "contains": "destructiveHint=not READ_OPERATIONS_ONLY_MODE",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L242-L247"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All tools carry accurate annotations (suggest_aws_commands readOnly, call_aws destructive), so a host gating on hints covers every path.",
+              "gap": "No server-side gate covering every path in the default configuration.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+                  "lines": "242-247",
+                  "contains": "destructiveHint=not READ_OPERATIONS_ONLY_MODE",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L242-L247"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+                  "lines": "147-149",
+                  "contains": "readOnlyHint=True",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L147-L149"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Annotations are fixed in code and only flip to readOnly when read-only mode is enabled.",
+              "gap": "No server-enforced confirmation is on by default.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+                  "lines": "242-247",
+                  "contains": "destructiveHint=not READ_OPERATIONS_ONLY_MODE",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L242-L247"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+                  "lines": "174",
+                  "contains": "REQUIRE_MUTATION_CONSENT = get_env_bool(REQUIRE_MUTATION_CONSENT_KEY, False)",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L174"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "With no gate, a wrongly approved call can make irreversible AWS changes (delete buckets, terminate instances, drop databases) with no undo.",
+              "gap": "No dry-run, rollback or quantity bounds on AWS actions.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+                  "lines": "131-138",
+                  "contains": "Default behavior: allow all operations",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L131-L138"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in REQUIRE_MUTATION_CONSENT elicitation",
+          "score": 0.45,
+          "raw": 0.45,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Each non-read-only operation (per AWS's own classification) triggers an elicitation that shows the exact CLI command; rejection, or a client without elicitation, aborts the call.",
+              "gap": "No argument-level allow/deny/escalate policy; decisions are per operation only.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/service.py",
+                  "lines": "52-66",
+                  "contains": "requires explicit consent",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/service.py#L52-L66"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+                  "lines": "134-135",
+                  "contains": "if REQUIRE_MUTATION_CONSENT and not is_read_only:",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L134-L135"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every call_aws command, including CLI customizations and each region of a --region * fan-out, passes the policy before execution, and auto-approved calls are AWS-classified read-only operations.",
+              "gap": "Read-only auto-approval still includes credential-minting and local-file-writing operations; no rejection of unknown commands beyond non-read-only classification.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+                  "lines": "337-344",
+                  "contains": "policy_decision = check_security_policy(ir, READ_OPERATIONS_INDEX, ctx)",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L337-L344"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py",
+                  "lines": "79-93",
+                  "contains": "if service not in self._service_reference_urls_by_service:",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py#L79-L93"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/service.py",
+                  "lines": "287-295",
+                  "contains": "region_wildcard.sub(f'--region {region}', cli_command) for region in active_regions",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/service.py#L287-L295"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Consent mode is off unless the operator sets REQUIRE_MUTATION_CONSENT.",
+              "gap": "Not on by default.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+                  "lines": "174",
+                  "contains": "REQUIRE_MUTATION_CONSENT = get_env_bool(REQUIRE_MUTATION_CONSENT_KEY, False)",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L174"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A wrongly approved AWS action is still irreversible and unbounded.",
+              "gap": "No rollback, dry-run or quantity limits.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+                  "lines": "131-138",
+                  "contains": "Default behavior: allow all operations",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L131-L138"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "call_aws is a general tool: any AWS API in any region with the operator's credentials. Inputs are parsed as AWS CLI syntax, not passed to a shell. The parser checks parameters against the service schema, rejects --debug, --no-verify-ssl and --no-sign-request, only allows loopback --endpoint-url values, and limits CLI customizations to an allowlist that spawns no subprocesses. Local file arguments are confined by default to a working directory using resolved paths. Files referenced indirectly (for example artefacts listed inside a CloudFormation template) are not confined, and nothing limits which AWS resources or quantities a call may touch.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.425,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Typed parsing and schema validation with real containment for direct file paths and loopback-only endpoints, but the tool accepts any AWS operation and the path check misses nested file references.",
+          "gap": "No allowlist of operations or resources; nested file references escape the working-directory check.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/lexer.py",
+              "lines": "38-52",
+              "contains": "if command != 'aws':",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/lexer.py#L38-L52"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/parser.py",
+              "lines": "674-684",
+              "contains": "denied_args.append('--no-sign-request')",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/parser.py#L674-L684"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/parser.py",
+              "lines": "853-861",
+              "contains": "if not ip_obj.is_loopback:",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/parser.py#L853-L861"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py",
+              "lines": "155-168",
+              "contains": "Path(absolute_path).resolve().relative_to(Path(working_directory).resolve())",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py#L155-L168"
+            },
+            {
+              "file": "src/aws-api-mcp-server/README.md",
+              "lines": "211",
+              "contains": "not confined to the working directory",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/README.md#L211"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All built-in tools validate input: call_aws through the shared parser, suggest_aws_commands with a 2000-character limit, and the opt-in plan tool with a dictionary lookup.",
+          "gap": "No central policy layer that new tools inherit automatically.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/lexer.py",
+              "lines": "38-52",
+              "contains": "if command != 'aws':",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/lexer.py#L38-L52"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+              "lines": "152-157",
+              "contains": "max_length=2000",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L152-L157"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All AWS operations, including writes, are enabled by default; read-only mode, no-access file mode and a user denylist can disable them.",
+          "gap": "Default tool set is not read-only.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+              "lines": "171",
+              "contains": "READ_OPERATIONS_ONLY_MODE = get_env_bool(READ_ONLY_KEY, False)",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L171"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+              "lines": "75",
+              "contains": "os.getenv(FILE_ACCESS_MODE_KEY, 'workdir')",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L75"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+              "lines": "56-65",
+              "contains": "policy_path = Path.home() / '.aws' / 'aws-api-mcp' / 'mcp-security-policy.json'",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L56-L65"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A misused call_aws can hit any API in the operator's AWS account across all enabled regions.",
+          "gap": "No scoping to a project, resource set or quantity bound.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/service.py",
+              "lines": "287-295",
+              "contains": "region_wildcard.sub(f'--region {region}', cli_command) for region in active_regions",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/service.py#L287-L295"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+              "lines": "131-138",
+              "contains": "Default behavior: allow all operations",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L131-L138"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.425,
+          "raw": 0.425,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Typed parsing and schema validation with real containment for direct file paths and loopback-only endpoints, but the tool accepts any AWS operation and the path check misses nested file references.",
+              "gap": "No allowlist of operations or resources; nested file references escape the working-directory check.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/lexer.py",
+                  "lines": "38-52",
+                  "contains": "if command != 'aws':",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/lexer.py#L38-L52"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/parser.py",
+                  "lines": "674-684",
+                  "contains": "denied_args.append('--no-sign-request')",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/parser.py#L674-L684"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/parser.py",
+                  "lines": "853-861",
+                  "contains": "if not ip_obj.is_loopback:",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/parser.py#L853-L861"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py",
+                  "lines": "155-168",
+                  "contains": "Path(absolute_path).resolve().relative_to(Path(working_directory).resolve())",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py#L155-L168"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/README.md",
+                  "lines": "211",
+                  "contains": "not confined to the working directory",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/README.md#L211"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All built-in tools validate input: call_aws through the shared parser, suggest_aws_commands with a 2000-character limit, and the opt-in plan tool with a dictionary lookup.",
+              "gap": "No central policy layer that new tools inherit automatically.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/lexer.py",
+                  "lines": "38-52",
+                  "contains": "if command != 'aws':",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/lexer.py#L38-L52"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+                  "lines": "152-157",
+                  "contains": "max_length=2000",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L152-L157"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All AWS operations, including writes, are enabled by default; read-only mode, no-access file mode and a user denylist can disable them.",
+              "gap": "Default tool set is not read-only.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+                  "lines": "171",
+                  "contains": "READ_OPERATIONS_ONLY_MODE = get_env_bool(READ_ONLY_KEY, False)",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L171"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+                  "lines": "75",
+                  "contains": "os.getenv(FILE_ACCESS_MODE_KEY, 'workdir')",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L75"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+                  "lines": "56-65",
+                  "contains": "policy_path = Path.home() / '.aws' / 'aws-api-mcp' / 'mcp-security-policy.json'",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L56-L65"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A misused call_aws can hit any API in the operator's AWS account across all enabled regions.",
+              "gap": "No scoping to a project, resource set or quantity bound.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/service.py",
+                  "lines": "287-295",
+                  "contains": "region_wildcard.sub(f'--region {region}', cli_command) for region in active_regions",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/service.py#L287-L295"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+                  "lines": "131-138",
+                  "contains": "Default behavior: allow all operations",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L131-L138"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "The server has no local shell or eval: model output is parsed into AWS API calls, and the CLI customizations it allows spawn no subprocesses. It does, however, forward model-written code for execution in the operator's AWS account (SSM RunCommand shell scripts, CloudFormation deploys, Lambda code, EC2 user data), all allowed by default with no isolation boundary and the operator's credentials. The opt-in unrestricted file-access mode also does not confine local execution.",
+      "max": 1.0,
+      "notes": "Local code execution is structurally absent in the default workdir file mode (NO_EXEC search). The opt-in unrestricted file-access mode does not confine local execution.",
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Model-authored scripts and templates are forwarded to SSM, CloudFormation and Lambda with the operator's credentials; there is no sandbox primitive.",
+          "gap": "No isolation or restriction on remote-execution APIs.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/parser.py",
+              "lines": "82-87",
+              "contains": "'cloudformation': ['package', 'deploy'],",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/parser.py#L82-L87"
+            },
+            {
+              "search": "rg -n -i 'SendCommand|RunShellScript|send-command' --glob '!*.json'",
+              "scope": "src/aws-api-mcp-server/awslabs",
+              "hits": 0,
+              "note": "No code path denies or gates SSM SendCommand / RunShellScript; it is an ordinary allowed operation."
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/interpretation.py",
+              "lines": "68-76",
+              "contains": "aws_secret_access_key=secret_access_key,",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/interpretation.py#L68-L76"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No execution path is isolated; there is no local exec path (negative search), and the remote execution paths are unrestricted.",
+          "gap": "No path goes through an isolation boundary.",
+          "evidence": [
+            {
+              "search": "rg -n 'subprocess|os\\.system|eval\\(|exec\\(|Popen|pickle'",
+              "scope": "src/aws-api-mcp-server/awslabs",
+              "hits": 1,
+              "note": "Only hit is parser.py:83, a comment stating allowed customizations do not spawn subprocesses."
+            },
+            {
+              "search": "rg -n -i 'SendCommand|RunShellScript|send-command' --glob '!*.json'",
+              "scope": "src/aws-api-mcp-server/awslabs",
+              "hits": 0,
+              "note": "No code path denies or gates SSM SendCommand / RunShellScript; it is an ordinary allowed operation."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Nothing restricts remote-execution operations by default; only opt-in read-only or consent modes would stop them.",
+          "gap": "No default restriction on remote code execution.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+              "lines": "171",
+              "contains": "READ_OPERATIONS_ONLY_MODE = get_env_bool(READ_ONLY_KEY, False)",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L171"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+              "lines": "174",
+              "contains": "REQUIRE_MUTATION_CONSENT = get_env_bool(REQUIRE_MUTATION_CONSENT_KEY, False)",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L174"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Remote commands run on the operator's instances and functions with their attached roles, and the server process holds the operator's AWS credentials.",
+          "gap": "No credential-free, network-restricted execution environment.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/driver.py",
+              "lines": "31-37",
+              "contains": "session = boto3.Session()",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/driver.py#L31-L37"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/parser.py",
+              "lines": "82-87",
+              "contains": "'cloudformation': ['package', 'deploy'],",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/parser.py#L82-L87"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Model-authored scripts and templates are forwarded to SSM, CloudFormation and Lambda with the operator's credentials; there is no sandbox primitive.",
+              "gap": "No isolation or restriction on remote-execution APIs.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/parser.py",
+                  "lines": "82-87",
+                  "contains": "'cloudformation': ['package', 'deploy'],",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/parser.py#L82-L87"
+                },
+                {
+                  "search": "rg -n -i 'SendCommand|RunShellScript|send-command' --glob '!*.json'",
+                  "scope": "src/aws-api-mcp-server/awslabs",
+                  "hits": 0,
+                  "note": "No code path denies or gates SSM SendCommand / RunShellScript; it is an ordinary allowed operation."
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/interpretation.py",
+                  "lines": "68-76",
+                  "contains": "aws_secret_access_key=secret_access_key,",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/interpretation.py#L68-L76"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No execution path is isolated; there is no local exec path (negative search), and the remote execution paths are unrestricted.",
+              "gap": "No path goes through an isolation boundary.",
+              "evidence": [
+                {
+                  "search": "rg -n 'subprocess|os\\.system|eval\\(|exec\\(|Popen|pickle'",
+                  "scope": "src/aws-api-mcp-server/awslabs",
+                  "hits": 1,
+                  "note": "Only hit is parser.py:83, a comment stating allowed customizations do not spawn subprocesses."
+                },
+                {
+                  "search": "rg -n -i 'SendCommand|RunShellScript|send-command' --glob '!*.json'",
+                  "scope": "src/aws-api-mcp-server/awslabs",
+                  "hits": 0,
+                  "note": "No code path denies or gates SSM SendCommand / RunShellScript; it is an ordinary allowed operation."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Nothing restricts remote-execution operations by default; only opt-in read-only or consent modes would stop them.",
+              "gap": "No default restriction on remote code execution.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+                  "lines": "171",
+                  "contains": "READ_OPERATIONS_ONLY_MODE = get_env_bool(READ_ONLY_KEY, False)",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L171"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+                  "lines": "174",
+                  "contains": "REQUIRE_MUTATION_CONSENT = get_env_bool(REQUIRE_MUTATION_CONSENT_KEY, False)",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L174"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Remote commands run on the operator's instances and functions with their attached roles, and the server process holds the operator's AWS credentials.",
+              "gap": "No credential-free, network-restricted execution environment.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/driver.py",
+                  "lines": "31-37",
+                  "contains": "session = boto3.Session()",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/driver.py#L31-L37"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/parser.py",
+                  "lines": "82-87",
+                  "contains": "'cloudformation': ['package', 'deploy'],",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/parser.py#L82-L87"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "The server returns AWS data, including content anyone with write access to the account's resources can control (S3 objects, log events, tags, queue messages), as structured JSON with the command, service, operation and region attached, but with nothing marking it as untrusted. In the default configuration a hijacked model can both read sensitive data and act on it: copy data to an external bucket or topic, mint credentials, or delete resources, all without a human step. The opt-in read-only and consent modes narrow this, but they are off by default.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C5-WORSTCASE",
+        "max": 0.25,
+        "reason": "Worst case (B L0): a hijacked agent can leak data and take irreversible actions unattended."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Outputs are structured: cli_command, response JSON, status and error codes, and service/operation/region metadata, kept separate from instructions.",
+          "gap": "No provenance or untrusted flag on the returned AWS content.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/models.py",
+              "lines": "214-219",
+              "contains": "cli_command: str",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/models.py#L214-L219"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/models.py",
+              "lines": "48-54",
+              "contains": "region_name: str | None = None",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/models.py#L48-L54"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every call_aws result uses the structured model; suggest_aws_commands passes the remote endpoint's JSON through unchanged.",
+          "gap": "suggest_aws_commands output and the opt-in plan text are passed through raw.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/models.py",
+              "lines": "214-219",
+              "contains": "cli_command: str",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/models.py#L214-L219"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+              "lines": "168-180",
+              "contains": "return response.json()",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L168-L180"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The response structure is fixed in code and cannot be disabled by configuration or content.",
+          "gap": "No untrusted-content signalling to keep on; the read-only and consent modes that would drop a Rule-of-Two leg are opt-in.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/models.py",
+              "lines": "214-219",
+              "contains": "cli_command: str",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/models.py#L214-L219"
+            },
+            {
+              "search": "rg -n -i 'untrusted|provenance' --glob '!*.json'",
+              "scope": "src/aws-api-mcp-server/awslabs",
+              "hits": 0
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "In the default configuration a hijacked model can read secrets or data and exfiltrate them through AWS (s3 cp to a foreign bucket, SNS publish) and delete resources, with no human step.",
+          "gap": "No default mode that removes egress or state change once untrusted AWS data has been read.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+              "lines": "131-138",
+              "contains": "Default behavior: allow all operations",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L131-L138"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+              "lines": "174",
+              "contains": "REQUIRE_MUTATION_CONSENT = get_env_bool(REQUIRE_MUTATION_CONSENT_KEY, False)",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L174"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.45,
+          "cap": {
+            "id": "C5-WORSTCASE",
+            "max": 0.25,
+            "reason": "Worst case (B L0): a hijacked agent can leak data and take irreversible actions unattended."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Outputs are structured: cli_command, response JSON, status and error codes, and service/operation/region metadata, kept separate from instructions.",
+              "gap": "No provenance or untrusted flag on the returned AWS content.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/models.py",
+                  "lines": "214-219",
+                  "contains": "cli_command: str",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/models.py#L214-L219"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/models.py",
+                  "lines": "48-54",
+                  "contains": "region_name: str | None = None",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/models.py#L48-L54"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every call_aws result uses the structured model; suggest_aws_commands passes the remote endpoint's JSON through unchanged.",
+              "gap": "suggest_aws_commands output and the opt-in plan text are passed through raw.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/models.py",
+                  "lines": "214-219",
+                  "contains": "cli_command: str",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/models.py#L214-L219"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+                  "lines": "168-180",
+                  "contains": "return response.json()",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L168-L180"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The response structure is fixed in code and cannot be disabled by configuration or content.",
+              "gap": "No untrusted-content signalling to keep on; the read-only and consent modes that would drop a Rule-of-Two leg are opt-in.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/models.py",
+                  "lines": "214-219",
+                  "contains": "cli_command: str",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/models.py#L214-L219"
+                },
+                {
+                  "search": "rg -n -i 'untrusted|provenance' --glob '!*.json'",
+                  "scope": "src/aws-api-mcp-server/awslabs",
+                  "hits": 0
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "In the default configuration a hijacked model can read secrets or data and exfiltrate them through AWS (s3 cp to a foreign bucket, SNS publish) and delete resources, with no human step.",
+              "gap": "No default mode that removes egress or state change once untrusted AWS data has been read.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+                  "lines": "131-138",
+                  "contains": "Default behavior: allow all operations",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L131-L138"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+                  "lines": "174",
+                  "contains": "REQUIRE_MUTATION_CONSENT = get_env_bool(REQUIRE_MUTATION_CONSENT_KEY, False)",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L174"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "The server keeps no memory and loads no context from the working directory. Its only configuration files are environment variables and a user-scope policy file in ~/.aws/aws-api-mcp, which the model cannot write in the default working-directory file mode because of resolved-path containment. Opt-in unrestricted file access would let the model overwrite that file.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'load_dotenv|dotenv|vector|embedding|remember|save_memory' --glob '!*.json' --glob '!*.md'",
+              "scope": "src/aws-api-mcp-server/awslabs",
+              "hits": 0
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+              "lines": "56-65",
+              "contains": "policy_path = Path.home() / '.aws' / 'aws-api-mcp' / 'mcp-security-policy.json'",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L56-L65"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py",
+              "lines": "155-168",
+              "contains": "Path(absolute_path).resolve().relative_to(Path(working_directory).resolve())",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py#L155-L168"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'load_dotenv|dotenv|vector|embedding|remember|save_memory' --glob '!*.json' --glob '!*.md'",
+              "scope": "src/aws-api-mcp-server/awslabs",
+              "hits": 0
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+              "lines": "56-65",
+              "contains": "policy_path = Path.home() / '.aws' / 'aws-api-mcp' / 'mcp-security-policy.json'",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L56-L65"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py",
+              "lines": "155-168",
+              "contains": "Path(absolute_path).resolve().relative_to(Path(working_directory).resolve())",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py#L155-L168"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'load_dotenv|dotenv|vector|embedding|remember|save_memory' --glob '!*.json' --glob '!*.md'",
+              "scope": "src/aws-api-mcp-server/awslabs",
+              "hits": 0
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+              "lines": "56-65",
+              "contains": "policy_path = Path.home() / '.aws' / 'aws-api-mcp' / 'mcp-security-policy.json'",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L56-L65"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py",
+              "lines": "155-168",
+              "contains": "Path(absolute_path).resolve().relative_to(Path(working_directory).resolve())",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py#L155-L168"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'load_dotenv|dotenv|vector|embedding|remember|save_memory' --glob '!*.json' --glob '!*.md'",
+              "scope": "src/aws-api-mcp-server/awslabs",
+              "hits": 0
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+              "lines": "56-65",
+              "contains": "policy_path = Path.home() / '.aws' / 'aws-api-mcp' / 'mcp-security-policy.json'",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L56-L65"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py",
+              "lines": "155-168",
+              "contains": "Path(absolute_path).resolve().relative_to(Path(working_directory).resolve())",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py#L155-L168"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'load_dotenv|dotenv|vector|embedding|remember|save_memory' --glob '!*.json' --glob '!*.md'",
+                  "scope": "src/aws-api-mcp-server/awslabs",
+                  "hits": 0
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+                  "lines": "56-65",
+                  "contains": "policy_path = Path.home() / '.aws' / 'aws-api-mcp' / 'mcp-security-policy.json'",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L56-L65"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py",
+                  "lines": "155-168",
+                  "contains": "Path(absolute_path).resolve().relative_to(Path(working_directory).resolve())",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py#L155-L168"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'load_dotenv|dotenv|vector|embedding|remember|save_memory' --glob '!*.json' --glob '!*.md'",
+                  "scope": "src/aws-api-mcp-server/awslabs",
+                  "hits": 0
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+                  "lines": "56-65",
+                  "contains": "policy_path = Path.home() / '.aws' / 'aws-api-mcp' / 'mcp-security-policy.json'",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L56-L65"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py",
+                  "lines": "155-168",
+                  "contains": "Path(absolute_path).resolve().relative_to(Path(working_directory).resolve())",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py#L155-L168"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'load_dotenv|dotenv|vector|embedding|remember|save_memory' --glob '!*.json' --glob '!*.md'",
+                  "scope": "src/aws-api-mcp-server/awslabs",
+                  "hits": 0
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+                  "lines": "56-65",
+                  "contains": "policy_path = Path.home() / '.aws' / 'aws-api-mcp' / 'mcp-security-policy.json'",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L56-L65"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py",
+                  "lines": "155-168",
+                  "contains": "Path(absolute_path).resolve().relative_to(Path(working_directory).resolve())",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py#L155-L168"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'load_dotenv|dotenv|vector|embedding|remember|save_memory' --glob '!*.json' --glob '!*.md'",
+                  "scope": "src/aws-api-mcp-server/awslabs",
+                  "hits": 0
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+                  "lines": "56-65",
+                  "contains": "policy_path = Path.home() / '.aws' / 'aws-api-mcp' / 'mcp-security-policy.json'",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L56-L65"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py",
+                  "lines": "155-168",
+                  "contains": "Path(absolute_path).resolve().relative_to(Path(working_directory).resolve())",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py#L155-L168"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n -i 'load_dotenv|dotenv|vector|embedding|remember|save_memory' --glob '!*.json' --glob '!*.md'",
+          "scope": "src/aws-api-mcp-server/awslabs",
+          "hits": 0
+        },
+        {
+          "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+          "lines": "56-65",
+          "contains": "policy_path = Path.home() / '.aws' / 'aws-api-mcp' / 'mcp-security-policy.json'",
+          "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L56-L65"
+        },
+        {
+          "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py",
+          "lines": "155-168",
+          "contains": "Path(absolute_path).resolve().relative_to(Path(working_directory).resolve())",
+          "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py#L155-L168"
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "The server loads no plugins, MCP servers, packages or model files at runtime. Remote data it fetches (AWS service-reference documents and command suggestions from an AWS endpoint) is data, not code. Opt-in agent scripts are markdown read from a directory the operator chooses. The AWS CLI's own [plugins] config section in ~/.aws/config is user scope and outside this server's code.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'entry_points|import_module|pip install|npx|plugin' --glob '!*.json' --glob '!*.md'",
+              "scope": "src/aws-api-mcp-server/awslabs",
+              "hits": 0
+            },
+            {
+              "search": "rg -n 'subprocess|os\\.system|eval\\(|exec\\(|Popen|pickle'",
+              "scope": "src/aws-api-mcp-server/awslabs",
+              "hits": 1,
+              "note": "Only hit is parser.py:83, a comment stating allowed customizations do not spawn subprocesses."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'entry_points|import_module|pip install|npx|plugin' --glob '!*.json' --glob '!*.md'",
+              "scope": "src/aws-api-mcp-server/awslabs",
+              "hits": 0
+            },
+            {
+              "search": "rg -n 'subprocess|os\\.system|eval\\(|exec\\(|Popen|pickle'",
+              "scope": "src/aws-api-mcp-server/awslabs",
+              "hits": 1,
+              "note": "Only hit is parser.py:83, a comment stating allowed customizations do not spawn subprocesses."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'entry_points|import_module|pip install|npx|plugin' --glob '!*.json' --glob '!*.md'",
+              "scope": "src/aws-api-mcp-server/awslabs",
+              "hits": 0
+            },
+            {
+              "search": "rg -n 'subprocess|os\\.system|eval\\(|exec\\(|Popen|pickle'",
+              "scope": "src/aws-api-mcp-server/awslabs",
+              "hits": 1,
+              "note": "Only hit is parser.py:83, a comment stating allowed customizations do not spawn subprocesses."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'entry_points|import_module|pip install|npx|plugin' --glob '!*.json' --glob '!*.md'",
+              "scope": "src/aws-api-mcp-server/awslabs",
+              "hits": 0
+            },
+            {
+              "search": "rg -n 'subprocess|os\\.system|eval\\(|exec\\(|Popen|pickle'",
+              "scope": "src/aws-api-mcp-server/awslabs",
+              "hits": 1,
+              "note": "Only hit is parser.py:83, a comment stating allowed customizations do not spawn subprocesses."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'entry_points|import_module|pip install|npx|plugin' --glob '!*.json' --glob '!*.md'",
+                  "scope": "src/aws-api-mcp-server/awslabs",
+                  "hits": 0
+                },
+                {
+                  "search": "rg -n 'subprocess|os\\.system|eval\\(|exec\\(|Popen|pickle'",
+                  "scope": "src/aws-api-mcp-server/awslabs",
+                  "hits": 1,
+                  "note": "Only hit is parser.py:83, a comment stating allowed customizations do not spawn subprocesses."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'entry_points|import_module|pip install|npx|plugin' --glob '!*.json' --glob '!*.md'",
+                  "scope": "src/aws-api-mcp-server/awslabs",
+                  "hits": 0
+                },
+                {
+                  "search": "rg -n 'subprocess|os\\.system|eval\\(|exec\\(|Popen|pickle'",
+                  "scope": "src/aws-api-mcp-server/awslabs",
+                  "hits": 1,
+                  "note": "Only hit is parser.py:83, a comment stating allowed customizations do not spawn subprocesses."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'entry_points|import_module|pip install|npx|plugin' --glob '!*.json' --glob '!*.md'",
+                  "scope": "src/aws-api-mcp-server/awslabs",
+                  "hits": 0
+                },
+                {
+                  "search": "rg -n 'subprocess|os\\.system|eval\\(|exec\\(|Popen|pickle'",
+                  "scope": "src/aws-api-mcp-server/awslabs",
+                  "hits": 1,
+                  "note": "Only hit is parser.py:83, a comment stating allowed customizations do not spawn subprocesses."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'entry_points|import_module|pip install|npx|plugin' --glob '!*.json' --glob '!*.md'",
+                  "scope": "src/aws-api-mcp-server/awslabs",
+                  "hits": 0
+                },
+                {
+                  "search": "rg -n 'subprocess|os\\.system|eval\\(|exec\\(|Popen|pickle'",
+                  "scope": "src/aws-api-mcp-server/awslabs",
+                  "hits": 1,
+                  "note": "Only hit is parser.py:83, a comment stating allowed customizations do not spawn subprocesses."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n 'entry_points|import_module|pip install|npx|plugin' --glob '!*.json' --glob '!*.md'",
+          "scope": "src/aws-api-mcp-server/awslabs",
+          "hits": 0
+        },
+        {
+          "search": "rg -n 'subprocess|os\\.system|eval\\(|exec\\(|Popen|pickle'",
+          "scope": "src/aws-api-mcp-server/awslabs",
+          "hits": 1,
+          "note": "Only hit is parser.py:83, a comment stating allowed customizations do not spawn subprocesses."
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "The server never puts its own AWS keys into model context or logs, and its execution log deliberately omits command parameters. But credentials are held in a plain model with no masking, the suggest tool logs the user's query verbatim, and AWS responses go to the model unredacted, including secrets the model asks for (Secrets Manager values, SSM SecureString parameters, new IAM access keys, which are allowed by default). Telemetry is on by default. It sends no content, only the MCP client name, version and configuration flags in the AWS User-Agent.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.2,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Credentials come from the ambient chain into a plain pydantic model; the only masking is omitting parameters from the execution log line.",
+          "gap": "No type-level masking or redaction filters; no redaction of secrets in AWS responses.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/models.py",
+              "lines": "74-82",
+              "contains": "secret_access_key: str",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/models.py#L74-L82"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+              "lines": "321-325",
+              "contains": "*parameters redacted*",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L321-L325"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only the main execution log path is protected; the suggest query is logged verbatim and model-bound AWS responses are unredacted.",
+          "gap": "No redaction on model-bound messages, errors or other log lines.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+              "lines": "321-325",
+              "contains": "*parameters redacted*",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L321-L325"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+              "lines": "162",
+              "contains": "Suggesting AWS commands for query",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L162"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Telemetry is on by default (AWS_API_MCP_TELEMETRY=true) and content-free, adding client name/version and config flags to the AWS User-Agent.",
+          "gap": "Telemetry should be opt-in.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+              "lines": "172",
+              "contains": "OPT_IN_TELEMETRY = get_env_bool(TELEMETRY_KEY, True)",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L172"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+              "lines": "106-116",
+              "contains": "MCPClient/",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L106-L116"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "With the default ALLOW policy the model can mint long-lived high-privilege keys (iam create-access-key) or read stored secrets into its context.",
+          "gap": "No gate or redaction keeping long-lived secrets out of model reach by default.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+              "lines": "131-138",
+              "contains": "Default behavior: allow all operations",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L131-L138"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py",
+              "lines": "25-44",
+              "contains": "'CreateAccessKey': False",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py#L25-L44"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.2,
+          "raw": 0.2,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Credentials come from the ambient chain into a plain pydantic model; the only masking is omitting parameters from the execution log line.",
+              "gap": "No type-level masking or redaction filters; no redaction of secrets in AWS responses.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/models.py",
+                  "lines": "74-82",
+                  "contains": "secret_access_key: str",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/models.py#L74-L82"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+                  "lines": "321-325",
+                  "contains": "*parameters redacted*",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L321-L325"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only the main execution log path is protected; the suggest query is logged verbatim and model-bound AWS responses are unredacted.",
+              "gap": "No redaction on model-bound messages, errors or other log lines.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+                  "lines": "321-325",
+                  "contains": "*parameters redacted*",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L321-L325"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+                  "lines": "162",
+                  "contains": "Suggesting AWS commands for query",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L162"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Telemetry is on by default (AWS_API_MCP_TELEMETRY=true) and content-free, adding client name/version and config flags to the AWS User-Agent.",
+              "gap": "Telemetry should be opt-in.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+                  "lines": "172",
+                  "contains": "OPT_IN_TELEMETRY = get_env_bool(TELEMETRY_KEY, True)",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L172"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+                  "lines": "106-116",
+                  "contains": "MCPClient/",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L106-L116"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "With the default ALLOW policy the model can mint long-lived high-privilege keys (iam create-access-key) or read stored secrets into its context.",
+              "gap": "No gate or redaction keeping long-lived secrets out of model reach by default.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+                  "lines": "131-138",
+                  "contains": "Default behavior: allow all operations",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L131-L138"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py",
+                  "lines": "25-44",
+                  "contains": "'CreateAccessKey': False",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/metadata/read_only_operations_list.py#L25-L44"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "The server writes a loguru log to ~/.aws/aws-api-mcp/aws-api-mcp-server.log (10 MB rotation, 7-day retention), outside the working directory. Each executed command is recorded only as service and operation; parameters are deliberately left out. Policy denials and user consent decisions go back to the client as errors, not into the server log. Nothing records which user or client made a call, and nothing protects the log from tampering, so an incident can be traced to operations but not to the exact resources touched or who approved them.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.375,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Unstructured text log lines record service and operation with parameters redacted, plus timing lines.",
+          "gap": "No structured per-call record with arguments, result status and actor.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+              "lines": "321-325",
+              "contains": "*parameters redacted*",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L321-L325"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+              "lines": "67-73",
+              "contains": "logger.add(log_file, rotation='10 MB', retention='7 days')",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L67-L73"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All tools log their invocation (call_aws, suggest_aws_commands, get_execution_plan).",
+          "gap": "Policy denials and consent decisions are sent to the client only, not logged.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+              "lines": "321-325",
+              "contains": "*parameters redacted*",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L321-L325"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+              "lines": "162",
+              "contains": "Suggesting AWS commands for query",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L162"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+              "lines": "421",
+              "contains": "Retrieved script plan",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L421"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "On by default, written to ~/.aws/aws-api-mcp outside the working directory, but the server process (and its log level env var) can alter it.",
+          "gap": "Log not written by a component the server process cannot modify.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+              "lines": "67-73",
+              "contains": "logger.add(log_file, rotation='10 MB', retention='7 days')",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L67-L73"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py",
+              "lines": "155-168",
+              "contains": "Path(absolute_path).resolve().relative_to(Path(working_directory).resolve())",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py#L155-L168"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "Logging is best-effort via loguru; a logging failure does not block an action.",
+          "gap": "Errors are not surfaced and records are not guaranteed per action.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+              "lines": "67-73",
+              "contains": "logger.add(log_file, rotation='10 MB', retention='7 days')",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L67-L73"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.375,
+          "raw": 0.375,
+          "cap": null,
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Unstructured text log lines record service and operation with parameters redacted, plus timing lines.",
+              "gap": "No structured per-call record with arguments, result status and actor.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+                  "lines": "321-325",
+                  "contains": "*parameters redacted*",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L321-L325"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+                  "lines": "67-73",
+                  "contains": "logger.add(log_file, rotation='10 MB', retention='7 days')",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L67-L73"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All tools log their invocation (call_aws, suggest_aws_commands, get_execution_plan).",
+              "gap": "Policy denials and consent decisions are sent to the client only, not logged.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+                  "lines": "321-325",
+                  "contains": "*parameters redacted*",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L321-L325"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+                  "lines": "162",
+                  "contains": "Suggesting AWS commands for query",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L162"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+                  "lines": "421",
+                  "contains": "Retrieved script plan",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L421"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "On by default, written to ~/.aws/aws-api-mcp outside the working directory, but the server process (and its log level env var) can alter it.",
+              "gap": "Log not written by a component the server process cannot modify.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+                  "lines": "67-73",
+                  "contains": "logger.add(log_file, rotation='10 MB', retention='7 days')",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L67-L73"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py",
+                  "lines": "155-168",
+                  "contains": "Path(absolute_path).resolve().relative_to(Path(working_directory).resolve())",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/file_system_controls.py#L155-L168"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "Logging is best-effort via loguru; a logging failure does not block an action.",
+              "gap": "Errors are not surfaced and records are not guaranteed per action.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+                  "lines": "67-73",
+                  "contains": "logger.add(log_file, rotation='10 MB', retention='7 days')",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L67-L73"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "The server caps a batch at 20 commands and sets 10-second connect and 60-second read timeouts with three retries on each AWS call. Pagination is unbounded unless the caller passes max_results, and --region * multiplies each command across every enabled region. There is no rate limit, no session budget, no limit on how many resources a call creates, and no way to cancel an in-flight call.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.45,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Server-enforced batch size, per-request timeouts and retry count exist on the main path.",
+          "gap": "No caps on pagination volume or region fan-out, and no rate or concurrency limits.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+              "lines": "188-191",
+              "contains": "MAX_BATCH_COMMANDS = 20",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L188-L191"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+              "lines": "263-266",
+              "contains": "if len(commands) > MAX_BATCH_COMMANDS:",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L263-L266"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/interpretation.py",
+              "lines": "58-64",
+              "contains": "connect_timeout=CONNECT_TIMEOUT_SECONDS,",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/interpretation.py#L58-L64"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Timeouts apply to every boto3 call; pagination and region fan-out are unbounded in aggregate.",
+          "gap": "No aggregate bound per tool call or session.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/services.py",
+              "lines": "199-203",
+              "contains": "if max_results is None:",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/services.py#L199-L203"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/service.py",
+              "lines": "287-295",
+              "contains": "region_wildcard.sub(f'--region {region}', cli_command) for region in active_regions",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/service.py#L287-L295"
+            },
+            {
+              "search": "rg -n -i 'rate.?limit|semaphore|cancel|concurren' --glob '!*.json' --glob '!*.md'",
+              "scope": "src/aws-api-mcp-server/awslabs",
+              "hits": 0
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Batch and timeout values are constants the model cannot change, but full pagination is the default.",
+          "gap": "Default pagination is unlimited; no hard ceilings.",
+          "evidence": [
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+              "lines": "188-191",
+              "contains": "MAX_BATCH_COMMANDS = 20",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L188-L191"
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/services.py",
+              "lines": "199-203",
+              "contains": "if max_results is None:",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/services.py#L199-L203"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A runaway host loop can keep creating or deleting resources with no server ceiling, and nothing cancels in-flight calls.",
+          "gap": "No session-level ceiling or cancellation.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'rate.?limit|semaphore|cancel|concurren' --glob '!*.json' --glob '!*.md'",
+              "scope": "src/aws-api-mcp-server/awslabs",
+              "hits": 0
+            },
+            {
+              "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+              "lines": "263-266",
+              "contains": "if len(commands) > MAX_BATCH_COMMANDS:",
+              "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L263-L266"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.45,
+          "raw": 0.45,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Server-enforced batch size, per-request timeouts and retry count exist on the main path.",
+              "gap": "No caps on pagination volume or region fan-out, and no rate or concurrency limits.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+                  "lines": "188-191",
+                  "contains": "MAX_BATCH_COMMANDS = 20",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L188-L191"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+                  "lines": "263-266",
+                  "contains": "if len(commands) > MAX_BATCH_COMMANDS:",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L263-L266"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/interpretation.py",
+                  "lines": "58-64",
+                  "contains": "connect_timeout=CONNECT_TIMEOUT_SECONDS,",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/interpretation.py#L58-L64"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Timeouts apply to every boto3 call; pagination and region fan-out are unbounded in aggregate.",
+              "gap": "No aggregate bound per tool call or session.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/services.py",
+                  "lines": "199-203",
+                  "contains": "if max_results is None:",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/services.py#L199-L203"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/service.py",
+                  "lines": "287-295",
+                  "contains": "region_wildcard.sub(f'--region {region}', cli_command) for region in active_regions",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/service.py#L287-L295"
+                },
+                {
+                  "search": "rg -n -i 'rate.?limit|semaphore|cancel|concurren' --glob '!*.json' --glob '!*.md'",
+                  "scope": "src/aws-api-mcp-server/awslabs",
+                  "hits": 0
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Batch and timeout values are constants the model cannot change, but full pagination is the default.",
+              "gap": "Default pagination is unlimited; no hard ceilings.",
+              "evidence": [
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+                  "lines": "188-191",
+                  "contains": "MAX_BATCH_COMMANDS = 20",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L188-L191"
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/services.py",
+                  "lines": "199-203",
+                  "contains": "if max_results is None:",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/services.py#L199-L203"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A runaway host loop can keep creating or deleting resources with no server ceiling, and nothing cancels in-flight calls.",
+              "gap": "No session-level ceiling or cancellation.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'rate.?limit|semaphore|cancel|concurren' --glob '!*.json' --glob '!*.md'",
+                  "scope": "src/aws-api-mcp-server/awslabs",
+                  "hits": 0
+                },
+                {
+                  "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py",
+                  "lines": "263-266",
+                  "contains": "if len(commands) > MAX_BATCH_COMMANDS:",
+                  "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/server.py#L263-L266"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "Default policy allows every AWS operation, so the model can modify the server's own IAM permissions or mint new access keys (C1-SELFESC).",
+      "criterion": "C1",
+      "owasp": [
+        "ASI03",
+        "T3"
+      ],
+      "evidence": [
+        {
+          "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+          "lines": "131-138",
+          "contains": "Default behavior: allow all operations",
+          "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L131-L138"
+        },
+        {
+          "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/driver.py",
+          "lines": "108-110",
+          "contains": "profile=translation.command.profile or AWS_API_MCP_PROFILE_NAME",
+          "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/driver.py#L108-L110"
+        }
+      ]
+    },
+    {
+      "summary": "The server acts with the operator's full ambient AWS authority, unscoped (C1 blast radius L0).",
+      "criterion": "C1",
+      "owasp": [
+        "ASI03"
+      ],
+      "evidence": [
+        {
+          "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/driver.py",
+          "lines": "31-37",
+          "contains": "session = boto3.Session()",
+          "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/driver.py#L31-L37"
+        }
+      ]
+    },
+    {
+      "summary": "Model-written code reaches remote execution (SSM RunCommand, CloudFormation deploy, Lambda) with the operator's credentials and no isolation (C4 blast radius L0).",
+      "criterion": "C4",
+      "owasp": [
+        "ASI05",
+        "T11"
+      ],
+      "evidence": [
+        {
+          "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/parser.py",
+          "lines": "82-87",
+          "contains": "'cloudformation': ['package', 'deploy'],",
+          "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/parser/parser.py#L82-L87"
+        },
+        {
+          "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/driver.py",
+          "lines": "31-37",
+          "contains": "session = boto3.Session()",
+          "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/aws/driver.py#L31-L37"
+        }
+      ]
+    },
+    {
+      "summary": "A hijacked session can exfiltrate data through AWS and take irreversible actions with no human step in the default configuration (C5-WORSTCASE).",
+      "criterion": "C5",
+      "owasp": [
+        "ASI01",
+        "LLM01"
+      ],
+      "evidence": [
+        {
+          "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+          "lines": "131-138",
+          "contains": "Default behavior: allow all operations",
+          "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L131-L138"
+        },
+        {
+          "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+          "lines": "174",
+          "contains": "REQUIRE_MUTATION_CONSENT = get_env_bool(REQUIRE_MUTATION_CONSENT_KEY, False)",
+          "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L174"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "AWS resource content (S3 objects, logs, tags, SQS messages) returned by call_aws (server.py:357-362)",
+    "sensitive_data": "operator's ambient AWS credentials and account data (core/aws/driver.py:31-46)",
+    "state_change_or_egress": "any AWS write API allowed by default (core/security/policy.py:137-138)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Turn REQUIRE_MUTATION_CONSENT on by default so every AWS write needs per-call human consent showing the exact command.",
+      "criterion": "C2",
+      "parameter": "D",
+      "from_level": 0,
+      "to_level": 3,
+      "playbook": "Playbook 5",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Make READ_OPERATIONS_ONLY the default and require an explicit operator flag for writes.",
+      "criterion": "C1",
+      "parameter": "D",
+      "from_level": 0,
+      "to_level": 3,
+      "playbook": "Playbook 4",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Ignore model-supplied --profile (or restrict it to an operator allowlist) and remove token-minting operations from the read-only allowlist.",
+      "criterion": "C1",
+      "parameter": "S",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 4",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Write a structured per-call audit record (full redacted arguments, result status, policy decision, consent outcome, client identity).",
+      "criterion": "C9",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Make telemetry opt-in.",
+      "criterion": "C8",
+      "parameter": "D",
+      "from_level": 1,
+      "to_level": 2,
+      "estimated_gain": 0.05
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of src/aws-api-mcp-server at the pinned commit only; nothing was installed or run.",
+    "Behaviour of awscli/botocore internals (CloudFormation package artefact resolution, loguru flushing, awscli [plugins] loading) is inferred from library knowledge, not read in this repo.",
+    "HTTP transport (streamable-http with no-auth or OAuth) and Bedrock AgentCore deployment were not scored; the README leads with local stdio.",
+    "The opt-in experimental agent scripts were reviewed only briefly; one bundled script instructs the model to run IAM attach-role-policy/put-user-policy.",
+    "No reviewer-targeted prompt injection was found in the subpath."
+  ]
+}

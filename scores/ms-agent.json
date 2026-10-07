@@ -1,0 +1,2534 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "ms-agent",
+  "name": "MS-Agent",
+  "repo_url": "https://github.com/modelscope/ms-agent",
+  "subpath": null,
+  "description": "ModelScope's Python agent framework with CLI, TUI and WebUI for tool-using, multi-agent and long-running tasks.",
+  "category": "agent_frameworks",
+  "pinned_commit": "a56afcc73f0049ba822af9569fd413a2e90677eb",
+  "version": "1.6.0",
+  "scored_date": "2026-10-04",
+  "scored_configuration": "README-led WebUI (`ms-agent ui`) and TUI defaults: permission_mode restricted, shipped ms_agent/agent/agent.yaml tools (file_system + local python_env code_executor); the SDK LLMAgent() and `ms-agent run` default to auto mode and are footnoted.",
+  "score": 3.0,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 10,
+    "score": 2.98,
+    "max": 10.0,
+    "percent": 30
+  },
+  "capability_profile": {
+    "code_execution": "yes",
+    "filesystem_write": "yes",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "yes",
+    "untrusted_input": "yes",
+    "third_party_extensions": "yes",
+    "sub_agents": "opt_in",
+    "external_communication": "opt_in"
+  },
+  "headline": "MS-Agent ships shell, Python and notebook execution on the host, and its Python tool runs model code inside the agent process itself, with no sandbox by default. The WebUI and TUI ask before most actions, but any project directory can switch that off through its own .ms_agent/config.yaml, permission_memory.json or hooks.json, with no workspace-trust prompt. The SDK and `ms-agent run` default to auto-approve. Treat opening an untrusted repository as running its code.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "MS-Agent runs as the operating-system user and adds no identity or credential scoping of its own. It does narrow what spawned processes inherit: shell commands, MCP stdio servers and hooks get a scrubbed environment without API keys. But the default python_executor tool runs model code inside the agent process itself, where every environment variable, the provider API keys and the user's home-directory credentials are reachable. A repo config file can also add variables back into the shell environment.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Shell, MCP stdio and hook subprocesses get an allowlisted environment, but the agent otherwise acts with the OS user's full ambient authority and holds long-lived provider keys in process.",
+          "gap": "No per-tool or per-capability credential scoping; nothing narrows the OS user's authority beyond environment scrubbing for some subprocesses.",
+          "evidence": [
+            {
+              "file": "ms_agent/tools/code/local_code_executor.py",
+              "lines": "324",
+              "contains": "shell_env = self._build_env('shell_env', inherit=False)",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L324"
+            },
+            {
+              "file": "ms_agent/tools/code/local_code_executor.py",
+              "lines": "416",
+              "contains": "for key in _POSIX_ENV_PASSTHROUGH:",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L416"
+            },
+            {
+              "file": "ms_agent/tools/mcp_client.py",
+              "lines": "95-98",
+              "contains": "for key in _STDIO_ENV_PASSTHROUGH if os.environ.get(key)",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/mcp_client.py#L95-L98"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The default python_executor runs exec() in the agent's own process, so it bypasses the environment scrubbing that protects the shell path.",
+          "gap": "Every execution path (including python_executor and notebook kernels) would need the same scrubbed identity.",
+          "evidence": [
+            {
+              "file": "ms_agent/tools/code/local_code_executor.py",
+              "lines": "782-786",
+              "contains": "exec(code, globals_dict, locals_dict)",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L782-L786"
+            },
+            {
+              "file": "ms_agent/tools/code/local_code_executor.py",
+              "lines": "782",
+              "contains": "'__builtins__': __builtins__",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L782"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The scrubbed shell environment is the default, but tools.code_executor.shell_env from any config layer, including the repo's .ms_agent/config.yaml, is merged on top.",
+          "gap": "Widening the subprocess environment should require operator scope, not a workspace-controlled config layer.",
+          "evidence": [
+            {
+              "file": "ms_agent/tools/code/local_code_executor.py",
+              "lines": "451-456",
+              "contains": "env_cfg = getattr(self.tool_config, field, None)",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L451-L456"
+            },
+            {
+              "file": "ms_agent/config/resolver.py",
+              "lines": "288-291",
+              "contains": "layers.append(OmegaConf.load(str(yaml_file)))",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/config/resolver.py#L288-L291"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked agent holds the OS user's authority across every system the user can reach (cloud CLIs, git remotes, SSH) plus the provider keys in process; only the per-call approval in restricted mode stands in the way.",
+          "gap": "Authority would need to be confined to one project/system with mostly read access.",
+          "evidence": [
+            {
+              "file": "ms_agent/tools/code/local_code_executor.py",
+              "lines": "782-786",
+              "contains": "exec(code, globals_dict, locals_dict)",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L782-L786"
+            },
+            {
+              "file": "ms_agent/cli/tui.py",
+              "lines": "49",
+              "contains": "default='restricted'",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/cli/tui.py#L49"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.25,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Shell, MCP stdio and hook subprocesses get an allowlisted environment, but the agent otherwise acts with the OS user's full ambient authority and holds long-lived provider keys in process.",
+              "gap": "No per-tool or per-capability credential scoping; nothing narrows the OS user's authority beyond environment scrubbing for some subprocesses.",
+              "evidence": [
+                {
+                  "file": "ms_agent/tools/code/local_code_executor.py",
+                  "lines": "324",
+                  "contains": "shell_env = self._build_env('shell_env', inherit=False)",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L324"
+                },
+                {
+                  "file": "ms_agent/tools/code/local_code_executor.py",
+                  "lines": "416",
+                  "contains": "for key in _POSIX_ENV_PASSTHROUGH:",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L416"
+                },
+                {
+                  "file": "ms_agent/tools/mcp_client.py",
+                  "lines": "95-98",
+                  "contains": "for key in _STDIO_ENV_PASSTHROUGH if os.environ.get(key)",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/mcp_client.py#L95-L98"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The default python_executor runs exec() in the agent's own process, so it bypasses the environment scrubbing that protects the shell path.",
+              "gap": "Every execution path (including python_executor and notebook kernels) would need the same scrubbed identity.",
+              "evidence": [
+                {
+                  "file": "ms_agent/tools/code/local_code_executor.py",
+                  "lines": "782-786",
+                  "contains": "exec(code, globals_dict, locals_dict)",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L782-L786"
+                },
+                {
+                  "file": "ms_agent/tools/code/local_code_executor.py",
+                  "lines": "782",
+                  "contains": "'__builtins__': __builtins__",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L782"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The scrubbed shell environment is the default, but tools.code_executor.shell_env from any config layer, including the repo's .ms_agent/config.yaml, is merged on top.",
+              "gap": "Widening the subprocess environment should require operator scope, not a workspace-controlled config layer.",
+              "evidence": [
+                {
+                  "file": "ms_agent/tools/code/local_code_executor.py",
+                  "lines": "451-456",
+                  "contains": "env_cfg = getattr(self.tool_config, field, None)",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L451-L456"
+                },
+                {
+                  "file": "ms_agent/config/resolver.py",
+                  "lines": "288-291",
+                  "contains": "layers.append(OmegaConf.load(str(yaml_file)))",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/config/resolver.py#L288-L291"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked agent holds the OS user's authority across every system the user can reach (cloud CLIs, git remotes, SSH) plus the provider keys in process; only the per-call approval in restricted mode stands in the way.",
+              "gap": "Authority would need to be confined to one project/system with mostly read access.",
+              "evidence": [
+                {
+                  "file": "ms_agent/tools/code/local_code_executor.py",
+                  "lines": "782-786",
+                  "contains": "exec(code, globals_dict, locals_dict)",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L782-L786"
+                },
+                {
+                  "file": "ms_agent/cli/tui.py",
+                  "lines": "49",
+                  "contains": "default='restricted'",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/cli/tui.py#L49"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "The WebUI and TUI default to a 'restricted' mode that asks a human before any tool outside a small whitelist (read_file, grep, glob, todo, memory, skills), with options to allow once, for the session, always, edit the arguments, or deny. The SDK constructor and `ms-agent run` default to 'auto', which approves everything except a few network commands. The approval prompts in the terminal truncate long arguments, so a long script can be partly hidden. A cloned repository can turn approval off: its .ms_agent/config.yaml can set permission.mode to auto, its .ms_agent/permission_memory.json can pre-seed always-allow rules, and its .ms_agent/hooks.json can register a PreToolUse hook whose 'allow' skips the approval step entirely. No checkpoints are taken by default.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "G2",
+        "max": 0.25,
+        "reason": "A repo-controlled .ms_agent/config.yaml, permission_memory.json or hooks.json PreToolUse hook disables or bypasses the approval gate at runtime with no trust decision."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Per-call approval with allow/session/always/edit/deny outcomes, but the TUI and CLI prompts truncate the arguments (8 lines/400 chars; 500 chars), so the approver may not see the exact call.",
+          "gap": "Show the full exact call (complete command, code, diff) for every approval.",
+          "evidence": [
+            {
+              "file": "ms_agent/tui/permission.py",
+              "lines": "112-115",
+              "contains": "s = s[:400] + '…'",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tui/permission.py#L112-L115"
+            },
+            {
+              "file": "ms_agent/permission/handler.py",
+              "lines": "88-90",
+              "contains": "args_display = args_display[:500] + '...'",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/permission/handler.py#L88-L90"
+            },
+            {
+              "file": "ms_agent/permission/enforcer.py",
+              "lines": "207-217",
+              "contains": "response = await self._ask_user(",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/permission/enforcer.py#L207-L217"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All tools including MCP pass the single gate in ToolManager.single_call_tool, but the WebUI auto-approves the memory write tool, and matching of network ask rules does not cover every path.",
+          "gap": "Auto-approved tools would need to be a verified read-only allowlist and ask rules would need robust matching.",
+          "evidence": [
+            {
+              "file": "ms_agent/tools/tool_manager.py",
+              "lines": "644",
+              "contains": "safety_decision = self._safety_guard.check(",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/tool_manager.py#L644"
+            },
+            {
+              "file": "ms_agent/tools/tool_manager.py",
+              "lines": "705",
+              "contains": "perm_out = await resolve_hook_permission_decision(",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/tool_manager.py#L705"
+            },
+            {
+              "file": "webui/backend/app/backends/ms_agent/config.py",
+              "lines": "720",
+              "contains": "\"unified_memory---*\"",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/backends/ms_agent/config.py#L720"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Restricted is the WebUI/TUI default, but workspace files the agent operates on (.ms_agent/config.yaml permission.mode, .ms_agent/permission_memory.json, .ms_agent/hooks.json PreToolUse allow) switch it to auto-approve with no trust prompt; the SDK default is auto.",
+          "gap": "Approval settings and persisted allow-rules would need to come only from user scope, never from the repo.",
+          "evidence": [
+            {
+              "file": "webui/backend/app/schemas/project.py",
+              "lines": "43",
+              "contains": "permission_mode: PermissionMode = \"restricted\"",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/schemas/project.py#L43"
+            },
+            {
+              "file": "ms_agent/cli/tui.py",
+              "lines": "49",
+              "contains": "default='restricted'",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/cli/tui.py#L49"
+            },
+            {
+              "file": "webui/backend/app/backends/ms_agent/config.py",
+              "lines": "729-739",
+              "contains": "elif OmegaConf.select(config, \"permission.mode\", default=None) is None:",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/backends/ms_agent/config.py#L729-L739"
+            },
+            {
+              "file": "ms_agent/config/resolver.py",
+              "lines": "288-291",
+              "contains": "layers.append(OmegaConf.load(str(yaml_file)))",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/config/resolver.py#L288-L291"
+            },
+            {
+              "file": "ms_agent/permission/memory.py",
+              "lines": "42-43",
+              "contains": "'.ms_agent' / 'permission_memory.json'",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/permission/memory.py#L42-L43"
+            },
+            {
+              "file": "ms_agent/hooks/permission_resolve.py",
+              "lines": "75-88",
+              "contains": "Allowed by PreToolUse hook",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/hooks/permission_resolve.py#L75-L88"
+            },
+            {
+              "file": "ms_agent/permission/config.py",
+              "lines": "187",
+              "contains": "mode: Literal['auto', 'strict', 'interactive'] = 'auto'",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/permission/config.py#L187"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Approved or bypassed shell/python calls can delete files, push code or send data anywhere with no undo; automatic snapshots are disabled by default.",
+          "gap": "Default checkpoints or rollback for filesystem state.",
+          "evidence": [
+            {
+              "file": "ms_agent/agent/llm_agent.py",
+              "lines": "216",
+              "contains": "Disabled by default for all agents",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/agent/llm_agent.py#L216"
+            },
+            {
+              "file": "ms_agent/tools/code/local_code_executor.py",
+              "lines": "782-786",
+              "contains": "exec(code, globals_dict, locals_dict)",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L782-L786"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.4,
+          "cap": {
+            "id": "G2",
+            "max": 0.25,
+            "reason": "A repo-controlled .ms_agent/config.yaml, permission_memory.json or hooks.json PreToolUse hook disables or bypasses the approval gate at runtime with no trust decision."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Per-call approval with allow/session/always/edit/deny outcomes, but the TUI and CLI prompts truncate the arguments (8 lines/400 chars; 500 chars), so the approver may not see the exact call.",
+              "gap": "Show the full exact call (complete command, code, diff) for every approval.",
+              "evidence": [
+                {
+                  "file": "ms_agent/tui/permission.py",
+                  "lines": "112-115",
+                  "contains": "s = s[:400] + '…'",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tui/permission.py#L112-L115"
+                },
+                {
+                  "file": "ms_agent/permission/handler.py",
+                  "lines": "88-90",
+                  "contains": "args_display = args_display[:500] + '...'",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/permission/handler.py#L88-L90"
+                },
+                {
+                  "file": "ms_agent/permission/enforcer.py",
+                  "lines": "207-217",
+                  "contains": "response = await self._ask_user(",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/permission/enforcer.py#L207-L217"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All tools including MCP pass the single gate in ToolManager.single_call_tool, but the WebUI auto-approves the memory write tool, and matching of network ask rules does not cover every path.",
+              "gap": "Auto-approved tools would need to be a verified read-only allowlist and ask rules would need robust matching.",
+              "evidence": [
+                {
+                  "file": "ms_agent/tools/tool_manager.py",
+                  "lines": "644",
+                  "contains": "safety_decision = self._safety_guard.check(",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/tool_manager.py#L644"
+                },
+                {
+                  "file": "ms_agent/tools/tool_manager.py",
+                  "lines": "705",
+                  "contains": "perm_out = await resolve_hook_permission_decision(",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/tool_manager.py#L705"
+                },
+                {
+                  "file": "webui/backend/app/backends/ms_agent/config.py",
+                  "lines": "720",
+                  "contains": "\"unified_memory---*\"",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/backends/ms_agent/config.py#L720"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Restricted is the WebUI/TUI default, but workspace files the agent operates on (.ms_agent/config.yaml permission.mode, .ms_agent/permission_memory.json, .ms_agent/hooks.json PreToolUse allow) switch it to auto-approve with no trust prompt; the SDK default is auto.",
+              "gap": "Approval settings and persisted allow-rules would need to come only from user scope, never from the repo.",
+              "evidence": [
+                {
+                  "file": "webui/backend/app/schemas/project.py",
+                  "lines": "43",
+                  "contains": "permission_mode: PermissionMode = \"restricted\"",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/schemas/project.py#L43"
+                },
+                {
+                  "file": "ms_agent/cli/tui.py",
+                  "lines": "49",
+                  "contains": "default='restricted'",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/cli/tui.py#L49"
+                },
+                {
+                  "file": "webui/backend/app/backends/ms_agent/config.py",
+                  "lines": "729-739",
+                  "contains": "elif OmegaConf.select(config, \"permission.mode\", default=None) is None:",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/backends/ms_agent/config.py#L729-L739"
+                },
+                {
+                  "file": "ms_agent/config/resolver.py",
+                  "lines": "288-291",
+                  "contains": "layers.append(OmegaConf.load(str(yaml_file)))",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/config/resolver.py#L288-L291"
+                },
+                {
+                  "file": "ms_agent/permission/memory.py",
+                  "lines": "42-43",
+                  "contains": "'.ms_agent' / 'permission_memory.json'",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/permission/memory.py#L42-L43"
+                },
+                {
+                  "file": "ms_agent/hooks/permission_resolve.py",
+                  "lines": "75-88",
+                  "contains": "Allowed by PreToolUse hook",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/hooks/permission_resolve.py#L75-L88"
+                },
+                {
+                  "file": "ms_agent/permission/config.py",
+                  "lines": "187",
+                  "contains": "mode: Literal['auto', 'strict', 'interactive'] = 'auto'",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/permission/config.py#L187"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Approved or bypassed shell/python calls can delete files, push code or send data anywhere with no undo; automatic snapshots are disabled by default.",
+              "gap": "Default checkpoints or rollback for filesystem state.",
+              "evidence": [
+                {
+                  "file": "ms_agent/agent/llm_agent.py",
+                  "lines": "216",
+                  "contains": "Disabled by default for all agents",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/agent/llm_agent.py#L216"
+                },
+                {
+                  "file": "ms_agent/tools/code/local_code_executor.py",
+                  "lines": "782-786",
+                  "contains": "exec(code, globals_dict, locals_dict)",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L782-L786"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "The file tools check resolved paths against the workspace and a list of sensitive paths, and shell commands go through a parser that extracts paths from known commands and blocks writes outside the workspace. That shell check lets unknown commands through, and inline interpreter code cannot be inspected. The python_executor and notebook tools take arbitrary code with no argument validation at all. The default tool set enables write, shell, Python and notebook execution together.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.325,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "File tools use resolved-path containment, but the shell validator is heuristic (unregistered commands allowed) and python_executor/notebook_executor are raw code passthrough.",
+          "gap": "Replace general exec tools with narrow ones or validate their effects with allowlists in code.",
+          "evidence": [
+            {
+              "file": "ms_agent/permission/path_validator.py",
+              "lines": "164-166",
+              "contains": "resolved = (Path(cwd) / path).resolve()",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/permission/path_validator.py#L164-L166"
+            },
+            {
+              "file": "ms_agent/permission/shell_validator.py",
+              "lines": "423",
+              "contains": "Unregistered command",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/permission/shell_validator.py#L423"
+            },
+            {
+              "file": "ms_agent/permission/safety.py",
+              "lines": "86",
+              "contains": "No safety rule matched",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/permission/safety.py#L86"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "SafetyGuard validates shell, write/edit/read/grep/glob; python_executor, notebook_executor and every MCP tool fall through to allow.",
+          "gap": "A shared validation layer covering exec and extension tools.",
+          "evidence": [
+            {
+              "file": "ms_agent/permission/safety.py",
+              "lines": "61-86",
+              "contains": "if tool_name.endswith('---shell_executor'):",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/permission/safety.py#L61-L86"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The shipped agent.yaml enables write_file, edit_file, shell_executor, python_executor and notebook_executor by default; each can be excluded via config.",
+          "gap": "Read-only default tool set with write/exec requiring explicit enabling.",
+          "evidence": [
+            {
+              "file": "ms_agent/agent/agent.yaml",
+              "lines": "97-101",
+              "contains": "implementation: python_env",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/agent/agent.yaml#L97-L101"
+            },
+            {
+              "file": "ms_agent/agent/agent.yaml",
+              "lines": "82-101",
+              "contains": "- write_file",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/agent/agent.yaml#L82-L101"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "python_executor and shell reach the whole machine as the OS user; the only independent layer that holds is the per-call approval in restricted mode.",
+          "gap": "Tools scoped to the workspace with quantity bounds.",
+          "evidence": [
+            {
+              "file": "ms_agent/tools/code/local_code_executor.py",
+              "lines": "782-786",
+              "contains": "exec(code, globals_dict, locals_dict)",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L782-L786"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.325,
+          "raw": 0.325,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "File tools use resolved-path containment, but the shell validator is heuristic (unregistered commands allowed) and python_executor/notebook_executor are raw code passthrough.",
+              "gap": "Replace general exec tools with narrow ones or validate their effects with allowlists in code.",
+              "evidence": [
+                {
+                  "file": "ms_agent/permission/path_validator.py",
+                  "lines": "164-166",
+                  "contains": "resolved = (Path(cwd) / path).resolve()",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/permission/path_validator.py#L164-L166"
+                },
+                {
+                  "file": "ms_agent/permission/shell_validator.py",
+                  "lines": "423",
+                  "contains": "Unregistered command",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/permission/shell_validator.py#L423"
+                },
+                {
+                  "file": "ms_agent/permission/safety.py",
+                  "lines": "86",
+                  "contains": "No safety rule matched",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/permission/safety.py#L86"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "SafetyGuard validates shell, write/edit/read/grep/glob; python_executor, notebook_executor and every MCP tool fall through to allow.",
+              "gap": "A shared validation layer covering exec and extension tools.",
+              "evidence": [
+                {
+                  "file": "ms_agent/permission/safety.py",
+                  "lines": "61-86",
+                  "contains": "if tool_name.endswith('---shell_executor'):",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/permission/safety.py#L61-L86"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The shipped agent.yaml enables write_file, edit_file, shell_executor, python_executor and notebook_executor by default; each can be excluded via config.",
+              "gap": "Read-only default tool set with write/exec requiring explicit enabling.",
+              "evidence": [
+                {
+                  "file": "ms_agent/agent/agent.yaml",
+                  "lines": "97-101",
+                  "contains": "implementation: python_env",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/agent/agent.yaml#L97-L101"
+                },
+                {
+                  "file": "ms_agent/agent/agent.yaml",
+                  "lines": "82-101",
+                  "contains": "- write_file",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/agent/agent.yaml#L82-L101"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "python_executor and shell reach the whole machine as the OS user; the only independent layer that holds is the per-call approval in restricted mode.",
+              "gap": "Tools scoped to the workspace with quantity bounds.",
+              "evidence": [
+                {
+                  "file": "ms_agent/tools/code/local_code_executor.py",
+                  "lines": "782-786",
+                  "contains": "exec(code, globals_dict, locals_dict)",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L782-L786"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "The shipped default runs model code with no isolation at all. Shell commands run as the user on the host (with a cleaned environment), and python_executor calls exec() inside the agent's own process, with full access to its memory, environment variables and API keys. A Docker sandbox backend (ms-enclave) exists, but it is opt-in. It is also a stock container with networking on and the workspace mounted read-write, and hooks and MCP servers still run on the host. If the approval step is bypassed, model code effectively has host-level access.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.325,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Stock Docker container via ms-enclave with privileged false and memory/CPU limits; no evidence of dropped capabilities, non-root or seccomp in this repo.",
+          "gap": "Hardened container (non-root, dropped caps, no-new-privileges, read-only root) or kernel isolation.",
+          "evidence": [
+            {
+              "file": "ms_agent/tools/code/code_executor.py",
+              "lines": "153-168",
+              "contains": "sandbox_cfg.get('privileged', False),",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/code_executor.py#L153-L168"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only the code_executor tools move into the container; hooks and MCP stdio servers still launch on the host.",
+          "gap": "Every model-reachable execution path in the sandbox.",
+          "evidence": [
+            {
+              "file": "ms_agent/tools/tool_manager.py",
+              "lines": "207-208",
+              "contains": "self.extra_tools.append(CodeExecutionTool(config))",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/tool_manager.py#L207-L208"
+            },
+            {
+              "file": "ms_agent/tools/mcp_client.py",
+              "lines": "445-448",
+              "contains": "server_params = StdioServerParameters(",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/mcp_client.py#L445-L448"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Opt-in; the shipped agent.yaml selects python_env.",
+          "gap": "On by default.",
+          "evidence": [
+            {
+              "file": "ms_agent/agent/agent.yaml",
+              "lines": "97-101",
+              "contains": "implementation: python_env",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/agent/agent.yaml#L97-L101"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Workspace mounted read-write at /data and network enabled by default inside the container.",
+          "gap": "Egress off or allowlisted by default.",
+          "evidence": [
+            {
+              "file": "ms_agent/tools/code/code_executor.py",
+              "lines": "136",
+              "contains": "'mode': 'rw'",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/code_executor.py#L136"
+            },
+            {
+              "file": "ms_agent/tools/code/code_executor.py",
+              "lines": "165-166",
+              "contains": "sandbox_cfg.get('network_enabled', True),",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/code_executor.py#L165-L166"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default implementation python_env: same-user subprocess for shell and in-process exec() for Python.",
+              "gap": "Any OS-level separation (container, low-privilege user, sandbox profile) in the default path.",
+              "evidence": [
+                {
+                  "file": "ms_agent/agent/agent.yaml",
+                  "lines": "97-101",
+                  "contains": "implementation: python_env",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/agent/agent.yaml#L97-L101"
+                },
+                {
+                  "file": "ms_agent/tools/code/local_code_executor.py",
+                  "lines": "782-786",
+                  "contains": "exec(code, globals_dict, locals_dict)",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L782-L786"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No execution path is sandboxed by default; hooks and MCP stdio servers also launch on the host.",
+              "gap": "Sandbox the main exec tools.",
+              "evidence": [
+                {
+                  "file": "ms_agent/tools/code/local_code_executor.py",
+                  "lines": "782-786",
+                  "contains": "exec(code, globals_dict, locals_dict)",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L782-L786"
+                },
+                {
+                  "file": "ms_agent/tools/code/local_code_executor.py",
+                  "lines": "940-946",
+                  "contains": "env=self.shell_env,",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L940-L946"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Sandboxing is off in the shipped agent.yaml (implementation: python_env).",
+              "gap": "Sandbox on by default.",
+              "evidence": [
+                {
+                  "file": "ms_agent/agent/agent.yaml",
+                  "lines": "97-101",
+                  "contains": "implementation: python_env",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/agent/agent.yaml#L97-L101"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "In-process exec gives model code the agent process's credentials, network and the user's whole filesystem.",
+              "gap": "Workspace-only reach with no secrets and restricted egress.",
+              "evidence": [
+                {
+                  "file": "ms_agent/tools/code/local_code_executor.py",
+                  "lines": "782-786",
+                  "contains": "exec(code, globals_dict, locals_dict)",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L782-L786"
+                },
+                {
+                  "file": "ms_agent/tools/code/local_code_executor.py",
+                  "lines": "791",
+                  "contains": "asyncio.to_thread(_exec_code), timeout=exec_timeout)",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L791"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in ms-enclave Docker sandbox (tools.code_executor.implementation: sandbox)",
+          "score": 0.325,
+          "raw": 0.325,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Stock Docker container via ms-enclave with privileged false and memory/CPU limits; no evidence of dropped capabilities, non-root or seccomp in this repo.",
+              "gap": "Hardened container (non-root, dropped caps, no-new-privileges, read-only root) or kernel isolation.",
+              "evidence": [
+                {
+                  "file": "ms_agent/tools/code/code_executor.py",
+                  "lines": "153-168",
+                  "contains": "sandbox_cfg.get('privileged', False),",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/code_executor.py#L153-L168"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only the code_executor tools move into the container; hooks and MCP stdio servers still launch on the host.",
+              "gap": "Every model-reachable execution path in the sandbox.",
+              "evidence": [
+                {
+                  "file": "ms_agent/tools/tool_manager.py",
+                  "lines": "207-208",
+                  "contains": "self.extra_tools.append(CodeExecutionTool(config))",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/tool_manager.py#L207-L208"
+                },
+                {
+                  "file": "ms_agent/tools/mcp_client.py",
+                  "lines": "445-448",
+                  "contains": "server_params = StdioServerParameters(",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/mcp_client.py#L445-L448"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Opt-in; the shipped agent.yaml selects python_env.",
+              "gap": "On by default.",
+              "evidence": [
+                {
+                  "file": "ms_agent/agent/agent.yaml",
+                  "lines": "97-101",
+                  "contains": "implementation: python_env",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/agent/agent.yaml#L97-L101"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Workspace mounted read-write at /data and network enabled by default inside the container.",
+              "gap": "Egress off or allowlisted by default.",
+              "evidence": [
+                {
+                  "file": "ms_agent/tools/code/code_executor.py",
+                  "lines": "136",
+                  "contains": "'mode': 'rw'",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/code_executor.py#L136"
+                },
+                {
+                  "file": "ms_agent/tools/code/code_executor.py",
+                  "lines": "165-166",
+                  "contains": "sandbox_cfg.get('network_enabled', True),",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/code_executor.py#L165-L166"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "Nothing tracks where content came from: files, shell output, MCP results and the repo's AGENTS.md all enter the model's context on equal footing, and AGENTS.md goes into the system prompt. What limits a hijacked agent in the default WebUI/TUI mode is the general per-call approval. Shell, Python and file writes need a click, but reads and memory writes do not, so injected text can persist itself into project memory without anyone approving it. The same repo-controlled config files that switch approval off also remove this limit, and in the SDK's default auto mode a hijack can both exfiltrate data and take irreversible actions unattended.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "G2",
+        "max": 0.25,
+        "reason": "A repo-controlled .ms_agent/config.yaml switches permission mode to auto, removing the approval that is the only limit on a hijacked agent."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "In restricted mode exec, write and network-capable tools ask a human regardless of what was read, but memory writes are auto-approved and nothing is tied to provenance.",
+          "gap": "Disable or force approval on every egress and state-changing tool once untrusted content is read, enforced in code.",
+          "evidence": [
+            {
+              "file": "webui/backend/app/schemas/project.py",
+              "lines": "43",
+              "contains": "permission_mode: PermissionMode = \"restricted\"",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/schemas/project.py#L43"
+            },
+            {
+              "file": "webui/backend/app/backends/ms_agent/config.py",
+              "lines": "715-721",
+              "contains": "\"file_system---read_file\"",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/backends/ms_agent/config.py#L715-L721"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Untrusted sources are not distinguished at all; the repo's AGENTS.md is injected into the system prompt and tool results enter context as normal messages.",
+          "gap": "Distinguish tool, MCP and file content as untrusted across all sources.",
+          "evidence": [
+            {
+              "file": "ms_agent/prompting/workspace_files.py",
+              "lines": "9",
+              "contains": "<work_dir>/AGENTS.md",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/prompting/workspace_files.py#L9"
+            },
+            {
+              "search": "rg -n -i 'taint|untrusted' --type py",
+              "scope": "ms_agent",
+              "hits": 1,
+              "note": "The single hit is a docstring about trust_remote_code, not provenance tracking."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The limiting gate is on in WebUI/TUI but a workspace .ms_agent/config.yaml can set permission.mode auto.",
+          "gap": "Nothing the agent reads (including workspace config) can configure the limit away.",
+          "evidence": [
+            {
+              "file": "webui/backend/app/backends/ms_agent/config.py",
+              "lines": "729-739",
+              "contains": "elif OmegaConf.select(config, \"permission.mode\", default=None) is None:",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/backends/ms_agent/config.py#L729-L739"
+            },
+            {
+              "file": "ms_agent/config/resolver.py",
+              "lines": "288-291",
+              "contains": "layers.append(OmegaConf.load(str(yaml_file)))",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/config/resolver.py#L288-L291"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "In restricted mode exfiltration and irreversible actions need approval; unattended, a hijack can read workspace files and write persistent project memory.",
+          "gap": "Make the only unattended effects low-sensitivity and non-persistent.",
+          "evidence": [
+            {
+              "file": "webui/backend/app/backends/ms_agent/config.py",
+              "lines": "720",
+              "contains": "\"unified_memory---*\"",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/backends/ms_agent/config.py#L720"
+            },
+            {
+              "file": "ms_agent/tools/tool_manager.py",
+              "lines": "705",
+              "contains": "perm_out = await resolve_hook_permission_decision(",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/tool_manager.py#L705"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.375,
+          "cap": {
+            "id": "G2",
+            "max": 0.25,
+            "reason": "A repo-controlled .ms_agent/config.yaml switches permission mode to auto, removing the approval that is the only limit on a hijacked agent."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "In restricted mode exec, write and network-capable tools ask a human regardless of what was read, but memory writes are auto-approved and nothing is tied to provenance.",
+              "gap": "Disable or force approval on every egress and state-changing tool once untrusted content is read, enforced in code.",
+              "evidence": [
+                {
+                  "file": "webui/backend/app/schemas/project.py",
+                  "lines": "43",
+                  "contains": "permission_mode: PermissionMode = \"restricted\"",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/schemas/project.py#L43"
+                },
+                {
+                  "file": "webui/backend/app/backends/ms_agent/config.py",
+                  "lines": "715-721",
+                  "contains": "\"file_system---read_file\"",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/backends/ms_agent/config.py#L715-L721"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Untrusted sources are not distinguished at all; the repo's AGENTS.md is injected into the system prompt and tool results enter context as normal messages.",
+              "gap": "Distinguish tool, MCP and file content as untrusted across all sources.",
+              "evidence": [
+                {
+                  "file": "ms_agent/prompting/workspace_files.py",
+                  "lines": "9",
+                  "contains": "<work_dir>/AGENTS.md",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/prompting/workspace_files.py#L9"
+                },
+                {
+                  "search": "rg -n -i 'taint|untrusted' --type py",
+                  "scope": "ms_agent",
+                  "hits": 1,
+                  "note": "The single hit is a docstring about trust_remote_code, not provenance tracking."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The limiting gate is on in WebUI/TUI but a workspace .ms_agent/config.yaml can set permission.mode auto.",
+              "gap": "Nothing the agent reads (including workspace config) can configure the limit away.",
+              "evidence": [
+                {
+                  "file": "webui/backend/app/backends/ms_agent/config.py",
+                  "lines": "729-739",
+                  "contains": "elif OmegaConf.select(config, \"permission.mode\", default=None) is None:",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/backends/ms_agent/config.py#L729-L739"
+                },
+                {
+                  "file": "ms_agent/config/resolver.py",
+                  "lines": "288-291",
+                  "contains": "layers.append(OmegaConf.load(str(yaml_file)))",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/config/resolver.py#L288-L291"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "In restricted mode exfiltration and irreversible actions need approval; unattended, a hijack can read workspace files and write persistent project memory.",
+              "gap": "Make the only unattended effects low-sensitivity and non-persistent.",
+              "evidence": [
+                {
+                  "file": "webui/backend/app/backends/ms_agent/config.py",
+                  "lines": "720",
+                  "contains": "\"unified_memory---*\"",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/backends/ms_agent/config.py#L720"
+                },
+                {
+                  "file": "ms_agent/tools/tool_manager.py",
+                  "lines": "705",
+                  "contains": "perm_out = await resolve_hook_permission_decision(",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/tool_manager.py#L705"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "A project directory controls a lot of the agent's behavior with no workspace-trust prompt. Its .ms_agent/config.yaml can change any setting, including tools, MCP servers and permission mode. Its .ms_agent/hooks.json registers shell-command hooks that run automatically, its permission_memory.json holds always-allow rules, its AGENTS.md is injected into the system prompt, and the CLI loads ./.env from the current directory. Project memory (MEMORY.md under .ms_agent/memory, on by default in the WebUI) is written by an auto-approved memory tool. A regex scanner rejects a few obvious injection phrases, but the memory is then fed back into later sessions.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.175,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C6-REPOCONFIG",
+        "max": 0.25,
+        "reason": "Workspace .ms_agent/config.yaml, hooks.json, permission_memory.json and ./.env enable hooks/MCP servers, loosen approval or change endpoints without a trust decision."
+      },
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Repo-controlled files add hooks (shell commands), MCP servers and auto-approve rules with no prompt.",
+          "gap": "Require an explicit workspace-trust decision before loading security-relevant project config.",
+          "evidence": [
+            {
+              "file": "ms_agent/config/resolver.py",
+              "lines": "288-291",
+              "contains": "layers.append(OmegaConf.load(str(yaml_file)))",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/config/resolver.py#L288-L291"
+            },
+            {
+              "file": "ms_agent/hooks/factory.py",
+              "lines": "153",
+              "contains": "ms_agent_hooks_json = project_internal_file(project_path, 'hooks.json')",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/hooks/factory.py#L153"
+            },
+            {
+              "file": "ms_agent/hooks/factory.py",
+              "lines": "41",
+              "contains": "raw.get('enabled_sources', ['native']) or ['native']",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/hooks/factory.py#L41"
+            },
+            {
+              "file": "ms_agent/permission/memory.py",
+              "lines": "42-43",
+              "contains": "'.ms_agent' / 'permission_memory.json'",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/permission/memory.py#L42-L43"
+            },
+            {
+              "search": "rg -n -i 'trust.*(workspace|folder|project)|workspace.trust|trusted_projects' --type py",
+              "scope": "ms_agent webui/backend/app",
+              "hits": 0,
+              "note": "No workspace-trust mechanism exists."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only the memory store has a write-time control (regex denylist); config files, hooks, AGENTS.md and .env are uncontrolled.",
+          "gap": "Control every auto-loaded file and setting.",
+          "evidence": [
+            {
+              "file": "ms_agent/memory/unified/security.py",
+              "lines": "52",
+              "contains": "def scan_content",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/memory/unified/security.py#L52"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Memory is namespaced per project id, but lives inside the project directory where the repo itself can pre-seed it.",
+          "gap": "Storage the workspace cannot write, isolated per user.",
+          "evidence": [
+            {
+              "file": "webui/backend/app/backends/ms_agent/config.py",
+              "lines": "645",
+              "contains": "<project.path>/.ms_agent/memory/",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/backends/ms_agent/config.py#L645"
+            },
+            {
+              "file": "webui/backend/app/schemas/project.py",
+              "lines": "23",
+              "contains": "memory_enabled: bool = True",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/schemas/project.py#L23"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Poisoned memory or repo config persists across the user's sessions in that project and can trigger tool use (hooks run commands).",
+          "gap": "Session-scoped, or persistent only after human review.",
+          "evidence": [
+            {
+              "file": "ms_agent/hooks/factory.py",
+              "lines": "153",
+              "contains": "ms_agent_hooks_json = project_internal_file(project_path, 'hooks.json')",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/hooks/factory.py#L153"
+            },
+            {
+              "file": "ms_agent/config/env.py",
+              "lines": "26",
+              "contains": "default = os.path.join(os.getcwd(), '.env')",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/config/env.py#L26"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.175,
+          "raw": 0.175,
+          "cap": {
+            "id": "C6-REPOCONFIG",
+            "max": 0.25,
+            "reason": "Workspace .ms_agent/config.yaml, hooks.json, permission_memory.json and ./.env enable hooks/MCP servers, loosen approval or change endpoints without a trust decision."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Repo-controlled files add hooks (shell commands), MCP servers and auto-approve rules with no prompt.",
+              "gap": "Require an explicit workspace-trust decision before loading security-relevant project config.",
+              "evidence": [
+                {
+                  "file": "ms_agent/config/resolver.py",
+                  "lines": "288-291",
+                  "contains": "layers.append(OmegaConf.load(str(yaml_file)))",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/config/resolver.py#L288-L291"
+                },
+                {
+                  "file": "ms_agent/hooks/factory.py",
+                  "lines": "153",
+                  "contains": "ms_agent_hooks_json = project_internal_file(project_path, 'hooks.json')",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/hooks/factory.py#L153"
+                },
+                {
+                  "file": "ms_agent/hooks/factory.py",
+                  "lines": "41",
+                  "contains": "raw.get('enabled_sources', ['native']) or ['native']",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/hooks/factory.py#L41"
+                },
+                {
+                  "file": "ms_agent/permission/memory.py",
+                  "lines": "42-43",
+                  "contains": "'.ms_agent' / 'permission_memory.json'",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/permission/memory.py#L42-L43"
+                },
+                {
+                  "search": "rg -n -i 'trust.*(workspace|folder|project)|workspace.trust|trusted_projects' --type py",
+                  "scope": "ms_agent webui/backend/app",
+                  "hits": 0,
+                  "note": "No workspace-trust mechanism exists."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only the memory store has a write-time control (regex denylist); config files, hooks, AGENTS.md and .env are uncontrolled.",
+              "gap": "Control every auto-loaded file and setting.",
+              "evidence": [
+                {
+                  "file": "ms_agent/memory/unified/security.py",
+                  "lines": "52",
+                  "contains": "def scan_content",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/memory/unified/security.py#L52"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Memory is namespaced per project id, but lives inside the project directory where the repo itself can pre-seed it.",
+              "gap": "Storage the workspace cannot write, isolated per user.",
+              "evidence": [
+                {
+                  "file": "webui/backend/app/backends/ms_agent/config.py",
+                  "lines": "645",
+                  "contains": "<project.path>/.ms_agent/memory/",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/backends/ms_agent/config.py#L645"
+                },
+                {
+                  "file": "webui/backend/app/schemas/project.py",
+                  "lines": "23",
+                  "contains": "memory_enabled: bool = True",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/schemas/project.py#L23"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Poisoned memory or repo config persists across the user's sessions in that project and can trigger tool use (hooks run commands).",
+              "gap": "Session-scoped, or persistent only after human review.",
+              "evidence": [
+                {
+                  "file": "ms_agent/hooks/factory.py",
+                  "lines": "153",
+                  "contains": "ms_agent_hooks_json = project_internal_file(project_path, 'hooks.json')",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/hooks/factory.py#L153"
+                },
+                {
+                  "file": "ms_agent/config/env.py",
+                  "lines": "26",
+                  "contains": "default = os.path.join(os.getcwd(), '.env')",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/config/env.py#L26"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "Extensions come from MCP servers, plugins, hooks and skills. Plugins installed from GitHub are pinned to a resolved commit, but MCP servers launch whatever command the config names with no pinning or integrity check. Project-scope plugins.json and mcp.json inside the workspace are picked up without consent. Loading Python tool plugins named in a config does require trust_remote_code. MCP stdio servers and hook commands run as separate processes with a scrubbed environment.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Plugin installs verify a resolved git SHA, but MCP servers are launched from user/project config with no pinning or integrity check.",
+          "gap": "Pin and verify every extension type.",
+          "evidence": [
+            {
+              "file": "ms_agent/plugins/installer.py",
+              "lines": "582",
+              "contains": "_verify_resolved_sha(ref=ref, expected_sha=expected_sha, resolved_sha=sha)",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/plugins/installer.py#L582"
+            },
+            {
+              "search": "rg -n -i 'sha256|integrity|checksum'",
+              "scope": "ms_agent/tools/mcp_client.py ms_agent/mcp ms_agent/config/mcp_manager.py",
+              "hits": 0,
+              "note": "No integrity checks on MCP servers."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only GitHub plugin installs are pinned; MCP servers, hooks and workspace plugins are not verified.",
+          "gap": "Verification across most extension types.",
+          "evidence": [
+            {
+              "file": "ms_agent/plugins/installer.py",
+              "lines": "527-528",
+              "contains": "pins.append(ref)",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/plugins/installer.py#L527-L528"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Workspace .ms_agent/plugins.json and .ms_agent/mcp.json are merged into the running config and enabled plugins load without a prompt.",
+          "gap": "Nothing third-party enabled from the workspace; adding one shows the exact command.",
+          "evidence": [
+            {
+              "file": "ms_agent/config/resolver.py",
+              "lines": "335-336",
+              "contains": "project_mcp = self._load_json_safe(",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/config/resolver.py#L335-L336"
+            },
+            {
+              "file": "ms_agent/plugins/config_manager.py",
+              "lines": "37-38",
+              "contains": "return project_internal_file(self.project_root, PLUGIN_FILE)",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/plugins/config_manager.py#L37-L38"
+            },
+            {
+              "file": "ms_agent/plugins/runtime.py",
+              "lines": "105-110",
+              "contains": "if not record.enabled:",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/plugins/runtime.py#L105-L110"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "MCP stdio servers and command hooks run as separate processes with an allowlisted environment; Python tool plugins load in-process but only with trust_remote_code.",
+          "gap": "Per-extension sandboxing with scoped credentials.",
+          "evidence": [
+            {
+              "file": "ms_agent/tools/mcp_client.py",
+              "lines": "95-98",
+              "contains": "for key in _STDIO_ENV_PASSTHROUGH if os.environ.get(key)",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/mcp_client.py#L95-L98"
+            },
+            {
+              "file": "ms_agent/hooks/executors/command.py",
+              "lines": "78-80",
+              "contains": "for key, value in os.environ.items() if key in _HOOK_ENV_ALLOWLIST",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/hooks/executors/command.py#L78-L80"
+            },
+            {
+              "file": "ms_agent/tools/tool_manager.py",
+              "lines": "269",
+              "contains": "if not self.trust_remote_code:",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/tool_manager.py#L269"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.25,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Plugin installs verify a resolved git SHA, but MCP servers are launched from user/project config with no pinning or integrity check.",
+              "gap": "Pin and verify every extension type.",
+              "evidence": [
+                {
+                  "file": "ms_agent/plugins/installer.py",
+                  "lines": "582",
+                  "contains": "_verify_resolved_sha(ref=ref, expected_sha=expected_sha, resolved_sha=sha)",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/plugins/installer.py#L582"
+                },
+                {
+                  "search": "rg -n -i 'sha256|integrity|checksum'",
+                  "scope": "ms_agent/tools/mcp_client.py ms_agent/mcp ms_agent/config/mcp_manager.py",
+                  "hits": 0,
+                  "note": "No integrity checks on MCP servers."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only GitHub plugin installs are pinned; MCP servers, hooks and workspace plugins are not verified.",
+              "gap": "Verification across most extension types.",
+              "evidence": [
+                {
+                  "file": "ms_agent/plugins/installer.py",
+                  "lines": "527-528",
+                  "contains": "pins.append(ref)",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/plugins/installer.py#L527-L528"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Workspace .ms_agent/plugins.json and .ms_agent/mcp.json are merged into the running config and enabled plugins load without a prompt.",
+              "gap": "Nothing third-party enabled from the workspace; adding one shows the exact command.",
+              "evidence": [
+                {
+                  "file": "ms_agent/config/resolver.py",
+                  "lines": "335-336",
+                  "contains": "project_mcp = self._load_json_safe(",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/config/resolver.py#L335-L336"
+                },
+                {
+                  "file": "ms_agent/plugins/config_manager.py",
+                  "lines": "37-38",
+                  "contains": "return project_internal_file(self.project_root, PLUGIN_FILE)",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/plugins/config_manager.py#L37-L38"
+                },
+                {
+                  "file": "ms_agent/plugins/runtime.py",
+                  "lines": "105-110",
+                  "contains": "if not record.enabled:",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/plugins/runtime.py#L105-L110"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "MCP stdio servers and command hooks run as separate processes with an allowlisted environment; Python tool plugins load in-process but only with trust_remote_code.",
+              "gap": "Per-extension sandboxing with scoped credentials.",
+              "evidence": [
+                {
+                  "file": "ms_agent/tools/mcp_client.py",
+                  "lines": "95-98",
+                  "contains": "for key in _STDIO_ENV_PASSTHROUGH if os.environ.get(key)",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/mcp_client.py#L95-L98"
+                },
+                {
+                  "file": "ms_agent/hooks/executors/command.py",
+                  "lines": "78-80",
+                  "contains": "for key, value in os.environ.items() if key in _HOOK_ENV_ALLOWLIST",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/hooks/executors/command.py#L78-L80"
+                },
+                {
+                  "file": "ms_agent/tools/tool_manager.py",
+                  "lines": "269",
+                  "contains": "if not self.trust_remote_code:",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/tool_manager.py#L269"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "There is no telemetry (the bundled mem0 telemetry is explicitly switched off), and API keys are masked when the WebUI sends them back to the browser. Spawned shells, MCP servers and hooks get environments without secrets. Provider keys are kept in plaintext settings, and session transcripts are written with no redaction. The in-process python_executor can read every key the agent holds and print it into the conversation.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.3,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Secrets come from env vars and plaintext settings.json; masking exists only in the WebUI API response path and env scrubbing for subprocesses.",
+          "gap": "Type-level masking and log filters on main paths.",
+          "evidence": [
+            {
+              "file": "webui/backend/app/backends/ms_agent/mapping.py",
+              "lines": "42",
+              "contains": "def _mask(api_key: str) -> str:",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/backends/ms_agent/mapping.py#L42"
+            },
+            {
+              "file": "ms_agent/tools/code/local_code_executor.py",
+              "lines": "416",
+              "contains": "for key in _POSIX_ENV_PASSTHROUGH:",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L416"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Subprocess environments are protected; logs, transcripts and model-bound tool output are not redacted.",
+          "gap": "Redact secrets in logs and transcripts.",
+          "evidence": [
+            {
+              "search": "rg -n 'redact|mask'",
+              "scope": "ms_agent/session/session_log.py",
+              "hits": 0,
+              "note": "No redaction in the session transcript writer."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No telemetry SDK; mem0 telemetry forced off; logging defaults reasonable.",
+          "gap": "Always-on redaction.",
+          "evidence": [
+            {
+              "file": "webui/backend/app/backends/ms_agent/config.py",
+              "lines": "34",
+              "contains": "os.environ.setdefault(\"MEM0_TELEMETRY\", \"false\")",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/backends/ms_agent/config.py#L34"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Long-lived provider and search API keys sit in the agent process, reachable by python_executor.",
+          "gap": "Scoped, short-lived keys.",
+          "evidence": [
+            {
+              "file": "ms_agent/tools/code/local_code_executor.py",
+              "lines": "782-786",
+              "contains": "exec(code, globals_dict, locals_dict)",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L782-L786"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.3,
+          "raw": 0.3,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Secrets come from env vars and plaintext settings.json; masking exists only in the WebUI API response path and env scrubbing for subprocesses.",
+              "gap": "Type-level masking and log filters on main paths.",
+              "evidence": [
+                {
+                  "file": "webui/backend/app/backends/ms_agent/mapping.py",
+                  "lines": "42",
+                  "contains": "def _mask(api_key: str) -> str:",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/backends/ms_agent/mapping.py#L42"
+                },
+                {
+                  "file": "ms_agent/tools/code/local_code_executor.py",
+                  "lines": "416",
+                  "contains": "for key in _POSIX_ENV_PASSTHROUGH:",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L416"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Subprocess environments are protected; logs, transcripts and model-bound tool output are not redacted.",
+              "gap": "Redact secrets in logs and transcripts.",
+              "evidence": [
+                {
+                  "search": "rg -n 'redact|mask'",
+                  "scope": "ms_agent/session/session_log.py",
+                  "hits": 0,
+                  "note": "No redaction in the session transcript writer."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No telemetry SDK; mem0 telemetry forced off; logging defaults reasonable.",
+              "gap": "Always-on redaction.",
+              "evidence": [
+                {
+                  "file": "webui/backend/app/backends/ms_agent/config.py",
+                  "lines": "34",
+                  "contains": "os.environ.setdefault(\"MEM0_TELEMETRY\", \"false\")",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/backends/ms_agent/config.py#L34"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Long-lived provider and search API keys sit in the agent process, reachable by python_executor.",
+              "gap": "Scoped, short-lived keys.",
+              "evidence": [
+                {
+                  "file": "ms_agent/tools/code/local_code_executor.py",
+                  "lines": "782-786",
+                  "contains": "exec(code, globals_dict, locals_dict)",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L782-L786"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "Each session is written as an append-only JSONL log under ~/.ms_agent/projects, outside the workspace, flushed line by line. It records every message, including tool calls and results, and the WebUI also records each approval or denial with its arguments. Records carry no actor identity beyond role. The agent's own process (and approved shell commands) can still edit the log, and a failed permission write is swallowed silently.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.45,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Structured JSONL record of every message with seq and timestamps, plus permission markers.",
+          "gap": "Actor attribution (requesting principal, approver) and cross-agent correlation IDs.",
+          "evidence": [
+            {
+              "file": "ms_agent/session/session_log.py",
+              "lines": "543-545",
+              "contains": "f.flush()",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/session/session_log.py#L543-L545"
+            },
+            {
+              "file": "ms_agent/session/session_log.py",
+              "lines": "157-164",
+              "contains": "def record_permission",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/session/session_log.py#L157-L164"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All tool calls on the main agent and WebUI approvals are recorded; sub-agent and hook activity are not shown to reach the same log.",
+          "gap": "Include sub-agents, hooks and denials on every surface.",
+          "evidence": [
+            {
+              "file": "webui/backend/app/backends/ms_agent/runtime.py",
+              "lines": "289-303",
+              "contains": "log.record_permission(record)",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/backends/ms_agent/runtime.py#L289-L303"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "On by default in WebUI/TUI and stored outside the workspace, but in a directory the agent process can write.",
+          "gap": "Written by a component the model cannot control.",
+          "evidence": [
+            {
+              "file": "ms_agent/project/paths.py",
+              "lines": "12",
+              "contains": "~/.ms_agent/projects/<key>/<session>.jsonl",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/project/paths.py#L12"
+            },
+            {
+              "file": "ms_agent/tui/app.py",
+              "lines": "160",
+              "contains": "'session_log.enabled', True",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tui/app.py#L160"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Flushed per line, but persistence failures are swallowed (logger.debug) and actions proceed.",
+          "gap": "Surface logging errors.",
+          "evidence": [
+            {
+              "file": "webui/backend/app/backends/ms_agent/runtime.py",
+              "lines": "304-305",
+              "contains": "permission record skipped",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/backends/ms_agent/runtime.py#L304-L305"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.45,
+          "raw": 0.45,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Structured JSONL record of every message with seq and timestamps, plus permission markers.",
+              "gap": "Actor attribution (requesting principal, approver) and cross-agent correlation IDs.",
+              "evidence": [
+                {
+                  "file": "ms_agent/session/session_log.py",
+                  "lines": "543-545",
+                  "contains": "f.flush()",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/session/session_log.py#L543-L545"
+                },
+                {
+                  "file": "ms_agent/session/session_log.py",
+                  "lines": "157-164",
+                  "contains": "def record_permission",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/session/session_log.py#L157-L164"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All tool calls on the main agent and WebUI approvals are recorded; sub-agent and hook activity are not shown to reach the same log.",
+              "gap": "Include sub-agents, hooks and denials on every surface.",
+              "evidence": [
+                {
+                  "file": "webui/backend/app/backends/ms_agent/runtime.py",
+                  "lines": "289-303",
+                  "contains": "log.record_permission(record)",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/backends/ms_agent/runtime.py#L289-L303"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "On by default in WebUI/TUI and stored outside the workspace, but in a directory the agent process can write.",
+              "gap": "Written by a component the model cannot control.",
+              "evidence": [
+                {
+                  "file": "ms_agent/project/paths.py",
+                  "lines": "12",
+                  "contains": "~/.ms_agent/projects/<key>/<session>.jsonl",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/project/paths.py#L12"
+                },
+                {
+                  "file": "ms_agent/tui/app.py",
+                  "lines": "160",
+                  "contains": "'session_log.enabled', True",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tui/app.py#L160"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Flushed per line, but persistence failures are swallowed (logger.debug) and actions proceed.",
+              "gap": "Surface logging errors.",
+              "evidence": [
+                {
+                  "file": "webui/backend/app/backends/ms_agent/runtime.py",
+                  "lines": "304-305",
+                  "contains": "permission record skipped",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/backends/ms_agent/runtime.py#L304-L305"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "The agent loop stops after a round cap, but the interfaces raise it to 1000 rounds (9999 in the shipped agent.yaml). Each tool call is bounded by a 120-second default timeout, and the model itself can raise that to 600 seconds. There is no token, cost or wall-clock budget. A python_executor timeout stops waiting but leaves the thread running. Killing a background shell task only marks it killed, because the kill code does not handle asyncio subprocesses.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.4,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Iteration cap plus enforced per-tool timeouts.",
+          "gap": "Token/cost and wall-clock caps.",
+          "evidence": [
+            {
+              "file": "ms_agent/agent/llm_agent.py",
+              "lines": "2901",
+              "contains": "if self.runtime.round >= self.max_chat_round + 1:",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/agent/llm_agent.py#L2901"
+            },
+            {
+              "file": "ms_agent/tools/tool_manager.py",
+              "lines": "43-45",
+              "contains": "TOOL_CALL_TIMEOUT_MAX = int(os.getenv('TOOL_CALL_TIMEOUT_MAX', 600))",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/tool_manager.py#L43-L45"
+            },
+            {
+              "search": "rg -n 'max_cost|cost_limit|token_budget|budget_usd|wall_clock'",
+              "scope": "ms_agent/agent ms_agent/tools/tool_manager.py",
+              "hits": 0,
+              "note": "No cost or wall-clock budget."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Top-level loop and every tool call through ToolManager are bounded; delegated agents get their own fresh round budget.",
+          "gap": "Sub-agents and background tasks counting against the parent budget.",
+          "evidence": [
+            {
+              "file": "ms_agent/capabilities/wrappers/agent_delegate.py",
+              "lines": "252",
+              "contains": "OmegaConf.update(config, 'max_chat_round', max_rounds, merge=True)",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/capabilities/wrappers/agent_delegate.py#L252"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Defaults are very large (1000 rounds in TUI/WebUI, 9999 in agent.yaml) and the model can raise per-call timeouts to the 600s ceiling.",
+          "gap": "Sensible defaults the model cannot raise.",
+          "evidence": [
+            {
+              "file": "ms_agent/tui/app.py",
+              "lines": "167",
+              "contains": "'max_chat_round', 1000",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tui/app.py#L167"
+            },
+            {
+              "file": "ms_agent/agent/agent.yaml",
+              "lines": "75",
+              "contains": "max_chat_round: 9999",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/agent/agent.yaml#L75"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Stopping leaves work running: TaskManager.kill only terminates mp.Process/futures, not asyncio subprocesses, and timed-out exec threads keep running.",
+          "gap": "Stop cancels pending calls and kills spawned processes.",
+          "evidence": [
+            {
+              "file": "ms_agent/utils/task_manager.py",
+              "lines": "89-96",
+              "contains": "if isinstance(task.proc, mp.Process):",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/utils/task_manager.py#L89-L96"
+            },
+            {
+              "file": "ms_agent/tools/code/local_code_executor.py",
+              "lines": "791",
+              "contains": "asyncio.to_thread(_exec_code)",
+              "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L791"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.4,
+          "raw": 0.4,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Iteration cap plus enforced per-tool timeouts.",
+              "gap": "Token/cost and wall-clock caps.",
+              "evidence": [
+                {
+                  "file": "ms_agent/agent/llm_agent.py",
+                  "lines": "2901",
+                  "contains": "if self.runtime.round >= self.max_chat_round + 1:",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/agent/llm_agent.py#L2901"
+                },
+                {
+                  "file": "ms_agent/tools/tool_manager.py",
+                  "lines": "43-45",
+                  "contains": "TOOL_CALL_TIMEOUT_MAX = int(os.getenv('TOOL_CALL_TIMEOUT_MAX', 600))",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/tool_manager.py#L43-L45"
+                },
+                {
+                  "search": "rg -n 'max_cost|cost_limit|token_budget|budget_usd|wall_clock'",
+                  "scope": "ms_agent/agent ms_agent/tools/tool_manager.py",
+                  "hits": 0,
+                  "note": "No cost or wall-clock budget."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Top-level loop and every tool call through ToolManager are bounded; delegated agents get their own fresh round budget.",
+              "gap": "Sub-agents and background tasks counting against the parent budget.",
+              "evidence": [
+                {
+                  "file": "ms_agent/capabilities/wrappers/agent_delegate.py",
+                  "lines": "252",
+                  "contains": "OmegaConf.update(config, 'max_chat_round', max_rounds, merge=True)",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/capabilities/wrappers/agent_delegate.py#L252"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Defaults are very large (1000 rounds in TUI/WebUI, 9999 in agent.yaml) and the model can raise per-call timeouts to the 600s ceiling.",
+              "gap": "Sensible defaults the model cannot raise.",
+              "evidence": [
+                {
+                  "file": "ms_agent/tui/app.py",
+                  "lines": "167",
+                  "contains": "'max_chat_round', 1000",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tui/app.py#L167"
+                },
+                {
+                  "file": "ms_agent/agent/agent.yaml",
+                  "lines": "75",
+                  "contains": "max_chat_round: 9999",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/agent/agent.yaml#L75"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Stopping leaves work running: TaskManager.kill only terminates mp.Process/futures, not asyncio subprocesses, and timed-out exec threads keep running.",
+              "gap": "Stop cancels pending calls and kills spawned processes.",
+              "evidence": [
+                {
+                  "file": "ms_agent/utils/task_manager.py",
+                  "lines": "89-96",
+                  "contains": "if isinstance(task.proc, mp.Process):",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/utils/task_manager.py#L89-L96"
+                },
+                {
+                  "file": "ms_agent/tools/code/local_code_executor.py",
+                  "lines": "791",
+                  "contains": "asyncio.to_thread(_exec_code)",
+                  "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L791"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "Model-generated Python executes in-process via exec() by default, with the agent's credentials and the user's full filesystem in reach.",
+      "criterion": "C4",
+      "owasp": [
+        "ASI05"
+      ],
+      "evidence": [
+        {
+          "file": "ms_agent/tools/code/local_code_executor.py",
+          "lines": "782-786",
+          "contains": "exec(code, globals_dict, locals_dict)",
+          "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L782-L786"
+        },
+        {
+          "file": "ms_agent/agent/agent.yaml",
+          "lines": "97-101",
+          "contains": "implementation: python_env",
+          "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/agent/agent.yaml#L97-L101"
+        }
+      ]
+    },
+    {
+      "summary": "Workspace files the agent opens (.ms_agent/config.yaml, permission_memory.json, hooks.json) can switch off or bypass the approval gate with no trust decision.",
+      "criterion": "C2",
+      "owasp": [
+        "ASI09",
+        "ASI02"
+      ],
+      "evidence": [
+        {
+          "file": "webui/backend/app/backends/ms_agent/config.py",
+          "lines": "729-739",
+          "contains": "elif OmegaConf.select(config, \"permission.mode\", default=None) is None:",
+          "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/backends/ms_agent/config.py#L729-L739"
+        },
+        {
+          "file": "ms_agent/config/resolver.py",
+          "lines": "288-291",
+          "contains": "layers.append(OmegaConf.load(str(yaml_file)))",
+          "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/config/resolver.py#L288-L291"
+        },
+        {
+          "file": "ms_agent/hooks/permission_resolve.py",
+          "lines": "75-88",
+          "contains": "Allowed by PreToolUse hook",
+          "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/hooks/permission_resolve.py#L75-L88"
+        }
+      ]
+    },
+    {
+      "summary": "The same repo-controlled config defeats the only limit on a prompt-injected agent, and the SDK/`ms-agent run` default (auto) leaves exfiltration and irreversible actions unattended.",
+      "criterion": "C5",
+      "owasp": [
+        "ASI01",
+        "LLM01"
+      ],
+      "evidence": [
+        {
+          "file": "webui/backend/app/backends/ms_agent/config.py",
+          "lines": "729-739",
+          "contains": "elif OmegaConf.select(config, \"permission.mode\", default=None) is None:",
+          "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/backends/ms_agent/config.py#L729-L739"
+        },
+        {
+          "file": "ms_agent/permission/config.py",
+          "lines": "187",
+          "contains": "mode: Literal['auto', 'strict', 'interactive'] = 'auto'",
+          "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/permission/config.py#L187"
+        }
+      ]
+    },
+    {
+      "summary": "Repo-controlled .ms_agent/hooks.json, config.yaml and ./.env are loaded with no workspace-trust prompt, enabling shell hooks, MCP servers and auto-approval.",
+      "criterion": "C6",
+      "owasp": [
+        "ASI06",
+        "ASI04"
+      ],
+      "evidence": [
+        {
+          "file": "ms_agent/hooks/factory.py",
+          "lines": "153",
+          "contains": "ms_agent_hooks_json = project_internal_file(project_path, 'hooks.json')",
+          "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/hooks/factory.py#L153"
+        },
+        {
+          "file": "ms_agent/config/resolver.py",
+          "lines": "288-291",
+          "contains": "layers.append(OmegaConf.load(str(yaml_file)))",
+          "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/config/resolver.py#L288-L291"
+        },
+        {
+          "file": "ms_agent/config/env.py",
+          "lines": "26",
+          "contains": "default = os.path.join(os.getcwd(), '.env')",
+          "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/config/env.py#L26"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "workspace files, AGENTS.md and tool/MCP results (ms_agent/prompting/workspace_files.py:9)",
+    "sensitive_data": "provider API keys and user files reachable from in-process exec (ms_agent/tools/code/local_code_executor.py:786)",
+    "state_change_or_egress": "shell/python execution and file writes (ms_agent/agent/agent.yaml:97-101)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Ignore permission, hooks, MCP and plugin settings from workspace .ms_agent/ files (and ./.env) unless the user makes an explicit workspace-trust decision.",
+      "criterion": "C2",
+      "parameter": "D",
+      "from_level": 1,
+      "to_level": 3,
+      "playbook": "Playbook 2",
+      "estimated_gain": 0.1
+    },
+    {
+      "summary": "Run python_executor in a subprocess with the scrubbed environment instead of in-process exec(), and make the sandbox backend the default.",
+      "criterion": "C4",
+      "parameter": "S",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 3 step 1",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Show the full untruncated call in TUI/CLI approval prompts.",
+      "criterion": "C2",
+      "parameter": "S",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 5",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Kill asyncio subprocesses (process group) in TaskManager.kill and on stop.",
+      "criterion": "C10",
+      "parameter": "B",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 3 step 3",
+      "estimated_gain": 0.05
+    },
+    {
+      "summary": "Require approval for memory writes and store project memory outside the workspace.",
+      "criterion": "C6",
+      "parameter": "C",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 2",
+      "estimated_gain": 0.075
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was executed, installed, or probed.",
+    "Shape set to agent_application because the README leads with the WebUI; the SDK/`ms-agent run` default (permission mode auto, config.py:187) is weaker and would lower C2 and C5 further.",
+    "WebUI frontend markdown rendering (possible image-based exfiltration) was not examined; projects/ applications, cron, ACP/A2A and agent_hub sync were not scored.",
+    "Sub-agent permission-handler inheritance and the launch path of project mcp.json servers were not fully traced.",
+    "No text aimed at AI reviewers was found in AGENTS.md, README or docs."
+  ]
+}

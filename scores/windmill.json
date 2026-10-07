@@ -1,0 +1,2679 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "windmill",
+  "name": "Windmill",
+  "repo_url": "https://github.com/windmill-labs/windmill",
+  "subpath": null,
+  "description": "Open-source developer platform for scripts, workflows and internal apps, with AI agent steps that call scripts, flows, MCP servers and web search as tools.",
+  "category": "agent_frameworks",
+  "pinned_commit": "85248eee786b633def40c42b6007fc7b907fb09e",
+  "version": "1.823.1",
+  "scored_date": "2026-10-05",
+  "scored_configuration": "Self-hosted docker-compose.yml with the shipped .env (CE image, privileged worker with PID-namespace isolation, nsjail off): an AI agent flow step with default settings (10 turns, compaction memory) and author-attached script, MCP and web-search tools.",
+  "score": 3.3,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 10,
+    "score": 3.3,
+    "max": 10.0,
+    "percent": 33
+  },
+  "capability_profile": {
+    "code_execution": "yes",
+    "filesystem_write": "yes",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "yes",
+    "untrusted_input": "yes",
+    "third_party_extensions": "opt_in",
+    "sub_agents": "yes",
+    "external_communication": "yes"
+  },
+  "headline": "A Windmill AI agent step runs every tool call the model makes without human review, using the full workspace permissions of whoever the flow runs as and the author's long-lived service credentials. If content it reads (a webhook payload, an email, a web page, a tool result) carries injected instructions, it can leak data and act on connected systems unattended. Authorization checks, author-pinned tool inputs, SSRF checks on MCP servers and a working cancel path are real strengths, but in the shipped compose file tool code runs as root in a privileged worker with only process-namespace isolation, and the nsjail sandbox and token scoping are opt-in.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "Every tool an agent calls runs as a Windmill job under the identity of whoever the flow runs as, with a job token that carries that user's full workspace permissions and lasts as long as the instance's maximum job duration (seven days on a self-hosted install). Authorization is real: resources, secrets and MCP servers are loaded through the job's own permissions, so a flow cannot use what its runner cannot read. Windmill also lets an author cap each step's or tool's token to named API scopes, and a tool can never get a wider token than its agent, but that cap is off unless set. A hijacked agent therefore acts with the runner's whole workspace authority plus the long-lived credentials attached to its tools.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.425,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Authors can cap a step's or tool's job token to named API scopes, intersected so a tool never exceeds its agent.",
+          "gap": "Scopes narrow Windmill API access only; credentials passed to tools as resources are not narrowed.",
+          "evidence": [
+            {
+              "file": "backend/windmill-common/src/scopes.rs",
+              "lines": "592",
+              "contains": "pub fn intersect_job_token_scopes(",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/scopes.rs#L592"
+            },
+            {
+              "file": "backend/windmill-types/src/flows.rs",
+              "lines": "930",
+              "contains": "Caps the token of this tool's jobs",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-types/src/flows.rs#L930"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The intersection applies to every Windmill tool job pushed by the agent, including nested agents.",
+          "gap": "Not evaluated against an end user distinct from the runner; MCP tools use the resource's own token.",
+          "evidence": [
+            {
+              "file": "backend/windmill-types/src/flows.rs",
+              "lines": "930",
+              "contains": "Caps the token of this tool's jobs",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-types/src/flows.rs#L930"
+            },
+            {
+              "file": "backend/windmill-types/src/flows.rs",
+              "lines": "932",
+              "contains": "pub job_token_scopes: Option<Vec<String>>",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-types/src/flows.rs#L932"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Off unless the author sets scopes.",
+          "gap": "Off by default.",
+          "evidence": [
+            {
+              "file": "backend/windmill-common/src/scopes.rs",
+              "lines": "592",
+              "contains": "pub fn intersect_job_token_scopes(",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/scopes.rs#L592"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "With scopes set, tools still hold the author's long-lived downstream credentials.",
+          "gap": "Downstream credentials stay long-lived and broadly scoped.",
+          "evidence": [
+            {
+              "file": "backend/windmill-common/src/auth.rs",
+              "lines": "730",
+              "contains": "max_job_duration_secs",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/auth.rs#L730"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.275,
+          "raw": 0.275,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tool jobs inherit the flow runner's identity and an unscoped job token; downstream credentials are the author's long-lived resources.",
+              "gap": "No per-tool narrowing by default: read and write tools share the runner's full workspace authority.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/ai/tools.rs",
+                  "lines": "522",
+                  "contains": "&ctx.job.permissioned_as_email",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L522"
+                },
+                {
+                  "file": "backend/windmill-worker/src/ai/tools.rs",
+                  "lines": "518-523",
+                  "contains": "ctx.job.permissioned_as.to_owned()",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L518-L523"
+                },
+                {
+                  "file": "backend/windmill-common/src/auth.rs",
+                  "lines": "730",
+                  "contains": "max_job_duration_secs",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/auth.rs#L730"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Windmill tools, nested agents and MCP resource/token loading all go through the job's permissioned client and job permissions.",
+              "gap": "Limited by the strength of the identity: every path gets the same broad authority rather than a per-capability one.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/ai/tools.rs",
+                  "lines": "518-523",
+                  "contains": "ctx.job.permissioned_as.to_owned()",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L518-L523"
+                },
+                {
+                  "file": "backend/windmill-worker/src/ai/utils.rs",
+                  "lines": "573-574",
+                  "contains": "get_resource_value::<McpResource>(path)",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/utils.rs#L573-L574"
+                },
+                {
+                  "file": "backend/windmill-types/src/flows.rs",
+                  "lines": "930",
+                  "contains": "Caps the token of this tool's jobs",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-types/src/flows.rs#L930"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Job token scopes default to unset, so tools receive the runner's full permissions; the shipped instance starts with a superadmin account.",
+              "gap": "Agent tools are not narrowed to minimal scopes by default.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-common/src/scopes.rs",
+                  "lines": "592",
+                  "contains": "pub fn intersect_job_token_scopes(",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/scopes.rs#L592"
+                },
+                {
+                  "file": "README.md",
+                  "lines": "209",
+                  "contains": "admin@windmill.dev",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/README.md#L209"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked agent holds the runner's workspace authority (every secret and resource they can read) for up to the job-token lifetime, plus every attached service credential.",
+              "gap": "Authority is not limited to one system or to short-lived credentials.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-common/src/auth.rs",
+                  "lines": "730",
+                  "contains": "max_job_duration_secs",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/auth.rs#L730"
+                },
+                {
+                  "file": "backend/windmill-common/src/worker.rs",
+                  "lines": "295",
+                  "contains": "604800",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/worker.rs#L295"
+                },
+                {
+                  "file": "backend/windmill-worker/src/bash_executor.rs",
+                  "lines": "281-282",
+                  "contains": ".envs(reserved_variables)",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/bash_executor.rs#L281-L282"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in per-step and per-tool job token scopes (job_token_scopes)",
+          "score": 0.425,
+          "raw": 0.425,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Authors can cap a step's or tool's job token to named API scopes, intersected so a tool never exceeds its agent.",
+              "gap": "Scopes narrow Windmill API access only; credentials passed to tools as resources are not narrowed.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-common/src/scopes.rs",
+                  "lines": "592",
+                  "contains": "pub fn intersect_job_token_scopes(",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/scopes.rs#L592"
+                },
+                {
+                  "file": "backend/windmill-types/src/flows.rs",
+                  "lines": "930",
+                  "contains": "Caps the token of this tool's jobs",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-types/src/flows.rs#L930"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The intersection applies to every Windmill tool job pushed by the agent, including nested agents.",
+              "gap": "Not evaluated against an end user distinct from the runner; MCP tools use the resource's own token.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-types/src/flows.rs",
+                  "lines": "930",
+                  "contains": "Caps the token of this tool's jobs",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-types/src/flows.rs#L930"
+                },
+                {
+                  "file": "backend/windmill-types/src/flows.rs",
+                  "lines": "932",
+                  "contains": "pub job_token_scopes: Option<Vec<String>>",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-types/src/flows.rs#L932"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Off unless the author sets scopes.",
+              "gap": "Off by default.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-common/src/scopes.rs",
+                  "lines": "592",
+                  "contains": "pub fn intersect_job_token_scopes(",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/scopes.rs#L592"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "With scopes set, tools still hold the author's long-lived downstream credentials.",
+              "gap": "Downstream credentials stay long-lived and broadly scoped.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-common/src/auth.rs",
+                  "lines": "730",
+                  "contains": "max_job_duration_secs",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/auth.rs#L730"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "An AI agent step runs every tool call the model chooses straight away; there is no approval step for agent tool calls. Windmill flows do have strong human-approval steps, but they sit between flow steps and cannot be attached to an individual tool call inside an agent. Whatever the attached tools can do, including writes, messages and payments through author scripts or MCP servers, happens without a person seeing the exact call.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No approval in the agent loop or tool executor.",
+          "gap": "No per-call human approval for agent tools.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'approv|suspend|human'",
+              "scope": "backend/windmill-worker/src/ai_executor.rs backend/windmill-worker/src/ai",
+              "hits": 0,
+              "note": "no approval, suspend or human-review step anywhere in the agent loop or tool executor"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No gate exists, so every tool path, including MCP tools, is ungated.",
+          "gap": "No gate for any tool path.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'approv|suspend|human'",
+              "scope": "backend/windmill-worker/src/ai_executor.rs backend/windmill-worker/src/ai",
+              "hits": 0,
+              "note": "no approval, suspend or human-review step anywhere in the agent loop or tool executor"
+            },
+            {
+              "file": "backend/windmill-types/src/flows.rs",
+              "lines": "955-962",
+              "contains": "..Default::default()",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-types/src/flows.rs#L955-L962"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Nothing to enable: agent tools carry no approval setting.",
+          "gap": "No approval on by default.",
+          "evidence": [
+            {
+              "file": "backend/windmill-types/src/flows.rs",
+              "lines": "955-962",
+              "contains": "..Default::default()",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-types/src/flows.rs#L955-L962"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Author tools can take irreversible external actions with no preview or undo.",
+          "gap": "No previews, dry-runs or rollback for consequential tool calls.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/src/ai/utils.rs",
+              "lines": "87-88",
+              "contains": "Collect keys to remove (parameters with completed input transforms)",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/utils.rs#L87-L88"
+            },
+            {
+              "file": "backend/windmill-worker/src/ai/tools.rs",
+              "lines": "518-523",
+              "contains": "ctx.job.permissioned_as.to_owned()",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L518-L523"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No approval in the agent loop or tool executor.",
+              "gap": "No per-call human approval for agent tools.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'approv|suspend|human'",
+                  "scope": "backend/windmill-worker/src/ai_executor.rs backend/windmill-worker/src/ai",
+                  "hits": 0,
+                  "note": "no approval, suspend or human-review step anywhere in the agent loop or tool executor"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No gate exists, so every tool path, including MCP tools, is ungated.",
+              "gap": "No gate for any tool path.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'approv|suspend|human'",
+                  "scope": "backend/windmill-worker/src/ai_executor.rs backend/windmill-worker/src/ai",
+                  "hits": 0,
+                  "note": "no approval, suspend or human-review step anywhere in the agent loop or tool executor"
+                },
+                {
+                  "file": "backend/windmill-types/src/flows.rs",
+                  "lines": "955-962",
+                  "contains": "..Default::default()",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-types/src/flows.rs#L955-L962"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Nothing to enable: agent tools carry no approval setting.",
+              "gap": "No approval on by default.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-types/src/flows.rs",
+                  "lines": "955-962",
+                  "contains": "..Default::default()",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-types/src/flows.rs#L955-L962"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Author tools can take irreversible external actions with no preview or undo.",
+              "gap": "No previews, dry-runs or rollback for consequential tool calls.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/ai/utils.rs",
+                  "lines": "87-88",
+                  "contains": "Collect keys to remove (parameters with completed input transforms)",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/utils.rs#L87-L88"
+                },
+                {
+                  "file": "backend/windmill-worker/src/ai/tools.rs",
+                  "lines": "518-523",
+                  "contains": "ctx.job.permissioned_as.to_owned()",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L518-L523"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "An agent only gets the tools its author attached and cannot load new ones; a run can narrow the roster but never widen it. Inputs the author pinned are removed from what the model sees and always override the model's values, MCP tools can be limited by include and exclude lists, and MCP server addresses are checked against private and metadata addresses without following redirects. Unpinned inputs are passed to the author's code as the model wrote them, and tools are general scripts that reach whatever their credentials reach.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.5,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Typed tool schemas with author-pinned inputs hidden from the model and overriding its values; SSRF-checked MCP URLs.",
+          "gap": "Unpinned arguments are not checked against allowlists or bounds before reaching tool code.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/src/ai_executor.rs",
+              "lines": "1066",
+              "contains": "filter_schema_by_input_transforms",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L1066"
+            },
+            {
+              "file": "backend/windmill-worker/src/ai/utils.rs",
+              "lines": "87-88",
+              "contains": "Collect keys to remove (parameters with completed input transforms)",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/utils.rs#L87-L88"
+            },
+            {
+              "file": "backend/windmill-mcp/src/client/mod.rs",
+              "lines": "46",
+              "contains": "validate_mcp_server_url",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-mcp/src/client/mod.rs#L46"
+            },
+            {
+              "file": "backend/windmill-mcp/src/client/mod.rs",
+              "lines": "86",
+              "contains": "Policy::none()",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-mcp/src/client/mod.rs#L86"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Pinned-input handling applies to every Windmill tool; MCP tools get name filters but arguments pass through unchanged.",
+          "gap": "MCP tool arguments and model-chosen values are not validated by a shared layer.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/src/ai/utils.rs",
+              "lines": "87-88",
+              "contains": "Collect keys to remove (parameters with completed input transforms)",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/utils.rs#L87-L88"
+            },
+            {
+              "file": "backend/windmill-worker/src/ai/utils.rs",
+              "lines": "632",
+              "contains": "apply_tool_filters(",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/utils.rs#L632"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No tool is attached by default; the author adds each one and a run may only narrow the set.",
+          "gap": "No per-task least-privilege tool sets beyond what the author attaches.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/src/ai_executor.rs",
+              "lines": "889",
+              "contains": "narrow_roster(tools, enabled_tools)",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L889"
+            },
+            {
+              "file": "backend/windmill-worker/src/ai_executor.rs",
+              "lines": "943",
+              "contains": "has_websearch = true",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L943"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tools are general-purpose scripts and MCP servers acting on production systems with the author's credentials.",
+          "gap": "Tool reach is not bounded by quantity or scope limits.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/src/ai/tools.rs",
+              "lines": "518-523",
+              "contains": "ctx.job.permissioned_as.to_owned()",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L518-L523"
+            },
+            {
+              "file": "backend/windmill-common/src/auth.rs",
+              "lines": "730",
+              "contains": "max_job_duration_secs",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/auth.rs#L730"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.5,
+          "raw": 0.5,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Typed tool schemas with author-pinned inputs hidden from the model and overriding its values; SSRF-checked MCP URLs.",
+              "gap": "Unpinned arguments are not checked against allowlists or bounds before reaching tool code.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/ai_executor.rs",
+                  "lines": "1066",
+                  "contains": "filter_schema_by_input_transforms",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L1066"
+                },
+                {
+                  "file": "backend/windmill-worker/src/ai/utils.rs",
+                  "lines": "87-88",
+                  "contains": "Collect keys to remove (parameters with completed input transforms)",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/utils.rs#L87-L88"
+                },
+                {
+                  "file": "backend/windmill-mcp/src/client/mod.rs",
+                  "lines": "46",
+                  "contains": "validate_mcp_server_url",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-mcp/src/client/mod.rs#L46"
+                },
+                {
+                  "file": "backend/windmill-mcp/src/client/mod.rs",
+                  "lines": "86",
+                  "contains": "Policy::none()",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-mcp/src/client/mod.rs#L86"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Pinned-input handling applies to every Windmill tool; MCP tools get name filters but arguments pass through unchanged.",
+              "gap": "MCP tool arguments and model-chosen values are not validated by a shared layer.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/ai/utils.rs",
+                  "lines": "87-88",
+                  "contains": "Collect keys to remove (parameters with completed input transforms)",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/utils.rs#L87-L88"
+                },
+                {
+                  "file": "backend/windmill-worker/src/ai/utils.rs",
+                  "lines": "632",
+                  "contains": "apply_tool_filters(",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/utils.rs#L632"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No tool is attached by default; the author adds each one and a run may only narrow the set.",
+              "gap": "No per-task least-privilege tool sets beyond what the author attaches.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/ai_executor.rs",
+                  "lines": "889",
+                  "contains": "narrow_roster(tools, enabled_tools)",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L889"
+                },
+                {
+                  "file": "backend/windmill-worker/src/ai_executor.rs",
+                  "lines": "943",
+                  "contains": "has_websearch = true",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L943"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tools are general-purpose scripts and MCP servers acting on production systems with the author's credentials.",
+              "gap": "Tool reach is not bounded by quantity or scope limits.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/ai/tools.rs",
+                  "lines": "518-523",
+                  "contains": "ctx.job.permissioned_as.to_owned()",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L518-L523"
+                },
+                {
+                  "file": "backend/windmill-common/src/auth.rs",
+                  "lines": "730",
+                  "contains": "max_job_duration_secs",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/auth.rs#L730"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "Agent tools run as Windmill jobs on workers. In the shipped Docker Compose setup the only job isolation is a separate process namespace, and the worker container itself runs privileged and as root, so a tool job can reach the worker host and its network. Windmill ships an nsjail sandbox that limits the filesystem and drops capabilities, but it is off by default and leaves network access and the job's token in place. Jobs start with a cleared environment that adds only Windmill's own variables, including the job token.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.35,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "nsjail with bind-mounted system directories, dropped capabilities and rlimits, but network namespaces are not used.",
+          "gap": "Network is not denied by default inside the jail.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/nsjail/run.python3.config.proto",
+              "lines": "15",
+              "contains": "clone_newnet: false",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/nsjail/run.python3.config.proto#L15"
+            },
+            {
+              "file": "backend/windmill-worker/nsjail/run.python3.config.proto",
+              "lines": "19",
+              "contains": "keep_caps: false",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/nsjail/run.python3.config.proto#L19"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Per-language nsjail configs exist for the script runtimes agent tools use.",
+          "gap": "Not shown to cover every job kind without exception.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/nsjail/run.python3.config.proto",
+              "lines": "1-3",
+              "contains": "python run script",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/nsjail/run.python3.config.proto#L1-L3"
+            },
+            {
+              "file": "backend/windmill-worker/src/bash_executor.rs",
+              "lines": "281-282",
+              "contains": ".envs(reserved_variables)",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/bash_executor.rs#L281-L282"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Off by default.",
+          "gap": "Off by default.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/src/worker.rs",
+              "lines": "370-373",
+              "contains": "unwrap_or(true)",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/worker.rs#L370-L373"
+            },
+            {
+              "file": "docker-compose.yml",
+              "lines": "197",
+              "contains": "ENABLE_NSJAIL=false",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/docker-compose.yml#L197"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Inside the jail jobs keep full network egress and the job token.",
+          "gap": "Egress and credentials remain available inside the sandbox.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/nsjail/run.python3.config.proto",
+              "lines": "15",
+              "contains": "clone_newnet: false",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/nsjail/run.python3.config.proto#L15"
+            },
+            {
+              "file": "backend/windmill-worker/nsjail/run.python3.config.proto",
+              "lines": "20",
+              "contains": "keep_env: true",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/nsjail/run.python3.config.proto#L20"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.325,
+          "cap": {
+            "id": "C4-HOSTROOT",
+            "max": 0.25,
+            "reason": "The shipped compose runs the worker container privileged and as root, and jobs run inside it with only PID isolation."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default isolation is a PID namespace (unshare) with a per-job directory; nsjail is disabled unless configured.",
+              "gap": "No filesystem, user or network separation by default.",
+              "evidence": [
+                {
+                  "file": "docker-compose.yml",
+                  "lines": "85",
+                  "contains": "FAVOR_UNSHARE_PID=true",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/docker-compose.yml#L85"
+                },
+                {
+                  "file": "backend/windmill-worker/src/worker.rs",
+                  "lines": "370-373",
+                  "contains": "unwrap_or(true)",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/worker.rs#L370-L373"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The same isolation wrapper applies to every language executor that agent tools use.",
+              "gap": "Coverage of a weak primitive; no stronger boundary on any path by default.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/bash_executor.rs",
+                  "lines": "281-282",
+                  "contains": ".envs(reserved_variables)",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/bash_executor.rs#L281-L282"
+                },
+                {
+                  "file": "backend/windmill-worker/src/worker.rs",
+                  "lines": "1010-1017",
+                  "contains": "JobIsolationLevel::Undefined => *FAVOR_UNSHARE_PID",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/worker.rs#L1010-L1017"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "PID isolation is turned on by the shipped compose file and can be switched off by an env var or instance setting.",
+              "gap": "Isolation is not fail-closed and not protected from silent operator changes.",
+              "evidence": [
+                {
+                  "file": "docker-compose.yml",
+                  "lines": "85",
+                  "contains": "FAVOR_UNSHARE_PID=true",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/docker-compose.yml#L85"
+                },
+                {
+                  "file": "backend/windmill-worker/src/worker.rs",
+                  "lines": "1010-1017",
+                  "contains": "JobIsolationLevel::Undefined => *FAVOR_UNSHARE_PID",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/worker.rs#L1010-L1017"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Jobs run as root inside a privileged worker container with full network and the job token in the environment.",
+              "gap": "Worker runs privileged as root; L1+ needs an unprivileged container without host-equivalent rights.",
+              "evidence": [
+                {
+                  "file": "docker-compose.yml",
+                  "lines": "78",
+                  "contains": "privileged: true",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/docker-compose.yml#L78"
+                },
+                {
+                  "search": "rg -n '^USER'",
+                  "scope": "Dockerfile",
+                  "hits": 0,
+                  "note": "the runtime image never switches away from root"
+                },
+                {
+                  "file": "backend/windmill-worker/src/bash_executor.rs",
+                  "lines": "281-282",
+                  "contains": ".envs(reserved_variables)",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/bash_executor.rs#L281-L282"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in nsjail sandbox (DISABLE_NSJAIL=false or job_isolation=nsjail)",
+          "score": 0.35,
+          "raw": 0.35,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "nsjail with bind-mounted system directories, dropped capabilities and rlimits, but network namespaces are not used.",
+              "gap": "Network is not denied by default inside the jail.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/nsjail/run.python3.config.proto",
+                  "lines": "15",
+                  "contains": "clone_newnet: false",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/nsjail/run.python3.config.proto#L15"
+                },
+                {
+                  "file": "backend/windmill-worker/nsjail/run.python3.config.proto",
+                  "lines": "19",
+                  "contains": "keep_caps: false",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/nsjail/run.python3.config.proto#L19"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Per-language nsjail configs exist for the script runtimes agent tools use.",
+              "gap": "Not shown to cover every job kind without exception.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/nsjail/run.python3.config.proto",
+                  "lines": "1-3",
+                  "contains": "python run script",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/nsjail/run.python3.config.proto#L1-L3"
+                },
+                {
+                  "file": "backend/windmill-worker/src/bash_executor.rs",
+                  "lines": "281-282",
+                  "contains": ".envs(reserved_variables)",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/bash_executor.rs#L281-L282"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Off by default.",
+              "gap": "Off by default.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/worker.rs",
+                  "lines": "370-373",
+                  "contains": "unwrap_or(true)",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/worker.rs#L370-L373"
+                },
+                {
+                  "file": "docker-compose.yml",
+                  "lines": "197",
+                  "contains": "ENABLE_NSJAIL=false",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/docker-compose.yml#L197"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Inside the jail jobs keep full network egress and the job token.",
+              "gap": "Egress and credentials remain available inside the sandbox.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/nsjail/run.python3.config.proto",
+                  "lines": "15",
+                  "contains": "clone_newnet: false",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/nsjail/run.python3.config.proto#L15"
+                },
+                {
+                  "file": "backend/windmill-worker/nsjail/run.python3.config.proto",
+                  "lines": "20",
+                  "contains": "keep_env: true",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/nsjail/run.python3.config.proto#L20"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "Agent steps commonly read content their author did not write: flow inputs from webhooks, email and other triggers, web search results, and the output of tools and MCP servers, which all enter the conversation like any other tool result. Nothing marks that content as untrusted or restricts what the agent may do after reading it, and no tool call needs approval. A successful prompt injection can therefore use any attached tool to send data out and take irreversible actions with the runner's authority.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C5-WORSTCASE",
+        "max": 0.25,
+        "reason": "Worst case (B L0): a hijacked agent can leak data and take irreversible actions unattended."
+      },
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No structural limit after untrusted content is read.",
+          "gap": "No approval or capability restriction triggered by untrusted content.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'untrusted|prompt.injection|guardrail|taint|provenance'",
+              "scope": "backend/windmill-worker/src/ai_executor.rs backend/windmill-worker/src/ai",
+              "hits": 0,
+              "note": "no provenance marking, detection or taint tracking for tool results or web content"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tool, MCP and web-search results enter context as ordinary tool messages.",
+          "gap": "Untrusted sources are not distinguished.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/src/ai/tools.rs",
+              "lines": "122",
+              "contains": "role: \"tool\"",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L122"
+            },
+            {
+              "file": "backend/windmill-worker/src/ai_executor.rs",
+              "lines": "943",
+              "contains": "has_websearch = true",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L943"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No control exists to be on.",
+          "gap": "Nothing on by default.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'untrusted|prompt.injection|guardrail|taint|provenance'",
+              "scope": "backend/windmill-worker/src/ai_executor.rs backend/windmill-worker/src/ai",
+              "hits": 0,
+              "note": "no provenance marking, detection or taint tracking for tool results or web content"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked agent can leak secrets and data through any egress tool and take irreversible actions, unattended.",
+          "gap": "Exfiltration and irreversible actions are not gated.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/src/ai/utils.rs",
+              "lines": "87-88",
+              "contains": "Collect keys to remove (parameters with completed input transforms)",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/utils.rs#L87-L88"
+            },
+            {
+              "file": "backend/windmill-worker/src/ai/tools.rs",
+              "lines": "518-523",
+              "contains": "ctx.job.permissioned_as.to_owned()",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L518-L523"
+            },
+            {
+              "file": "backend/windmill-common/src/auth.rs",
+              "lines": "730",
+              "contains": "max_job_duration_secs",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/auth.rs#L730"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": {
+            "id": "C5-WORSTCASE",
+            "max": 0.25,
+            "reason": "Worst case (B L0): a hijacked agent can leak data and take irreversible actions unattended."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No structural limit after untrusted content is read.",
+              "gap": "No approval or capability restriction triggered by untrusted content.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'untrusted|prompt.injection|guardrail|taint|provenance'",
+                  "scope": "backend/windmill-worker/src/ai_executor.rs backend/windmill-worker/src/ai",
+                  "hits": 0,
+                  "note": "no provenance marking, detection or taint tracking for tool results or web content"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tool, MCP and web-search results enter context as ordinary tool messages.",
+              "gap": "Untrusted sources are not distinguished.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/ai/tools.rs",
+                  "lines": "122",
+                  "contains": "role: \"tool\"",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L122"
+                },
+                {
+                  "file": "backend/windmill-worker/src/ai_executor.rs",
+                  "lines": "943",
+                  "contains": "has_websearch = true",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L943"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No control exists to be on.",
+              "gap": "Nothing on by default.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'untrusted|prompt.injection|guardrail|taint|provenance'",
+                  "scope": "backend/windmill-worker/src/ai_executor.rs backend/windmill-worker/src/ai",
+                  "hits": 0,
+                  "note": "no provenance marking, detection or taint tracking for tool results or web content"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked agent can leak secrets and data through any egress tool and take irreversible actions, unattended.",
+              "gap": "Exfiltration and irreversible actions are not gated.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/ai/utils.rs",
+                  "lines": "87-88",
+                  "contains": "Collect keys to remove (parameters with completed input transforms)",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/utils.rs#L87-L88"
+                },
+                {
+                  "file": "backend/windmill-worker/src/ai/tools.rs",
+                  "lines": "518-523",
+                  "contains": "ctx.job.permissioned_as.to_owned()",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L518-L523"
+                },
+                {
+                  "file": "backend/windmill-common/src/auth.rs",
+                  "lines": "730",
+                  "contains": "max_job_duration_secs",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/auth.rs#L730"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "Agent steps keep conversation memory by default, summarising older turns when the context fills up and storing the whole conversation, including tool results, in the database for the next run of the same conversation. Memory is kept per workspace, flow and conversation id, and the model cannot choose which memory it reads. Nothing validates what is written, so injected text that lands in a tool result or summary is replayed in every later turn of that conversation. There are no workspace instruction files or repository configs that an agent loads.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.35,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Full conversation (tool results and compaction summaries) is persisted and replayed without validation.",
+          "gap": "Memory writes are not gated, validated or provenance-tagged.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/src/ai_executor.rs",
+              "lines": "2375",
+              "contains": "write_to_memory",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L2375"
+            },
+            {
+              "file": "backend/windmill-worker/src/ai_executor.rs",
+              "lines": "1407",
+              "contains": "read_from_memory",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L1407"
+            },
+            {
+              "file": "frontend/src/lib/components/flows/agentFormFields.ts",
+              "lines": "58",
+              "contains": "kind: 'compaction'",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/frontend/src/lib/components/flows/agentFormFields.ts#L58"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The one memory store has no write control; summaries and tool results persist as is.",
+          "gap": "No control over summaries or tool-result content entering memory.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/src/memory_common.rs",
+              "lines": "79",
+              "contains": "INSERT INTO ai_agent_memory",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/memory_common.rs#L79"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Memory is keyed by workspace, flow and conversation id in queries, and the model cannot pick the id.",
+          "gap": "Nothing stops a flow from using a shared or caller-chosen conversation id; no retention limit by default.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/src/ai_executor.rs",
+              "lines": "349",
+              "contains": "memory_key(workspace_id, flow_path, step_memory_id)",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L349"
+            },
+            {
+              "file": "backend/windmill-worker/src/ai_executor.rs",
+              "lines": "251",
+              "contains": "fn keep_authored_memory_id",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L251"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Poisoned memory persists for the conversation and can steer later tool calls, but stays inside one conversation.",
+          "gap": "Poisoned memory can still trigger ungated tool use in later turns.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/src/ai_executor.rs",
+              "lines": "1407",
+              "contains": "read_from_memory",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L1407"
+            },
+            {
+              "file": "backend/windmill-worker/src/memory_common.rs",
+              "lines": "79",
+              "contains": "INSERT INTO ai_agent_memory",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/memory_common.rs#L79"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.35,
+          "raw": 0.35,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Full conversation (tool results and compaction summaries) is persisted and replayed without validation.",
+              "gap": "Memory writes are not gated, validated or provenance-tagged.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/ai_executor.rs",
+                  "lines": "2375",
+                  "contains": "write_to_memory",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L2375"
+                },
+                {
+                  "file": "backend/windmill-worker/src/ai_executor.rs",
+                  "lines": "1407",
+                  "contains": "read_from_memory",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L1407"
+                },
+                {
+                  "file": "frontend/src/lib/components/flows/agentFormFields.ts",
+                  "lines": "58",
+                  "contains": "kind: 'compaction'",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/frontend/src/lib/components/flows/agentFormFields.ts#L58"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The one memory store has no write control; summaries and tool results persist as is.",
+              "gap": "No control over summaries or tool-result content entering memory.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/memory_common.rs",
+                  "lines": "79",
+                  "contains": "INSERT INTO ai_agent_memory",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/memory_common.rs#L79"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Memory is keyed by workspace, flow and conversation id in queries, and the model cannot pick the id.",
+              "gap": "Nothing stops a flow from using a shared or caller-chosen conversation id; no retention limit by default.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/ai_executor.rs",
+                  "lines": "349",
+                  "contains": "memory_key(workspace_id, flow_path, step_memory_id)",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L349"
+                },
+                {
+                  "file": "backend/windmill-worker/src/ai_executor.rs",
+                  "lines": "251",
+                  "contains": "fn keep_authored_memory_id",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L251"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Poisoned memory persists for the conversation and can steer later tool calls, but stays inside one conversation.",
+              "gap": "Poisoned memory can still trigger ungated tool use in later turns.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/ai_executor.rs",
+                  "lines": "1407",
+                  "contains": "read_from_memory",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L1407"
+                },
+                {
+                  "file": "backend/windmill-worker/src/memory_common.rs",
+                  "lines": "79",
+                  "contains": "INSERT INTO ai_agent_memory",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/memory_common.rs#L79"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "Agents can use third-party code in two ways: Hub scripts, which are pinned to a version id and fetched from Windmill's hub, and remote MCP servers, whose tool lists are fetched fresh on every run with no pinning or change detection. Nothing third-party is enabled by default; the author adds each one. MCP servers run remotely and only receive their own token and the call arguments, but Hub scripts run on the worker like any other job, with the runner's job token and the same weak default isolation.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "MCP tool definitions are fetched each run without pinning; Hub scripts are pinned by version id without an integrity check.",
+          "gap": "No pinning or integrity check for MCP servers, and no re-approval when tools change.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/src/ai_executor.rs",
+              "lines": "1101",
+              "contains": "load_mcp_tools",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L1101"
+            },
+            {
+              "file": "backend/windmill-common/src/scripts.rs",
+              "lines": "266-268",
+              "contains": "expected hub path to have version number",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/scripts.rs#L266-L268"
+            },
+            {
+              "search": "rg -n -i 'sha256|checksum|integrity|signature'",
+              "scope": "backend/windmill-mcp/src/client",
+              "hits": 0,
+              "note": "no pinning or integrity check of MCP server tool definitions"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Version pinning covers Hub scripts only.",
+          "gap": "MCP servers are not verified.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/src/ai_executor.rs",
+              "lines": "984",
+              "contains": "get_full_hub_script_by_path",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L984"
+            },
+            {
+              "file": "backend/windmill-common/src/scripts.rs",
+              "lines": "266-268",
+              "contains": "expected hub path to have version number",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/scripts.rs#L266-L268"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Nothing third-party is enabled by default; the author explicitly adds a Hub script or MCP resource.",
+          "gap": "Adding an MCP server does not show or approve the exact tool set that will run.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/src/ai/utils.rs",
+              "lines": "573-574",
+              "contains": "get_resource_value::<McpResource>(path)",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/utils.rs#L573-L574"
+            },
+            {
+              "file": "backend/windmill-worker/src/ai_executor.rs",
+              "lines": "984",
+              "contains": "get_full_hub_script_by_path",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L984"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Hub scripts run as worker jobs with the runner's job token in a privileged, root worker.",
+          "gap": "Third-party scripts are not confined or given scoped credentials.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/src/bash_executor.rs",
+              "lines": "281-282",
+              "contains": ".envs(reserved_variables)",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/bash_executor.rs#L281-L282"
+            },
+            {
+              "file": "docker-compose.yml",
+              "lines": "78",
+              "contains": "privileged: true",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/docker-compose.yml#L78"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.25,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "MCP tool definitions are fetched each run without pinning; Hub scripts are pinned by version id without an integrity check.",
+              "gap": "No pinning or integrity check for MCP servers, and no re-approval when tools change.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/ai_executor.rs",
+                  "lines": "1101",
+                  "contains": "load_mcp_tools",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L1101"
+                },
+                {
+                  "file": "backend/windmill-common/src/scripts.rs",
+                  "lines": "266-268",
+                  "contains": "expected hub path to have version number",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/scripts.rs#L266-L268"
+                },
+                {
+                  "search": "rg -n -i 'sha256|checksum|integrity|signature'",
+                  "scope": "backend/windmill-mcp/src/client",
+                  "hits": 0,
+                  "note": "no pinning or integrity check of MCP server tool definitions"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Version pinning covers Hub scripts only.",
+              "gap": "MCP servers are not verified.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/ai_executor.rs",
+                  "lines": "984",
+                  "contains": "get_full_hub_script_by_path",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L984"
+                },
+                {
+                  "file": "backend/windmill-common/src/scripts.rs",
+                  "lines": "266-268",
+                  "contains": "expected hub path to have version number",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/scripts.rs#L266-L268"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Nothing third-party is enabled by default; the author explicitly adds a Hub script or MCP resource.",
+              "gap": "Adding an MCP server does not show or approve the exact tool set that will run.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/ai/utils.rs",
+                  "lines": "573-574",
+                  "contains": "get_resource_value::<McpResource>(path)",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/utils.rs#L573-L574"
+                },
+                {
+                  "file": "backend/windmill-worker/src/ai_executor.rs",
+                  "lines": "984",
+                  "contains": "get_full_hub_script_by_path",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L984"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Hub scripts run as worker jobs with the runner's job token in a privileged, root worker.",
+              "gap": "Third-party scripts are not confined or given scoped credentials.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/bash_executor.rs",
+                  "lines": "281-282",
+                  "contains": ".envs(reserved_variables)",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/bash_executor.rs#L281-L282"
+                },
+                {
+                  "file": "docker-compose.yml",
+                  "lines": "78",
+                  "contains": "privileged: true",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/docker-compose.yml#L78"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "Secret variables are encrypted at rest with a per-workspace key, and any secret a job fetches, along with its own token, is masked in that job's logs. Jobs start from a cleared environment. Author-pinned credentials are kept out of the tool schema the model sees. Redaction covers job logs only: job results, stored conversation memory and messages sent to the model provider are not redacted, instance-level settings are stored unencrypted under the default backend, and every tool job receives a long-lived token with the runner's full permissions. Usage statistics code is closed source in this repository.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.275,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Encrypted secret variables and per-job log masking of fetched secrets and the job token.",
+          "gap": "No redaction before model-bound messages, results or memory; instance settings stored in plaintext.",
+          "evidence": [
+            {
+              "file": "backend/windmill-common/src/secret_backend/database.rs",
+              "lines": "11",
+              "contains": "stores secrets encrypted",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/secret_backend/database.rs#L11"
+            },
+            {
+              "file": "backend/windmill-common/src/sensitive_log_masks.rs",
+              "lines": "244",
+              "contains": "pub fn register_secret_for_job",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/sensitive_log_masks.rs#L244"
+            },
+            {
+              "file": "backend/windmill-worker/src/worker.rs",
+              "lines": "4536-4541",
+              "contains": "register_secret_for_job(job_id, token)",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/worker.rs#L4536-L4541"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Masking covers job logs; subprocess environments are cleared apart from Windmill's own variables.",
+          "gap": "Results, transcripts, memory and model-bound messages are not covered.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/src/worker.rs",
+              "lines": "4536-4541",
+              "contains": "register_secret_for_job(job_id, token)",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/worker.rs#L4536-L4541"
+            },
+            {
+              "search": "rg -n -i 'redact|mask'",
+              "scope": "backend/windmill-worker/src/ai_executor.rs backend/windmill-worker/src/ai",
+              "hits": 2,
+              "note": "both hits are comments about job-log masks; nothing redacts tool results or model-bound messages"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "Log masking is always on; usage statistics are sent by closed-source code whose content cannot be checked here.",
+          "gap": "Telemetry is not shown to be opt-in or content-free.",
+          "evidence": [
+            {
+              "file": "backend/windmill-common/src/stats_oss.rs",
+              "lines": "12-15",
+              "contains": "stats details are closed source",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/stats_oss.rs#L12-L15"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every tool subprocess receives a job token with the runner's full workspace authority, valid for up to the maximum job duration.",
+          "gap": "Tokens reachable by tool code are long-lived and broadly privileged.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/src/bash_executor.rs",
+              "lines": "281-282",
+              "contains": ".envs(reserved_variables)",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/bash_executor.rs#L281-L282"
+            },
+            {
+              "file": "backend/windmill-common/src/auth.rs",
+              "lines": "730",
+              "contains": "max_job_duration_secs",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/auth.rs#L730"
+            },
+            {
+              "file": "backend/windmill-common/src/worker.rs",
+              "lines": "295",
+              "contains": "604800",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/worker.rs#L295"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.275,
+          "raw": 0.275,
+          "cap": null,
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Encrypted secret variables and per-job log masking of fetched secrets and the job token.",
+              "gap": "No redaction before model-bound messages, results or memory; instance settings stored in plaintext.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-common/src/secret_backend/database.rs",
+                  "lines": "11",
+                  "contains": "stores secrets encrypted",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/secret_backend/database.rs#L11"
+                },
+                {
+                  "file": "backend/windmill-common/src/sensitive_log_masks.rs",
+                  "lines": "244",
+                  "contains": "pub fn register_secret_for_job",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/sensitive_log_masks.rs#L244"
+                },
+                {
+                  "file": "backend/windmill-worker/src/worker.rs",
+                  "lines": "4536-4541",
+                  "contains": "register_secret_for_job(job_id, token)",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/worker.rs#L4536-L4541"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Masking covers job logs; subprocess environments are cleared apart from Windmill's own variables.",
+              "gap": "Results, transcripts, memory and model-bound messages are not covered.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/worker.rs",
+                  "lines": "4536-4541",
+                  "contains": "register_secret_for_job(job_id, token)",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/worker.rs#L4536-L4541"
+                },
+                {
+                  "search": "rg -n -i 'redact|mask'",
+                  "scope": "backend/windmill-worker/src/ai_executor.rs backend/windmill-worker/src/ai",
+                  "hits": 2,
+                  "note": "both hits are comments about job-log masks; nothing redacts tool results or model-bound messages"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "Log masking is always on; usage statistics are sent by closed-source code whose content cannot be checked here.",
+              "gap": "Telemetry is not shown to be opt-in or content-free.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-common/src/stats_oss.rs",
+                  "lines": "12-15",
+                  "contains": "stats details are closed source",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/stats_oss.rs#L12-L15"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every tool subprocess receives a job token with the runner's full workspace authority, valid for up to the maximum job duration.",
+              "gap": "Tokens reachable by tool code are long-lived and broadly privileged.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/bash_executor.rs",
+                  "lines": "281-282",
+                  "contains": ".envs(reserved_variables)",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/bash_executor.rs#L281-L282"
+                },
+                {
+                  "file": "backend/windmill-common/src/auth.rs",
+                  "lines": "730",
+                  "contains": "max_job_duration_secs",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/auth.rs#L730"
+                },
+                {
+                  "file": "backend/windmill-common/src/worker.rs",
+                  "lines": "295",
+                  "contains": "604800",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/worker.rs#L295"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "Each tool call is recorded as it happens in the flow's status, and Windmill tools run as separate jobs whose arguments, results, logs, timestamps, creator and run-as identity are stored with parent and root job ids, so a run can be traced across nested agents. MCP calls are recorded with their arguments, and the agent's final result carries the full message history. The audit log that would record configuration changes and secret reads is an Enterprise feature and does nothing in this code. Records live in the instance database, which tool jobs can reach through the API with the runner's permissions.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.65,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Structured job records with arguments and results plus creator and run-as identity and parent/root correlation ids.",
+          "gap": "Records are not tamper-evident or exported to an external store by default.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/src/ai/tools.rs",
+              "lines": "522",
+              "contains": "&ctx.job.permissioned_as_email",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L522"
+            },
+            {
+              "file": "backend/windmill-worker/src/ai/tools.rs",
+              "lines": "518-523",
+              "contains": "ctx.job.permissioned_as.to_owned()",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L518-L523"
+            },
+            {
+              "file": "backend/windmill-worker/src/ai/tools.rs",
+              "lines": "342",
+              "contains": "AgentAction::ToolCall",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L342"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Windmill tool calls, MCP calls and nested agents are all recorded.",
+          "gap": "Configuration changes, memory writes and credential use are not recorded in the open-source build.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/src/ai/tools.rs",
+              "lines": "342",
+              "contains": "AgentAction::ToolCall",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L342"
+            },
+            {
+              "file": "backend/windmill-worker/src/ai/tools.rs",
+              "lines": "210",
+              "contains": "AgentAction::McpToolCall",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L210"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "On by default and written by the worker, but stored where the runner's token can reach it.",
+          "gap": "The record is not written by a component the agent's tools cannot alter.",
+          "evidence": [
+            {
+              "file": "backend/windmill-audit/src/audit_oss.rs",
+              "lines": "87",
+              "contains": "not open source as Audit logs",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-audit/src/audit_oss.rs#L87"
+            },
+            {
+              "file": "backend/windmill-common/src/auth.rs",
+              "lines": "730",
+              "contains": "max_job_duration_secs",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/auth.rs#L730"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tool-call actions are flushed as each call starts; full message history lands when the step ends.",
+          "gap": "No fail-closed recording; results and messages are only complete at the end of the step.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/src/ai/tools.rs",
+              "lines": "342",
+              "contains": "AgentAction::ToolCall",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L342"
+            },
+            {
+              "file": "backend/windmill-worker/src/ai/tools.rs",
+              "lines": "210",
+              "contains": "AgentAction::McpToolCall",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L210"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.65,
+          "raw": 0.65,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Structured job records with arguments and results plus creator and run-as identity and parent/root correlation ids.",
+              "gap": "Records are not tamper-evident or exported to an external store by default.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/ai/tools.rs",
+                  "lines": "522",
+                  "contains": "&ctx.job.permissioned_as_email",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L522"
+                },
+                {
+                  "file": "backend/windmill-worker/src/ai/tools.rs",
+                  "lines": "518-523",
+                  "contains": "ctx.job.permissioned_as.to_owned()",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L518-L523"
+                },
+                {
+                  "file": "backend/windmill-worker/src/ai/tools.rs",
+                  "lines": "342",
+                  "contains": "AgentAction::ToolCall",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L342"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Windmill tool calls, MCP calls and nested agents are all recorded.",
+              "gap": "Configuration changes, memory writes and credential use are not recorded in the open-source build.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/ai/tools.rs",
+                  "lines": "342",
+                  "contains": "AgentAction::ToolCall",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L342"
+                },
+                {
+                  "file": "backend/windmill-worker/src/ai/tools.rs",
+                  "lines": "210",
+                  "contains": "AgentAction::McpToolCall",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L210"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "On by default and written by the worker, but stored where the runner's token can reach it.",
+              "gap": "The record is not written by a component the agent's tools cannot alter.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-audit/src/audit_oss.rs",
+                  "lines": "87",
+                  "contains": "not open source as Audit logs",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-audit/src/audit_oss.rs#L87"
+                },
+                {
+                  "file": "backend/windmill-common/src/auth.rs",
+                  "lines": "730",
+                  "contains": "max_job_duration_secs",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/auth.rs#L730"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tool-call actions are flushed as each call starts; full message history lands when the step ends.",
+              "gap": "No fail-closed recording; results and messages are only complete at the end of the step.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/ai/tools.rs",
+                  "lines": "342",
+                  "contains": "AgentAction::ToolCall",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L342"
+                },
+                {
+                  "file": "backend/windmill-worker/src/ai/tools.rs",
+                  "lines": "210",
+                  "contains": "AgentAction::McpToolCall",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L210"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "An agent step stops after 10 model turns by default, an author can raise that to at most 1,000, and every model request and tool job is bounded by the job timeout, which defaults to seven days on a self-hosted install. Cancelling a run stops the loop, gives in-flight tools 30 seconds and then aborts them and cancels any tool jobs still queued or running. There is no token or cost budget, and a nested agent tool starts its own turn budget.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.5,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Iteration cap plus per-request and per-job timeouts, with a cancel path that aborts in-flight tools after a grace period.",
+          "gap": "No token or cost budget and no repeated-action breaker.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/src/ai_executor.rs",
+              "lines": "104",
+              "contains": "DEFAULT_MAX_AGENT_ITERATIONS: usize = 10",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L104"
+            },
+            {
+              "file": "backend/windmill-worker/src/ai_executor.rs",
+              "lines": "1586",
+              "contains": "clamp(1, HARD_MAX_AGENT_ITERATIONS)",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L1586"
+            },
+            {
+              "file": "backend/windmill-worker/src/ai_executor.rs",
+              "lines": "1143",
+              "contains": "from_secs(30)",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L1143"
+            },
+            {
+              "file": "backend/windmill-worker/src/ai_executor.rs",
+              "lines": "1234",
+              "contains": "cleanup_orphaned_tool_jobs",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L1234"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Limits cover the loop and tool jobs (job timeouts); nested agents get their own turn budget.",
+          "gap": "Nested agents do not count against the parent's budget.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/src/ai_executor.rs",
+              "lines": "688",
+              "contains": "nesting beyond 2 levels",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L688"
+            },
+            {
+              "file": "backend/windmill-worker/src/ai_executor.rs",
+              "lines": "1635",
+              "contains": "cancel_rx.borrow()",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L1635"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A sensible turn default with a hard ceiling the model cannot raise, but a seven-day default time ceiling.",
+          "gap": "Delegation to a nested agent resets the turn budget.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/src/ai_executor.rs",
+              "lines": "104",
+              "contains": "DEFAULT_MAX_AGENT_ITERATIONS: usize = 10",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L104"
+            },
+            {
+              "file": "backend/windmill-worker/src/ai_executor.rs",
+              "lines": "1586",
+              "contains": "clamp(1, HARD_MAX_AGENT_ITERATIONS)",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L1586"
+            },
+            {
+              "file": "backend/windmill-common/src/worker.rs",
+              "lines": "295",
+              "contains": "604800",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/worker.rs#L295"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Moderate turn ceiling; stopping cancels pending tool jobs after 30 seconds, but run time can reach days.",
+          "gap": "No tight per-run time or spend ceiling.",
+          "evidence": [
+            {
+              "file": "backend/windmill-worker/src/ai_executor.rs",
+              "lines": "1143",
+              "contains": "from_secs(30)",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L1143"
+            },
+            {
+              "file": "backend/windmill-worker/src/ai_executor.rs",
+              "lines": "1234",
+              "contains": "cleanup_orphaned_tool_jobs",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L1234"
+            },
+            {
+              "file": "backend/windmill-common/src/worker.rs",
+              "lines": "295",
+              "contains": "604800",
+              "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/worker.rs#L295"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.5,
+          "raw": 0.5,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Iteration cap plus per-request and per-job timeouts, with a cancel path that aborts in-flight tools after a grace period.",
+              "gap": "No token or cost budget and no repeated-action breaker.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/ai_executor.rs",
+                  "lines": "104",
+                  "contains": "DEFAULT_MAX_AGENT_ITERATIONS: usize = 10",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L104"
+                },
+                {
+                  "file": "backend/windmill-worker/src/ai_executor.rs",
+                  "lines": "1586",
+                  "contains": "clamp(1, HARD_MAX_AGENT_ITERATIONS)",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L1586"
+                },
+                {
+                  "file": "backend/windmill-worker/src/ai_executor.rs",
+                  "lines": "1143",
+                  "contains": "from_secs(30)",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L1143"
+                },
+                {
+                  "file": "backend/windmill-worker/src/ai_executor.rs",
+                  "lines": "1234",
+                  "contains": "cleanup_orphaned_tool_jobs",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L1234"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Limits cover the loop and tool jobs (job timeouts); nested agents get their own turn budget.",
+              "gap": "Nested agents do not count against the parent's budget.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/ai_executor.rs",
+                  "lines": "688",
+                  "contains": "nesting beyond 2 levels",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L688"
+                },
+                {
+                  "file": "backend/windmill-worker/src/ai_executor.rs",
+                  "lines": "1635",
+                  "contains": "cancel_rx.borrow()",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L1635"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A sensible turn default with a hard ceiling the model cannot raise, but a seven-day default time ceiling.",
+              "gap": "Delegation to a nested agent resets the turn budget.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/ai_executor.rs",
+                  "lines": "104",
+                  "contains": "DEFAULT_MAX_AGENT_ITERATIONS: usize = 10",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L104"
+                },
+                {
+                  "file": "backend/windmill-worker/src/ai_executor.rs",
+                  "lines": "1586",
+                  "contains": "clamp(1, HARD_MAX_AGENT_ITERATIONS)",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L1586"
+                },
+                {
+                  "file": "backend/windmill-common/src/worker.rs",
+                  "lines": "295",
+                  "contains": "604800",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/worker.rs#L295"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Moderate turn ceiling; stopping cancels pending tool jobs after 30 seconds, but run time can reach days.",
+              "gap": "No tight per-run time or spend ceiling.",
+              "evidence": [
+                {
+                  "file": "backend/windmill-worker/src/ai_executor.rs",
+                  "lines": "1143",
+                  "contains": "from_secs(30)",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L1143"
+                },
+                {
+                  "file": "backend/windmill-worker/src/ai_executor.rs",
+                  "lines": "1234",
+                  "contains": "cleanup_orphaned_tool_jobs",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L1234"
+                },
+                {
+                  "file": "backend/windmill-common/src/worker.rs",
+                  "lines": "295",
+                  "contains": "604800",
+                  "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/worker.rs#L295"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "Tool jobs carry the runner's full workspace authority and long-lived service credentials, so a hijacked agent holds everything the runner can reach.",
+      "criterion": "C1",
+      "owasp": [
+        "ASI03",
+        "T3"
+      ],
+      "evidence": [
+        {
+          "file": "backend/windmill-worker/src/ai/tools.rs",
+          "lines": "518-523",
+          "contains": "ctx.job.permissioned_as.to_owned()",
+          "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L518-L523"
+        },
+        {
+          "file": "backend/windmill-common/src/auth.rs",
+          "lines": "730",
+          "contains": "max_job_duration_secs",
+          "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/auth.rs#L730"
+        }
+      ]
+    },
+    {
+      "summary": "In the shipped compose file the worker runs privileged as root and jobs get only PID-namespace isolation.",
+      "criterion": "C4",
+      "owasp": [
+        "ASI05",
+        "T11"
+      ],
+      "evidence": [
+        {
+          "file": "docker-compose.yml",
+          "lines": "78",
+          "contains": "privileged: true",
+          "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/docker-compose.yml#L78"
+        },
+        {
+          "file": "docker-compose.yml",
+          "lines": "85",
+          "contains": "FAVOR_UNSHARE_PID=true",
+          "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/docker-compose.yml#L85"
+        }
+      ]
+    },
+    {
+      "summary": "A prompt-injected agent can both exfiltrate data and take irreversible actions with no human involved.",
+      "criterion": "C5",
+      "owasp": [
+        "ASI01",
+        "T6",
+        "LLM01"
+      ],
+      "evidence": [
+        {
+          "file": "backend/windmill-worker/src/ai/tools.rs",
+          "lines": "122",
+          "contains": "role: \"tool\"",
+          "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L122"
+        },
+        {
+          "file": "backend/windmill-worker/src/ai/tools.rs",
+          "lines": "518-523",
+          "contains": "ctx.job.permissioned_as.to_owned()",
+          "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L518-L523"
+        }
+      ]
+    },
+    {
+      "summary": "Third-party Hub scripts run as ordinary worker jobs with the runner's job token and no extra confinement.",
+      "criterion": "C7",
+      "owasp": [
+        "ASI04",
+        "T17"
+      ],
+      "evidence": [
+        {
+          "file": "backend/windmill-worker/src/ai_executor.rs",
+          "lines": "984",
+          "contains": "get_full_hub_script_by_path",
+          "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L984"
+        },
+        {
+          "file": "backend/windmill-worker/src/bash_executor.rs",
+          "lines": "281-282",
+          "contains": ".envs(reserved_variables)",
+          "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/bash_executor.rs#L281-L282"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "Flow inputs from webhooks, email and other triggers, provider web search (backend/windmill-worker/src/ai_executor.rs:943), MCP and tool results as tool messages (backend/windmill-worker/src/ai/tools.rs:122)",
+    "sensitive_data": "Job token with the runner's workspace permissions (backend/windmill-common/src/auth.rs:730) and author-attached resources (backend/windmill-worker/src/ai/utils.rs:87)",
+    "state_change_or_egress": "Author scripts, flows and MCP tools pushed as jobs with no gate (backend/windmill-worker/src/ai/tools.rs:518)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Offer per-tool human approval for agent tool calls that shows the exact arguments, reusing the flow approval machinery.",
+      "criterion": "C2",
+      "parameter": "S",
+      "from_level": 0,
+      "to_level": 3,
+      "playbook": "Playbook 5",
+      "estimated_gain": 0.225
+    },
+    {
+      "summary": "Once untrusted content enters an agent run, route egress and state-changing tools through approval.",
+      "criterion": "C5",
+      "parameter": "S",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 1",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Ship the compose worker unprivileged and non-root, and make nsjail with network isolation the default.",
+      "criterion": "C4",
+      "parameter": "B",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.1
+    },
+    {
+      "summary": "Default agent tool job tokens to a minimal scope set and shorten their lifetime to the tool's own timeout.",
+      "criterion": "C1",
+      "parameter": "D",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 4",
+      "estimated_gain": 0.05
+    },
+    {
+      "summary": "Add a run-level token or cost budget shared with nested agent tools.",
+      "criterion": "C10",
+      "parameter": "S",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 3 step 3",
+      "estimated_gain": 0.075
+    }
+  ],
+  "reaudit_log": [
+    {
+      "criterion": "C1",
+      "parameter": "S",
+      "from_level": 2,
+      "to_level": 1,
+      "reason": "Workspace RBAC scopes the user, but tool jobs get the runner's whole authority and unscoped long-lived downstream resources; between L1 and L2, so the lower level."
+    },
+    {
+      "criterion": "C6",
+      "parameter": "B",
+      "from_level": 3,
+      "to_level": 2,
+      "reason": "Conversation memory is session-like, but the run's memory id can come from the caller, so persistence is not provably limited to one session; poisoned memory can still drive ungated tool calls."
+    }
+  ],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was executed, installed, or probed.",
+    "The version is taken from version.txt; release tags were not available in the shallow clone.",
+    "Enterprise-only code (audit logs, memory_ee, stats_ee and other *_ee modules) is not in this repository; the CE Docker image may contain closed-source code that behaves differently from the open-source stubs reviewed here.",
+    "Scored the AI agent flow step; the editor AI assistant, the Windmill MCP server endpoint and the AI proxy were not scored as agents and were only read where they affect the agent step.",
+    "Frontend rendering of agent output and the Helm chart (not in this repository) were not examined."
+  ]
+}

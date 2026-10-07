@@ -1,0 +1,2351 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "metorial",
+  "name": "Metorial",
+  "repo_url": "https://github.com/metorial/metorial",
+  "subpath": null,
+  "description": "Catalog of 1,100+ integrations (Slates SDK tool providers) that the Metorial platform exposes to AI agents as tools.",
+  "category": "agent_frameworks",
+  "pinned_commit": "221f8ead1244f884711ac062398ae4e4f771b1ee",
+  "version": null,
+  "scored_date": "2026-10-04",
+  "scored_configuration": "Integrations as shipped, served by @slates/provider-handler to a host (the Metorial hub) with each integration's default tool set and config.",
+  "score": 4.3,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 8,
+    "score": 2.25,
+    "max": 8.0,
+    "percent": 28
+  },
+  "capability_profile": {
+    "code_execution": "yes",
+    "filesystem_write": "no",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "no",
+    "untrusted_input": "yes",
+    "third_party_extensions": "no",
+    "sub_agents": "no",
+    "external_communication": "yes"
+  },
+  "headline": "Metorial's integrations give agents thousands of tools against real accounts (GitHub, Gmail, Slack, Kubernetes, databases) with the user's long-lived credentials and every tool exposed by default. The SDK validates argument types centrally and redacts secrets from HTTP traces well, but it leaves approval, scoping and authorization to the host platform, which is not in this repo, and several high-impact tools are mislabelled as non-destructive. The dominant risk is a hijacked agent running arbitrary SQL, sending mail or rewriting Kubernetes RBAC with no server-side check.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "Each integration acts with whatever credential the user connected through the Metorial hub: an OAuth token with scopes the hub requests, an API key, a database password, or a Kubernetes bearer token. Tools can declare the OAuth scopes they need, which lets the host request narrower grants, but only a minority of tools declare them and the executor in this repo never checks them. Several integrations offer broad scopes (GitHub admin:org, delete_repo) and some tools can change their own permissions: the Kubernetes manage_rbac tool can bind a ClusterRole to a ServiceAccount, which is the default credential type, so a hijacked call can escalate itself to cluster-admin.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C1-SELFESC",
+        "max": 0.25,
+        "reason": "kubernetes manage_rbac creates ClusterRoleBindings for ServiceAccount subjects, and the default auth method is a ServiceAccount bearer token, so the agent can widen its own permissions."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "One credential per connected integration, static for the session; read and write tools share it; tools may declare required OAuth scopes as metadata.",
+          "gap": "No per-tool credential narrowing or short-lived task-scoped tokens; read and write share one credential.",
+          "evidence": [
+            {
+              "file": "packages/provider/src/action/action.ts",
+              "lines": "24-30",
+              "contains": "destructive?: boolean",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider/src/action/action.ts#L24-L30"
+            },
+            {
+              "file": "integrations/github/src/auth.ts",
+              "lines": "170",
+              "contains": "ctx.scopes.join(' ')",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/github/src/auth.ts#L170"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Per-tool scope declarations exist (about 754 .scopes() calls across roughly 18,400 tools) but the tool executor attaches the session credential to every tool with no authorization check.",
+          "gap": "No authorization check in the executor mapping each tool to the granted scopes.",
+          "evidence": [
+            {
+              "file": "packages/provider-handler/src/index.ts",
+              "lines": "939-1012",
+              "contains": "slates/action.tool.invoke",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L939-L1012"
+            },
+            {
+              "search": "rg -n 'action\\.scopes|\\.scopes\\b.*includes'",
+              "scope": "packages/provider-handler/src",
+              "hits": 0,
+              "note": "declared per-tool scopes are never checked by the executor"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The scope set is chosen by the host; integrations offer admin-level scopes and nothing in the server marks a least-privilege default.",
+          "gap": "No minimal default scope set enforced by the server; widening is a host-side choice with no signal.",
+          "evidence": [
+            {
+              "file": "integrations/github/src/auth.ts",
+              "lines": "31",
+              "contains": "admin:org",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/github/src/auth.ts#L31"
+            },
+            {
+              "file": "integrations/github/src/auth.ts",
+              "lines": "106",
+              "contains": "delete_repo",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/github/src/auth.ts#L106"
+            },
+            {
+              "file": "integrations/github/src/auth.ts",
+              "lines": "170",
+              "contains": "ctx.scopes.join(' ')",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/github/src/auth.ts#L170"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked call holds the user's account-level authority on each connected service: GitHub org admin and repo deletion, Kubernetes cluster RBAC, production databases.",
+          "gap": "Credentials would need to be scoped to one project/tenant and mostly read.",
+          "evidence": [
+            {
+              "file": "integrations/github/src/auth.ts",
+              "lines": "31",
+              "contains": "admin:org",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/github/src/auth.ts#L31"
+            },
+            {
+              "file": "integrations/kubernetes/src/tools/manage-rbac.ts",
+              "lines": "43",
+              "contains": "clusterrolebindings",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/kubernetes/src/tools/manage-rbac.ts#L43"
+            },
+            {
+              "file": "integrations/kubernetes/src/auth.ts",
+              "lines": "30",
+              "contains": "Service Account token",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/kubernetes/src/auth.ts#L30"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.275,
+          "cap": {
+            "id": "C1-SELFESC",
+            "max": 0.25,
+            "reason": "kubernetes manage_rbac creates ClusterRoleBindings for ServiceAccount subjects, and the default auth method is a ServiceAccount bearer token, so the agent can widen its own permissions."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "One credential per connected integration, static for the session; read and write tools share it; tools may declare required OAuth scopes as metadata.",
+              "gap": "No per-tool credential narrowing or short-lived task-scoped tokens; read and write share one credential.",
+              "evidence": [
+                {
+                  "file": "packages/provider/src/action/action.ts",
+                  "lines": "24-30",
+                  "contains": "destructive?: boolean",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider/src/action/action.ts#L24-L30"
+                },
+                {
+                  "file": "integrations/github/src/auth.ts",
+                  "lines": "170",
+                  "contains": "ctx.scopes.join(' ')",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/github/src/auth.ts#L170"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Per-tool scope declarations exist (about 754 .scopes() calls across roughly 18,400 tools) but the tool executor attaches the session credential to every tool with no authorization check.",
+              "gap": "No authorization check in the executor mapping each tool to the granted scopes.",
+              "evidence": [
+                {
+                  "file": "packages/provider-handler/src/index.ts",
+                  "lines": "939-1012",
+                  "contains": "slates/action.tool.invoke",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L939-L1012"
+                },
+                {
+                  "search": "rg -n 'action\\.scopes|\\.scopes\\b.*includes'",
+                  "scope": "packages/provider-handler/src",
+                  "hits": 0,
+                  "note": "declared per-tool scopes are never checked by the executor"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The scope set is chosen by the host; integrations offer admin-level scopes and nothing in the server marks a least-privilege default.",
+              "gap": "No minimal default scope set enforced by the server; widening is a host-side choice with no signal.",
+              "evidence": [
+                {
+                  "file": "integrations/github/src/auth.ts",
+                  "lines": "31",
+                  "contains": "admin:org",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/github/src/auth.ts#L31"
+                },
+                {
+                  "file": "integrations/github/src/auth.ts",
+                  "lines": "106",
+                  "contains": "delete_repo",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/github/src/auth.ts#L106"
+                },
+                {
+                  "file": "integrations/github/src/auth.ts",
+                  "lines": "170",
+                  "contains": "ctx.scopes.join(' ')",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/github/src/auth.ts#L170"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked call holds the user's account-level authority on each connected service: GitHub org admin and repo deletion, Kubernetes cluster RBAC, production databases.",
+              "gap": "Credentials would need to be scoped to one project/tenant and mostly read.",
+              "evidence": [
+                {
+                  "file": "integrations/github/src/auth.ts",
+                  "lines": "31",
+                  "contains": "admin:org",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/github/src/auth.ts#L31"
+                },
+                {
+                  "file": "integrations/kubernetes/src/tools/manage-rbac.ts",
+                  "lines": "43",
+                  "contains": "clusterrolebindings",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/kubernetes/src/tools/manage-rbac.ts#L43"
+                },
+                {
+                  "file": "integrations/kubernetes/src/auth.ts",
+                  "lines": "30",
+                  "contains": "Service Account token",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/kubernetes/src/auth.ts#L30"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "As a tool server, Metorial integrations leave approval to the host and supply readOnly/destructive tags on tools. Most tools carry tags, but important mutating tools are mislabelled or untagged: arbitrary-SQL execute_query and Gmail send_email are marked non-destructive, Kubernetes manage_rbac is non-destructive, and GitHub manage_file_content mixes read, write and delete with no tags at all. There is no dry-run or server-enforced read-only mode, and many actions (sending mail, DROP TABLE, deleting repositories) cannot be undone.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.2,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "readOnly/destructive tags exist and are widely used, but they are missing or wrong on several mutating tools and some tools mix reads and writes.",
+          "gap": "Accurate tags on every tool with separate read and write tools.",
+          "evidence": [
+            {
+              "file": "packages/provider/src/action/action.ts",
+              "lines": "24-30",
+              "contains": "destructive?: boolean",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider/src/action/action.ts#L24-L30"
+            },
+            {
+              "file": "integrations/postgresql/src/tools/execute-query.ts",
+              "lines": "21-24",
+              "contains": "destructive: false",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L21-L24"
+            },
+            {
+              "file": "integrations/gmail/src/tools/send-email.ts",
+              "lines": "16-24",
+              "contains": "to: z.array(z.string())",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/gmail/src/tools/send-email.ts#L16-L24"
+            },
+            {
+              "file": "integrations/github/src/tools/manage-file-content.ts",
+              "lines": "24",
+              "contains": "'read', 'write', 'delete'",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/github/src/tools/manage-file-content.ts#L24"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tags cover most tools (about 13,800 readOnly: lines across about 18,400 tools) but powerful mutating tools are unflagged or flagged non-destructive.",
+          "gap": "Every mutating tool flagged accurately.",
+          "evidence": [
+            {
+              "file": "integrations/postgresql/src/tools/execute-query.ts",
+              "lines": "21-24",
+              "contains": "destructive: false",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L21-L24"
+            },
+            {
+              "file": "integrations/kubernetes/src/tools/manage-rbac.ts",
+              "lines": "35-37",
+              "contains": "destructive: false",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/kubernetes/src/tools/manage-rbac.ts#L35-L37"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tags are static code the model cannot change, but nothing in the server enforces them; the host may ignore them.",
+          "gap": "No server-enforced read-only mode or confirmation step.",
+          "evidence": [
+            {
+              "file": "packages/provider-handler/src/index.ts",
+              "lines": "939-1012",
+              "contains": "slates/action.tool.invoke",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L939-L1012"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Irreversible high-impact actions (email send, arbitrary SQL including DROP, RBAC changes) run with no undo or preview.",
+          "gap": "Previews/dry-runs for external actions or reversibility for the common case.",
+          "evidence": [
+            {
+              "file": "integrations/gmail/src/tools/send-email.ts",
+              "lines": "16-24",
+              "contains": "to: z.array(z.string())",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/gmail/src/tools/send-email.ts#L16-L24"
+            },
+            {
+              "file": "integrations/postgresql/src/tools/execute-query.ts",
+              "lines": "79",
+              "contains": "client.query(querySql",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L79"
+            },
+            {
+              "file": "integrations/kubernetes/src/tools/manage-rbac.ts",
+              "lines": "43",
+              "contains": "clusterrolebindings",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/kubernetes/src/tools/manage-rbac.ts#L43"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.2,
+          "raw": 0.2,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "readOnly/destructive tags exist and are widely used, but they are missing or wrong on several mutating tools and some tools mix reads and writes.",
+              "gap": "Accurate tags on every tool with separate read and write tools.",
+              "evidence": [
+                {
+                  "file": "packages/provider/src/action/action.ts",
+                  "lines": "24-30",
+                  "contains": "destructive?: boolean",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider/src/action/action.ts#L24-L30"
+                },
+                {
+                  "file": "integrations/postgresql/src/tools/execute-query.ts",
+                  "lines": "21-24",
+                  "contains": "destructive: false",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L21-L24"
+                },
+                {
+                  "file": "integrations/gmail/src/tools/send-email.ts",
+                  "lines": "16-24",
+                  "contains": "to: z.array(z.string())",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/gmail/src/tools/send-email.ts#L16-L24"
+                },
+                {
+                  "file": "integrations/github/src/tools/manage-file-content.ts",
+                  "lines": "24",
+                  "contains": "'read', 'write', 'delete'",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/github/src/tools/manage-file-content.ts#L24"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tags cover most tools (about 13,800 readOnly: lines across about 18,400 tools) but powerful mutating tools are unflagged or flagged non-destructive.",
+              "gap": "Every mutating tool flagged accurately.",
+              "evidence": [
+                {
+                  "file": "integrations/postgresql/src/tools/execute-query.ts",
+                  "lines": "21-24",
+                  "contains": "destructive: false",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L21-L24"
+                },
+                {
+                  "file": "integrations/kubernetes/src/tools/manage-rbac.ts",
+                  "lines": "35-37",
+                  "contains": "destructive: false",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/kubernetes/src/tools/manage-rbac.ts#L35-L37"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tags are static code the model cannot change, but nothing in the server enforces them; the host may ignore them.",
+              "gap": "No server-enforced read-only mode or confirmation step.",
+              "evidence": [
+                {
+                  "file": "packages/provider-handler/src/index.ts",
+                  "lines": "939-1012",
+                  "contains": "slates/action.tool.invoke",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L939-L1012"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Irreversible high-impact actions (email send, arbitrary SQL including DROP, RBAC changes) run with no undo or preview.",
+              "gap": "Previews/dry-runs for external actions or reversibility for the common case.",
+              "evidence": [
+                {
+                  "file": "integrations/gmail/src/tools/send-email.ts",
+                  "lines": "16-24",
+                  "contains": "to: z.array(z.string())",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/gmail/src/tools/send-email.ts#L16-L24"
+                },
+                {
+                  "file": "integrations/postgresql/src/tools/execute-query.ts",
+                  "lines": "79",
+                  "contains": "client.query(querySql",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L79"
+                },
+                {
+                  "file": "integrations/kubernetes/src/tools/manage-rbac.ts",
+                  "lines": "43",
+                  "contains": "clusterrolebindings",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/kubernetes/src/tools/manage-rbac.ts#L43"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "Every tool call passes through one central Zod schema check before its handler runs, and most tools are narrow API wrappers (create an issue, list branches). But the schemas mostly check types, not bounds or allowlists: arbitrary SQL, Kubernetes manifests, and unbounded email recipient lists are accepted, and the Slack upload tool fetches any URL from the server process. Every tool in an integration is exposed by default, including write and delete tools, so a misused tool reaches production systems directly.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.375,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Typed Zod schemas are enforced, with some checks that are not strict boundaries and raw passthrough elsewhere (execute_query).",
+          "gap": "Allowlist validation in code: host allowlists with internal-address blocking, numeric bounds, no raw SQL passthrough.",
+          "evidence": [
+            {
+              "file": "packages/provider-handler/src/validation.ts",
+              "lines": "15-27",
+              "contains": "schema.safeParse(data)",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/validation.ts#L15-L27"
+            },
+            {
+              "file": "integrations/postgresql/src/tools/execute-query.ts",
+              "lines": "79",
+              "contains": "client.query(querySql",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L79"
+            },
+            {
+              "file": "integrations/slack/src/chat/tools/upload-file.ts",
+              "lines": "27",
+              "contains": "fetch(ctx.input.fileUrl)",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/slack/src/chat/tools/upload-file.ts#L27"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The same validate() call runs for every tool invocation before the handler, so new tools inherit it.",
+          "gap": "C is capped one level above S; the shared layer only checks types.",
+          "evidence": [
+            {
+              "file": "packages/provider-handler/src/index.ts",
+              "lines": "939-1012",
+              "contains": "slates/action.tool.invoke",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L939-L1012"
+            },
+            {
+              "file": "packages/provider-handler/src/validation.ts",
+              "lines": "15-27",
+              "contains": "schema.safeParse(data)",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/validation.ts#L15-L27"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All actions of an integration are exposed by default, including write, delete and raw-SQL tools; the exposure filter only hides adapter actions.",
+          "gap": "Read-only tool set by default with write/exec requiring explicit enabling.",
+          "evidence": [
+            {
+              "file": "packages/provider-handler/src/spec.ts",
+              "lines": "176-182",
+              "contains": "includeAdapterActions || !action.adapter",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/spec.ts#L176-L182"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "General-purpose tools act on production systems: any SQL on the connected database, any Kubernetes resource, any number of email recipients.",
+          "gap": "Tools scoped to a project with quantity bounds.",
+          "evidence": [
+            {
+              "file": "integrations/postgresql/src/tools/execute-query.ts",
+              "lines": "79",
+              "contains": "client.query(querySql",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L79"
+            },
+            {
+              "file": "integrations/gmail/src/tools/send-email.ts",
+              "lines": "16-24",
+              "contains": "to: z.array(z.string())",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/gmail/src/tools/send-email.ts#L16-L24"
+            },
+            {
+              "file": "adapters/chat/src/tools.ts",
+              "lines": "371",
+              "contains": "z.string().url()",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/adapters/chat/src/tools.ts#L371"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.375,
+          "raw": 0.375,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Typed Zod schemas are enforced, with some checks that are not strict boundaries and raw passthrough elsewhere (execute_query).",
+              "gap": "Allowlist validation in code: host allowlists with internal-address blocking, numeric bounds, no raw SQL passthrough.",
+              "evidence": [
+                {
+                  "file": "packages/provider-handler/src/validation.ts",
+                  "lines": "15-27",
+                  "contains": "schema.safeParse(data)",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/validation.ts#L15-L27"
+                },
+                {
+                  "file": "integrations/postgresql/src/tools/execute-query.ts",
+                  "lines": "79",
+                  "contains": "client.query(querySql",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L79"
+                },
+                {
+                  "file": "integrations/slack/src/chat/tools/upload-file.ts",
+                  "lines": "27",
+                  "contains": "fetch(ctx.input.fileUrl)",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/slack/src/chat/tools/upload-file.ts#L27"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The same validate() call runs for every tool invocation before the handler, so new tools inherit it.",
+              "gap": "C is capped one level above S; the shared layer only checks types.",
+              "evidence": [
+                {
+                  "file": "packages/provider-handler/src/index.ts",
+                  "lines": "939-1012",
+                  "contains": "slates/action.tool.invoke",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L939-L1012"
+                },
+                {
+                  "file": "packages/provider-handler/src/validation.ts",
+                  "lines": "15-27",
+                  "contains": "schema.safeParse(data)",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/validation.ts#L15-L27"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All actions of an integration are exposed by default, including write, delete and raw-SQL tools; the exposure filter only hides adapter actions.",
+              "gap": "Read-only tool set by default with write/exec requiring explicit enabling.",
+              "evidence": [
+                {
+                  "file": "packages/provider-handler/src/spec.ts",
+                  "lines": "176-182",
+                  "contains": "includeAdapterActions || !action.adapter",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/spec.ts#L176-L182"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "General-purpose tools act on production systems: any SQL on the connected database, any Kubernetes resource, any number of email recipients.",
+              "gap": "Tools scoped to a project with quantity bounds.",
+              "evidence": [
+                {
+                  "file": "integrations/postgresql/src/tools/execute-query.ts",
+                  "lines": "79",
+                  "contains": "client.query(querySql",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L79"
+                },
+                {
+                  "file": "integrations/gmail/src/tools/send-email.ts",
+                  "lines": "16-24",
+                  "contains": "to: z.array(z.string())",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/gmail/src/tools/send-email.ts#L16-L24"
+                },
+                {
+                  "file": "adapters/chat/src/tools.ts",
+                  "lines": "371",
+                  "contains": "z.string().url()",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/adapters/chat/src/tools.ts#L371"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "The server never runs model-generated code on its own host: there is no shell, eval or subprocess path in the integration runtime. But several tools pass model-written code straight to remote systems, most directly PostgreSQL's execute_query, which runs any SQL (including DROP and ALTER) with the stored database credentials. The separate select_query tool wraps queries in a read-only transaction, but execute_query sits alongside it with no containment, so the connected database is fully exposed.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Remote code paths (arbitrary SQL) run with no isolation primitive; only the separate select_query tool uses a READ ONLY transaction.",
+          "gap": "An isolation boundary (read-only role, sandboxed replica) around model-written code.",
+          "evidence": [
+            {
+              "file": "integrations/postgresql/src/tools/execute-query.ts",
+              "lines": "79",
+              "contains": "client.query(querySql",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L79"
+            },
+            {
+              "file": "integrations/postgresql/src/tools/select-query.ts",
+              "lines": "97",
+              "contains": "START TRANSACTION READ ONLY",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/select-query.ts#L97"
+            },
+            {
+              "search": "rg -n -g '!*.test.ts' 'child_process|node:vm|\\beval\\(|new Function\\(|execFile|spawnSync'",
+              "scope": "integrations packages/provider/src packages/provider-handler/src packages/proto/src packages/client/src adapters packages/slates/src",
+              "hits": 0
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The main raw-SQL tool is not contained; only the auxiliary select tool is.",
+          "gap": "The main execution tool would need containment.",
+          "evidence": [
+            {
+              "file": "integrations/postgresql/src/tools/execute-query.ts",
+              "lines": "79",
+              "contains": "client.query(querySql",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L79"
+            },
+            {
+              "file": "integrations/postgresql/src/tools/select-query.ts",
+              "lines": "97",
+              "contains": "START TRANSACTION READ ONLY",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/select-query.ts#L97"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "execute_query ships enabled alongside select_query with no containment to switch on.",
+          "gap": "Containment on by default.",
+          "evidence": [
+            {
+              "file": "integrations/postgresql/src/tools/execute-query.ts",
+              "lines": "21-24",
+              "contains": "destructive: false",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L21-L24"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Model-written SQL runs with the stored database credentials against the user's database, including DDL and deletes.",
+          "gap": "Execution limited to an isolated, credential-free environment.",
+          "evidence": [
+            {
+              "file": "integrations/postgresql/src/tools/execute-query.ts",
+              "lines": "79",
+              "contains": "client.query(querySql",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L79"
+            },
+            {
+              "file": "integrations/postgresql/src/auth.ts",
+              "lines": "8-16",
+              "contains": "password: z.string()",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/auth.ts#L8-L16"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Remote code paths (arbitrary SQL) run with no isolation primitive; only the separate select_query tool uses a READ ONLY transaction.",
+              "gap": "An isolation boundary (read-only role, sandboxed replica) around model-written code.",
+              "evidence": [
+                {
+                  "file": "integrations/postgresql/src/tools/execute-query.ts",
+                  "lines": "79",
+                  "contains": "client.query(querySql",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L79"
+                },
+                {
+                  "file": "integrations/postgresql/src/tools/select-query.ts",
+                  "lines": "97",
+                  "contains": "START TRANSACTION READ ONLY",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/select-query.ts#L97"
+                },
+                {
+                  "search": "rg -n -g '!*.test.ts' 'child_process|node:vm|\\beval\\(|new Function\\(|execFile|spawnSync'",
+                  "scope": "integrations packages/provider/src packages/provider-handler/src packages/proto/src packages/client/src adapters packages/slates/src",
+                  "hits": 0
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The main raw-SQL tool is not contained; only the auxiliary select tool is.",
+              "gap": "The main execution tool would need containment.",
+              "evidence": [
+                {
+                  "file": "integrations/postgresql/src/tools/execute-query.ts",
+                  "lines": "79",
+                  "contains": "client.query(querySql",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L79"
+                },
+                {
+                  "file": "integrations/postgresql/src/tools/select-query.ts",
+                  "lines": "97",
+                  "contains": "START TRANSACTION READ ONLY",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/select-query.ts#L97"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "execute_query ships enabled alongside select_query with no containment to switch on.",
+              "gap": "Containment on by default.",
+              "evidence": [
+                {
+                  "file": "integrations/postgresql/src/tools/execute-query.ts",
+                  "lines": "21-24",
+                  "contains": "destructive: false",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L21-L24"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Model-written SQL runs with the stored database credentials against the user's database, including DDL and deletes.",
+              "gap": "Execution limited to an isolated, credential-free environment.",
+              "evidence": [
+                {
+                  "file": "integrations/postgresql/src/tools/execute-query.ts",
+                  "lines": "79",
+                  "contains": "client.query(querySql",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L79"
+                },
+                {
+                  "file": "integrations/postgresql/src/auth.ts",
+                  "lines": "8-16",
+                  "contains": "password: z.string()",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/auth.ts#L8-L16"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "Tool results come back as a structured output object plus a separate model-facing message, which keeps content apart from metadata. But nothing marks results as untrusted or records where content came from (email bodies, issue comments, web pages), and the server offers no mode that removes a Rule-of-Two leg. If an agent using these tools is hijacked by content it reads, the same server can send email, post to Slack, write to GitHub and run SQL with no server-side check, so data theft and irreversible actions are both reachable.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C5-WORSTCASE",
+        "max": 0.25,
+        "reason": "B is L0: leak plus irreversible action is reachable unattended through the server's own tools."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Results are structured {output, message, attachments}, separating returned content from metadata.",
+          "gap": "Provenance or an untrusted flag on returned content that the host can act on.",
+          "evidence": [
+            {
+              "file": "packages/provider/src/action/action.ts",
+              "lines": "42-46",
+              "contains": "message: string;",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider/src/action/action.ts#L42-L46"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No source is distinguished; email bodies, issue comments and web content all come back in the same shape as trusted data.",
+          "gap": "Untrusted sources distinguished at least for the main readers.",
+          "evidence": [
+            {
+              "file": "packages/provider/src/action/action.ts",
+              "lines": "42-46",
+              "contains": "message: string;",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider/src/action/action.ts#L42-L46"
+            },
+            {
+              "search": "rg -n -i 'untrusted|provenance'",
+              "scope": "packages/provider/src packages/provider-handler/src packages/proto/src",
+              "hits": 0
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The structured result shape is fixed in code and always on.",
+          "gap": "Nothing that ensures a host is warned or can rely on provenance.",
+          "evidence": [
+            {
+              "file": "packages/provider-handler/src/index.ts",
+              "lines": "939-1012",
+              "contains": "slates/action.tool.invoke",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L939-L1012"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked agent can exfiltrate through email/Slack/GitHub and take irreversible actions (send, delete, DROP) with no server-side approval.",
+          "gap": "Exfiltration and irreversible actions would need human approval.",
+          "evidence": [
+            {
+              "file": "integrations/gmail/src/tools/send-email.ts",
+              "lines": "16-24",
+              "contains": "to: z.array(z.string())",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/gmail/src/tools/send-email.ts#L16-L24"
+            },
+            {
+              "file": "integrations/postgresql/src/tools/execute-query.ts",
+              "lines": "79",
+              "contains": "client.query(querySql",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L79"
+            },
+            {
+              "file": "integrations/slack/src/chat/tools/upload-file.ts",
+              "lines": "27",
+              "contains": "fetch(ctx.input.fileUrl)",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/slack/src/chat/tools/upload-file.ts#L27"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.25,
+          "cap": {
+            "id": "C5-WORSTCASE",
+            "max": 0.25,
+            "reason": "B is L0: leak plus irreversible action is reachable unattended through the server's own tools."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Results are structured {output, message, attachments}, separating returned content from metadata.",
+              "gap": "Provenance or an untrusted flag on returned content that the host can act on.",
+              "evidence": [
+                {
+                  "file": "packages/provider/src/action/action.ts",
+                  "lines": "42-46",
+                  "contains": "message: string;",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider/src/action/action.ts#L42-L46"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No source is distinguished; email bodies, issue comments and web content all come back in the same shape as trusted data.",
+              "gap": "Untrusted sources distinguished at least for the main readers.",
+              "evidence": [
+                {
+                  "file": "packages/provider/src/action/action.ts",
+                  "lines": "42-46",
+                  "contains": "message: string;",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider/src/action/action.ts#L42-L46"
+                },
+                {
+                  "search": "rg -n -i 'untrusted|provenance'",
+                  "scope": "packages/provider/src packages/provider-handler/src packages/proto/src",
+                  "hits": 0
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The structured result shape is fixed in code and always on.",
+              "gap": "Nothing that ensures a host is warned or can rely on provenance.",
+              "evidence": [
+                {
+                  "file": "packages/provider-handler/src/index.ts",
+                  "lines": "939-1012",
+                  "contains": "slates/action.tool.invoke",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L939-L1012"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked agent can exfiltrate through email/Slack/GitHub and take irreversible actions (send, delete, DROP) with no server-side approval.",
+              "gap": "Exfiltration and irreversible actions would need human approval.",
+              "evidence": [
+                {
+                  "file": "integrations/gmail/src/tools/send-email.ts",
+                  "lines": "16-24",
+                  "contains": "to: z.array(z.string())",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/gmail/src/tools/send-email.ts#L16-L24"
+                },
+                {
+                  "file": "integrations/postgresql/src/tools/execute-query.ts",
+                  "lines": "79",
+                  "contains": "client.query(querySql",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L79"
+                },
+                {
+                  "file": "integrations/slack/src/chat/tools/upload-file.ts",
+                  "lines": "27",
+                  "contains": "fetch(ctx.input.fileUrl)",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/slack/src/chat/tools/upload-file.ts#L27"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "The integration runtime keeps no memory or retrieval store and loads no instruction or config files from a workspace. Session and polling state come from the hub and are not written by the model. There is no persistence path a poisoned input could use.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'dotenv|load_dotenv|AGENTS\\.md|CLAUDE\\.md|saveMemory|remember\\(' -g '!*.test.ts'",
+              "scope": "packages/provider/src packages/provider-handler/src packages/client/src integrations",
+              "hits": 2,
+              "note": "both hits are bitwarden restoreMember (case-insensitive match), not memory"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'dotenv|load_dotenv|AGENTS\\.md|CLAUDE\\.md|saveMemory|remember\\(' -g '!*.test.ts'",
+              "scope": "packages/provider/src packages/provider-handler/src packages/client/src integrations",
+              "hits": 2,
+              "note": "both hits are bitwarden restoreMember (case-insensitive match), not memory"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'dotenv|load_dotenv|AGENTS\\.md|CLAUDE\\.md|saveMemory|remember\\(' -g '!*.test.ts'",
+              "scope": "packages/provider/src packages/provider-handler/src packages/client/src integrations",
+              "hits": 2,
+              "note": "both hits are bitwarden restoreMember (case-insensitive match), not memory"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'dotenv|load_dotenv|AGENTS\\.md|CLAUDE\\.md|saveMemory|remember\\(' -g '!*.test.ts'",
+              "scope": "packages/provider/src packages/provider-handler/src packages/client/src integrations",
+              "hits": 2,
+              "note": "both hits are bitwarden restoreMember (case-insensitive match), not memory"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'dotenv|load_dotenv|AGENTS\\.md|CLAUDE\\.md|saveMemory|remember\\(' -g '!*.test.ts'",
+                  "scope": "packages/provider/src packages/provider-handler/src packages/client/src integrations",
+                  "hits": 2,
+                  "note": "both hits are bitwarden restoreMember (case-insensitive match), not memory"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'dotenv|load_dotenv|AGENTS\\.md|CLAUDE\\.md|saveMemory|remember\\(' -g '!*.test.ts'",
+                  "scope": "packages/provider/src packages/provider-handler/src packages/client/src integrations",
+                  "hits": 2,
+                  "note": "both hits are bitwarden restoreMember (case-insensitive match), not memory"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'dotenv|load_dotenv|AGENTS\\.md|CLAUDE\\.md|saveMemory|remember\\(' -g '!*.test.ts'",
+                  "scope": "packages/provider/src packages/provider-handler/src packages/client/src integrations",
+                  "hits": 2,
+                  "note": "both hits are bitwarden restoreMember (case-insensitive match), not memory"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'dotenv|load_dotenv|AGENTS\\.md|CLAUDE\\.md|saveMemory|remember\\(' -g '!*.test.ts'",
+                  "scope": "packages/provider/src packages/provider-handler/src packages/client/src integrations",
+                  "hits": 2,
+                  "note": "both hits are bitwarden restoreMember (case-insensitive match), not memory"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n -i 'dotenv|load_dotenv|AGENTS\\.md|CLAUDE\\.md|saveMemory|remember\\(' -g '!*.test.ts'",
+          "scope": "packages/provider/src packages/provider-handler/src packages/client/src integrations",
+          "hits": 2,
+          "note": "both hits are bitwarden restoreMember (case-insensitive match), not memory"
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "Integrations are bundled at build time; the runtime does not download or launch plugins, MCP servers or packages, and the only dynamic imports load the integration's own local modules. Custom MCP server hosting, mentioned in the README, lives in the separate platform repo and was not reviewed.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'await import\\(|npx |pip install|trust_remote_code|pickle' -g '!*.test.ts' -g '!**/dist*/**' -g '!**/docs/**'",
+              "scope": "packages/provider/src packages/provider-handler/src packages/proto/src packages/client/src packages/slates/src adapters/chat/src integrations",
+              "hits": 6,
+              "note": "all hits are dynamic imports of the integration's own ./lib modules or the slates SDK"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'await import\\(|npx |pip install|trust_remote_code|pickle' -g '!*.test.ts' -g '!**/dist*/**' -g '!**/docs/**'",
+              "scope": "packages/provider/src packages/provider-handler/src packages/proto/src packages/client/src packages/slates/src adapters/chat/src integrations",
+              "hits": 6,
+              "note": "all hits are dynamic imports of the integration's own ./lib modules or the slates SDK"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'await import\\(|npx |pip install|trust_remote_code|pickle' -g '!*.test.ts' -g '!**/dist*/**' -g '!**/docs/**'",
+              "scope": "packages/provider/src packages/provider-handler/src packages/proto/src packages/client/src packages/slates/src adapters/chat/src integrations",
+              "hits": 6,
+              "note": "all hits are dynamic imports of the integration's own ./lib modules or the slates SDK"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'await import\\(|npx |pip install|trust_remote_code|pickle' -g '!*.test.ts' -g '!**/dist*/**' -g '!**/docs/**'",
+              "scope": "packages/provider/src packages/provider-handler/src packages/proto/src packages/client/src packages/slates/src adapters/chat/src integrations",
+              "hits": 6,
+              "note": "all hits are dynamic imports of the integration's own ./lib modules or the slates SDK"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'await import\\(|npx |pip install|trust_remote_code|pickle' -g '!*.test.ts' -g '!**/dist*/**' -g '!**/docs/**'",
+                  "scope": "packages/provider/src packages/provider-handler/src packages/proto/src packages/client/src packages/slates/src adapters/chat/src integrations",
+                  "hits": 6,
+                  "note": "all hits are dynamic imports of the integration's own ./lib modules or the slates SDK"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'await import\\(|npx |pip install|trust_remote_code|pickle' -g '!*.test.ts' -g '!**/dist*/**' -g '!**/docs/**'",
+                  "scope": "packages/provider/src packages/provider-handler/src packages/proto/src packages/client/src packages/slates/src adapters/chat/src integrations",
+                  "hits": 6,
+                  "note": "all hits are dynamic imports of the integration's own ./lib modules or the slates SDK"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'await import\\(|npx |pip install|trust_remote_code|pickle' -g '!*.test.ts' -g '!**/dist*/**' -g '!**/docs/**'",
+                  "scope": "packages/provider/src packages/provider-handler/src packages/proto/src packages/client/src packages/slates/src adapters/chat/src integrations",
+                  "hits": 6,
+                  "note": "all hits are dynamic imports of the integration's own ./lib modules or the slates SDK"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'await import\\(|npx |pip install|trust_remote_code|pickle' -g '!*.test.ts' -g '!**/dist*/**' -g '!**/docs/**'",
+                  "scope": "packages/provider/src packages/provider-handler/src packages/proto/src packages/client/src packages/slates/src adapters/chat/src integrations",
+                  "hits": 6,
+                  "note": "all hits are dynamic imports of the integration's own ./lib modules or the slates SDK"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n 'await import\\(|npx |pip install|trust_remote_code|pickle' -g '!*.test.ts' -g '!**/dist*/**' -g '!**/docs/**'",
+          "scope": "packages/provider/src packages/provider-handler/src packages/proto/src packages/client/src packages/slates/src adapters/chat/src integrations",
+          "hits": 6,
+          "note": "all hits are dynamic imports of the integration's own ./lib modules or the slates SDK"
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "Credentials reach integrations from the hub per session, and the SDK redacts them from recorded HTTP traces by header/field name, by the exact values of the connected credentials, and by well-known token patterns. Attachment URLs have credentials swapped for placeholders the hub fills in later. Gaps: tool outputs and messages sent to the model are not scanned, and error logs carry raw messages and stack traces. The credentials themselves are long-lived OAuth tokens, API keys and database passwords.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.45,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Name-based, value-based and pattern-based redaction on HTTP traces; placeholder substitution for attachment credentials.",
+          "gap": "Redaction on model-bound outputs and verified encryption at rest (held by the hub, not in this repo).",
+          "evidence": [
+            {
+              "file": "packages/provider/src/axios/trace.ts",
+              "lines": "694-716",
+              "contains": "sanitizeHeaders(config.headers, redactor)",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider/src/axios/trace.ts#L694-L716"
+            },
+            {
+              "file": "packages/provider/src/axios/trace.ts",
+              "lines": "58",
+              "contains": "'authorization',",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider/src/axios/trace.ts#L58"
+            },
+            {
+              "file": "packages/provider/src/axios/trace.ts",
+              "lines": "274",
+              "contains": "eyJ",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider/src/axios/trace.ts#L274"
+            },
+            {
+              "file": "packages/provider-handler/src/index.ts",
+              "lines": "980-983",
+              "contains": "redactUrlAttachmentSecrets(",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L980-L983"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "HTTP traces and attachments are covered; error logs and tool outputs are not.",
+          "gap": "Redaction of error logs/stack traces and model-bound tool outputs.",
+          "evidence": [
+            {
+              "file": "packages/provider-handler/src/index.ts",
+              "lines": "168-173",
+              "contains": "errorStack: error.stack",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L168-L173"
+            },
+            {
+              "file": "packages/provider-handler/src/index.ts",
+              "lines": "939-1012",
+              "contains": "slates/action.tool.invoke",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L939-L1012"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Trace redaction is applied inside the axios interceptor with no off switch and there is no telemetry SDK, but error logs with raw messages and stack traces are emitted unredacted by default.",
+          "gap": "Redaction always on for every emitted log, including error entries.",
+          "evidence": [
+            {
+              "file": "packages/provider/src/axios/trace.ts",
+              "lines": "694-716",
+              "contains": "sanitizeHeaders(config.headers, redactor)",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider/src/axios/trace.ts#L694-L716"
+            },
+            {
+              "search": "rg -n -i 'sentry|posthog|opentelemetry|datadog'",
+              "scope": "packages/provider/src packages/provider-handler/src packages/proto/src packages/client/src packages/slates/src",
+              "hits": 0
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Leaked credentials are long-lived user OAuth tokens, API keys and DB passwords, often broadly scoped.",
+          "gap": "Scoped keys with short lifetimes.",
+          "evidence": [
+            {
+              "file": "integrations/postgresql/src/auth.ts",
+              "lines": "8-16",
+              "contains": "password: z.string()",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/auth.ts#L8-L16"
+            },
+            {
+              "file": "integrations/github/src/auth.ts",
+              "lines": "31",
+              "contains": "admin:org",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/github/src/auth.ts#L31"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.45,
+          "raw": 0.45,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Name-based, value-based and pattern-based redaction on HTTP traces; placeholder substitution for attachment credentials.",
+              "gap": "Redaction on model-bound outputs and verified encryption at rest (held by the hub, not in this repo).",
+              "evidence": [
+                {
+                  "file": "packages/provider/src/axios/trace.ts",
+                  "lines": "694-716",
+                  "contains": "sanitizeHeaders(config.headers, redactor)",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider/src/axios/trace.ts#L694-L716"
+                },
+                {
+                  "file": "packages/provider/src/axios/trace.ts",
+                  "lines": "58",
+                  "contains": "'authorization',",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider/src/axios/trace.ts#L58"
+                },
+                {
+                  "file": "packages/provider/src/axios/trace.ts",
+                  "lines": "274",
+                  "contains": "eyJ",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider/src/axios/trace.ts#L274"
+                },
+                {
+                  "file": "packages/provider-handler/src/index.ts",
+                  "lines": "980-983",
+                  "contains": "redactUrlAttachmentSecrets(",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L980-L983"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "HTTP traces and attachments are covered; error logs and tool outputs are not.",
+              "gap": "Redaction of error logs/stack traces and model-bound tool outputs.",
+              "evidence": [
+                {
+                  "file": "packages/provider-handler/src/index.ts",
+                  "lines": "168-173",
+                  "contains": "errorStack: error.stack",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L168-L173"
+                },
+                {
+                  "file": "packages/provider-handler/src/index.ts",
+                  "lines": "939-1012",
+                  "contains": "slates/action.tool.invoke",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L939-L1012"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Trace redaction is applied inside the axios interceptor with no off switch and there is no telemetry SDK, but error logs with raw messages and stack traces are emitted unredacted by default.",
+              "gap": "Redaction always on for every emitted log, including error entries.",
+              "evidence": [
+                {
+                  "file": "packages/provider/src/axios/trace.ts",
+                  "lines": "694-716",
+                  "contains": "sanitizeHeaders(config.headers, redactor)",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider/src/axios/trace.ts#L694-L716"
+                },
+                {
+                  "search": "rg -n -i 'sentry|posthog|opentelemetry|datadog'",
+                  "scope": "packages/provider/src packages/provider-handler/src packages/proto/src packages/client/src packages/slates/src",
+                  "hits": 0
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Leaked credentials are long-lived user OAuth tokens, API keys and DB passwords, often broadly scoped.",
+              "gap": "Scoped keys with short lifetimes.",
+              "evidence": [
+                {
+                  "file": "integrations/postgresql/src/auth.ts",
+                  "lines": "8-16",
+                  "contains": "password: z.string()",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/auth.ts#L8-L16"
+                },
+                {
+                  "file": "integrations/github/src/auth.ts",
+                  "lines": "31",
+                  "contains": "admin:org",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/github/src/auth.ts#L31"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "Every tool invocation emits structured start, success and error log entries (tool id, duration, result message), and each outbound HTTP request is recorded with method, sanitized URL and body. Tool arguments themselves are deliberately not logged (only their key count), and there is no actor or approver attribution. Logs are batched in memory, flushed after 10 ms to whatever listener the host attaches, and dropped if none is attached or the process crashes.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.4,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Structured per-call records with timestamps and status, plus sanitized HTTP request/response traces.",
+          "gap": "Actor attribution (requesting principal, approver) and correlation IDs.",
+          "evidence": [
+            {
+              "file": "packages/provider-handler/src/index.ts",
+              "lines": "244-282",
+              "contains": "phase: 'start'",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L244-L282"
+            },
+            {
+              "file": "packages/provider-handler/src/index.ts",
+              "lines": "962",
+              "contains": "inputKeyCount: getObjectKeyCount(input)",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L962"
+            },
+            {
+              "file": "packages/provider/src/axios/trace.ts",
+              "lines": "694-716",
+              "contains": "sanitizeHeaders(config.headers, redactor)",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider/src/axios/trace.ts#L694-L716"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All tool invocations go through traceProviderCall; HTTP traces cover only axios-based clients (raw-socket clients like PostgreSQL are not traced).",
+          "gap": "Complete coverage of every outbound effect.",
+          "evidence": [
+            {
+              "file": "packages/provider-handler/src/index.ts",
+              "lines": "244-282",
+              "contains": "phase: 'start'",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L244-L282"
+            },
+            {
+              "file": "integrations/postgresql/src/tools/execute-query.ts",
+              "lines": "79",
+              "contains": "client.query(querySql",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L79"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Records live in the provider process and reach a sink only if the host passes listeners (default empty list).",
+          "gap": "Record written by a component the model cannot control, on by default.",
+          "evidence": [
+            {
+              "file": "packages/client/src/transport.ts",
+              "lines": "34",
+              "contains": "d.listeners ?? []",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/client/src/transport.ts#L34"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Best-effort in-memory buffer flushed on a 10 ms timer; lost on crash.",
+          "gap": "Records flushed per action with surfaced errors.",
+          "evidence": [
+            {
+              "file": "packages/provider/src/logger/logger.ts",
+              "lines": "110-118",
+              "contains": "}, 10);",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider/src/logger/logger.ts#L110-L118"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.4,
+          "raw": 0.4,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Structured per-call records with timestamps and status, plus sanitized HTTP request/response traces.",
+              "gap": "Actor attribution (requesting principal, approver) and correlation IDs.",
+              "evidence": [
+                {
+                  "file": "packages/provider-handler/src/index.ts",
+                  "lines": "244-282",
+                  "contains": "phase: 'start'",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L244-L282"
+                },
+                {
+                  "file": "packages/provider-handler/src/index.ts",
+                  "lines": "962",
+                  "contains": "inputKeyCount: getObjectKeyCount(input)",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L962"
+                },
+                {
+                  "file": "packages/provider/src/axios/trace.ts",
+                  "lines": "694-716",
+                  "contains": "sanitizeHeaders(config.headers, redactor)",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider/src/axios/trace.ts#L694-L716"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All tool invocations go through traceProviderCall; HTTP traces cover only axios-based clients (raw-socket clients like PostgreSQL are not traced).",
+              "gap": "Complete coverage of every outbound effect.",
+              "evidence": [
+                {
+                  "file": "packages/provider-handler/src/index.ts",
+                  "lines": "244-282",
+                  "contains": "phase: 'start'",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L244-L282"
+                },
+                {
+                  "file": "integrations/postgresql/src/tools/execute-query.ts",
+                  "lines": "79",
+                  "contains": "client.query(querySql",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L79"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Records live in the provider process and reach a sink only if the host passes listeners (default empty list).",
+              "gap": "Record written by a component the model cannot control, on by default.",
+              "evidence": [
+                {
+                  "file": "packages/client/src/transport.ts",
+                  "lines": "34",
+                  "contains": "d.listeners ?? []",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/client/src/transport.ts#L34"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Best-effort in-memory buffer flushed on a 10 ms timer; lost on crash.",
+              "gap": "Records flushed per action with surfaced errors.",
+              "evidence": [
+                {
+                  "file": "packages/provider/src/logger/logger.ts",
+                  "lines": "110-118",
+                  "contains": "}, 10);",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider/src/logger/logger.ts#L110-L118"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "Bounds on the server's own work are piecemeal: HTTP trace bodies are cut at 10 KB, attachments are capped at 100 MB with upload concurrency of 10, and some integrations set defaults such as PostgreSQL's 30-second query timeout and 1,000-row limit. The SDK has no general per-tool timeout and no cancellation of in-flight calls, and in execute_query the model can raise the row limit itself.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.325,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Server-enforced caps on some operations (trace size, attachment size, per-integration query timeouts).",
+          "gap": "Caps on every operation plus rate limits.",
+          "evidence": [
+            {
+              "file": "packages/provider/src/axios/trace.ts",
+              "lines": "46",
+              "contains": "TRACE_TEXT_LIMIT = 10 * 1024",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider/src/axios/trace.ts#L46"
+            },
+            {
+              "file": "packages/provider-handler/src/index.ts",
+              "lines": "46",
+              "contains": "DEFAULT_MAX_ATTACHMENT_SIZE_BYTES = 100_000_000",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L46"
+            },
+            {
+              "file": "integrations/postgresql/src/config.ts",
+              "lines": "10",
+              "contains": "default(30000)",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/config.ts#L10"
+            },
+            {
+              "search": "rg -n 'timeout:'",
+              "scope": "packages/provider/src packages/provider-handler/src packages/proto/src",
+              "hits": 2,
+              "note": "both hits are error-code maps (timeout: 'internal.timeout'), not timeouts"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Caps are set per integration and are absent from the SDK's tool executor.",
+          "gap": "SDK-level timeout covering every tool.",
+          "evidence": [
+            {
+              "file": "packages/provider-handler/src/index.ts",
+              "lines": "939-1012",
+              "contains": "slates/action.tool.invoke",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L939-L1012"
+            },
+            {
+              "search": "rg -n 'timeout:'",
+              "scope": "packages/provider/src packages/provider-handler/src packages/proto/src",
+              "hits": 2,
+              "note": "both hits are error-code maps (timeout: 'internal.timeout'), not timeouts"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Where defaults exist the model can override them (maxRows input overrides config).",
+          "gap": "Defaults the model cannot raise.",
+          "evidence": [
+            {
+              "file": "integrations/postgresql/src/tools/execute-query.ts",
+              "lines": "62",
+              "contains": "ctx.input.maxRows ?? ctx.config.maxRows",
+              "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L62"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No cancellation of in-flight calls; upstream HTTP calls have no default timeout.",
+          "gap": "Stopping should cancel pending calls with tight per-call ceilings.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'abortsignal|abortcontroller|\\.cancel\\('",
+              "scope": "packages/provider/src packages/provider-handler/src packages/proto/src",
+              "hits": 1,
+              "note": "only hit is a stream reader.cancel() in directUpload; no cancellation of tool invocations"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.325,
+          "raw": 0.325,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Server-enforced caps on some operations (trace size, attachment size, per-integration query timeouts).",
+              "gap": "Caps on every operation plus rate limits.",
+              "evidence": [
+                {
+                  "file": "packages/provider/src/axios/trace.ts",
+                  "lines": "46",
+                  "contains": "TRACE_TEXT_LIMIT = 10 * 1024",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider/src/axios/trace.ts#L46"
+                },
+                {
+                  "file": "packages/provider-handler/src/index.ts",
+                  "lines": "46",
+                  "contains": "DEFAULT_MAX_ATTACHMENT_SIZE_BYTES = 100_000_000",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L46"
+                },
+                {
+                  "file": "integrations/postgresql/src/config.ts",
+                  "lines": "10",
+                  "contains": "default(30000)",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/config.ts#L10"
+                },
+                {
+                  "search": "rg -n 'timeout:'",
+                  "scope": "packages/provider/src packages/provider-handler/src packages/proto/src",
+                  "hits": 2,
+                  "note": "both hits are error-code maps (timeout: 'internal.timeout'), not timeouts"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Caps are set per integration and are absent from the SDK's tool executor.",
+              "gap": "SDK-level timeout covering every tool.",
+              "evidence": [
+                {
+                  "file": "packages/provider-handler/src/index.ts",
+                  "lines": "939-1012",
+                  "contains": "slates/action.tool.invoke",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L939-L1012"
+                },
+                {
+                  "search": "rg -n 'timeout:'",
+                  "scope": "packages/provider/src packages/provider-handler/src packages/proto/src",
+                  "hits": 2,
+                  "note": "both hits are error-code maps (timeout: 'internal.timeout'), not timeouts"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Where defaults exist the model can override them (maxRows input overrides config).",
+              "gap": "Defaults the model cannot raise.",
+              "evidence": [
+                {
+                  "file": "integrations/postgresql/src/tools/execute-query.ts",
+                  "lines": "62",
+                  "contains": "ctx.input.maxRows ?? ctx.config.maxRows",
+                  "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L62"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No cancellation of in-flight calls; upstream HTTP calls have no default timeout.",
+              "gap": "Stopping should cancel pending calls with tight per-call ceilings.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'abortsignal|abortcontroller|\\.cancel\\('",
+                  "scope": "packages/provider/src packages/provider-handler/src packages/proto/src",
+                  "hits": 1,
+                  "note": "only hit is a stream reader.cancel() in directUpload; no cancellation of tool invocations"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "The Kubernetes manage_rbac tool can create ClusterRoleBindings for a ServiceAccount (the default credential type) and is tagged non-destructive, letting a hijacked agent grant itself cluster-admin.",
+      "criterion": "C1",
+      "owasp": [
+        "ASI03",
+        "T3"
+      ],
+      "evidence": [
+        {
+          "file": "integrations/kubernetes/src/tools/manage-rbac.ts",
+          "lines": "17",
+          "contains": "'ServiceAccount'",
+          "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/kubernetes/src/tools/manage-rbac.ts#L17"
+        },
+        {
+          "file": "integrations/kubernetes/src/tools/manage-rbac.ts",
+          "lines": "43",
+          "contains": "clusterrolebindings",
+          "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/kubernetes/src/tools/manage-rbac.ts#L43"
+        },
+        {
+          "file": "integrations/kubernetes/src/tools/manage-rbac.ts",
+          "lines": "35-37",
+          "contains": "destructive: false",
+          "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/kubernetes/src/tools/manage-rbac.ts#L35-L37"
+        },
+        {
+          "file": "integrations/kubernetes/src/auth.ts",
+          "lines": "30",
+          "contains": "Service Account token",
+          "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/kubernetes/src/auth.ts#L30"
+        }
+      ]
+    },
+    {
+      "summary": "Connected credentials carry account-level authority (GitHub admin:org/delete_repo, cluster RBAC, database passwords) with no per-tool narrowing.",
+      "criterion": "C1",
+      "owasp": [
+        "ASI03",
+        "T3"
+      ],
+      "evidence": [
+        {
+          "file": "integrations/github/src/auth.ts",
+          "lines": "31",
+          "contains": "admin:org",
+          "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/github/src/auth.ts#L31"
+        },
+        {
+          "file": "integrations/github/src/auth.ts",
+          "lines": "106",
+          "contains": "delete_repo",
+          "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/github/src/auth.ts#L106"
+        },
+        {
+          "file": "packages/provider-handler/src/index.ts",
+          "lines": "939-1012",
+          "contains": "slates/action.tool.invoke",
+          "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L939-L1012"
+        }
+      ]
+    },
+    {
+      "summary": "PostgreSQL execute_query runs arbitrary model-written SQL (DDL, DELETE, DROP) with the stored database credentials and no containment, tagged non-destructive.",
+      "criterion": "C4",
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "evidence": [
+        {
+          "file": "integrations/postgresql/src/tools/execute-query.ts",
+          "lines": "79",
+          "contains": "client.query(querySql",
+          "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L79"
+        },
+        {
+          "file": "integrations/postgresql/src/tools/execute-query.ts",
+          "lines": "21-24",
+          "contains": "destructive: false",
+          "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L21-L24"
+        }
+      ]
+    },
+    {
+      "summary": "Untrusted content read through one tool can drive email sends, Slack/GitHub posts and arbitrary SQL through others with no server-side check; worst case is leak plus irreversible action.",
+      "criterion": "C5",
+      "owasp": [
+        "ASI01",
+        "LLM01",
+        "T6"
+      ],
+      "evidence": [
+        {
+          "file": "integrations/gmail/src/tools/send-email.ts",
+          "lines": "16-24",
+          "contains": "to: z.array(z.string())",
+          "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/gmail/src/tools/send-email.ts#L16-L24"
+        },
+        {
+          "file": "integrations/postgresql/src/tools/execute-query.ts",
+          "lines": "79",
+          "contains": "client.query(querySql",
+          "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/tools/execute-query.ts#L79"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "email, issue and chat content returned by read tools (e.g. gmail/src/tools/get-message.ts)",
+    "sensitive_data": "user OAuth tokens and DB passwords in session auth (provider-handler/src/index.ts:1006)",
+    "state_change_or_egress": "send_email (gmail/src/tools/send-email.ts:24), execute_query (postgresql/src/tools/execute-query.ts:79)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Fix readOnly/destructive tags on mutating tools (execute_query, send_email, manage_rbac) and split mixed read/write tools, enforced by a lint in validate-pr.",
+      "criterion": "C2",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 5",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Check each tool's declared scopes against the granted scopes in the executor, failing closed, and declare scopes on every tool.",
+      "criterion": "C1",
+      "parameter": "C",
+      "from_level": 1,
+      "to_level": 3,
+      "playbook": "Playbook 4 step 1",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Ship write/delete/raw-SQL tools disabled unless the operator enables them for a deployment.",
+      "criterion": "C3",
+      "parameter": "D",
+      "from_level": 0,
+      "to_level": 3,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Add a default per-invocation timeout and cancellation in provider-handler.",
+      "criterion": "C10",
+      "parameter": "C",
+      "from_level": 1,
+      "to_level": 2,
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Log redacted tool arguments with the requesting principal on each invocation.",
+      "criterion": "C9",
+      "parameter": "S",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 1 step 3",
+      "estimated_gain": 0.075
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was executed, installed, or probed.",
+    "The Metorial platform (hub: credential storage, RBAC, approvals, audit logs) lives in metorial/metorial-platform and was not reviewed; README claims about RBAC and audit logs are therefore not credited.",
+    "With 1,149 integrations, per-integration findings come from sampled integrations (github, gmail, slack, postgresql, kubernetes) and repo-wide counts; other integrations may differ.",
+    "No text aimed at AI reviewers was found in the repository."
+  ]
+}

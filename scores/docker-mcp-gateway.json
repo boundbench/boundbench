@@ -1,0 +1,2386 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "docker-mcp-gateway",
+  "name": "Docker MCP Gateway",
+  "repo_url": "https://github.com/docker/mcp-gateway",
+  "subpath": null,
+  "description": "Docker MCP CLI plugin/gateway running MCP servers as isolated containers",
+  "category": "infrastructure_ops",
+  "pinned_commit": "a34df45d4ec0e941a9853ad768c4f6cd818966b3",
+  "version": "v0.44.1",
+  "scored_date": "2026-10-03",
+  "scored_configuration": "On-host `docker mcp gateway run` with no flags: profiles mode on the `default` profile, stdio transport, dynamic tools enabled, log-calls, block-secrets and signature verification on, block-network off, no Docker Desktop governance policy.",
+  "score": 4.0,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 10,
+    "score": 4.0,
+    "max": 10.0,
+    "percent": 40
+  },
+  "capability_profile": {
+    "code_execution": "yes",
+    "filesystem_write": "opt_in",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "yes",
+    "untrusted_input": "yes",
+    "third_party_extensions": "yes",
+    "sub_agents": "no",
+    "external_communication": "yes"
+  },
+  "headline": "The gateway runs every MCP server in its own short-lived Docker container with only that server's own secrets, scrubs the environment, refuses risky host mounts, verifies signatures on Docker's official images, and scans tool traffic for secret patterns by default. It is still a relay, not a firewall: tool results reach the model as they are, containers get full network egress by default, the gateway's own management tools and the code-mode/mcp-exec wrappers carry no risk annotations, and nothing bounds how long a call may run. A hijacked client can read through one enabled server and act or exfiltrate through another without the gateway stopping it, and the model can save its own server configuration into persistent profiles.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "Each MCP server receives only the secrets its catalog entry declares, passed as references that Docker Desktop resolves when the container starts, and the docker process gets a scrubbed environment (PATH plus those secrets). Remote servers get their own per-server OAuth token, and client tokens are never forwarded. The credentials themselves are whatever the user stored (often broad personal tokens), one per server for both reads and writes, and per-request authorization exists only when Docker Desktop's governance feature is on; otherwise the policy client is a no-op. If several servers are enabled, a hijacked client can write to several external systems.",
+      "max": 1.0,
+      "notes": "HTTP transports (sse/streaming) need a bearer token by default; --allow-unauthenticated prints a loud warning (pkg/gateway/run.go:498-503). Stdio, the scored mode, has no network listener.",
+      "status": "scored",
+      "score": 0.45,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Credentials are scoped per server: a container gets only the secrets in its own spec, and a remote server gets only its own OAuth token.",
+          "gap": "No per-tool or read/write credential split and no deterministic authorization gate by default; reads and writes share each server's long-lived credential.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/clientpool.go",
+              "lines": "378-392",
+              "contains": "for _, s := range serverConfig.Spec.Secrets {",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L378-L392"
+            },
+            {
+              "file": "pkg/mcp/remote.go",
+              "lines": "94-104",
+              "contains": "headers[\"Authorization\"] = \"Bearer \" + token",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/mcp/remote.go#L94-L104"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every container launch goes through argsAndEnv with a scrubbed environment, and every backend tool is wrapped by withInvokePolicy, but the default policy client is a no-op that authorizes nothing.",
+          "gap": "The authorization layer on every path is a no-op unless Docker Desktop's MCPGovernance flag is on, so no per-request authorization check actually runs by default.",
+          "evidence": [
+            {
+              "file": "pkg/mcp/stdio.go",
+              "lines": "67-75",
+              "contains": "func commandEnv(env []string) []string {",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/mcp/stdio.go#L67-L75"
+            },
+            {
+              "file": "pkg/gateway/tool_policy.go",
+              "lines": "40-56",
+              "contains": "func (g *Gateway) withInvokePolicy(",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/tool_policy.go#L40-L56"
+            },
+            {
+              "file": "pkg/policy/policy.go",
+              "lines": "104-116",
+              "contains": "return NoopClient{}",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/policy/policy.go#L104-L116"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only servers the user enabled receive credentials, and the model's mcp-add and mcp-config-set tools cannot reach a server that is not already enabled unless an enforcing policy allows it.",
+          "gap": "The default isn't read-only; the user's stored credentials go to each enabled server with full read/write reach and no elevation step.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/configset.go",
+              "lines": "174-181",
+              "contains": "no enforcing policy is available to authorize catalog access",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/configset.go#L174-L181"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked client can use each enabled server's long-lived user credential (for example a GitHub PAT) across several systems, and the gateway itself drives the user's Docker daemon.",
+          "gap": "Credentials are not limited to one system or to non-destructive operations, and they aren't short-lived.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/clientpool.go",
+              "lines": "552-560",
+              "contains": "mcpclient.NewStdioCmdClient(cg.serverConfig.Name, \"docker\", env, runArgs...)",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L552-L560"
+            },
+            {
+              "file": "pkg/gateway/secrets_uri.go",
+              "lines": "29-41",
+              "contains": "func BuildSecretsURIs(ctx context.Context, configs []ServerSecretConfig) map[string]string {",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/secrets_uri.go#L29-L41"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.45,
+          "raw": 0.45,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Credentials are scoped per server: a container gets only the secrets in its own spec, and a remote server gets only its own OAuth token.",
+              "gap": "No per-tool or read/write credential split and no deterministic authorization gate by default; reads and writes share each server's long-lived credential.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/clientpool.go",
+                  "lines": "378-392",
+                  "contains": "for _, s := range serverConfig.Spec.Secrets {",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L378-L392"
+                },
+                {
+                  "file": "pkg/mcp/remote.go",
+                  "lines": "94-104",
+                  "contains": "headers[\"Authorization\"] = \"Bearer \" + token",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/mcp/remote.go#L94-L104"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every container launch goes through argsAndEnv with a scrubbed environment, and every backend tool is wrapped by withInvokePolicy, but the default policy client is a no-op that authorizes nothing.",
+              "gap": "The authorization layer on every path is a no-op unless Docker Desktop's MCPGovernance flag is on, so no per-request authorization check actually runs by default.",
+              "evidence": [
+                {
+                  "file": "pkg/mcp/stdio.go",
+                  "lines": "67-75",
+                  "contains": "func commandEnv(env []string) []string {",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/mcp/stdio.go#L67-L75"
+                },
+                {
+                  "file": "pkg/gateway/tool_policy.go",
+                  "lines": "40-56",
+                  "contains": "func (g *Gateway) withInvokePolicy(",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/tool_policy.go#L40-L56"
+                },
+                {
+                  "file": "pkg/policy/policy.go",
+                  "lines": "104-116",
+                  "contains": "return NoopClient{}",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/policy/policy.go#L104-L116"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only servers the user enabled receive credentials, and the model's mcp-add and mcp-config-set tools cannot reach a server that is not already enabled unless an enforcing policy allows it.",
+              "gap": "The default isn't read-only; the user's stored credentials go to each enabled server with full read/write reach and no elevation step.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/configset.go",
+                  "lines": "174-181",
+                  "contains": "no enforcing policy is available to authorize catalog access",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/configset.go#L174-L181"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked client can use each enabled server's long-lived user credential (for example a GitHub PAT) across several systems, and the gateway itself drives the user's Docker daemon.",
+              "gap": "Credentials are not limited to one system or to non-destructive operations, and they aren't short-lived.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/clientpool.go",
+                  "lines": "552-560",
+                  "contains": "mcpclient.NewStdioCmdClient(cg.serverConfig.Name, \"docker\", env, runArgs...)",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L552-L560"
+                },
+                {
+                  "file": "pkg/gateway/secrets_uri.go",
+                  "lines": "29-41",
+                  "contains": "func BuildSecretsURIs(ctx context.Context, configs []ServerSecretConfig) map[string]string {",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/secrets_uri.go#L29-L41"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "As a tool server, the gateway passes through whatever risk annotations downstream servers declare, but it adds none to its own management tools (mcp-config-set, mcp-remove, mcp-create-profile, code-mode, mcp-exec). The mcp-exec and code-mode wrappers can call any enabled tool behind one tool name, which hides the inner tool's annotations from the host's approval logic. There is no dry-run, read-only mode or confirmation step enforced by the server. Downstream actions such as sending messages or deleting repositories are irreversible.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.2,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Downstream tool annotations are copied through, but the gateway's own mutating tools carry no readOnlyHint or destructiveHint, and code-mode only sets a Title.",
+          "gap": "Not every tool has accurate read/write annotations: mcp-exec and code-mode mix reads and writes in one tool, and the management tools are unannotated.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/tool_schema_dialect.go",
+              "lines": "29",
+              "contains": "prefixedTool := *tool",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/tool_schema_dialect.go#L29"
+            },
+            {
+              "file": "pkg/gateway/dynamic_mcps.go",
+              "lines": "78-104",
+              "contains": "Name: \"mcp-config-set\",",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/dynamic_mcps.go#L78-L104"
+            },
+            {
+              "file": "pkg/codemode/codemode.go",
+              "lines": "67-69",
+              "contains": "Title: \"Run tools with Javascript\",",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/codemode/codemode.go#L67-L69"
+            },
+            {
+              "search": "rg -n ReadOnlyHint|DestructiveHint",
+              "scope": "pkg/gateway pkg/codemode pkg/interceptors",
+              "hits": 0,
+              "note": "the gateway never sets risk hints on its own tools"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "mcp-exec runs any registered tool by name, and code-mode runs JavaScript that calls any tool of the chosen servers, so one approved gateway tool reaches every write tool behind it.",
+          "gap": "Indirect paths do not surface the inner tool's risk to the host, so not every consequential call reaches the host's gate as itself.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/mcpexec.go",
+              "lines": "42-83",
+              "contains": "result, err := toolReg.Handler(ctx, toolCallRequest)",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/mcpexec.go#L42-L83"
+            },
+            {
+              "file": "pkg/codemode/exec.go",
+              "lines": "19-35",
+              "contains": "_ = vm.Set(toolWithHandler.Tool.Name, callTool(ctx, toolWithHandler, request))",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/codemode/exec.go#L19-L35"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Dynamic tools, including code-mode, which lets the model register new tool names that wrap arbitrary scripts, are on by default unless the user disables the feature or passes --servers.",
+          "gap": "The model can create new code-mode tools at runtime, so a host's per-tool \"always allow\" can be widened without any operator action.",
+          "evidence": [
+            {
+              "file": "cmd/docker-mcp/commands/gateway.go",
+              "lines": "339-352",
+              "contains": "return true // Default enabled when not in config",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L339-L352"
+            },
+            {
+              "file": "pkg/gateway/codemode.go",
+              "lines": "113-134",
+              "contains": "g.mcpServer.AddTool(customTool.Tool, customTool.Handler)",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/codemode.go#L113-L134"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Calls go straight to downstream servers, which can take irreversible external actions; the gateway offers no preview, dry-run or rollback, and mcp-create-profile overwrites saved profiles in place.",
+          "gap": "No dry-run, checkpoint or undo for any consequential path.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/handlers.go",
+              "lines": "134-140",
+              "contains": "result, err := client.Session().CallTool(ctx, params)",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/handlers.go#L134-L140"
+            },
+            {
+              "file": "pkg/gateway/createprofile.go",
+              "lines": "165-172",
+              "contains": "if err := dao.UpdateWorkingSet(ctx, ws.ToDb()); err != nil {",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/createprofile.go#L165-L172"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.2,
+          "raw": 0.2,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Downstream tool annotations are copied through, but the gateway's own mutating tools carry no readOnlyHint or destructiveHint, and code-mode only sets a Title.",
+              "gap": "Not every tool has accurate read/write annotations: mcp-exec and code-mode mix reads and writes in one tool, and the management tools are unannotated.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/tool_schema_dialect.go",
+                  "lines": "29",
+                  "contains": "prefixedTool := *tool",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/tool_schema_dialect.go#L29"
+                },
+                {
+                  "file": "pkg/gateway/dynamic_mcps.go",
+                  "lines": "78-104",
+                  "contains": "Name: \"mcp-config-set\",",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/dynamic_mcps.go#L78-L104"
+                },
+                {
+                  "file": "pkg/codemode/codemode.go",
+                  "lines": "67-69",
+                  "contains": "Title: \"Run tools with Javascript\",",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/codemode/codemode.go#L67-L69"
+                },
+                {
+                  "search": "rg -n ReadOnlyHint|DestructiveHint",
+                  "scope": "pkg/gateway pkg/codemode pkg/interceptors",
+                  "hits": 0,
+                  "note": "the gateway never sets risk hints on its own tools"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "mcp-exec runs any registered tool by name, and code-mode runs JavaScript that calls any tool of the chosen servers, so one approved gateway tool reaches every write tool behind it.",
+              "gap": "Indirect paths do not surface the inner tool's risk to the host, so not every consequential call reaches the host's gate as itself.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/mcpexec.go",
+                  "lines": "42-83",
+                  "contains": "result, err := toolReg.Handler(ctx, toolCallRequest)",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/mcpexec.go#L42-L83"
+                },
+                {
+                  "file": "pkg/codemode/exec.go",
+                  "lines": "19-35",
+                  "contains": "_ = vm.Set(toolWithHandler.Tool.Name, callTool(ctx, toolWithHandler, request))",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/codemode/exec.go#L19-L35"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Dynamic tools, including code-mode, which lets the model register new tool names that wrap arbitrary scripts, are on by default unless the user disables the feature or passes --servers.",
+              "gap": "The model can create new code-mode tools at runtime, so a host's per-tool \"always allow\" can be widened without any operator action.",
+              "evidence": [
+                {
+                  "file": "cmd/docker-mcp/commands/gateway.go",
+                  "lines": "339-352",
+                  "contains": "return true // Default enabled when not in config",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L339-L352"
+                },
+                {
+                  "file": "pkg/gateway/codemode.go",
+                  "lines": "113-134",
+                  "contains": "g.mcpServer.AddTool(customTool.Tool, customTool.Handler)",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/codemode.go#L113-L134"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Calls go straight to downstream servers, which can take irreversible external actions; the gateway offers no preview, dry-run or rollback, and mcp-create-profile overwrites saved profiles in place.",
+              "gap": "No dry-run, checkpoint or undo for any consequential path.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/handlers.go",
+                  "lines": "134-140",
+                  "contains": "result, err := client.Session().CallTool(ctx, params)",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/handlers.go#L134-L140"
+                },
+                {
+                  "file": "pkg/gateway/createprofile.go",
+                  "lines": "165-172",
+                  "contains": "if err := dao.UpdateWorkingSet(ctx, ws.ToDb()); err != nil {",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/createprofile.go#L165-L172"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "The gateway validates the inputs it acts on itself. Host bind mounts are resolved through symlinks, kept read-only and limited to temp directories unless the operator allowlists a path, and credential and system paths are refused. Values that look like docker flags are dropped, model-supplied server config is checked against the server's JSON schema, and management tools only reach enabled servers. Arguments to downstream tools are passed through unvalidated. All enabled servers' tools plus the dynamic management tools are exposed by default, though per-server tool lists can narrow that.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.525,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Host bind sources are canonicalised with EvalSymlinks, refused for system and credential paths, forced read-only, and contained to allowlisted roots; flag-like values are rejected.",
+          "gap": "Bind-path validation is not a strict boundary, and general tools such as mcp-exec and code-mode are not replaced by narrow ones.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/docker_binds.go",
+              "lines": "57-75",
+              "contains": "host path bind mounts must be read-only unless the exact host path is allowed for writable binds",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/docker_binds.go#L57-L75"
+            },
+            {
+              "file": "pkg/gateway/docker_binds.go",
+              "lines": "235-240",
+              "contains": "resolved, err := filepath.EvalSymlinks(p)",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/docker_binds.go#L235-L240"
+            },
+            {
+              "file": "pkg/gateway/docker_binds.go",
+              "lines": "306-336",
+              "contains": "case \".aws\", \".azure\", \".config\", \".docker\", \".gnupg\", \".kube\", \".ssh\":",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/docker_binds.go#L306-L336"
+            },
+            {
+              "file": "pkg/gateway/clientpool.go",
+              "lines": "459-461",
+              "contains": "return v != \"\" && !strings.HasPrefix(v, \"-\")",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L459-L461"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All gateway-built container launches and management tools validate their inputs, but downstream tool arguments are relayed unvalidated (only the secret-pattern scan sees them).",
+          "gap": "No shared argument-validation layer wraps extension (downstream) tools.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/handlers.go",
+              "lines": "121-135",
+              "contains": "Arguments: args,",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/handlers.go#L121-L135"
+            },
+            {
+              "file": "pkg/gateway/configset.go",
+              "lines": "118-121",
+              "contains": "if err := resolved.Validate(params.Config); err != nil {",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/configset.go#L118-L121"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tool sets are selectable (--tools, per-server tool lists, --servers turns off dynamic tools), but by default every tool of every enabled server plus the dynamic management tools is exposed.",
+          "gap": "The default set still includes write tools and code-mode; it is not read-only.",
+          "evidence": [
+            {
+              "file": "cmd/docker-mcp/commands/gateway.go",
+              "lines": "173-183",
+              "contains": "Disable dynamic-tools if the user explicitly configured a set of servers via the --servers flag.",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L173-L183"
+            },
+            {
+              "file": "pkg/gateway/capabilitites.go",
+              "lines": "351-353",
+              "contains": "func isToolEnabled(configuration Configuration, serverName, serverImage, toolName string, enabledTools []string) bool {",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/capabilitites.go#L351-L353"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Misused downstream tools act with the server's full credential and the container's unrestricted network; the gateway only bounds host mounts.",
+          "gap": "Not scoped to a project/workspace; external reach is bounded only by what each server's credential allows.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/clientpool.go",
+              "lines": "357-364",
+              "contains": "args = append(args, \"--network\", \"none\")",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L357-L364"
+            },
+            {
+              "file": "cmd/docker-mcp/commands/gateway.go",
+              "lines": "214",
+              "contains": "\"block-network\", options.BlockNetwork",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L214"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.525,
+          "raw": 0.525,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Host bind sources are canonicalised with EvalSymlinks, refused for system and credential paths, forced read-only, and contained to allowlisted roots; flag-like values are rejected.",
+              "gap": "Bind-path validation is not a strict boundary, and general tools such as mcp-exec and code-mode are not replaced by narrow ones.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/docker_binds.go",
+                  "lines": "57-75",
+                  "contains": "host path bind mounts must be read-only unless the exact host path is allowed for writable binds",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/docker_binds.go#L57-L75"
+                },
+                {
+                  "file": "pkg/gateway/docker_binds.go",
+                  "lines": "235-240",
+                  "contains": "resolved, err := filepath.EvalSymlinks(p)",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/docker_binds.go#L235-L240"
+                },
+                {
+                  "file": "pkg/gateway/docker_binds.go",
+                  "lines": "306-336",
+                  "contains": "case \".aws\", \".azure\", \".config\", \".docker\", \".gnupg\", \".kube\", \".ssh\":",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/docker_binds.go#L306-L336"
+                },
+                {
+                  "file": "pkg/gateway/clientpool.go",
+                  "lines": "459-461",
+                  "contains": "return v != \"\" && !strings.HasPrefix(v, \"-\")",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L459-L461"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All gateway-built container launches and management tools validate their inputs, but downstream tool arguments are relayed unvalidated (only the secret-pattern scan sees them).",
+              "gap": "No shared argument-validation layer wraps extension (downstream) tools.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/handlers.go",
+                  "lines": "121-135",
+                  "contains": "Arguments: args,",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/handlers.go#L121-L135"
+                },
+                {
+                  "file": "pkg/gateway/configset.go",
+                  "lines": "118-121",
+                  "contains": "if err := resolved.Validate(params.Config); err != nil {",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/configset.go#L118-L121"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tool sets are selectable (--tools, per-server tool lists, --servers turns off dynamic tools), but by default every tool of every enabled server plus the dynamic management tools is exposed.",
+              "gap": "The default set still includes write tools and code-mode; it is not read-only.",
+              "evidence": [
+                {
+                  "file": "cmd/docker-mcp/commands/gateway.go",
+                  "lines": "173-183",
+                  "contains": "Disable dynamic-tools if the user explicitly configured a set of servers via the --servers flag.",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L173-L183"
+                },
+                {
+                  "file": "pkg/gateway/capabilitites.go",
+                  "lines": "351-353",
+                  "contains": "func isToolEnabled(configuration Configuration, serverName, serverImage, toolName string, enabledTools []string) bool {",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/capabilitites.go#L351-L353"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Misused downstream tools act with the server's full credential and the container's unrestricted network; the gateway only bounds host mounts.",
+              "gap": "Not scoped to a project/workspace; external reach is bounded only by what each server's credential allows.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/clientpool.go",
+                  "lines": "357-364",
+                  "contains": "args = append(args, \"--network\", \"none\")",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L357-L364"
+                },
+                {
+                  "file": "cmd/docker-mcp/commands/gateway.go",
+                  "lines": "214",
+                  "contains": "\"block-network\", options.BlockNetwork",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L214"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "Every local MCP server runs as a fresh `docker run --rm --init` container with no-new-privileges, one CPU and 2 GB of memory, and there is no path that runs a server directly on the host or falls back to the host when Docker fails. The container is otherwise stock: whatever user the image picks (often root), Docker's default capabilities, a writable root filesystem and no process limit. It also gets full network egress by default, along with that server's own secrets. The Docker socket and system or credential paths cannot be mounted, and `--privileged` is added only under an explicit Docker-in-Docker environment variable. Code-mode scripts run in an embedded goja JavaScript engine that only exposes the tools injected into it.",
+      "max": 1.0,
+      "notes": "C4-HOSTROOT does not apply in the scored default: --privileged requires DOCKER_MCP_IN_DIND=1. Each server's own image decides its user and contents, and was not reviewed.",
+      "status": "scored",
+      "score": 0.575,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Containers get --rm, --init, no-new-privileges and CPU/memory limits, but no --cap-drop, no --read-only, no forced non-root user and no PID limit.",
+          "gap": "Not a hardened container: capabilities are not dropped, root filesystem is writable and the user is not forced non-root.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/clientpool.go",
+              "lines": "324-338",
+              "contains": "args = append(args, \"--rm\", \"-i\", \"--init\", \"--security-opt\", \"no-new-privileges\")",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L324-L338"
+            },
+            {
+              "search": "rg -n cap-drop|read-only|--pids-limit|--user",
+              "scope": "pkg/gateway/clientpool.go",
+              "hits": 0,
+              "note": "no capability drop, read-only rootfs, PID limit or user flag in the container launcher"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Both container paths (MCP servers and POCI tool containers) launch through `docker run`, with no host-execution fallback; operator-configured --interceptor exec hooks and DinD --privileged are the documented escape hatches.",
+          "gap": "Coverage is capped one level above the stock-container strength; the host-run interceptor hook also receives model-controlled payloads on stdin.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/clientpool.go",
+              "lines": "552-560",
+              "contains": "mcpclient.NewStdioCmdClient(cg.serverConfig.Name, \"docker\", env, runArgs...)",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L552-L560"
+            },
+            {
+              "file": "pkg/gateway/clientpool.go",
+              "lines": "302",
+              "contains": "cmd := exec.CommandContext(ctx, \"docker\", args...)",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L302"
+            },
+            {
+              "file": "pkg/interceptors/interceptors.go",
+              "lines": "160-164",
+              "contains": "cmd := exec.CommandContext(ctx, \"/bin/sh\", \"-c\", i.Argument)",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/interceptors/interceptors.go#L160-L164"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Containerisation is unconditional, and only an operator env var (DOCKER_MCP_IN_DIND) adds --privileged.",
+          "gap": "The model can still shape mounts, user and command through mcp-config-set values that feed the container spec templates (within the bind validation).",
+          "evidence": [
+            {
+              "file": "pkg/gateway/clientpool.go",
+              "lines": "336-338",
+              "contains": "if os.Getenv(\"DOCKER_MCP_IN_DIND\") == \"1\" {",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L336-L338"
+            },
+            {
+              "file": "pkg/gateway/clientpool.go",
+              "lines": "409-439",
+              "contains": "for _, mount := range eval.EvaluateList(serverConfig.Spec.Volumes, serverConfig.Config) {",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L409-L439"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Inside the container: that server's own secrets and full network egress (block-network is off), with host mounts read-only by default and docker.sock/system/credential paths blocked.",
+          "gap": "Network egress is not off or allowlisted by default, so credentials in the container can be sent anywhere.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/clientpool.go",
+              "lines": "357-364",
+              "contains": "for _, network := range cp.networks {",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L357-L364"
+            },
+            {
+              "file": "pkg/gateway/docker_binds.go",
+              "lines": "306-327",
+              "contains": "\"/var/run\",",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/docker_binds.go#L306-L327"
+            },
+            {
+              "file": "pkg/gateway/clientpool.go",
+              "lines": "532-540",
+              "contains": "if cg.cp.BlockNetwork && len(cg.serverConfig.Spec.AllowHosts) > 0 {",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L532-L540"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.575,
+          "raw": 0.575,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Containers get --rm, --init, no-new-privileges and CPU/memory limits, but no --cap-drop, no --read-only, no forced non-root user and no PID limit.",
+              "gap": "Not a hardened container: capabilities are not dropped, root filesystem is writable and the user is not forced non-root.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/clientpool.go",
+                  "lines": "324-338",
+                  "contains": "args = append(args, \"--rm\", \"-i\", \"--init\", \"--security-opt\", \"no-new-privileges\")",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L324-L338"
+                },
+                {
+                  "search": "rg -n cap-drop|read-only|--pids-limit|--user",
+                  "scope": "pkg/gateway/clientpool.go",
+                  "hits": 0,
+                  "note": "no capability drop, read-only rootfs, PID limit or user flag in the container launcher"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Both container paths (MCP servers and POCI tool containers) launch through `docker run`, with no host-execution fallback; operator-configured --interceptor exec hooks and DinD --privileged are the documented escape hatches.",
+              "gap": "Coverage is capped one level above the stock-container strength; the host-run interceptor hook also receives model-controlled payloads on stdin.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/clientpool.go",
+                  "lines": "552-560",
+                  "contains": "mcpclient.NewStdioCmdClient(cg.serverConfig.Name, \"docker\", env, runArgs...)",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L552-L560"
+                },
+                {
+                  "file": "pkg/gateway/clientpool.go",
+                  "lines": "302",
+                  "contains": "cmd := exec.CommandContext(ctx, \"docker\", args...)",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L302"
+                },
+                {
+                  "file": "pkg/interceptors/interceptors.go",
+                  "lines": "160-164",
+                  "contains": "cmd := exec.CommandContext(ctx, \"/bin/sh\", \"-c\", i.Argument)",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/interceptors/interceptors.go#L160-L164"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Containerisation is unconditional, and only an operator env var (DOCKER_MCP_IN_DIND) adds --privileged.",
+              "gap": "The model can still shape mounts, user and command through mcp-config-set values that feed the container spec templates (within the bind validation).",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/clientpool.go",
+                  "lines": "336-338",
+                  "contains": "if os.Getenv(\"DOCKER_MCP_IN_DIND\") == \"1\" {",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L336-L338"
+                },
+                {
+                  "file": "pkg/gateway/clientpool.go",
+                  "lines": "409-439",
+                  "contains": "for _, mount := range eval.EvaluateList(serverConfig.Spec.Volumes, serverConfig.Config) {",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L409-L439"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Inside the container: that server's own secrets and full network egress (block-network is off), with host mounts read-only by default and docker.sock/system/credential paths blocked.",
+              "gap": "Network egress is not off or allowlisted by default, so credentials in the container can be sent anywhere.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/clientpool.go",
+                  "lines": "357-364",
+                  "contains": "for _, network := range cp.networks {",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L357-L364"
+                },
+                {
+                  "file": "pkg/gateway/docker_binds.go",
+                  "lines": "306-327",
+                  "contains": "\"/var/run\",",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/docker_binds.go#L306-L327"
+                },
+                {
+                  "file": "pkg/gateway/clientpool.go",
+                  "lines": "532-540",
+                  "contains": "if cg.cp.BlockNetwork && len(cg.serverConfig.Spec.AllowHosts) > 0 {",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L532-L540"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "The gateway relays downstream tool results, resources and tool descriptions to the client unchanged, with no provenance or untrusted-content marking. Its own mcp-add response pastes third-party tool descriptions into a message that also tells the model to assume the server is ready to use. The only related protections are a check that stops one server shadowing another's tool or prompt names, the secret-pattern scan, and opt-in network blocking. Because the gateway aggregates servers, one session commonly mixes untrusted content, credentialed servers and egress. Nothing in the gateway breaks that combination by default, so a hijacked client can leak data and take irreversible actions through it.",
+      "max": 1.0,
+      "notes": "Rated per the framework rule for aggregators: the gateway's normal use combines untrusted input, credentialed servers and egress, and nothing in the gateway breaks that combination by default. Block-secrets (C8) blocks responses that match secret patterns, which narrows credential leaks but not private-data leaks.",
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C5-WORSTCASE",
+        "max": 0.25,
+        "reason": "B is L0 in the default configuration: leak plus irreversible action can proceed unattended through enabled servers."
+      },
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Gateway-composed outputs mix third-party tool descriptions with directives to the model (\"Assume that it is fully configured and ready to use\"), and relayed results carry no provenance.",
+          "gap": "No structured separation of returned content from gateway metadata or instructions.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/mcpadd.go",
+              "lines": "275-300",
+              "contains": "Assume that it is fully configured and ready to use.",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/mcpadd.go#L275-L300"
+            },
+            {
+              "file": "pkg/gateway/handlers.go",
+              "lines": "134-140",
+              "contains": "return result, nil",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/handlers.go#L134-L140"
+            },
+            {
+              "search": "rg -n -i untrusted|provenance",
+              "scope": "pkg/gateway pkg/interceptors pkg/codemode",
+              "hits": 7,
+              "note": "all 7 hits are test fixtures naming a server \"untrusted\" in tool-name collision tests; no provenance marking exists"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tool results, resources and tool descriptions from every server enter the client unmarked; only name-shadowing between servers is prevented.",
+          "gap": "No untrusted source is distinguished from trusted content.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/tool_names.go",
+              "lines": "62",
+              "contains": "func validateExternalToolNameCollisions(registrations []ToolRegistration, existing map[string]ToolRegistration) error {",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/tool_names.go#L62"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The one mechanism that drops a Rule-of-Two leg (per-server network allowlisting via --block-network) is off by default.",
+          "gap": "No untrusted-input control is on by default.",
+          "evidence": [
+            {
+              "file": "cmd/docker-mcp/commands/gateway.go",
+              "lines": "214",
+              "contains": "\"block-network\", options.BlockNetwork, \"Block tools from accessing forbidden network resources\"",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L214"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "With the default unrestricted container network and per-server credentials, injected content read through one server can drive writes and exfiltration through others with nothing in the gateway asking a human.",
+          "gap": "Exfiltration and irreversible actions both proceed unattended at the gateway layer.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/clientpool.go",
+              "lines": "357-364",
+              "contains": "for _, network := range cp.networks {",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L357-L364"
+            },
+            {
+              "file": "pkg/gateway/mcpexec.go",
+              "lines": "42-83",
+              "contains": "result, err := toolReg.Handler(ctx, toolCallRequest)",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/mcpexec.go#L42-L83"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": {
+            "id": "C5-WORSTCASE",
+            "max": 0.25,
+            "reason": "B is L0 in the default configuration: leak plus irreversible action can proceed unattended through enabled servers."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Gateway-composed outputs mix third-party tool descriptions with directives to the model (\"Assume that it is fully configured and ready to use\"), and relayed results carry no provenance.",
+              "gap": "No structured separation of returned content from gateway metadata or instructions.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/mcpadd.go",
+                  "lines": "275-300",
+                  "contains": "Assume that it is fully configured and ready to use.",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/mcpadd.go#L275-L300"
+                },
+                {
+                  "file": "pkg/gateway/handlers.go",
+                  "lines": "134-140",
+                  "contains": "return result, nil",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/handlers.go#L134-L140"
+                },
+                {
+                  "search": "rg -n -i untrusted|provenance",
+                  "scope": "pkg/gateway pkg/interceptors pkg/codemode",
+                  "hits": 7,
+                  "note": "all 7 hits are test fixtures naming a server \"untrusted\" in tool-name collision tests; no provenance marking exists"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tool results, resources and tool descriptions from every server enter the client unmarked; only name-shadowing between servers is prevented.",
+              "gap": "No untrusted source is distinguished from trusted content.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/tool_names.go",
+                  "lines": "62",
+                  "contains": "func validateExternalToolNameCollisions(registrations []ToolRegistration, existing map[string]ToolRegistration) error {",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/tool_names.go#L62"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The one mechanism that drops a Rule-of-Two leg (per-server network allowlisting via --block-network) is off by default.",
+              "gap": "No untrusted-input control is on by default.",
+              "evidence": [
+                {
+                  "file": "cmd/docker-mcp/commands/gateway.go",
+                  "lines": "214",
+                  "contains": "\"block-network\", options.BlockNetwork, \"Block tools from accessing forbidden network resources\"",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L214"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "With the default unrestricted container network and per-server credentials, injected content read through one server can drive writes and exfiltration through others with nothing in the gateway asking a human.",
+              "gap": "Exfiltration and irreversible actions both proceed unattended at the gateway layer.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/clientpool.go",
+                  "lines": "357-364",
+                  "contains": "for _, network := range cp.networks {",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L357-L364"
+                },
+                {
+                  "file": "pkg/gateway/mcpexec.go",
+                  "lines": "42-83",
+                  "contains": "result, err := toolReg.Handler(ctx, toolCallRequest)",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/mcpexec.go#L42-L83"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "The gateway has no conversational memory, but the model can change persistent configuration. mcp-config-set swaps in new config for any enabled server (checked only against that server's schema), and mcp-create-profile saves the current servers and config into any named profile, including `default`, with no human confirmation. That profile is what the next gateway start loads, and its config feeds container command lines, environment and mounts. For Claude Code clients the profile is also written to `profiles.json` in the working directory, and on connect the gateway reads that file back. In the default configuration activation is refused for any server not already enabled, so a repository's profiles.json cannot add servers.",
+      "max": 1.0,
+      "notes": "C6-REPOCONFIG was considered and not applied. A profiles.json in the working directory is auto-loaded for Claude Code clients, but activation calls checkServerManagementAccess, which refuses servers that aren't already enabled unless an enforcing (Docker Desktop governance) policy exists, and already-enabled servers are skipped. With governance on, the admin policy decides.",
+      "status": "scored",
+      "score": 0.3,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Model-initiated config and profile writes are logged and schema-checked but not gated, and they persist into profiles the gateway loads as trusted configuration.",
+          "gap": "No human approval, expiry or provenance on model-written profile/config, and the workspace profiles.json load path exists without a workspace-trust prompt.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/configset.go",
+              "lines": "145-152",
+              "contains": "g.configuration.config[canonicalServerName] = params.Config",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/configset.go#L145-L152"
+            },
+            {
+              "file": "pkg/gateway/createprofile.go",
+              "lines": "124-180",
+              "contains": "_ = project.SaveProfileForClient(clientInfo, ws)",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/createprofile.go#L124-L180"
+            },
+            {
+              "file": "pkg/gateway/project/project.go",
+              "lines": "26-36",
+              "contains": "profilesPath := filepath.Join(cwd, \"profiles.json\")",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/project/project.go#L26-L36"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The workspace profiles.json load is gated by the enabled-server check, but model writes to the profile database and profiles.json are not gated.",
+          "gap": "The main persistent store (profiles) accepts model writes without control.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/activateprofile.go",
+              "lines": "110-135",
+              "contains": "if err := g.checkServerManagementAccess(ctx, profileConfig.policyRequest(serverName, \"\", policy.ActionLoad), nil); err != nil {",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/activateprofile.go#L110-L135"
+            },
+            {
+              "file": "pkg/gateway/run.go",
+              "lines": "862-879",
+              "contains": "_ = project.LoadProfilesForClient(ctx, initParams.ClientInfo, g)",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/run.go#L862-L879"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Profiles live in the OS user's local database (single-user tool), but any session can overwrite any profile name, including `default`.",
+          "gap": "The model can write to profiles other than the one in use.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/createprofile.go",
+              "lines": "124-136",
+              "contains": "existingProfile, err := dao.GetWorkingSet(ctx, profileName)",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/createprofile.go#L124-L136"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A poisoned profile persists across the user's sessions and changes how servers are launched (command, env, mounts), so it influences later tool use.",
+          "gap": "Poisoned config is neither session-scoped nor gated by review, and there is no rollback.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/clientpool.go",
+              "lines": "394-407",
+              "contains": "value = fmt.Sprintf(\"%v\", eval.Evaluate(e.Value, serverConfig.Config))",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L394-L407"
+            },
+            {
+              "file": "pkg/gateway/clientpool.go",
+              "lines": "548",
+              "contains": "command := expandEnvList(eval.EvaluateList(cg.serverConfig.Spec.Command, cg.serverConfig.Config), env)",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L548"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.3,
+          "raw": 0.3,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Model-initiated config and profile writes are logged and schema-checked but not gated, and they persist into profiles the gateway loads as trusted configuration.",
+              "gap": "No human approval, expiry or provenance on model-written profile/config, and the workspace profiles.json load path exists without a workspace-trust prompt.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/configset.go",
+                  "lines": "145-152",
+                  "contains": "g.configuration.config[canonicalServerName] = params.Config",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/configset.go#L145-L152"
+                },
+                {
+                  "file": "pkg/gateway/createprofile.go",
+                  "lines": "124-180",
+                  "contains": "_ = project.SaveProfileForClient(clientInfo, ws)",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/createprofile.go#L124-L180"
+                },
+                {
+                  "file": "pkg/gateway/project/project.go",
+                  "lines": "26-36",
+                  "contains": "profilesPath := filepath.Join(cwd, \"profiles.json\")",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/project/project.go#L26-L36"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The workspace profiles.json load is gated by the enabled-server check, but model writes to the profile database and profiles.json are not gated.",
+              "gap": "The main persistent store (profiles) accepts model writes without control.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/activateprofile.go",
+                  "lines": "110-135",
+                  "contains": "if err := g.checkServerManagementAccess(ctx, profileConfig.policyRequest(serverName, \"\", policy.ActionLoad), nil); err != nil {",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/activateprofile.go#L110-L135"
+                },
+                {
+                  "file": "pkg/gateway/run.go",
+                  "lines": "862-879",
+                  "contains": "_ = project.LoadProfilesForClient(ctx, initParams.ClientInfo, g)",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/run.go#L862-L879"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Profiles live in the OS user's local database (single-user tool), but any session can overwrite any profile name, including `default`.",
+              "gap": "The model can write to profiles other than the one in use.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/createprofile.go",
+                  "lines": "124-136",
+                  "contains": "existingProfile, err := dao.GetWorkingSet(ctx, profileName)",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/createprofile.go#L124-L136"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A poisoned profile persists across the user's sessions and changes how servers are launched (command, env, mounts), so it influences later tool use.",
+              "gap": "Poisoned config is neither session-scoped nor gated by review, and there is no rollback.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/clientpool.go",
+                  "lines": "394-407",
+                  "contains": "value = fmt.Sprintf(\"%v\", eval.Evaluate(e.Value, serverConfig.Config))",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L394-L407"
+                },
+                {
+                  "file": "pkg/gateway/clientpool.go",
+                  "lines": "548",
+                  "contains": "command := expandEnvList(eval.EvaluateList(cg.serverConfig.Spec.Command, cg.serverConfig.Config), env)",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L548"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "MCP servers are third-party container images (or remote endpoints) the user enables. Images under docker.io/mcp/ must be pinned by digest and pass cosign signature verification against an embedded Docker public key before pull, which is on by default. Community images, custom catalogs, --oci-ref and remote servers get no verification, and a tool definition that changes is not re-approved. The model cannot enable a new server by default. Each server runs in its own container with only its own secrets, but with open network access.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.55,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Docker-official images require a sha256 digest and a valid cosign signature from an embedded key, and the default catalog is Docker's curated catalog.",
+          "gap": "No re-approval when an extension's image or tool definitions change.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/pull.go",
+              "lines": "69-92",
+              "contains": "image must be referenced by digest",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/pull.go#L69-L92"
+            },
+            {
+              "file": "pkg/signatures/signatures.go",
+              "lines": "24-28",
+              "contains": "const publicKey = `-----BEGIN PUBLIC KEY-----",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/signatures/signatures.go#L24-L28"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only images whose path starts with mcp/ on docker.io are verified; other images, OCI refs and remote servers are not.",
+          "gap": "Community/custom images and remote servers have no pinning or integrity check.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/pull.go",
+              "lines": "96-108",
+              "contains": "return strings.HasPrefix(reference.Path(named), \"mcp/\")",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/pull.go#L96-L108"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No server is enabled by default (an absent default profile is empty), the model's mcp-add only reaches already-enabled servers, and a workspace profiles.json can't add servers without governance.",
+          "gap": "No evidence that enabling a server shows the exact image, command and permissions before it runs.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/configuration_workingset.go",
+              "lines": "60-66",
+              "contains": "Default profile not found, using empty configuration",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/configuration_workingset.go#L60-L66"
+            },
+            {
+              "file": "pkg/gateway/configset.go",
+              "lines": "174-181",
+              "contains": "if !slices.Contains(g.configuration.ServerNames(), serverName) && !hasEnforcingPolicy(g.policyClient) {",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/configset.go#L174-L181"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Each extension runs in its own container with only its own declared secrets and a scrubbed docker environment.",
+          "gap": "Network and file access are not limited to what the extension declares by default (allowHosts proxying is opt-in).",
+          "evidence": [
+            {
+              "file": "pkg/gateway/clientpool.go",
+              "lines": "378-392",
+              "contains": "env = append(env, fmt.Sprintf(\"%s=%s\", s.Env, secretValue))",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L378-L392"
+            },
+            {
+              "file": "pkg/mcp/stdio.go",
+              "lines": "41-42",
+              "contains": "cmd.Env = commandEnv(c.env)",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/mcp/stdio.go#L41-L42"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.55,
+          "raw": 0.55,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Docker-official images require a sha256 digest and a valid cosign signature from an embedded key, and the default catalog is Docker's curated catalog.",
+              "gap": "No re-approval when an extension's image or tool definitions change.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/pull.go",
+                  "lines": "69-92",
+                  "contains": "image must be referenced by digest",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/pull.go#L69-L92"
+                },
+                {
+                  "file": "pkg/signatures/signatures.go",
+                  "lines": "24-28",
+                  "contains": "const publicKey = `-----BEGIN PUBLIC KEY-----",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/signatures/signatures.go#L24-L28"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only images whose path starts with mcp/ on docker.io are verified; other images, OCI refs and remote servers are not.",
+              "gap": "Community/custom images and remote servers have no pinning or integrity check.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/pull.go",
+                  "lines": "96-108",
+                  "contains": "return strings.HasPrefix(reference.Path(named), \"mcp/\")",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/pull.go#L96-L108"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No server is enabled by default (an absent default profile is empty), the model's mcp-add only reaches already-enabled servers, and a workspace profiles.json can't add servers without governance.",
+              "gap": "No evidence that enabling a server shows the exact image, command and permissions before it runs.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/configuration_workingset.go",
+                  "lines": "60-66",
+                  "contains": "Default profile not found, using empty configuration",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/configuration_workingset.go#L60-L66"
+                },
+                {
+                  "file": "pkg/gateway/configset.go",
+                  "lines": "174-181",
+                  "contains": "if !slices.Contains(g.configuration.ServerNames(), serverName) && !hasEnforcingPolicy(g.policyClient) {",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/configset.go#L174-L181"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Each extension runs in its own container with only its own declared secrets and a scrubbed docker environment.",
+              "gap": "Network and file access are not limited to what the extension declares by default (allowHosts proxying is opt-in).",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/clientpool.go",
+                  "lines": "378-392",
+                  "contains": "env = append(env, fmt.Sprintf(\"%s=%s\", s.Env, secretValue))",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L378-L392"
+                },
+                {
+                  "file": "pkg/mcp/stdio.go",
+                  "lines": "41-42",
+                  "contains": "cmd.Env = commandEnv(c.env)",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/mcp/stdio.go#L41-L42"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "Secrets come from Docker Desktop's secrets store and reach containers as se:// references that Docker Desktop resolves at container start, so the gateway passes handles rather than values. By default every tool call's arguments and text results are scanned for secret patterns and blocked on a match. Call logs record only the shape of arguments, and verbose output masks secrets after four characters. Resource reads and prompts are not scanned. Content-free usage telemetry (tool, server and client names) is always on through the Docker CLI's OpenTelemetry provider. Stored credentials are mostly long-lived user API keys.",
+      "max": 1.0,
+      "notes": "Resolution of se:// handles and at-rest protection of the secrets store happen in Docker Desktop's closed-source secrets engine, which was not reviewed.",
+      "status": "scored",
+      "score": 0.525,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A secret store plus opaque se:// handles keep values out of gateway config and model context, and model-bound tool results are scanned and blocked on secret patterns.",
+          "gap": "Credentials are long-lived API keys rather than short-lived tokens, and scanning blocks only tools/call.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/secrets_uri.go",
+              "lines": "20-41",
+              "contains": "BuildSecretsURIs generates se:// URIs",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/secrets_uri.go#L20-L41"
+            },
+            {
+              "file": "pkg/interceptors/block_secrets.go",
+              "lines": "34-36",
+              "contains": "if secretsscan.ContainsSecrets(argumentsStr) {",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/interceptors/block_secrets.go#L34-L36"
+            },
+            {
+              "file": "pkg/interceptors/block_secrets.go",
+              "lines": "65-66",
+              "contains": "a secret is being returned by the %s tool",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/interceptors/block_secrets.go#L65-L66"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Logs, subprocess environment and tools/call traffic are protected, but resources/read and prompts/get bypass the secret scan, and the full initialize request is logged.",
+          "gap": "Not every model-bound path is covered: resources and prompts are relayed unscanned.",
+          "evidence": [
+            {
+              "file": "pkg/interceptors/block_secrets.go",
+              "lines": "17-19",
+              "contains": "if method != \"tools/call\" {",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/interceptors/block_secrets.go#L17-L19"
+            },
+            {
+              "file": "pkg/interceptors/log_calls.go",
+              "lines": "33",
+              "contains": "argumentsSummary(arguments)",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/interceptors/log_calls.go#L33"
+            },
+            {
+              "file": "pkg/gateway/clientpool.go",
+              "lines": "482-492",
+              "contains": "return value[:4] + \"****\"",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L482-L492"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Telemetry middleware is always added and exports content-free metrics; block-secrets is on but disabled by a plain flag.",
+          "gap": "Telemetry is on by default rather than opt-in.",
+          "evidence": [
+            {
+              "file": "pkg/interceptors/interceptors.go",
+              "lines": "24-25",
+              "contains": "Add telemetry middleware (always enabled)",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/interceptors/interceptors.go#L24-L25"
+            },
+            {
+              "file": "pkg/gateway/tool_policy.go",
+              "lines": "84-95",
+              "contains": "telemetry.ToolCallCounter.Add(ctx, 1, metric.WithAttributes(metricAttrs...))",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/tool_policy.go#L84-L95"
+            },
+            {
+              "file": "cmd/docker-mcp/commands/gateway.go",
+              "lines": "56-57",
+              "contains": "BlockSecrets:     true,",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L56-L57"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A leaked credential is one server's key (scoped to that service) but typically long-lived; OAuth tokens are refreshed by the provider loop.",
+          "gap": "API-key secrets are not short-lived or rotated by the gateway.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/secrets_uri.go",
+              "lines": "77-110",
+              "contains": "Fall back to direct secret (API keys, tokens, etc.)",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/secrets_uri.go#L77-L110"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.525,
+          "raw": 0.525,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A secret store plus opaque se:// handles keep values out of gateway config and model context, and model-bound tool results are scanned and blocked on secret patterns.",
+              "gap": "Credentials are long-lived API keys rather than short-lived tokens, and scanning blocks only tools/call.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/secrets_uri.go",
+                  "lines": "20-41",
+                  "contains": "BuildSecretsURIs generates se:// URIs",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/secrets_uri.go#L20-L41"
+                },
+                {
+                  "file": "pkg/interceptors/block_secrets.go",
+                  "lines": "34-36",
+                  "contains": "if secretsscan.ContainsSecrets(argumentsStr) {",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/interceptors/block_secrets.go#L34-L36"
+                },
+                {
+                  "file": "pkg/interceptors/block_secrets.go",
+                  "lines": "65-66",
+                  "contains": "a secret is being returned by the %s tool",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/interceptors/block_secrets.go#L65-L66"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Logs, subprocess environment and tools/call traffic are protected, but resources/read and prompts/get bypass the secret scan, and the full initialize request is logged.",
+              "gap": "Not every model-bound path is covered: resources and prompts are relayed unscanned.",
+              "evidence": [
+                {
+                  "file": "pkg/interceptors/block_secrets.go",
+                  "lines": "17-19",
+                  "contains": "if method != \"tools/call\" {",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/interceptors/block_secrets.go#L17-L19"
+                },
+                {
+                  "file": "pkg/interceptors/log_calls.go",
+                  "lines": "33",
+                  "contains": "argumentsSummary(arguments)",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/interceptors/log_calls.go#L33"
+                },
+                {
+                  "file": "pkg/gateway/clientpool.go",
+                  "lines": "482-492",
+                  "contains": "return value[:4] + \"****\"",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L482-L492"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Telemetry middleware is always added and exports content-free metrics; block-secrets is on but disabled by a plain flag.",
+              "gap": "Telemetry is on by default rather than opt-in.",
+              "evidence": [
+                {
+                  "file": "pkg/interceptors/interceptors.go",
+                  "lines": "24-25",
+                  "contains": "Add telemetry middleware (always enabled)",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/interceptors/interceptors.go#L24-L25"
+                },
+                {
+                  "file": "pkg/gateway/tool_policy.go",
+                  "lines": "84-95",
+                  "contains": "telemetry.ToolCallCounter.Add(ctx, 1, metric.WithAttributes(metricAttrs...))",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/tool_policy.go#L84-L95"
+                },
+                {
+                  "file": "cmd/docker-mcp/commands/gateway.go",
+                  "lines": "56-57",
+                  "contains": "BlockSecrets:     true,",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L56-L57"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A leaked credential is one server's key (scoped to that service) but typically long-lived; OAuth tokens are refreshed by the provider loop.",
+              "gap": "API-key secrets are not short-lived or rotated by the gateway.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/secrets_uri.go",
+                  "lines": "77-110",
+                  "contains": "Fall back to direct secret (API keys, tokens, etc.)",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/secrets_uri.go#L77-L110"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "By default every incoming tool call is logged to stderr with the tool name, the shape of its arguments (not their values) and its duration. Config changes and profile writes are also logged. These are plain text lines on the gateway's stderr, which the MCP client may or may not keep. Structured audit events with client identity and policy decisions go to Docker Desktop only when its governance feature is on, and they are queued, dropped under backpressure and sent without error handling. Calls made inside code-mode scripts don't pass through the call log.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.375,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Unstructured stderr lines with tool name, argument shape and timing; no argument values or results.",
+          "gap": "No structured per-call record with arguments and result status.",
+          "evidence": [
+            {
+              "file": "pkg/interceptors/log_calls.go",
+              "lines": "32-43",
+              "contains": "log.Logf(\"  - Calling tool %s with arguments: %s\\n\", toolName, argumentsSummary(arguments))",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/interceptors/log_calls.go#L32-L43"
+            },
+            {
+              "file": "pkg/log/log.go",
+              "lines": "10",
+              "contains": "var logWriter io.Writer = os.Stderr",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/log/log.go#L10"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The receiving middleware sees every client tools/call, including dynamic tools and mcp-exec, but tool calls made inside code-mode scripts bypass it.",
+          "gap": "Inner code-mode calls and approvals/denials are not in the default record.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/run.go",
+              "lines": "313-321",
+              "contains": "g.mcpServer.AddReceivingMiddleware(middlewares...)",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/run.go#L313-L321"
+            },
+            {
+              "file": "pkg/codemode/exec.go",
+              "lines": "80",
+              "contains": "result, err := toolWithHandler.Handler(ctx, &mcp.CallToolRequest{",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/codemode/exec.go#L80"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "log-calls is on by default and written by the gateway process outside any workspace, but `--log-calls=false` turns it off silently.",
+          "gap": "Nothing writes to a store the model can't influence, so tamper resistance stays capped one level above the plain-log strength.",
+          "evidence": [
+            {
+              "file": "cmd/docker-mcp/commands/gateway.go",
+              "lines": "56",
+              "contains": "LogCalls:         true,",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L56"
+            },
+            {
+              "file": "cmd/docker-mcp/commands/gateway.go",
+              "lines": "212",
+              "contains": "\"log-calls\", options.LogCalls",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L212"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Logging is best-effort stderr, and audit events are dropped when the 100-slot queue is full, with submission errors ignored.",
+          "gap": "Failures are not surfaced and records are not durable per action.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/policy_audit.go",
+              "lines": "18-29",
+              "contains": "// Note: Errors intentionally ignored",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/policy_audit.go#L18-L29"
+            },
+            {
+              "file": "pkg/gateway/policy_audit.go",
+              "lines": "123-131",
+              "contains": "audit event dropped due to backpressure",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/policy_audit.go#L123-L131"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.375,
+          "raw": 0.375,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Unstructured stderr lines with tool name, argument shape and timing; no argument values or results.",
+              "gap": "No structured per-call record with arguments and result status.",
+              "evidence": [
+                {
+                  "file": "pkg/interceptors/log_calls.go",
+                  "lines": "32-43",
+                  "contains": "log.Logf(\"  - Calling tool %s with arguments: %s\\n\", toolName, argumentsSummary(arguments))",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/interceptors/log_calls.go#L32-L43"
+                },
+                {
+                  "file": "pkg/log/log.go",
+                  "lines": "10",
+                  "contains": "var logWriter io.Writer = os.Stderr",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/log/log.go#L10"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The receiving middleware sees every client tools/call, including dynamic tools and mcp-exec, but tool calls made inside code-mode scripts bypass it.",
+              "gap": "Inner code-mode calls and approvals/denials are not in the default record.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/run.go",
+                  "lines": "313-321",
+                  "contains": "g.mcpServer.AddReceivingMiddleware(middlewares...)",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/run.go#L313-L321"
+                },
+                {
+                  "file": "pkg/codemode/exec.go",
+                  "lines": "80",
+                  "contains": "result, err := toolWithHandler.Handler(ctx, &mcp.CallToolRequest{",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/codemode/exec.go#L80"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "log-calls is on by default and written by the gateway process outside any workspace, but `--log-calls=false` turns it off silently.",
+              "gap": "Nothing writes to a store the model can't influence, so tamper resistance stays capped one level above the plain-log strength.",
+              "evidence": [
+                {
+                  "file": "cmd/docker-mcp/commands/gateway.go",
+                  "lines": "56",
+                  "contains": "LogCalls:         true,",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L56"
+                },
+                {
+                  "file": "cmd/docker-mcp/commands/gateway.go",
+                  "lines": "212",
+                  "contains": "\"log-calls\", options.LogCalls",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L212"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Logging is best-effort stderr, and audit events are dropped when the 100-slot queue is full, with submission errors ignored.",
+              "gap": "Failures are not surfaced and records are not durable per action.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/policy_audit.go",
+                  "lines": "18-29",
+                  "contains": "// Note: Errors intentionally ignored",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/policy_audit.go#L18-L29"
+                },
+                {
+                  "file": "pkg/gateway/policy_audit.go",
+                  "lines": "123-131",
+                  "contains": "audit event dropped due to backpressure",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/policy_audit.go#L123-L131"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "Each server container is limited to one CPU and 2 GB of memory by default, and the model can't change that. There is no timeout on tool calls, no rate limiting, and no limit on how many containers or code-mode tools a session can create. The code-mode JavaScript engine has no interrupt, so a looping script can't be stopped by cancellation. Closing a client session or stopping the gateway closes its server sessions, and the containers are removed via --rm.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.5,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Server-enforced CPU and memory caps apply to every container; nothing else is bounded.",
+          "gap": "No per-call timeouts, concurrency or rate limits.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/clientpool.go",
+              "lines": "328-333",
+              "contains": "args = append(args, \"--memory\", cp.Memory)",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L328-L333"
+            },
+            {
+              "file": "pkg/gateway/clientpool.go",
+              "lines": "577-578",
+              "contains": "// ctx, cancel := context.WithTimeout(ctx, 20*time.Second)",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L577-L578"
+            },
+            {
+              "search": "rg -n context.WithTimeout|vm.Interrupt",
+              "scope": "pkg/gateway pkg/codemode pkg/mcp",
+              "hits": 8,
+              "note": "3 are tests, 2 are embeddings HTTP calls, 1 telemetry flush, 1 is the commented-out client timeout; none bound tool calls or code-mode scripts"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Resource caps cover every container launch but not code-mode scripts running in the gateway process or remote-server calls.",
+          "gap": "Code-mode and remote calls are unbounded, and there's no cap on concurrent containers.",
+          "evidence": [
+            {
+              "file": "pkg/codemode/exec.go",
+              "lines": "13-35",
+              "contains": "v, err := vm.RunString(script)",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/codemode/exec.go#L13-L35"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Defaults of 1 CPU / 2 GB are sensible and only operator flags change them; no tool lets the model raise them.",
+          "gap": "No hard ceiling: --cpus 0 or a large --memory removes the bound.",
+          "evidence": [
+            {
+              "file": "cmd/docker-mcp/commands/gateway.go",
+              "lines": "53-54",
+              "contains": "Cpus:             1,",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L53-L54"
+            },
+            {
+              "file": "cmd/docker-mcp/commands/gateway.go",
+              "lines": "221-222",
+              "contains": "\"cpus\", options.Cpus",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L221-L222"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A runaway call or goja loop has no time ceiling, and a looping script keeps running after cancellation; stopping the gateway closes sessions and --rm removes containers.",
+          "gap": "No time ceiling, and cancellation doesn't interrupt in-process code-mode execution.",
+          "evidence": [
+            {
+              "file": "pkg/gateway/clientpool.go",
+              "lines": "161-173",
+              "contains": "client.Session().Close()",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L161-L173"
+            },
+            {
+              "file": "pkg/codemode/exec.go",
+              "lines": "14",
+              "contains": "vm := goja.New()",
+              "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/codemode/exec.go#L14"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.5,
+          "raw": 0.5,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Server-enforced CPU and memory caps apply to every container; nothing else is bounded.",
+              "gap": "No per-call timeouts, concurrency or rate limits.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/clientpool.go",
+                  "lines": "328-333",
+                  "contains": "args = append(args, \"--memory\", cp.Memory)",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L328-L333"
+                },
+                {
+                  "file": "pkg/gateway/clientpool.go",
+                  "lines": "577-578",
+                  "contains": "// ctx, cancel := context.WithTimeout(ctx, 20*time.Second)",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L577-L578"
+                },
+                {
+                  "search": "rg -n context.WithTimeout|vm.Interrupt",
+                  "scope": "pkg/gateway pkg/codemode pkg/mcp",
+                  "hits": 8,
+                  "note": "3 are tests, 2 are embeddings HTTP calls, 1 telemetry flush, 1 is the commented-out client timeout; none bound tool calls or code-mode scripts"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Resource caps cover every container launch but not code-mode scripts running in the gateway process or remote-server calls.",
+              "gap": "Code-mode and remote calls are unbounded, and there's no cap on concurrent containers.",
+              "evidence": [
+                {
+                  "file": "pkg/codemode/exec.go",
+                  "lines": "13-35",
+                  "contains": "v, err := vm.RunString(script)",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/codemode/exec.go#L13-L35"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Defaults of 1 CPU / 2 GB are sensible and only operator flags change them; no tool lets the model raise them.",
+              "gap": "No hard ceiling: --cpus 0 or a large --memory removes the bound.",
+              "evidence": [
+                {
+                  "file": "cmd/docker-mcp/commands/gateway.go",
+                  "lines": "53-54",
+                  "contains": "Cpus:             1,",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L53-L54"
+                },
+                {
+                  "file": "cmd/docker-mcp/commands/gateway.go",
+                  "lines": "221-222",
+                  "contains": "\"cpus\", options.Cpus",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L221-L222"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A runaway call or goja loop has no time ceiling, and a looping script keeps running after cancellation; stopping the gateway closes sessions and --rm removes containers.",
+              "gap": "No time ceiling, and cancellation doesn't interrupt in-process code-mode execution.",
+              "evidence": [
+                {
+                  "file": "pkg/gateway/clientpool.go",
+                  "lines": "161-173",
+                  "contains": "client.Session().Close()",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L161-L173"
+                },
+                {
+                  "file": "pkg/codemode/exec.go",
+                  "lines": "14",
+                  "contains": "vm := goja.New()",
+                  "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/codemode/exec.go#L14"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "In the default configuration nothing in the gateway breaks the Rule-of-Two combination: injected content relayed from one server can drive credentialed writes and exfiltration through other enabled servers over unrestricted container networking, with no gateway-side approval (C5-WORSTCASE).",
+      "criterion": "C5",
+      "owasp": [
+        "ASI01",
+        "T6",
+        "LLM01"
+      ],
+      "evidence": [
+        {
+          "file": "pkg/gateway/handlers.go",
+          "lines": "134-140",
+          "contains": "result, err := client.Session().CallTool(ctx, params)",
+          "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/handlers.go#L134-L140"
+        },
+        {
+          "file": "pkg/gateway/clientpool.go",
+          "lines": "357-364",
+          "contains": "for _, network := range cp.networks {",
+          "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/pkg/gateway/clientpool.go#L357-L364"
+        },
+        {
+          "file": "cmd/docker-mcp/commands/gateway.go",
+          "lines": "214",
+          "contains": "\"block-network\", options.BlockNetwork",
+          "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L214"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "Downstream tool results and descriptions relayed unchanged (pkg/gateway/handlers.go:134-140)",
+    "sensitive_data": "Per-server user secrets and OAuth tokens injected into containers/remote calls (pkg/gateway/clientpool.go:378-392, pkg/mcp/remote.go:94-104)",
+    "state_change_or_egress": "Downstream write tools plus unrestricted container networking by default (pkg/gateway/clientpool.go:357-364)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Add readOnlyHint/destructiveHint to the gateway's own tools and surface the inner tool's annotations (or refuse write tools) in mcp-exec and code-mode.",
+      "criterion": "C2",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 5",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Turn --block-network on by default so each container only reaches its catalog-declared allowHosts through the proxy.",
+      "criterion": "C4",
+      "parameter": "B",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.05
+    },
+    {
+      "summary": "Harden container launch args: --cap-drop ALL, --read-only with tmpfs, a non-root default user and --pids-limit.",
+      "criterion": "C4",
+      "parameter": "S",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Require a human confirmation (elicitation) before mcp-config-set or mcp-create-profile persist model-chosen configuration, and stop the model overwriting profiles other than the active one.",
+      "criterion": "C6",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 2",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Add a per-call timeout to backend tool calls and interrupt the goja VM on context cancellation.",
+      "criterion": "C10",
+      "parameter": "S",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.075
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was executed, installed, or probed.",
+    "Docker Desktop components that the gateway relies on (secrets engine and se:// resolution, MCPGovernance policy service, OpenTelemetry forwarding destination) are outside this repository and were not reviewed.",
+    "The contents of the Docker MCP catalog and of individual server images (their users, capabilities, network needs) were not reviewed; container hardening was judged from the gateway's docker run arguments only.",
+    "Scored the on-host default (`docker mcp gateway run`, profiles mode, stdio). In-container mode (DOCKER_MCP_IN_CONTAINER=1) uses verbose logging and a different secrets path; Docker-in-Docker mode adds --privileged.",
+    "The vendor/ directory and test files were not audited except where cited.",
+    "No reviewer-directed prompt-injection text was found in the repository (searched README/docs/source for auditor- or reviewer-directed instructions)."
+  ]
+}

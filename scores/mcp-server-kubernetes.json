@@ -1,0 +1,2554 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "mcp-server-kubernetes",
+  "name": "mcp-server-kubernetes",
+  "repo_url": "https://github.com/Flux159/mcp-server-kubernetes",
+  "subpath": null,
+  "description": "TypeScript MCP server for kubectl/Helm management of Kubernetes clusters",
+  "category": "infrastructure_ops",
+  "pinned_commit": "3d71add204014dcceddebe53e9695ed7d8a6d129",
+  "version": "4.1.9",
+  "scored_date": "2026-10-03",
+  "scored_configuration": "Local stdio server launched as the README leads (npx mcp-server-kubernetes) with no environment variables: all tools enabled, credentials from the operator's ~/.kube/config, telemetry off.",
+  "score": 2.6,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 9,
+    "score": 1.6,
+    "max": 9.0,
+    "percent": 18
+  },
+  "capability_profile": {
+    "code_execution": "yes",
+    "filesystem_write": "yes",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "no",
+    "untrusted_input": "yes",
+    "third_party_extensions": "no",
+    "sub_agents": "no",
+    "external_communication": "no"
+  },
+  "headline": "As shipped, this server gives the model the operator's full kubeconfig authority across every context, with exec into any pod, a generic kubectl tool, Helm installs from any repository, and forced deletes all enabled. It has a careful argv flag denylist and masks Secret values in kubectl_get, but the generic tool can run 'config view --raw', which returns raw credentials to the model, and neither the denylist nor the masking is a complete boundary. The dominant risk is a prompt-injected host agent using cluster-admin-equivalent credentials unattended; the read-only and allowlist modes that would contain it are opt-in.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "In the default local mode the server loads the operator's own kubeconfig and runs every kubectl and helm command with it, and the model can pick any context in that file on every call, so it inherits the operator's full authority across every cluster they can reach. There is no server identity, no scoping of verbs or resources, and no authorization check of any kind before a command runs; the only narrowing is an opt-in tool allowlist set by environment variable. A hijacked or misled session therefore holds whatever the kubeconfig grants, which for most operators is cluster-admin.",
+      "max": 1.0,
+      "notes": "kubectl_apply/create can write RoleBindings, but Kubernetes RBAC escalation prevention stops a credential granting more than it holds, so C1-SELFESC was not applied. The Helm chart (not the README's lead mode) ships a ClusterRole with cluster-wide pod/exec/secret-read and write verbs; its network transport defaults are not locked down.",
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every tool runs kubectl/helm with the operator's ambient kubeconfig (loadFromDefault) and the model chooses the context per call; nothing narrows the credential.",
+          "gap": "No dedicated or role-scoped identity: the server never obtains its own narrower credential.",
+          "evidence": [
+            {
+              "file": "src/utils/kubernetes-manager.ts",
+              "lines": "79-85",
+              "contains": "this.kc.loadFromDefault();",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/utils/kubernetes-manager.ts#L79-L85"
+            },
+            {
+              "file": "src/models/common-parameters.ts",
+              "lines": "1-5",
+              "contains": "Kubeconfig Context to use for the command",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/models/common-parameters.ts#L1-L5"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No authorization layer exists: tools build kubectl argv and execute it with the full process environment, and the only check is an argv flag denylist that does not evaluate permissions.",
+          "gap": "No check maps a request to permissions before credentials are used, on any tool path.",
+          "evidence": [
+            {
+              "file": "src/tools/kubectl-generic.ts",
+              "lines": "163-167",
+              "contains": "env: { ...process.env, KUBECONFIG: process.env.KUBECONFIG }",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L163-L167"
+            },
+            {
+              "file": "src/security/kubectl-flags.ts",
+              "lines": "435-442",
+              "contains": "assertSafeArgv(args);",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/security/kubectl-flags.ts#L435-L442"
+            },
+            {
+              "search": "rg -n -i 'authoriz|SubjectAccessReview|can-i'",
+              "scope": "src/",
+              "hits": 2,
+              "note": "Both hits are HTTP X-MCP-AUTH error strings in src/utils/auth.ts, not authorization of Kubernetes requests."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "With no env vars set, isToolAllowed returns true for every tool and the server uses whatever the kubeconfig grants.",
+          "gap": "No least-privilege default; narrowing requires the operator to set ALLOWED_TOOLS / read-only env vars or supply a scoped kubeconfig.",
+          "evidence": [
+            {
+              "file": "src/index.ts",
+              "lines": "84-104",
+              "contains": "const allowOnlyReadonlyTools = process.env.ALLOW_ONLY_READONLY_TOOLS === \"true\";",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L84-L104"
+            },
+            {
+              "file": "src/index.ts",
+              "lines": "100-104",
+              "contains": "return true;",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L100-L104"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked session holds the operator's full authority over every cluster in the kubeconfig, including deletes, pod exec and RBAC writes.",
+          "gap": "Blast radius is not limited to one cluster, one namespace, or read-mostly access.",
+          "evidence": [
+            {
+              "file": "src/models/common-parameters.ts",
+              "lines": "1-5",
+              "contains": "Kubeconfig Context to use for the command",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/models/common-parameters.ts#L1-L5"
+            },
+            {
+              "file": "src/index.ts",
+              "lines": "130-171",
+              "contains": "const allTools = [",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L130-L171"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every tool runs kubectl/helm with the operator's ambient kubeconfig (loadFromDefault) and the model chooses the context per call; nothing narrows the credential.",
+              "gap": "No dedicated or role-scoped identity: the server never obtains its own narrower credential.",
+              "evidence": [
+                {
+                  "file": "src/utils/kubernetes-manager.ts",
+                  "lines": "79-85",
+                  "contains": "this.kc.loadFromDefault();",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/utils/kubernetes-manager.ts#L79-L85"
+                },
+                {
+                  "file": "src/models/common-parameters.ts",
+                  "lines": "1-5",
+                  "contains": "Kubeconfig Context to use for the command",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/models/common-parameters.ts#L1-L5"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No authorization layer exists: tools build kubectl argv and execute it with the full process environment, and the only check is an argv flag denylist that does not evaluate permissions.",
+              "gap": "No check maps a request to permissions before credentials are used, on any tool path.",
+              "evidence": [
+                {
+                  "file": "src/tools/kubectl-generic.ts",
+                  "lines": "163-167",
+                  "contains": "env: { ...process.env, KUBECONFIG: process.env.KUBECONFIG }",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L163-L167"
+                },
+                {
+                  "file": "src/security/kubectl-flags.ts",
+                  "lines": "435-442",
+                  "contains": "assertSafeArgv(args);",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/security/kubectl-flags.ts#L435-L442"
+                },
+                {
+                  "search": "rg -n -i 'authoriz|SubjectAccessReview|can-i'",
+                  "scope": "src/",
+                  "hits": 2,
+                  "note": "Both hits are HTTP X-MCP-AUTH error strings in src/utils/auth.ts, not authorization of Kubernetes requests."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "With no env vars set, isToolAllowed returns true for every tool and the server uses whatever the kubeconfig grants.",
+              "gap": "No least-privilege default; narrowing requires the operator to set ALLOWED_TOOLS / read-only env vars or supply a scoped kubeconfig.",
+              "evidence": [
+                {
+                  "file": "src/index.ts",
+                  "lines": "84-104",
+                  "contains": "const allowOnlyReadonlyTools = process.env.ALLOW_ONLY_READONLY_TOOLS === \"true\";",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L84-L104"
+                },
+                {
+                  "file": "src/index.ts",
+                  "lines": "100-104",
+                  "contains": "return true;",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L100-L104"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked session holds the operator's full authority over every cluster in the kubeconfig, including deletes, pod exec and RBAC writes.",
+              "gap": "Blast radius is not limited to one cluster, one namespace, or read-mostly access.",
+              "evidence": [
+                {
+                  "file": "src/models/common-parameters.ts",
+                  "lines": "1-5",
+                  "contains": "Kubeconfig Context to use for the command",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/models/common-parameters.ts#L1-L5"
+                },
+                {
+                  "file": "src/index.ts",
+                  "lines": "130-171",
+                  "contains": "const allTools = [",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L130-L171"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "As a tool server it relies on the host to ask the human, so what matters is how accurately it labels risk. Most mutating tools carry a destructive hint and there are dry-run options on apply, create, patch and node drain, but the labels are not reliable: some annotations are inaccurate, kubectl_create and port_forward carry no hints at all, and kubectl_generic mixes reads and writes in one tool. An opt-in read-only mode is enforced by the server on every call, though it is not a strict boundary. Deletes (including forced deletes and Helm uninstall) are irreversible with no preview.",
+      "max": 1.0,
+      "notes": "node_management requires confirmDrain=true for a drain, but the model sets that argument itself, so it is not a human gate (C2-SELFAPPROVE not applied because it is not the server's primary risk-signalling control).",
+      "status": "scored",
+      "score": 0.325,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Read-only mode lists and allows only eight tools, but it is not a strict boundary, and annotation quality is unchanged.",
+          "gap": "Accurate hints on every tool and a robust read-only set.",
+          "evidence": [
+            {
+              "file": "src/index.ts",
+              "lines": "107-116",
+              "contains": "kubectlContextSchema,",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L107-L116"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "isToolAllowed is enforced on every CallTool request, not only in ListTools, so hidden tools cannot be called directly.",
+          "gap": "Read-only mode is not a strict boundary.",
+          "evidence": [
+            {
+              "file": "src/index.ts",
+              "lines": "256-261",
+              "contains": "if (!isToolAllowed(name)) {",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L256-L261"
+            },
+            {
+              "file": "src/index.ts",
+              "lines": "107-116",
+              "contains": "kubectlContextSchema,",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L107-L116"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Opt-in via environment variable; off in the scored configuration.",
+          "gap": "Not on by default.",
+          "evidence": [
+            {
+              "file": "src/index.ts",
+              "lines": "84-104",
+              "contains": "const allowOnlyReadonlyTools = process.env.ALLOW_ONLY_READONLY_TOOLS === \"true\";",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L84-L104"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "With read-only mode on, remaining state changes are limited and reversible.",
+          "gap": "No rate limits or quantity bounds.",
+          "evidence": [
+            {
+              "file": "src/index.ts",
+              "lines": "107-116",
+              "contains": "kubectlContextSchema,",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L107-L116"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.25,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Annotations exist on most tools but some are inaccurate and they are missing on kubectl_create and port_forward; kubectl_generic mixes reads and writes.",
+              "gap": "Accurate readOnly/destructive hints on every tool, with read and write split into separate tools.",
+              "evidence": [
+                {
+                  "file": "src/tools/kubectl-create.ts",
+                  "lines": "11-15",
+                  "contains": "name: \"kubectl_create\"",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-create.ts#L11-L15"
+                },
+                {
+                  "file": "src/tools/port_forward.ts",
+                  "lines": "62-67",
+                  "contains": "title: \"Port Forward\"",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/port_forward.ts#L62-L67"
+                },
+                {
+                  "file": "src/tools/kubectl-generic.ts",
+                  "lines": "15-21",
+                  "contains": "Execute any kubectl command with the provided arguments and flags",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L15-L21"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "exec_in_pod, kubectl_generic and delete are flagged destructive, but kubectl_create (creates arbitrary resources) reaches state changes without a destructive signal, and other annotations are inaccurate.",
+              "gap": "Every mutating tool must be flagged so a host gate keyed on hints covers all of them.",
+              "evidence": [
+                {
+                  "file": "src/tools/exec_in_pod.ts",
+                  "lines": "25-30",
+                  "contains": "destructiveHint: true",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/exec_in_pod.ts#L25-L30"
+                },
+                {
+                  "file": "src/tools/kubectl-create.ts",
+                  "lines": "11-15",
+                  "contains": "name: \"kubectl_create\"",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-create.ts#L11-L15"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Hints are static in code and cannot be changed by the model or input; the server-side read-only mode is off unless ALLOW_ONLY_READONLY_TOOLS=true.",
+              "gap": "No server-side confirmation or read-only posture on by default; capped one level above the weak signalling.",
+              "evidence": [
+                {
+                  "file": "src/index.ts",
+                  "lines": "84-104",
+                  "contains": "const allowOnlyReadonlyTools = process.env.ALLOW_ONLY_READONLY_TOOLS === \"true\";",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L84-L104"
+                },
+                {
+                  "file": "src/index.ts",
+                  "lines": "100-104",
+                  "contains": "return true;",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L100-L104"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A wrongly approved call can force-delete resources, uninstall releases or delete namespaces with no undo; dry-run exists only for apply/create/patch/drain.",
+              "gap": "No preview or rollback for delete/uninstall/scale/generic operations.",
+              "evidence": [
+                {
+                  "file": "src/tools/kubectl-delete.ts",
+                  "lines": "166-169",
+                  "contains": "args.push(\"--force\");",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-delete.ts#L166-L169"
+                },
+                {
+                  "file": "src/tools/kubectl-apply.ts",
+                  "lines": "98-101",
+                  "contains": "args.push(\"--dry-run=client\");",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-apply.ts#L98-L101"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in ALLOW_ONLY_READONLY_TOOLS mode",
+          "score": 0.325,
+          "raw": 0.325,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Read-only mode lists and allows only eight tools, but it is not a strict boundary, and annotation quality is unchanged.",
+              "gap": "Accurate hints on every tool and a robust read-only set.",
+              "evidence": [
+                {
+                  "file": "src/index.ts",
+                  "lines": "107-116",
+                  "contains": "kubectlContextSchema,",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L107-L116"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "isToolAllowed is enforced on every CallTool request, not only in ListTools, so hidden tools cannot be called directly.",
+              "gap": "Read-only mode is not a strict boundary.",
+              "evidence": [
+                {
+                  "file": "src/index.ts",
+                  "lines": "256-261",
+                  "contains": "if (!isToolAllowed(name)) {",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L256-L261"
+                },
+                {
+                  "file": "src/index.ts",
+                  "lines": "107-116",
+                  "contains": "kubectlContextSchema,",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L107-L116"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Opt-in via environment variable; off in the scored configuration.",
+              "gap": "Not on by default.",
+              "evidence": [
+                {
+                  "file": "src/index.ts",
+                  "lines": "84-104",
+                  "contains": "const allowOnlyReadonlyTools = process.env.ALLOW_ONLY_READONLY_TOOLS === \"true\";",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L84-L104"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "With read-only mode on, remaining state changes are limited and reversible.",
+              "gap": "No rate limits or quantity bounds.",
+              "evidence": [
+                {
+                  "file": "src/index.ts",
+                  "lines": "107-116",
+                  "contains": "kubectlContextSchema,",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L107-L116"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "Every kubectl and helm invocation passes through one wrapper that rejects a denylist of dangerous flags (API server, token, impersonation, kubeconfig) and most tools refuse operands that start with a dash, which is a real improvement over raw passthrough. But kubectl_generic accepts any kubectl verb and any positional arguments, and the flag denylist is not a complete boundary. Helm tools accept any repository URL and chart, and every tool, including exec and generic kubectl, is enabled by default.",
+      "max": 1.0,
+      "notes": "ALLOW_KUBECTL_UNSAFE_FLAGS=true disables the denylist entirely (operator setting).",
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "G2",
+        "max": 0.25,
+        "reason": "The flag denylist is not a complete boundary against the model at runtime."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Validation is a denylist of flag names plus typed schemas; kubectl_generic passes any verb and positional args, and helm accepts any repo URL.",
+          "gap": "No allowlist of verbs/subcommands or repo hosts; positional arguments of kubectl_generic are not validated.",
+          "evidence": [
+            {
+              "file": "src/security/kubectl-flags.ts",
+              "lines": "16-51",
+              "contains": "const DANGEROUS_FLAGS = new Set<string>([",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/security/kubectl-flags.ts#L16-L51"
+            },
+            {
+              "file": "src/tools/kubectl-generic.ts",
+              "lines": "98-99",
+              "contains": "const cmdArgs: string[] = [input.command];",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L98-L99"
+            },
+            {
+              "file": "src/tools/helm-operations.ts",
+              "lines": "342-346",
+              "contains": "executeCommand(\"helm\", [\"repo\", \"add\", repoName, params.repo]);",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/helm-operations.ts#L342-L346"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The argv guard runs at one choke point (execFileSyncSafe) used by every kubectl/helm call, and port_forward calls it directly.",
+          "gap": "Coverage is capped one level above the denylist's strength; a central allowlist policy would be needed.",
+          "evidence": [
+            {
+              "file": "src/security/kubectl-flags.ts",
+              "lines": "435-442",
+              "contains": "assertSafeArgv(args);",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/security/kubectl-flags.ts#L435-L442"
+            },
+            {
+              "file": "src/tools/port_forward.ts",
+              "lines": "15-17",
+              "contains": "const process = spawn(\"kubectl\", args);",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/port_forward.ts#L15-L17"
+            },
+            {
+              "search": "rg -n 'from \"child_process\"'",
+              "scope": "src/",
+              "hits": 2,
+              "note": "Only the safe wrapper and port_forward import child_process; both run assertSafeArgv."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All tools, including exec_in_pod, kubectl_generic and helm, are enabled by default; groups can be removed via ALLOW_ONLY_NON_DESTRUCTIVE_TOOLS / ALLOW_ONLY_READONLY_TOOLS / ALLOWED_TOOLS.",
+          "gap": "Read-only tool set by default with writes/exec enabled explicitly.",
+          "evidence": [
+            {
+              "file": "src/index.ts",
+              "lines": "84-104",
+              "contains": "const allowOnlyReadonlyTools = process.env.ALLOW_ONLY_READONLY_TOOLS === \"true\";",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L84-L104"
+            },
+            {
+              "file": "src/index.ts",
+              "lines": "100-104",
+              "contains": "return true;",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L100-L104"
+            },
+            {
+              "file": "src/index.ts",
+              "lines": "130-171",
+              "contains": "const allTools = [",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L130-L171"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "kubectl_generic is a general-purpose kubectl against any namespace of any cluster in the kubeconfig.",
+          "gap": "No namespace, resource or quantity bounds on any tool.",
+          "evidence": [
+            {
+              "file": "src/tools/kubectl-generic.ts",
+              "lines": "15-21",
+              "contains": "Execute any kubectl command with the provided arguments and flags",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L15-L21"
+            },
+            {
+              "file": "src/models/common-parameters.ts",
+              "lines": "1-5",
+              "contains": "Kubeconfig Context to use for the command",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/models/common-parameters.ts#L1-L5"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.325,
+          "cap": {
+            "id": "G2",
+            "max": 0.25,
+            "reason": "The flag denylist is not a complete boundary against the model at runtime."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Validation is a denylist of flag names plus typed schemas; kubectl_generic passes any verb and positional args, and helm accepts any repo URL.",
+              "gap": "No allowlist of verbs/subcommands or repo hosts; positional arguments of kubectl_generic are not validated.",
+              "evidence": [
+                {
+                  "file": "src/security/kubectl-flags.ts",
+                  "lines": "16-51",
+                  "contains": "const DANGEROUS_FLAGS = new Set<string>([",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/security/kubectl-flags.ts#L16-L51"
+                },
+                {
+                  "file": "src/tools/kubectl-generic.ts",
+                  "lines": "98-99",
+                  "contains": "const cmdArgs: string[] = [input.command];",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L98-L99"
+                },
+                {
+                  "file": "src/tools/helm-operations.ts",
+                  "lines": "342-346",
+                  "contains": "executeCommand(\"helm\", [\"repo\", \"add\", repoName, params.repo]);",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/helm-operations.ts#L342-L346"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The argv guard runs at one choke point (execFileSyncSafe) used by every kubectl/helm call, and port_forward calls it directly.",
+              "gap": "Coverage is capped one level above the denylist's strength; a central allowlist policy would be needed.",
+              "evidence": [
+                {
+                  "file": "src/security/kubectl-flags.ts",
+                  "lines": "435-442",
+                  "contains": "assertSafeArgv(args);",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/security/kubectl-flags.ts#L435-L442"
+                },
+                {
+                  "file": "src/tools/port_forward.ts",
+                  "lines": "15-17",
+                  "contains": "const process = spawn(\"kubectl\", args);",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/port_forward.ts#L15-L17"
+                },
+                {
+                  "search": "rg -n 'from \"child_process\"'",
+                  "scope": "src/",
+                  "hits": 2,
+                  "note": "Only the safe wrapper and port_forward import child_process; both run assertSafeArgv."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All tools, including exec_in_pod, kubectl_generic and helm, are enabled by default; groups can be removed via ALLOW_ONLY_NON_DESTRUCTIVE_TOOLS / ALLOW_ONLY_READONLY_TOOLS / ALLOWED_TOOLS.",
+              "gap": "Read-only tool set by default with writes/exec enabled explicitly.",
+              "evidence": [
+                {
+                  "file": "src/index.ts",
+                  "lines": "84-104",
+                  "contains": "const allowOnlyReadonlyTools = process.env.ALLOW_ONLY_READONLY_TOOLS === \"true\";",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L84-L104"
+                },
+                {
+                  "file": "src/index.ts",
+                  "lines": "100-104",
+                  "contains": "return true;",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L100-L104"
+                },
+                {
+                  "file": "src/index.ts",
+                  "lines": "130-171",
+                  "contains": "const allTools = [",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L130-L171"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "kubectl_generic is a general-purpose kubectl against any namespace of any cluster in the kubeconfig.",
+              "gap": "No namespace, resource or quantity bounds on any tool.",
+              "evidence": [
+                {
+                  "file": "src/tools/kubectl-generic.ts",
+                  "lines": "15-21",
+                  "contains": "Execute any kubectl command with the provided arguments and flags",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L15-L21"
+                },
+                {
+                  "file": "src/models/common-parameters.ts",
+                  "lines": "1-5",
+                  "contains": "Kubeconfig Context to use for the command",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/models/common-parameters.ts#L1-L5"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "exec_in_pod runs any model-chosen command inside any pod container in any namespace, and kubectl_apply, kubectl_create and kubectl_generic can create arbitrary pods, including privileged or host-mounted ones. The server provides no isolation around any of this: commands run inside existing workloads with their own service-account tokens and network access, and on the host side kubectl and helm run as the operator's user with the full environment. The argv is passed without a shell, which prevents shell injection on the host but is not a sandbox.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "exec_in_pod forwards an arbitrary argv to kubectl exec in a model-chosen pod; no isolation primitive is involved.",
+          "gap": "No sandbox or isolation boundary for model-directed execution.",
+          "evidence": [
+            {
+              "file": "src/tools/exec_in_pod.ts",
+              "lines": "105-124",
+              "contains": "args.push(\"--\", ...input.command);",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/exec_in_pod.ts#L105-L124"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No execution path is isolated: exec_in_pod, kubectl_generic (run/debug), apply/create of pod manifests, and host-side kubectl/helm all run unconfined.",
+          "gap": "At least the main exec tool would need to run inside an isolation boundary.",
+          "evidence": [
+            {
+              "file": "src/tools/exec_in_pod.ts",
+              "lines": "105-124",
+              "contains": "args.push(\"--\", ...input.command);",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/exec_in_pod.ts#L105-L124"
+            },
+            {
+              "file": "src/tools/kubectl-generic.ts",
+              "lines": "98-99",
+              "contains": "const cmdArgs: string[] = [input.command];",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L98-L99"
+            },
+            {
+              "file": "src/tools/kubectl-generic.ts",
+              "lines": "163-167",
+              "contains": "env: { ...process.env, KUBECONFIG: process.env.KUBECONFIG }",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L163-L167"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Exec tools are enabled by default with no sandbox to turn on.",
+          "gap": "No isolation on by default.",
+          "evidence": [
+            {
+              "file": "src/index.ts",
+              "lines": "100-104",
+              "contains": "return true;",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L100-L104"
+            },
+            {
+              "file": "src/tools/exec_in_pod.ts",
+              "lines": "25-30",
+              "contains": "destructiveHint: true",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/exec_in_pod.ts#L25-L30"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Commands run inside production workloads that hold their own credentials and network, and created pods can be privileged or mount the host, reaching node root.",
+          "gap": "Nothing confines what exec'd commands or created pods can reach.",
+          "evidence": [
+            {
+              "file": "src/tools/exec_in_pod.ts",
+              "lines": "105-124",
+              "contains": "args.push(\"--\", ...input.command);",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/exec_in_pod.ts#L105-L124"
+            },
+            {
+              "file": "src/index.ts",
+              "lines": "130-171",
+              "contains": "const allTools = [",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L130-L171"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "exec_in_pod forwards an arbitrary argv to kubectl exec in a model-chosen pod; no isolation primitive is involved.",
+              "gap": "No sandbox or isolation boundary for model-directed execution.",
+              "evidence": [
+                {
+                  "file": "src/tools/exec_in_pod.ts",
+                  "lines": "105-124",
+                  "contains": "args.push(\"--\", ...input.command);",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/exec_in_pod.ts#L105-L124"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No execution path is isolated: exec_in_pod, kubectl_generic (run/debug), apply/create of pod manifests, and host-side kubectl/helm all run unconfined.",
+              "gap": "At least the main exec tool would need to run inside an isolation boundary.",
+              "evidence": [
+                {
+                  "file": "src/tools/exec_in_pod.ts",
+                  "lines": "105-124",
+                  "contains": "args.push(\"--\", ...input.command);",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/exec_in_pod.ts#L105-L124"
+                },
+                {
+                  "file": "src/tools/kubectl-generic.ts",
+                  "lines": "98-99",
+                  "contains": "const cmdArgs: string[] = [input.command];",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L98-L99"
+                },
+                {
+                  "file": "src/tools/kubectl-generic.ts",
+                  "lines": "163-167",
+                  "contains": "env: { ...process.env, KUBECONFIG: process.env.KUBECONFIG }",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L163-L167"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Exec tools are enabled by default with no sandbox to turn on.",
+              "gap": "No isolation on by default.",
+              "evidence": [
+                {
+                  "file": "src/index.ts",
+                  "lines": "100-104",
+                  "contains": "return true;",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L100-L104"
+                },
+                {
+                  "file": "src/tools/exec_in_pod.ts",
+                  "lines": "25-30",
+                  "contains": "destructiveHint: true",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/exec_in_pod.ts#L25-L30"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Commands run inside production workloads that hold their own credentials and network, and created pods can be privileged or mount the host, reaching node root.",
+              "gap": "Nothing confines what exec'd commands or created pods can reach.",
+              "evidence": [
+                {
+                  "file": "src/tools/exec_in_pod.ts",
+                  "lines": "105-124",
+                  "contains": "args.push(\"--\", ...input.command);",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/exec_in_pod.ts#L105-L124"
+                },
+                {
+                  "file": "src/index.ts",
+                  "lines": "130-171",
+                  "contains": "const allTools = [",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L130-L171"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "Pod logs, events, exec output and resource fields are attacker-influenceable and are returned to the model as plain text with no provenance or untrusted marking. The default tool set gives a hijacked agent both exfiltration channels (a model-chosen Helm repository URL, creating pods that call out) and irreversible actions (forced deletes, Helm uninstall), with nothing in the server requiring a human. The opt-in read-only mode would remove most of the state-changing leg but is off by default.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.075,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C5-WORSTCASE",
+        "max": 0.25,
+        "reason": "B is L0: leak plus irreversible action, unattended, in the default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tool outputs are raw kubectl stdout returned as plain text, with no source or untrusted flag; this is the absence of a mechanism, not an opt-in one.",
+          "gap": "Structured outputs separating returned content from metadata, with provenance the host can act on.",
+          "evidence": [
+            {
+              "file": "src/tools/kubectl-generic.ts",
+              "lines": "169-176",
+              "contains": "text: result,",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L169-L176"
+            },
+            {
+              "file": "src/tools/kubectl-logs.ts",
+              "lines": "116-121",
+              "contains": "return formatLogOutput(name, result);",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-logs.ts#L116-L121"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No untrusted source is distinguished: logs, events, exec output and resource fields all enter context the same way.",
+          "gap": "Untrusted sources such as pod logs would need to be marked.",
+          "evidence": [
+            {
+              "file": "src/tools/kubectl-logs.ts",
+              "lines": "116-121",
+              "contains": "return formatLogOutput(name, result);",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-logs.ts#L116-L121"
+            },
+            {
+              "search": "rg -n -i 'untrusted|provenance|prompt injection'",
+              "scope": "src/",
+              "hits": 1,
+              "note": "The single hit is a comment in kubectl-flags.ts explaining the flag denylist; no output marking exists."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "There is no untrusted-input mechanism to turn on.",
+          "gap": "No mechanism on by default.",
+          "evidence": [
+            {
+              "file": "src/index.ts",
+              "lines": "84-104",
+              "contains": "const allowOnlyReadonlyTools = process.env.ALLOW_ONLY_READONLY_TOOLS === \"true\";",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L84-L104"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked session can read cluster data and exfiltrate it (helm repo add to any URL, pods with egress) and force-delete resources with no human step in the server.",
+          "gap": "No leg of the Rule of Two is dropped by default.",
+          "evidence": [
+            {
+              "file": "src/tools/helm-operations.ts",
+              "lines": "342-346",
+              "contains": "executeCommand(\"helm\", [\"repo\", \"add\", repoName, params.repo]);",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/helm-operations.ts#L342-L346"
+            },
+            {
+              "file": "src/tools/kubectl-delete.ts",
+              "lines": "166-169",
+              "contains": "args.push(\"--force\");",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-delete.ts#L166-L169"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.075,
+          "raw": 0.075,
+          "cap": {
+            "id": "C5-WORSTCASE",
+            "max": 0.25,
+            "reason": "B is L0: leak plus irreversible action, unattended, in the default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tool outputs are raw kubectl stdout returned as plain text, with no source or untrusted flag; this is the absence of a mechanism, not an opt-in one.",
+              "gap": "Structured outputs separating returned content from metadata, with provenance the host can act on.",
+              "evidence": [
+                {
+                  "file": "src/tools/kubectl-generic.ts",
+                  "lines": "169-176",
+                  "contains": "text: result,",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L169-L176"
+                },
+                {
+                  "file": "src/tools/kubectl-logs.ts",
+                  "lines": "116-121",
+                  "contains": "return formatLogOutput(name, result);",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-logs.ts#L116-L121"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No untrusted source is distinguished: logs, events, exec output and resource fields all enter context the same way.",
+              "gap": "Untrusted sources such as pod logs would need to be marked.",
+              "evidence": [
+                {
+                  "file": "src/tools/kubectl-logs.ts",
+                  "lines": "116-121",
+                  "contains": "return formatLogOutput(name, result);",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-logs.ts#L116-L121"
+                },
+                {
+                  "search": "rg -n -i 'untrusted|provenance|prompt injection'",
+                  "scope": "src/",
+                  "hits": 1,
+                  "note": "The single hit is a comment in kubectl-flags.ts explaining the flag denylist; no output marking exists."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "There is no untrusted-input mechanism to turn on.",
+              "gap": "No mechanism on by default.",
+              "evidence": [
+                {
+                  "file": "src/index.ts",
+                  "lines": "84-104",
+                  "contains": "const allowOnlyReadonlyTools = process.env.ALLOW_ONLY_READONLY_TOOLS === \"true\";",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L84-L104"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked session can read cluster data and exfiltrate it (helm repo add to any URL, pods with egress) and force-delete resources with no human step in the server.",
+              "gap": "No leg of the Rule of Two is dropped by default.",
+              "evidence": [
+                {
+                  "file": "src/tools/helm-operations.ts",
+                  "lines": "342-346",
+                  "contains": "executeCommand(\"helm\", [\"repo\", \"add\", repoName, params.repo]);",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/helm-operations.ts#L342-L346"
+                },
+                {
+                  "file": "src/tools/kubectl-delete.ts",
+                  "lines": "166-169",
+                  "contains": "args.push(\"--force\");",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-delete.ts#L166-L169"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "The server has no memory store, but the model can persistently rewrite the operator's kubeconfig, which the server and the operator's own kubectl load on every later run. kubectl_context's set operation switches the current context, and it is not the only kubeconfig-writing path. A single injected instruction can therefore leave behind a configuration that points future sessions, and the operator's own terminal, at a different cluster.",
+      "max": 1.0,
+      "notes": "No workspace files (.env, project config) are loaded from the working directory; C6-REPOCONFIG does not apply.",
+      "status": "scored",
+      "score": 0.1,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "kubectl_context set runs 'kubectl config use-context', and it is not the only kubeconfig-writing path, so the model can rewrite the kubeconfig that every later session loads; kubectl's persistence of these writes is inferred from its documented behaviour.",
+          "gap": "Writes to security-relevant configuration need a gate (human approval or validation).",
+          "evidence": [
+            {
+              "file": "src/tools/kubectl-context.ts",
+              "lines": "300",
+              "contains": "const setArgs = [\"config\", \"use-context\", contextName];",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-context.ts#L300"
+            },
+            {
+              "file": "src/tools/kubectl-generic.ts",
+              "lines": "98-99",
+              "contains": "const cmdArgs: string[] = [input.command];",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L98-L99"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No path that writes the kubeconfig is controlled.",
+          "gap": "At least one persistence path would need to be controlled.",
+          "evidence": [
+            {
+              "file": "src/tools/kubectl-generic.ts",
+              "lines": "98-99",
+              "contains": "const cmdArgs: string[] = [input.command];",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L98-L99"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The kubeconfig is per OS user (file permissions), but it is shared by every MCP session and by the operator's own kubectl.",
+          "gap": "Per-session isolation of configuration enforced in code; capped one level above S.",
+          "evidence": [
+            {
+              "file": "src/utils/kubernetes-manager.ts",
+              "lines": "79-85",
+              "contains": "this.kc.loadFromDefault();",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/utils/kubernetes-manager.ts#L79-L85"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "A poisoned kubeconfig persists across the user's sessions and changes which cluster or endpoint later tool calls (and the operator's own commands) hit.",
+          "gap": "Poisoned configuration should be session-scoped or easily inspected and reverted by the server.",
+          "evidence": [
+            {
+              "file": "src/utils/kubernetes-manager.ts",
+              "lines": "79-85",
+              "contains": "this.kc.loadFromDefault();",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/utils/kubernetes-manager.ts#L79-L85"
+            },
+            {
+              "file": "src/tools/kubectl-context.ts",
+              "lines": "300",
+              "contains": "const setArgs = [\"config\", \"use-context\", contextName];",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-context.ts#L300"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.1,
+          "raw": 0.1,
+          "cap": null,
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "kubectl_context set runs 'kubectl config use-context', and it is not the only kubeconfig-writing path, so the model can rewrite the kubeconfig that every later session loads; kubectl's persistence of these writes is inferred from its documented behaviour.",
+              "gap": "Writes to security-relevant configuration need a gate (human approval or validation).",
+              "evidence": [
+                {
+                  "file": "src/tools/kubectl-context.ts",
+                  "lines": "300",
+                  "contains": "const setArgs = [\"config\", \"use-context\", contextName];",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-context.ts#L300"
+                },
+                {
+                  "file": "src/tools/kubectl-generic.ts",
+                  "lines": "98-99",
+                  "contains": "const cmdArgs: string[] = [input.command];",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L98-L99"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No path that writes the kubeconfig is controlled.",
+              "gap": "At least one persistence path would need to be controlled.",
+              "evidence": [
+                {
+                  "file": "src/tools/kubectl-generic.ts",
+                  "lines": "98-99",
+                  "contains": "const cmdArgs: string[] = [input.command];",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L98-L99"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The kubeconfig is per OS user (file permissions), but it is shared by every MCP session and by the operator's own kubectl.",
+              "gap": "Per-session isolation of configuration enforced in code; capped one level above S.",
+              "evidence": [
+                {
+                  "file": "src/utils/kubernetes-manager.ts",
+                  "lines": "79-85",
+                  "contains": "this.kc.loadFromDefault();",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/utils/kubernetes-manager.ts#L79-L85"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "A poisoned kubeconfig persists across the user's sessions and changes which cluster or endpoint later tool calls (and the operator's own commands) hit.",
+              "gap": "Poisoned configuration should be session-scoped or easily inspected and reverted by the server.",
+              "evidence": [
+                {
+                  "file": "src/utils/kubernetes-manager.ts",
+                  "lines": "79-85",
+                  "contains": "this.kc.loadFromDefault();",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/utils/kubernetes-manager.ts#L79-L85"
+                },
+                {
+                  "file": "src/tools/kubectl-context.ts",
+                  "lines": "300",
+                  "contains": "const setArgs = [\"config\", \"use-context\", contextName];",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-context.ts#L300"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "The server loads no plugins, MCP servers or downloaded code into its own process: it only invokes the kubectl and helm binaries already installed by the operator. Helm charts installed from model-chosen repositories run in the cluster rather than in the server and are covered under tool scoping and untrusted-input blast radius.",
+      "max": 1.0,
+      "notes": "kubectl_generic's free 'command' lets the model invoke any kubectl plugin (kubectl-<name>) the operator has installed on PATH; these are the operator's own tools, not extensions the server loads. Helm charts are pulled unpinned (no version parameter) from any repo URL; scored in C3/C5.",
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'import\\(|require\\('",
+              "scope": "src/",
+              "hits": 0,
+              "note": "No dynamic code loading."
+            },
+            {
+              "search": "rg -n -i 'npx|npm install|pip install|plugin|loadPlugin'",
+              "scope": "src/",
+              "hits": 0,
+              "note": "No package install or plugin loader."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'import\\(|require\\('",
+              "scope": "src/",
+              "hits": 0,
+              "note": "No dynamic code loading."
+            },
+            {
+              "search": "rg -n -i 'npx|npm install|pip install|plugin|loadPlugin'",
+              "scope": "src/",
+              "hits": 0,
+              "note": "No package install or plugin loader."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'import\\(|require\\('",
+              "scope": "src/",
+              "hits": 0,
+              "note": "No dynamic code loading."
+            },
+            {
+              "search": "rg -n -i 'npx|npm install|pip install|plugin|loadPlugin'",
+              "scope": "src/",
+              "hits": 0,
+              "note": "No package install or plugin loader."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'import\\(|require\\('",
+              "scope": "src/",
+              "hits": 0,
+              "note": "No dynamic code loading."
+            },
+            {
+              "search": "rg -n -i 'npx|npm install|pip install|plugin|loadPlugin'",
+              "scope": "src/",
+              "hits": 0,
+              "note": "No package install or plugin loader."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'import\\(|require\\('",
+                  "scope": "src/",
+                  "hits": 0,
+                  "note": "No dynamic code loading."
+                },
+                {
+                  "search": "rg -n -i 'npx|npm install|pip install|plugin|loadPlugin'",
+                  "scope": "src/",
+                  "hits": 0,
+                  "note": "No package install or plugin loader."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'import\\(|require\\('",
+                  "scope": "src/",
+                  "hits": 0,
+                  "note": "No dynamic code loading."
+                },
+                {
+                  "search": "rg -n -i 'npx|npm install|pip install|plugin|loadPlugin'",
+                  "scope": "src/",
+                  "hits": 0,
+                  "note": "No package install or plugin loader."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'import\\(|require\\('",
+                  "scope": "src/",
+                  "hits": 0,
+                  "note": "No dynamic code loading."
+                },
+                {
+                  "search": "rg -n -i 'npx|npm install|pip install|plugin|loadPlugin'",
+                  "scope": "src/",
+                  "hits": 0,
+                  "note": "No package install or plugin loader."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'import\\(|require\\('",
+                  "scope": "src/",
+                  "hits": 0,
+                  "note": "No dynamic code loading."
+                },
+                {
+                  "search": "rg -n -i 'npx|npm install|pip install|plugin|loadPlugin'",
+                  "scope": "src/",
+                  "hits": 0,
+                  "note": "No package install or plugin loader."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n 'import\\(|require\\('",
+          "scope": "src/",
+          "hits": 0,
+          "note": "No dynamic code loading."
+        },
+        {
+          "search": "rg -n -i 'npx|npm install|pip install|plugin|loadPlugin'",
+          "scope": "src/",
+          "hits": 0,
+          "note": "No package install or plugin loader."
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "Credentials come from the operator's kubeconfig or environment variables; inline kubeconfigs are written to a 0600 temp file. kubectl_get masks the values of Secret objects by default, but this is the only protected path: it can be turned off with MASK_SECRETS=false, it is not a complete boundary, and kubectl_generic can fetch Secrets or run 'config view --raw' to return the full kubeconfig, tokens and keys included, straight to the model. Telemetry is off by default and records only tool names and argument keys.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Secret data/stringData masking in kubectl_get only, and not a complete boundary there; credentials come from env vars or the kubeconfig.",
+          "gap": "Masking on all model-bound paths (generic kubectl output, exec output) and redaction in logs.",
+          "evidence": [
+            {
+              "file": "src/tools/kubectl-get.ts",
+              "lines": "178-185",
+              "contains": "process.env.MASK_SECRETS !== \"false\" &&",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-get.ts#L178-L185"
+            },
+            {
+              "file": "src/tools/kubectl-get.ts",
+              "lines": "472",
+              "contains": "(key === \"data\" || key === \"stringData\") &&",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-get.ts#L472"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only kubectl_get output is masked; kubectl_generic output, exec_in_pod output, logs and error messages are returned unfiltered, and subprocesses get the full environment.",
+          "gap": "Logs and transcripts plus at least the main model-bound paths protected.",
+          "evidence": [
+            {
+              "file": "src/tools/kubectl-generic.ts",
+              "lines": "169-176",
+              "contains": "text: result,",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L169-L176"
+            },
+            {
+              "file": "src/tools/kubectl-generic.ts",
+              "lines": "163-167",
+              "contains": "env: { ...process.env, KUBECONFIG: process.env.KUBECONFIG }",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L163-L167"
+            },
+            {
+              "file": "src/tools/kubectl-generic.ts",
+              "lines": "162",
+              "contains": "console.error(`Executing: kubectl ${cmdArgs.join(\" \")}`);",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L162"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Telemetry is opt-in and content-free; masking defaults on but MASK_SECRETS=false disables it.",
+          "gap": "Redaction that cannot be disabled.",
+          "evidence": [
+            {
+              "file": "src/config/telemetry-config.ts",
+              "lines": "76-86",
+              "contains": "const enabled = isExplicitlyEnabled && !!endpoint;",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/config/telemetry-config.ts#L76-L86"
+            },
+            {
+              "file": "src/tools/kubectl-get.ts",
+              "lines": "178-185",
+              "contains": "process.env.MASK_SECRETS !== \"false\" &&",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-get.ts#L178-L185"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The model can obtain the operator's long-lived, high-privilege kubeconfig credentials (kubectl_generic config view --raw, or exec cat of service-account tokens).",
+          "gap": "Credentials reachable by the model are not scoped or short-lived.",
+          "evidence": [
+            {
+              "file": "src/tools/kubectl-generic.ts",
+              "lines": "98-99",
+              "contains": "const cmdArgs: string[] = [input.command];",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L98-L99"
+            },
+            {
+              "file": "src/tools/exec_in_pod.ts",
+              "lines": "105-124",
+              "contains": "args.push(\"--\", ...input.command);",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/exec_in_pod.ts#L105-L124"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.25,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Secret data/stringData masking in kubectl_get only, and not a complete boundary there; credentials come from env vars or the kubeconfig.",
+              "gap": "Masking on all model-bound paths (generic kubectl output, exec output) and redaction in logs.",
+              "evidence": [
+                {
+                  "file": "src/tools/kubectl-get.ts",
+                  "lines": "178-185",
+                  "contains": "process.env.MASK_SECRETS !== \"false\" &&",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-get.ts#L178-L185"
+                },
+                {
+                  "file": "src/tools/kubectl-get.ts",
+                  "lines": "472",
+                  "contains": "(key === \"data\" || key === \"stringData\") &&",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-get.ts#L472"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only kubectl_get output is masked; kubectl_generic output, exec_in_pod output, logs and error messages are returned unfiltered, and subprocesses get the full environment.",
+              "gap": "Logs and transcripts plus at least the main model-bound paths protected.",
+              "evidence": [
+                {
+                  "file": "src/tools/kubectl-generic.ts",
+                  "lines": "169-176",
+                  "contains": "text: result,",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L169-L176"
+                },
+                {
+                  "file": "src/tools/kubectl-generic.ts",
+                  "lines": "163-167",
+                  "contains": "env: { ...process.env, KUBECONFIG: process.env.KUBECONFIG }",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L163-L167"
+                },
+                {
+                  "file": "src/tools/kubectl-generic.ts",
+                  "lines": "162",
+                  "contains": "console.error(`Executing: kubectl ${cmdArgs.join(\" \")}`);",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L162"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Telemetry is opt-in and content-free; masking defaults on but MASK_SECRETS=false disables it.",
+              "gap": "Redaction that cannot be disabled.",
+              "evidence": [
+                {
+                  "file": "src/config/telemetry-config.ts",
+                  "lines": "76-86",
+                  "contains": "const enabled = isExplicitlyEnabled && !!endpoint;",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/config/telemetry-config.ts#L76-L86"
+                },
+                {
+                  "file": "src/tools/kubectl-get.ts",
+                  "lines": "178-185",
+                  "contains": "process.env.MASK_SECRETS !== \"false\" &&",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-get.ts#L178-L185"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The model can obtain the operator's long-lived, high-privilege kubeconfig credentials (kubectl_generic config view --raw, or exec cat of service-account tokens).",
+              "gap": "Credentials reachable by the model are not scoped or short-lived.",
+              "evidence": [
+                {
+                  "file": "src/tools/kubectl-generic.ts",
+                  "lines": "98-99",
+                  "contains": "const cmdArgs: string[] = [input.command];",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L98-L99"
+                },
+                {
+                  "file": "src/tools/exec_in_pod.ts",
+                  "lines": "105-124",
+                  "contains": "args.push(\"--\", ...input.command);",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/exec_in_pod.ts#L105-L124"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "By default the server keeps no record of what it did: only kubectl_generic prints the command it runs to stderr, and nothing is written to a file the server owns. An opt-in OpenTelemetry integration wraps every tool call in a span, but it records only the tool name, argument names, context, namespace and resource type, not the commands or manifests, and it is off unless both ENABLE_TELEMETRY and an OTLP endpoint are set.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.275,
+      "counted": "alt",
+      "confidence": "medium",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Spans carry tool name, argument keys, context/namespace/resourceType and status, but not the command, manifest or exec argv.",
+          "gap": "Spans would need the full arguments to reconstruct what ran.",
+          "evidence": [
+            {
+              "file": "src/middleware/telemetry-middleware.ts",
+              "lines": "50-64",
+              "contains": "span.setAttribute(\"tool.argument_keys\", argKeys.join(\",\"));",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/middleware/telemetry-middleware.ts#L50-L64"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "withTelemetry wraps the single CallTool handler, so every tool call, including denials from isToolAllowed, gets a span.",
+          "gap": "Coverage is capped one level above the record's strength.",
+          "evidence": [
+            {
+              "file": "src/index.ts",
+              "lines": "247-249",
+              "contains": "withTelemetry(async (request: {",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L247-L249"
+            },
+            {
+              "file": "src/index.ts",
+              "lines": "256-261",
+              "contains": "if (!isToolAllowed(name)) {",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L256-L261"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Enabled only when ENABLE_TELEMETRY=true and OTEL_EXPORTER_OTLP_ENDPOINT are both set.",
+          "gap": "Not on by default.",
+          "evidence": [
+            {
+              "file": "src/config/telemetry-config.ts",
+              "lines": "76-86",
+              "contains": "const enabled = isExplicitlyEnabled && !!endpoint;",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/config/telemetry-config.ts#L76-L86"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "Spans are exported best-effort by the SDK; export failures do not affect the action.",
+          "gap": "Records flushed per action with surfaced errors.",
+          "evidence": [
+            {
+              "file": "src/config/telemetry-config.ts",
+              "lines": "76-86",
+              "contains": "const enabled = isExplicitlyEnabled && !!endpoint;",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/config/telemetry-config.ts#L76-L86"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.2,
+          "raw": 0.2,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "An unstructured 'Executing: kubectl ...' line to stderr for kubectl_generic only.",
+              "gap": "Structured record of every tool call with arguments, status and timestamps.",
+              "evidence": [
+                {
+                  "file": "src/tools/kubectl-generic.ts",
+                  "lines": "162",
+                  "contains": "console.error(`Executing: kubectl ${cmdArgs.join(\" \")}`);",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L162"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only one tool logs what it runs; exec_in_pod, delete, apply and helm calls are not recorded.",
+              "gap": "Every built-in tool call recorded.",
+              "evidence": [
+                {
+                  "file": "src/tools/kubectl-generic.ts",
+                  "lines": "162",
+                  "contains": "console.error(`Executing: kubectl ${cmdArgs.join(\" \")}`);",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L162"
+                },
+                {
+                  "file": "src/tools/exec_in_pod.ts",
+                  "lines": "105-124",
+                  "contains": "args.push(\"--\", ...input.command);",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/exec_in_pod.ts#L105-L124"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The stderr line is on by default but is only as durable as the host's capture of the server's stderr.",
+              "gap": "Record written outside the server's process to durable storage by default.",
+              "evidence": [
+                {
+                  "file": "src/tools/kubectl-generic.ts",
+                  "lines": "162",
+                  "contains": "console.error(`Executing: kubectl ${cmdArgs.join(\" \")}`);",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L162"
+                },
+                {
+                  "file": "src/index.ts",
+                  "lines": "614-629",
+                  "contains": "const transport = new StdioServerTransport();",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L614-L629"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "There is no durable record to fail; actions proceed and nothing is retained by the server.",
+              "gap": "Errors surfaced and records flushed per action.",
+              "evidence": [
+                {
+                  "file": "src/tools/kubectl-generic.ts",
+                  "lines": "162",
+                  "contains": "console.error(`Executing: kubectl ${cmdArgs.join(\" \")}`);",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L162"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in OpenTelemetry tracing",
+          "score": 0.275,
+          "raw": 0.275,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Spans carry tool name, argument keys, context/namespace/resourceType and status, but not the command, manifest or exec argv.",
+              "gap": "Spans would need the full arguments to reconstruct what ran.",
+              "evidence": [
+                {
+                  "file": "src/middleware/telemetry-middleware.ts",
+                  "lines": "50-64",
+                  "contains": "span.setAttribute(\"tool.argument_keys\", argKeys.join(\",\"));",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/middleware/telemetry-middleware.ts#L50-L64"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "withTelemetry wraps the single CallTool handler, so every tool call, including denials from isToolAllowed, gets a span.",
+              "gap": "Coverage is capped one level above the record's strength.",
+              "evidence": [
+                {
+                  "file": "src/index.ts",
+                  "lines": "247-249",
+                  "contains": "withTelemetry(async (request: {",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L247-L249"
+                },
+                {
+                  "file": "src/index.ts",
+                  "lines": "256-261",
+                  "contains": "if (!isToolAllowed(name)) {",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L256-L261"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Enabled only when ENABLE_TELEMETRY=true and OTEL_EXPORTER_OTLP_ENDPOINT are both set.",
+              "gap": "Not on by default.",
+              "evidence": [
+                {
+                  "file": "src/config/telemetry-config.ts",
+                  "lines": "76-86",
+                  "contains": "const enabled = isExplicitlyEnabled && !!endpoint;",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/config/telemetry-config.ts#L76-L86"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "Spans are exported best-effort by the SDK; export failures do not affect the action.",
+              "gap": "Records flushed per action with surfaced errors.",
+              "evidence": [
+                {
+                  "file": "src/config/telemetry-config.ts",
+                  "lines": "76-86",
+                  "contains": "const enabled = isExplicitlyEnabled && !!endpoint;",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/config/telemetry-config.ts#L76-L86"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "Every kubectl and helm call has a default 1 MB output cap, and exec_in_pod, Helm and node operations have timeouts. But most kubectl calls (get, apply, delete, generic, logs with follow) have no timeout and run synchronously, the model can raise exec_in_pod and rollout timeouts itself, and there are no rate limits. Port-forward processes the server spawns are not stopped by cleanup or on shutdown.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.325,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Server-enforced output cap (maxBuffer, 1 MB default) on every execFileSyncSafe call and timeouts on exec_in_pod, helm and node operations.",
+          "gap": "Caps on every operation (timeouts on get/apply/delete/generic/logs) plus rate or concurrency limits.",
+          "evidence": [
+            {
+              "file": "src/config/max-buffer.ts",
+              "lines": "1-3",
+              "contains": "SPAWN_MAX_BUFFER || \"1048577\"",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/config/max-buffer.ts#L1-L3"
+            },
+            {
+              "file": "src/tools/exec_in_pod.ts",
+              "lines": "117",
+              "contains": "const timeoutMs = input.timeout || 60000;",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/exec_in_pod.ts#L117"
+            },
+            {
+              "file": "src/tools/helm-operations.ts",
+              "lines": "166-172",
+              "contains": "timeout: 300000, // 5 minutes timeout",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/helm-operations.ts#L166-L172"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The output cap applies to all synchronous kubectl/helm calls, but kubectl_get, kubectl_delete, kubectl_generic and kubectl_logs (including --follow) run without a timeout and port_forward has no cap.",
+          "gap": "Timeouts on every tool, not only exec, helm and node operations.",
+          "evidence": [
+            {
+              "file": "src/tools/kubectl-get.ts",
+              "lines": "169-173",
+              "contains": "maxBuffer: getSpawnMaxBuffer(),",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-get.ts#L169-L173"
+            },
+            {
+              "file": "src/tools/kubectl-logs.ts",
+              "lines": "116-120",
+              "contains": "const result = execFileSyncSafe(command, args, {",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-logs.ts#L116-L120"
+            },
+            {
+              "file": "src/tools/kubectl-logs.ts",
+              "lines": "299-301",
+              "contains": "args.push(`--follow`);",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-logs.ts#L299-L301"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Defaults exist, but exec_in_pod's timeout is a model-supplied argument with no ceiling.",
+          "gap": "Limits the model cannot raise.",
+          "evidence": [
+            {
+              "file": "src/tools/exec_in_pod.ts",
+              "lines": "117",
+              "contains": "const timeoutMs = input.timeout || 60000;",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/exec_in_pod.ts#L117"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Stopping the server leaves spawned kubectl port-forward processes running; cleanup() stops watches and tracked resources but not port-forwards.",
+          "gap": "Stop should end all spawned processes.",
+          "evidence": [
+            {
+              "file": "src/tools/port_forward.ts",
+              "lines": "15-17",
+              "contains": "const process = spawn(\"kubectl\", args);",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/port_forward.ts#L15-L17"
+            },
+            {
+              "file": "src/utils/kubernetes-manager.ts",
+              "lines": "301-321",
+              "contains": "async cleanup() {",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/utils/kubernetes-manager.ts#L301-L321"
+            },
+            {
+              "file": "src/index.ts",
+              "lines": "631-637",
+              "contains": "await server.close();",
+              "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L631-L637"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.325,
+          "raw": 0.325,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Server-enforced output cap (maxBuffer, 1 MB default) on every execFileSyncSafe call and timeouts on exec_in_pod, helm and node operations.",
+              "gap": "Caps on every operation (timeouts on get/apply/delete/generic/logs) plus rate or concurrency limits.",
+              "evidence": [
+                {
+                  "file": "src/config/max-buffer.ts",
+                  "lines": "1-3",
+                  "contains": "SPAWN_MAX_BUFFER || \"1048577\"",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/config/max-buffer.ts#L1-L3"
+                },
+                {
+                  "file": "src/tools/exec_in_pod.ts",
+                  "lines": "117",
+                  "contains": "const timeoutMs = input.timeout || 60000;",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/exec_in_pod.ts#L117"
+                },
+                {
+                  "file": "src/tools/helm-operations.ts",
+                  "lines": "166-172",
+                  "contains": "timeout: 300000, // 5 minutes timeout",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/helm-operations.ts#L166-L172"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The output cap applies to all synchronous kubectl/helm calls, but kubectl_get, kubectl_delete, kubectl_generic and kubectl_logs (including --follow) run without a timeout and port_forward has no cap.",
+              "gap": "Timeouts on every tool, not only exec, helm and node operations.",
+              "evidence": [
+                {
+                  "file": "src/tools/kubectl-get.ts",
+                  "lines": "169-173",
+                  "contains": "maxBuffer: getSpawnMaxBuffer(),",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-get.ts#L169-L173"
+                },
+                {
+                  "file": "src/tools/kubectl-logs.ts",
+                  "lines": "116-120",
+                  "contains": "const result = execFileSyncSafe(command, args, {",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-logs.ts#L116-L120"
+                },
+                {
+                  "file": "src/tools/kubectl-logs.ts",
+                  "lines": "299-301",
+                  "contains": "args.push(`--follow`);",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-logs.ts#L299-L301"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Defaults exist, but exec_in_pod's timeout is a model-supplied argument with no ceiling.",
+              "gap": "Limits the model cannot raise.",
+              "evidence": [
+                {
+                  "file": "src/tools/exec_in_pod.ts",
+                  "lines": "117",
+                  "contains": "const timeoutMs = input.timeout || 60000;",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/exec_in_pod.ts#L117"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Stopping the server leaves spawned kubectl port-forward processes running; cleanup() stops watches and tracked resources but not port-forwards.",
+              "gap": "Stop should end all spawned processes.",
+              "evidence": [
+                {
+                  "file": "src/tools/port_forward.ts",
+                  "lines": "15-17",
+                  "contains": "const process = spawn(\"kubectl\", args);",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/port_forward.ts#L15-L17"
+                },
+                {
+                  "file": "src/utils/kubernetes-manager.ts",
+                  "lines": "301-321",
+                  "contains": "async cleanup() {",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/utils/kubernetes-manager.ts#L301-L321"
+                },
+                {
+                  "file": "src/index.ts",
+                  "lines": "631-637",
+                  "contains": "await server.close();",
+                  "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L631-L637"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "Default local mode runs every tool with the operator's full kubeconfig across all contexts, with no authorization check.",
+      "criterion": "C1",
+      "owasp": [
+        "ASI03",
+        "T3"
+      ],
+      "evidence": [
+        {
+          "file": "src/utils/kubernetes-manager.ts",
+          "lines": "79-85",
+          "contains": "this.kc.loadFromDefault();",
+          "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/utils/kubernetes-manager.ts#L79-L85"
+        },
+        {
+          "file": "src/models/common-parameters.ts",
+          "lines": "1-5",
+          "contains": "Kubeconfig Context to use for the command",
+          "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/models/common-parameters.ts#L1-L5"
+        }
+      ]
+    },
+    {
+      "summary": "exec_in_pod and kubectl_generic run model-chosen commands in any pod, and arbitrary pods can be created, with no isolation from the server.",
+      "criterion": "C4",
+      "owasp": [
+        "ASI05",
+        "T11"
+      ],
+      "evidence": [
+        {
+          "file": "src/tools/exec_in_pod.ts",
+          "lines": "105-124",
+          "contains": "args.push(\"--\", ...input.command);",
+          "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/exec_in_pod.ts#L105-L124"
+        },
+        {
+          "file": "src/tools/kubectl-generic.ts",
+          "lines": "98-99",
+          "contains": "const cmdArgs: string[] = [input.command];",
+          "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L98-L99"
+        }
+      ]
+    },
+    {
+      "summary": "Worst case under prompt injection from pod logs or resource fields: the default tool set can both exfiltrate cluster data and delete resources with no server-side human step.",
+      "criterion": "C5",
+      "owasp": [
+        "ASI01",
+        "LLM01"
+      ],
+      "evidence": [
+        {
+          "file": "src/tools/helm-operations.ts",
+          "lines": "342-346",
+          "contains": "executeCommand(\"helm\", [\"repo\", \"add\", repoName, params.repo]);",
+          "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/helm-operations.ts#L342-L346"
+        },
+        {
+          "file": "src/tools/kubectl-delete.ts",
+          "lines": "166-169",
+          "contains": "args.push(\"--force\");",
+          "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-delete.ts#L166-L169"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "pod logs, events and exec output returned as plain text (src/tools/kubectl-logs.ts:116-121, src/tools/exec_in_pod.ts:105-124)",
+    "sensitive_data": "operator kubeconfig credentials and cluster Secrets via kubectl_generic (src/tools/kubectl-generic.ts:98-145)",
+    "state_change_or_egress": "kubectl_delete --force, helm repo add to any URL (src/tools/kubectl-delete.ts:166-169, src/tools/helm-operations.ts:342-346)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Restrict kubectl_generic to an allowlist of verbs and subcommands.",
+      "criterion": "C3",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Fix tool annotations and read-only mode coverage, and add hints to kubectl_create and port_forward.",
+      "criterion": "C2",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 5",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Ship read-only (or non-destructive) mode as the default and require an explicit env var to enable write, exec and generic tools.",
+      "criterion": "C3",
+      "parameter": "D",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.05
+    },
+    {
+      "summary": "Log every tool call with its full argv, status and timestamp to stderr as structured JSON by default.",
+      "criterion": "C9",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 1, step 3",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Cap model-supplied timeouts and add default timeouts to every kubectl call, and kill port-forward children on cleanup and shutdown.",
+      "criterion": "C10",
+      "parameter": "D",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 3, step 3",
+      "estimated_gain": 0.05
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was executed, installed, or probed.",
+    "kubectl behaviour relied on (use-context persisting to the kubeconfig, config view --raw) is inferred from kubectl's documentation, not observed.",
+    "Scored the stdio mode the README leads with; the Helm chart and SSE/Streamable HTTP transports were reviewed only for footnotes.",
+    "Tests, CI workflows and the mcpb/gemini extension manifests were not examined in depth.",
+    "No reviewer-injection text was found in README.md, AGENTS.md, CLAUDE.md or SECURITY.md."
+  ]
+}

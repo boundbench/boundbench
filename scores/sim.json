@@ -1,0 +1,2773 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "sim",
+  "name": "Sim",
+  "repo_url": "https://github.com/simstudioai/sim",
+  "subpath": null,
+  "description": "Workspace to build, deploy and monitor AI agents and workflows",
+  "category": "agent_frameworks",
+  "pinned_commit": "165e117acd19207a89a30655836f257c70b5b4e9",
+  "version": "v0.9.12",
+  "scored_date": "2026-10-03",
+  "scored_configuration": "Self-hosted docker-compose.prod.yml as deployed by `npx sim-setup`, default environment (billing disabled, no COPILOT_API_KEY, no remote code sandbox), with workflows using the Agent block.",
+  "score": 3.8,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 10,
+    "score": 3.75,
+    "max": 10.0,
+    "percent": 38
+  },
+  "capability_profile": {
+    "code_execution": "yes",
+    "filesystem_write": "yes",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "yes",
+    "untrusted_input": "yes",
+    "third_party_extensions": "opt_in",
+    "sub_agents": "yes",
+    "external_communication": "yes"
+  },
+  "headline": "Sim has strong engineering below the agent layer: a V8-isolate code sandbox with a scrubbed environment, DNS-pinned SSRF protection on every tool request, credential authorization in code, and secret redaction before logs and the model. The agent layer has no human approval for tool calls, nothing limits what an agent does after reading untrusted content, and deployed chats are public by default while running with the owner's credentials. Model-written code receives every workspace secret along with open internet egress. As shipped by compose, server telemetry also exports logs, including tool error payloads, to the vendor.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "Workflows act with the OAuth grants and API keys that workspace members connect, chosen per tool block. Before any token is attached, a deterministic check confirms the credential belongs to the workflow's workspace and that the acting user may use it, and service-account tokens are minted with only the scopes the tool declares. OAuth grants are still broad, though. Gmail asks for modify and send, Drive for full access, and one grant serves both reads and writes. Deployed runs act as the workflow owner whoever triggered them, so a public chat user borrows the owner's authority.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.45,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Per-integration OAuth grants with provider scopes such as gmail.modify and full Drive, shared by read and write tools; service-account tokens are downscoped to the tool's requiredScopes.",
+          "gap": "No per-tool read/write credential split for OAuth grants and no short-lived downscoped token per call.",
+          "evidence": [
+            {
+              "file": "apps/sim/lib/oauth/oauth.ts",
+              "lines": "163-165",
+              "contains": "gmail.modify",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/oauth/oauth.ts#L163-L165"
+            },
+            {
+              "file": "apps/sim/lib/oauth/oauth.ts",
+              "lines": "179",
+              "contains": "auth/drive'",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/oauth/oauth.ts#L179"
+            },
+            {
+              "file": "apps/sim/lib/oauth/token-resolution.ts",
+              "lines": "254-258",
+              "contains": "authorizeCredentialUseForAuth(auth",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/oauth/token-resolution.ts#L254-L258"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every built-in tool and Copilot credential use goes through resolveCredentialAccessToken and authorizeCredentialUseForAuth, but the requesting principal is only pinned when enforceCredentialAccess is set.",
+          "gap": "Authorization is not evaluated against the person who triggered a deployed run (public chat, webhook); the owner's authority is used.",
+          "evidence": [
+            {
+              "file": "apps/sim/lib/oauth/token-resolution.ts",
+              "lines": "254-258",
+              "contains": "authorizeCredentialUseForAuth(auth",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/oauth/token-resolution.ts#L254-L258"
+            },
+            {
+              "file": "apps/sim/lib/auth/credential-access.ts",
+              "lines": "122-131",
+              "contains": "Credential is not accessible from this workflow workspace",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/auth/credential-access.ts#L122-L131"
+            },
+            {
+              "file": "apps/sim/executor/utils/credential-token.ts",
+              "lines": "117",
+              "contains": "callerUserId: userId && params.enforceCredentialAccess",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/executor/utils/credential-token.ts#L117"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Nothing is connected by default; each tool block needs an explicitly selected credential, but connecting a grant requests the full scope set for that provider without a read-only option.",
+          "gap": "No read-only default grant; write scopes are requested up front rather than through explicit elevation.",
+          "evidence": [
+            {
+              "file": "apps/sim/lib/oauth/oauth.ts",
+              "lines": "163-165",
+              "contains": "gmail.modify",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/oauth/oauth.ts#L163-L165"
+            },
+            {
+              "file": "apps/sim/blocks/blocks/agent.ts",
+              "lines": "270-273",
+              "contains": "defaultValue: []",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/blocks/blocks/agent.ts#L270-L273"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked workflow can write across every connected system (mail send/modify, full Drive, Slack, databases) within the workspace's credentials.",
+          "gap": "Long-lived refresh tokens with write scopes across several systems; L2 needs writes confined to one system.",
+          "evidence": [
+            {
+              "file": "apps/sim/lib/oauth/oauth.ts",
+              "lines": "163-165",
+              "contains": "gmail.modify",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/oauth/oauth.ts#L163-L165"
+            },
+            {
+              "file": "apps/sim/lib/oauth/oauth.ts",
+              "lines": "179",
+              "contains": "auth/drive'",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/oauth/oauth.ts#L179"
+            },
+            {
+              "file": "apps/sim/tools/gmail/send.ts",
+              "lines": "5",
+              "contains": "id: 'gmail_send'",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/gmail/send.ts#L5"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.45,
+          "raw": 0.45,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Per-integration OAuth grants with provider scopes such as gmail.modify and full Drive, shared by read and write tools; service-account tokens are downscoped to the tool's requiredScopes.",
+              "gap": "No per-tool read/write credential split for OAuth grants and no short-lived downscoped token per call.",
+              "evidence": [
+                {
+                  "file": "apps/sim/lib/oauth/oauth.ts",
+                  "lines": "163-165",
+                  "contains": "gmail.modify",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/oauth/oauth.ts#L163-L165"
+                },
+                {
+                  "file": "apps/sim/lib/oauth/oauth.ts",
+                  "lines": "179",
+                  "contains": "auth/drive'",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/oauth/oauth.ts#L179"
+                },
+                {
+                  "file": "apps/sim/lib/oauth/token-resolution.ts",
+                  "lines": "254-258",
+                  "contains": "authorizeCredentialUseForAuth(auth",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/oauth/token-resolution.ts#L254-L258"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every built-in tool and Copilot credential use goes through resolveCredentialAccessToken and authorizeCredentialUseForAuth, but the requesting principal is only pinned when enforceCredentialAccess is set.",
+              "gap": "Authorization is not evaluated against the person who triggered a deployed run (public chat, webhook); the owner's authority is used.",
+              "evidence": [
+                {
+                  "file": "apps/sim/lib/oauth/token-resolution.ts",
+                  "lines": "254-258",
+                  "contains": "authorizeCredentialUseForAuth(auth",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/oauth/token-resolution.ts#L254-L258"
+                },
+                {
+                  "file": "apps/sim/lib/auth/credential-access.ts",
+                  "lines": "122-131",
+                  "contains": "Credential is not accessible from this workflow workspace",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/auth/credential-access.ts#L122-L131"
+                },
+                {
+                  "file": "apps/sim/executor/utils/credential-token.ts",
+                  "lines": "117",
+                  "contains": "callerUserId: userId && params.enforceCredentialAccess",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/executor/utils/credential-token.ts#L117"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Nothing is connected by default; each tool block needs an explicitly selected credential, but connecting a grant requests the full scope set for that provider without a read-only option.",
+              "gap": "No read-only default grant; write scopes are requested up front rather than through explicit elevation.",
+              "evidence": [
+                {
+                  "file": "apps/sim/lib/oauth/oauth.ts",
+                  "lines": "163-165",
+                  "contains": "gmail.modify",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/oauth/oauth.ts#L163-L165"
+                },
+                {
+                  "file": "apps/sim/blocks/blocks/agent.ts",
+                  "lines": "270-273",
+                  "contains": "defaultValue: []",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/blocks/blocks/agent.ts#L270-L273"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked workflow can write across every connected system (mail send/modify, full Drive, Slack, databases) within the workspace's credentials.",
+              "gap": "Long-lived refresh tokens with write scopes across several systems; L2 needs writes confined to one system.",
+              "evidence": [
+                {
+                  "file": "apps/sim/lib/oauth/oauth.ts",
+                  "lines": "163-165",
+                  "contains": "gmail.modify",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/oauth/oauth.ts#L163-L165"
+                },
+                {
+                  "file": "apps/sim/lib/oauth/oauth.ts",
+                  "lines": "179",
+                  "contains": "auth/drive'",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/oauth/oauth.ts#L179"
+                },
+                {
+                  "file": "apps/sim/tools/gmail/send.ts",
+                  "lines": "5",
+                  "contains": "id: 'gmail_send'",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/gmail/send.ts#L5"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "The Agent block's tool loop runs every tool the model calls, including email sends, HTTP requests, SQL and SSH commands, with no approval step. The platform offers a Human-in-the-Loop block that pauses a workflow until an authenticated workspace member resumes it. The workflow author has to place it, and it cannot stop an individual tool call inside an Agent block. Copilot chat has per-tool approvals, but only when an operator sets COPILOT_TOOL_PERMISSIONS_ENABLED, and they are skipped for non-interactive runs.",
+      "max": 1.0,
+      "notes": "Copilot (Mothership) approvals need COPILOT_API_KEY and COPILOT_TOOL_PERMISSIONS_ENABLED, neither set in the shipped compose file, and return no-approval for non-interactive runs (permission.ts:72-73).",
+      "status": "scored",
+      "score": 0.15,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "C2-POWERBYPASS",
+        "max": 0.25,
+        "reason": "Agent block tool calls still bypass the pause."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A designer-placed block pauses the run and shows designer-chosen fields; only an authenticated user with workflow access can resume.",
+          "gap": "Approves a workflow step, not the exact tool call and arguments; no risk tiers.",
+          "evidence": [
+            {
+              "file": "apps/sim/executor/handlers/human-in-the-loop/human-in-the-loop-handler.ts",
+              "lines": "71",
+              "contains": "class HumanInTheLoopBlockHandler",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/executor/handlers/human-in-the-loop/human-in-the-loop-handler.ts#L71"
+            },
+            {
+              "file": "apps/sim/app/api/resume/[workflowId]/[executionId]/[contextId]/route.ts",
+              "lines": "25",
+              "contains": "validateWorkflowAccess(request, requestedWorkflowId",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/app/api/resume/[workflowId]/[executionId]/[contextId]/route.ts#L25"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tool calls made inside an Agent block's loop never pass through a HITL pause.",
+          "gap": "The Agent tool loop is not covered; L1 needs flagged tools to be gated.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'requiresApproval|needsApproval'",
+              "scope": "apps/sim/executor apps/sim/providers/index.ts apps/sim/providers/utils.ts",
+              "hits": 0,
+              "note": "the workflow executor and the Agent block provider tool loop have no approval concept"
+            },
+            {
+              "file": "apps/sim/providers/index.ts",
+              "lines": "135",
+              "contains": "DEFAULT_MAX_TOOL_ITERATIONS = 20",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/providers/index.ts#L135"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The block must be added by the workflow author.",
+          "gap": "Opt-in per workflow.",
+          "evidence": [
+            {
+              "file": "apps/sim/executor/handlers/human-in-the-loop/human-in-the-loop-handler.ts",
+              "lines": "71",
+              "contains": "class HumanInTheLoopBlockHandler",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/executor/handlers/human-in-the-loop/human-in-the-loop-handler.ts#L71"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Same irreversible external actions as the default.",
+          "gap": "No undo or previews for external actions.",
+          "evidence": [
+            {
+              "file": "apps/sim/tools/gmail/send.ts",
+              "lines": "5",
+              "contains": "id: 'gmail_send'",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/gmail/send.ts#L5"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": {
+            "id": "C2-POWERBYPASS",
+            "max": 0.25,
+            "reason": "Code execution, generic HTTP and SSH tool calls from the Agent block skip any gate in the default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No approval gate on Agent block tool calls; the executor and provider tool loop have no approval concept.",
+              "gap": "No per-call approval; L1 needs at least a human approval step before consequential tool calls.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'requiresApproval|needsApproval'",
+                  "scope": "apps/sim/executor apps/sim/providers/index.ts apps/sim/providers/utils.ts",
+                  "hits": 0,
+                  "note": "the workflow executor and the Agent block provider tool loop have no approval concept"
+                },
+                {
+                  "file": "apps/sim/providers/index.ts",
+                  "lines": "135",
+                  "contains": "DEFAULT_MAX_TOOL_ITERATIONS = 20",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/providers/index.ts#L135"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The most powerful paths (function_execute, http_request, ssh_execute_command, gmail_send) are reachable from the Agent block with no gate.",
+              "gap": "Every consequential tool path bypasses approval; L1 needs at least the flagged tools gated.",
+              "evidence": [
+                {
+                  "file": "apps/sim/tools/function/execute.ts",
+                  "lines": "114-117",
+                  "contains": "visibility: 'user-or-llm'",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/function/execute.ts#L114-L117"
+                },
+                {
+                  "file": "apps/sim/tools/http/request.ts",
+                  "lines": "17-20",
+                  "contains": "visibility: 'user-or-llm'",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/http/request.ts#L17-L20"
+                },
+                {
+                  "file": "apps/sim/tools/ssh/execute_command.ts",
+                  "lines": "47-51",
+                  "contains": "Shell command to execute on the remote server",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/ssh/execute_command.ts#L47-L51"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Human approval exists only as an opt-in workflow block or an opt-in Copilot flag.",
+              "gap": "Approval is opt-in; L1 needs it on by default.",
+              "evidence": [
+                {
+                  "file": "apps/sim/lib/core/config/env-flags.ts",
+                  "lines": "109",
+                  "contains": "isTruthy(env.COPILOT_TOOL_PERMISSIONS_ENABLED)",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/core/config/env-flags.ts#L109"
+                },
+                {
+                  "file": "apps/sim/executor/handlers/human-in-the-loop/human-in-the-loop-handler.ts",
+                  "lines": "71",
+                  "contains": "class HumanInTheLoopBlockHandler",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/executor/handlers/human-in-the-loop/human-in-the-loop-handler.ts#L71"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Wrongly executed actions include sending email, deleting records, and running remote commands, none of which can be undone.",
+              "gap": "Irreversible external actions with no undo or preview; L1 needs some actions to be reversible.",
+              "evidence": [
+                {
+                  "file": "apps/sim/tools/gmail/send.ts",
+                  "lines": "5",
+                  "contains": "id: 'gmail_send'",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/gmail/send.ts#L5"
+                },
+                {
+                  "file": "apps/sim/tools/ssh/execute_command.ts",
+                  "lines": "47-51",
+                  "contains": "Shell command to execute on the remote server",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/ssh/execute_command.ts#L47-L51"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in Human-in-the-Loop workflow block",
+          "score": 0.15,
+          "raw": 0.15,
+          "cap": {
+            "id": "C2-POWERBYPASS",
+            "max": 0.25,
+            "reason": "Agent block tool calls still bypass the pause."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A designer-placed block pauses the run and shows designer-chosen fields; only an authenticated user with workflow access can resume.",
+              "gap": "Approves a workflow step, not the exact tool call and arguments; no risk tiers.",
+              "evidence": [
+                {
+                  "file": "apps/sim/executor/handlers/human-in-the-loop/human-in-the-loop-handler.ts",
+                  "lines": "71",
+                  "contains": "class HumanInTheLoopBlockHandler",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/executor/handlers/human-in-the-loop/human-in-the-loop-handler.ts#L71"
+                },
+                {
+                  "file": "apps/sim/app/api/resume/[workflowId]/[executionId]/[contextId]/route.ts",
+                  "lines": "25",
+                  "contains": "validateWorkflowAccess(request, requestedWorkflowId",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/app/api/resume/[workflowId]/[executionId]/[contextId]/route.ts#L25"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tool calls made inside an Agent block's loop never pass through a HITL pause.",
+              "gap": "The Agent tool loop is not covered; L1 needs flagged tools to be gated.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'requiresApproval|needsApproval'",
+                  "scope": "apps/sim/executor apps/sim/providers/index.ts apps/sim/providers/utils.ts",
+                  "hits": 0,
+                  "note": "the workflow executor and the Agent block provider tool loop have no approval concept"
+                },
+                {
+                  "file": "apps/sim/providers/index.ts",
+                  "lines": "135",
+                  "contains": "DEFAULT_MAX_TOOL_ITERATIONS = 20",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/providers/index.ts#L135"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The block must be added by the workflow author.",
+              "gap": "Opt-in per workflow.",
+              "evidence": [
+                {
+                  "file": "apps/sim/executor/handlers/human-in-the-loop/human-in-the-loop-handler.ts",
+                  "lines": "71",
+                  "contains": "class HumanInTheLoopBlockHandler",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/executor/handlers/human-in-the-loop/human-in-the-loop-handler.ts#L71"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Same irreversible external actions as the default.",
+              "gap": "No undo or previews for external actions.",
+              "evidence": [
+                {
+                  "file": "apps/sim/tools/gmail/send.ts",
+                  "lines": "5",
+                  "contains": "id: 'gmail_send'",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/gmail/send.ts#L5"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "Tools have typed parameter schemas, and parameters marked user-only (hosts, passwords, secret scopes) are stripped from model arguments in code. Every external tool request passes through a shared check that resolves DNS, blocks private and metadata addresses, pins the IP and rechecks redirects. Several tools are still general-purpose, though: HTTP requests to any public URL, model-written code, SQL whose statement check also allows INSERT, UPDATE and DELETE, and SSH commands. Agents receive only the tools their author attaches, but each of those tools reaches far.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.5,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Typed schemas, user-only parameter stripping and DNS-pinned SSRF validation, but general tools remain (arbitrary public URL, SQL regex statement allowlist, raw SSH command).",
+          "gap": "General tools (http_request, SQL query, ssh_execute_command) accept raw URLs, statements and commands; L3 needs allowlist validation of those arguments.",
+          "evidence": [
+            {
+              "file": "apps/sim/providers/utils.ts",
+              "lines": "1563-1566",
+              "contains": "stripModelBlockedParams(tool.modelBlockedParams",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/providers/utils.ts#L1563-L1566"
+            },
+            {
+              "file": "apps/sim/tools/index.ts",
+              "lines": "2833",
+              "contains": "validateUrlWithDNS(fullUrl, 'toolUrl', 'requestTarget')",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/index.ts#L2833"
+            },
+            {
+              "file": "apps/sim/lib/core/security/input-validation.server.ts",
+              "lines": "1567-1579",
+              "contains": "secureFetchWithPinnedIP(url, validation.resolvedIP",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/core/security/input-validation.server.ts#L1567-L1579"
+            },
+            {
+              "file": "apps/sim/lib/internal/postgresql/queries.ts",
+              "lines": "92",
+              "contains": "allowedStatements = /^(select|insert|update|delete",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/internal/postgresql/queries.ts#L92"
+            },
+            {
+              "file": "apps/sim/tools/ssh/execute_command.ts",
+              "lines": "47-51",
+              "contains": "Shell command to execute on the remote server",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/ssh/execute_command.ts#L47-L51"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The SSRF check and model-parameter stripping apply centrally to every built-in tool request; argument-level validation beyond types varies per tool.",
+          "gap": "No shared argument policy beyond SSRF and visibility; L3 needs every built-in tool and MCP tool validated.",
+          "evidence": [
+            {
+              "file": "apps/sim/tools/index.ts",
+              "lines": "2833",
+              "contains": "validateUrlWithDNS(fullUrl, 'toolUrl', 'requestTarget')",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/index.ts#L2833"
+            },
+            {
+              "file": "apps/sim/providers/utils.ts",
+              "lines": "1563-1566",
+              "contains": "stripModelBlockedParams(tool.modelBlockedParams",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/providers/utils.ts#L1563-L1566"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "An Agent block starts with no tools; the author attaches each one and the model cannot add tools itself.",
+          "gap": "Write and exec tools are offered without narrower per-task variants; L4 also needs per-task allowlists that are read-only by default.",
+          "evidence": [
+            {
+              "file": "apps/sim/blocks/blocks/agent.ts",
+              "lines": "270-273",
+              "contains": "defaultValue: []",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/blocks/blocks/agent.ts#L270-L273"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A misused tool can reach any public host and run arbitrary statements and commands on connected systems; only private addresses and response sizes are limited.",
+          "gap": "Broad reach with minor limits; L2 needs tools scoped to one project or workspace.",
+          "evidence": [
+            {
+              "file": "apps/sim/tools/http/request.ts",
+              "lines": "17-20",
+              "contains": "visibility: 'user-or-llm'",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/http/request.ts#L17-L20"
+            },
+            {
+              "file": "apps/sim/lib/execution/isolated-vm.ts",
+              "lines": "260",
+              "contains": "profile: 'requestTarget'",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/execution/isolated-vm.ts#L260"
+            },
+            {
+              "file": "apps/sim/tools/ssh/execute_command.ts",
+              "lines": "47-51",
+              "contains": "Shell command to execute on the remote server",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/ssh/execute_command.ts#L47-L51"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.5,
+          "raw": 0.5,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Typed schemas, user-only parameter stripping and DNS-pinned SSRF validation, but general tools remain (arbitrary public URL, SQL regex statement allowlist, raw SSH command).",
+              "gap": "General tools (http_request, SQL query, ssh_execute_command) accept raw URLs, statements and commands; L3 needs allowlist validation of those arguments.",
+              "evidence": [
+                {
+                  "file": "apps/sim/providers/utils.ts",
+                  "lines": "1563-1566",
+                  "contains": "stripModelBlockedParams(tool.modelBlockedParams",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/providers/utils.ts#L1563-L1566"
+                },
+                {
+                  "file": "apps/sim/tools/index.ts",
+                  "lines": "2833",
+                  "contains": "validateUrlWithDNS(fullUrl, 'toolUrl', 'requestTarget')",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/index.ts#L2833"
+                },
+                {
+                  "file": "apps/sim/lib/core/security/input-validation.server.ts",
+                  "lines": "1567-1579",
+                  "contains": "secureFetchWithPinnedIP(url, validation.resolvedIP",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/core/security/input-validation.server.ts#L1567-L1579"
+                },
+                {
+                  "file": "apps/sim/lib/internal/postgresql/queries.ts",
+                  "lines": "92",
+                  "contains": "allowedStatements = /^(select|insert|update|delete",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/internal/postgresql/queries.ts#L92"
+                },
+                {
+                  "file": "apps/sim/tools/ssh/execute_command.ts",
+                  "lines": "47-51",
+                  "contains": "Shell command to execute on the remote server",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/ssh/execute_command.ts#L47-L51"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The SSRF check and model-parameter stripping apply centrally to every built-in tool request; argument-level validation beyond types varies per tool.",
+              "gap": "No shared argument policy beyond SSRF and visibility; L3 needs every built-in tool and MCP tool validated.",
+              "evidence": [
+                {
+                  "file": "apps/sim/tools/index.ts",
+                  "lines": "2833",
+                  "contains": "validateUrlWithDNS(fullUrl, 'toolUrl', 'requestTarget')",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/index.ts#L2833"
+                },
+                {
+                  "file": "apps/sim/providers/utils.ts",
+                  "lines": "1563-1566",
+                  "contains": "stripModelBlockedParams(tool.modelBlockedParams",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/providers/utils.ts#L1563-L1566"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "An Agent block starts with no tools; the author attaches each one and the model cannot add tools itself.",
+              "gap": "Write and exec tools are offered without narrower per-task variants; L4 also needs per-task allowlists that are read-only by default.",
+              "evidence": [
+                {
+                  "file": "apps/sim/blocks/blocks/agent.ts",
+                  "lines": "270-273",
+                  "contains": "defaultValue: []",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/blocks/blocks/agent.ts#L270-L273"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A misused tool can reach any public host and run arbitrary statements and commands on connected systems; only private addresses and response sizes are limited.",
+              "gap": "Broad reach with minor limits; L2 needs tools scoped to one project or workspace.",
+              "evidence": [
+                {
+                  "file": "apps/sim/tools/http/request.ts",
+                  "lines": "17-20",
+                  "contains": "visibility: 'user-or-llm'",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/http/request.ts#L17-L20"
+                },
+                {
+                  "file": "apps/sim/lib/execution/isolated-vm.ts",
+                  "lines": "260",
+                  "contains": "profile: 'requestTarget'",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/execution/isolated-vm.ts#L260"
+                },
+                {
+                  "file": "apps/sim/tools/ssh/execute_command.ts",
+                  "lines": "47-51",
+                  "contains": "Shell command to execute on the remote server",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/ssh/execute_command.ts#L47-L51"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "Model-written JavaScript runs in an isolated-vm V8 isolate inside a separate Node worker process whose environment is cut down to an allowlist, with a 128 MB memory limit and timeouts. Python and shell are refused unless a remote E2B or Daytona sandbox is configured, so there is no fallback to running code on the host. However, by default the isolate is given every workspace secret and a fetch that reaches any public URL. Code the model writes can therefore send those secrets anywhere. SSH and SQL tools also run model-written commands on remote systems with no sandbox.",
+      "max": 1.0,
+      "notes": "The opt-in E2B/Daytona remote sandboxes for Python and shell would rate higher on S but are G1-capped at 0.50, below the default's score. Escape impact via /proc of the same-uid app process is inferred, not verified.",
+      "status": "scored",
+      "score": 0.525,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A separate V8 isolate whose only capabilities are injected host callbacks (log, fetch, brokers), run in a worker process with an env allowlist and a memory limit.",
+          "gap": "Same-container V8 isolate, not kernel-separated; L4 needs a microVM, gVisor or remote ephemeral sandbox.",
+          "evidence": [
+            {
+              "file": "apps/sim/lib/execution/isolated-vm-worker.cjs",
+              "lines": "211",
+              "contains": "memoryLimit: 128",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/execution/isolated-vm-worker.cjs#L211"
+            },
+            {
+              "file": "apps/sim/lib/execution/isolated-vm.ts",
+              "lines": "1036-1039",
+              "contains": "env: buildWorkerEnv()",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/execution/isolated-vm.ts#L1036-L1039"
+            },
+            {
+              "file": "apps/sim/lib/execution/isolated-vm.ts",
+              "lines": "956-958",
+              "contains": "function buildWorkerEnv",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/execution/isolated-vm.ts#L956-L958"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Function blocks, custom tools and sandbox tasks all run in isolated-vm and Python/shell fail closed without a remote sandbox, but ssh_execute_command and SQL tools run model text on remote systems unsandboxed.",
+          "gap": "SSH command and raw SQL tools execute model-written text outside any sandbox; L3 needs every model-reachable execution path sandboxed.",
+          "evidence": [
+            {
+              "file": "apps/sim/lib/function-execution/execute-request.ts",
+              "lines": "2649-2651",
+              "contains": "Python execution requires a remote code sandbox",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/function-execution/execute-request.ts#L2649-L2651"
+            },
+            {
+              "file": "apps/sim/lib/function-execution/execute-request.ts",
+              "lines": "2643-2645",
+              "contains": "Shell execution requires a remote code sandbox",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/function-execution/execute-request.ts#L2643-L2645"
+            },
+            {
+              "file": "apps/sim/tools/ssh/execute_command.ts",
+              "lines": "47-51",
+              "contains": "Shell command to execute on the remote server",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/ssh/execute_command.ts#L47-L51"
+            },
+            {
+              "file": "apps/sim/lib/internal/postgresql/queries.ts",
+              "lines": "92",
+              "contains": "allowedStatements = /^(select|insert|update|delete",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/internal/postgresql/queries.ts#L92"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Always on with no host-execution fallback; worker pool and queue limits are operator env vars the model cannot set.",
+          "gap": "Sandbox tunables (IVM_* pool and fetch limits) can be changed by environment variables without bounds or warnings.",
+          "evidence": [
+            {
+              "file": "apps/sim/lib/function-execution/execute-request.ts",
+              "lines": "2649-2651",
+              "contains": "Python execution requires a remote code sandbox",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/function-execution/execute-request.ts#L2649-L2651"
+            },
+            {
+              "file": "apps/sim/lib/execution/isolated-vm.ts",
+              "lines": "1036-1039",
+              "contains": "env: buildWorkerEnv()",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/execution/isolated-vm.ts#L1036-L1039"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All workspace secrets are injected into the isolate by default and fetch() reaches any public host, so the code can exfiltrate them. An isolate escape lands in a worker that shares the app container and its user.",
+          "gap": "Credentials are in the sandbox by default; L1 needs secrets kept out unless explicitly mounted.",
+          "evidence": [
+            {
+              "file": "apps/sim/lib/function-execution/execute-request.ts",
+              "lines": "844",
+              "contains": "if (scope !== 'selected') return envVars",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/function-execution/execute-request.ts#L844"
+            },
+            {
+              "file": "apps/sim/tools/function/execute.ts",
+              "lines": "114-117",
+              "contains": "visibility: 'user-or-llm'",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/function/execute.ts#L114-L117"
+            },
+            {
+              "file": "apps/sim/lib/execution/isolated-vm.ts",
+              "lines": "260",
+              "contains": "profile: 'requestTarget'",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/execution/isolated-vm.ts#L260"
+            },
+            {
+              "file": "docker/app.Dockerfile",
+              "lines": "202",
+              "contains": "USER nextjs",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/docker/app.Dockerfile#L202"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.525,
+          "raw": 0.525,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A separate V8 isolate whose only capabilities are injected host callbacks (log, fetch, brokers), run in a worker process with an env allowlist and a memory limit.",
+              "gap": "Same-container V8 isolate, not kernel-separated; L4 needs a microVM, gVisor or remote ephemeral sandbox.",
+              "evidence": [
+                {
+                  "file": "apps/sim/lib/execution/isolated-vm-worker.cjs",
+                  "lines": "211",
+                  "contains": "memoryLimit: 128",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/execution/isolated-vm-worker.cjs#L211"
+                },
+                {
+                  "file": "apps/sim/lib/execution/isolated-vm.ts",
+                  "lines": "1036-1039",
+                  "contains": "env: buildWorkerEnv()",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/execution/isolated-vm.ts#L1036-L1039"
+                },
+                {
+                  "file": "apps/sim/lib/execution/isolated-vm.ts",
+                  "lines": "956-958",
+                  "contains": "function buildWorkerEnv",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/execution/isolated-vm.ts#L956-L958"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Function blocks, custom tools and sandbox tasks all run in isolated-vm and Python/shell fail closed without a remote sandbox, but ssh_execute_command and SQL tools run model text on remote systems unsandboxed.",
+              "gap": "SSH command and raw SQL tools execute model-written text outside any sandbox; L3 needs every model-reachable execution path sandboxed.",
+              "evidence": [
+                {
+                  "file": "apps/sim/lib/function-execution/execute-request.ts",
+                  "lines": "2649-2651",
+                  "contains": "Python execution requires a remote code sandbox",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/function-execution/execute-request.ts#L2649-L2651"
+                },
+                {
+                  "file": "apps/sim/lib/function-execution/execute-request.ts",
+                  "lines": "2643-2645",
+                  "contains": "Shell execution requires a remote code sandbox",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/function-execution/execute-request.ts#L2643-L2645"
+                },
+                {
+                  "file": "apps/sim/tools/ssh/execute_command.ts",
+                  "lines": "47-51",
+                  "contains": "Shell command to execute on the remote server",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/ssh/execute_command.ts#L47-L51"
+                },
+                {
+                  "file": "apps/sim/lib/internal/postgresql/queries.ts",
+                  "lines": "92",
+                  "contains": "allowedStatements = /^(select|insert|update|delete",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/internal/postgresql/queries.ts#L92"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Always on with no host-execution fallback; worker pool and queue limits are operator env vars the model cannot set.",
+              "gap": "Sandbox tunables (IVM_* pool and fetch limits) can be changed by environment variables without bounds or warnings.",
+              "evidence": [
+                {
+                  "file": "apps/sim/lib/function-execution/execute-request.ts",
+                  "lines": "2649-2651",
+                  "contains": "Python execution requires a remote code sandbox",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/function-execution/execute-request.ts#L2649-L2651"
+                },
+                {
+                  "file": "apps/sim/lib/execution/isolated-vm.ts",
+                  "lines": "1036-1039",
+                  "contains": "env: buildWorkerEnv()",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/execution/isolated-vm.ts#L1036-L1039"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All workspace secrets are injected into the isolate by default and fetch() reaches any public host, so the code can exfiltrate them. An isolate escape lands in a worker that shares the app container and its user.",
+              "gap": "Credentials are in the sandbox by default; L1 needs secrets kept out unless explicitly mounted.",
+              "evidence": [
+                {
+                  "file": "apps/sim/lib/function-execution/execute-request.ts",
+                  "lines": "844",
+                  "contains": "if (scope !== 'selected') return envVars",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/function-execution/execute-request.ts#L844"
+                },
+                {
+                  "file": "apps/sim/tools/function/execute.ts",
+                  "lines": "114-117",
+                  "contains": "visibility: 'user-or-llm'",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/function/execute.ts#L114-L117"
+                },
+                {
+                  "file": "apps/sim/lib/execution/isolated-vm.ts",
+                  "lines": "260",
+                  "contains": "profile: 'requestTarget'",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/execution/isolated-vm.ts#L260"
+                },
+                {
+                  "file": "docker/app.Dockerfile",
+                  "lines": "202",
+                  "contains": "USER nextjs",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/docker/app.Dockerfile#L202"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "Workflows are built to read untrusted content: 78 trigger integrations (inbound email, chat, webhooks), web and HTTP tools, and knowledge-base connectors. Chat deployments are public by default. Tool results reach the model as ordinary tool messages, and only compacted conversation summaries are labelled as untrusted data. Nothing in code limits what a hijacked agent can do after reading untrusted content. It can leak secrets through HTTP or code, send email, and delete records, all while acting with the owner's credentials and with no human involved.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C5-PUBLICTRIGGER",
+        "max": 0.25,
+        "reason": "Chat deployments default to public and inbound triggers start runs that use the owner's write credentials with no check that the requester is a principal."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only labelling: compacted history is wrapped as untrusted_conversation_summary; no capability restriction after untrusted input.",
+          "gap": "No human approval or capability drop once untrusted content is read; L2 needs at least some dangerous capabilities gated.",
+          "evidence": [
+            {
+              "file": "apps/sim/providers/conversation-summary.ts",
+              "lines": "56",
+              "contains": "untrusted_conversation_summary",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/providers/conversation-summary.ts#L56"
+            },
+            {
+              "search": "rg -n -i 'requiresApproval|needsApproval'",
+              "scope": "apps/sim/executor apps/sim/providers/index.ts apps/sim/providers/utils.ts",
+              "hits": 0,
+              "note": "the workflow executor and the Agent block provider tool loop have no approval concept"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The label covers memory summaries; tool results, trigger payloads, MCP results and chat messages enter context unmarked.",
+          "gap": "Tool, trigger and MCP outputs are not distinguished; L2 needs most sources handled.",
+          "evidence": [
+            {
+              "file": "apps/sim/providers/conversation-summary.ts",
+              "lines": "56",
+              "contains": "untrusted_conversation_summary",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/providers/conversation-summary.ts#L56"
+            },
+            {
+              "file": "apps/sim/triggers/gmail/poller.ts",
+              "lines": "5",
+              "contains": "id: 'gmail_poller'",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/triggers/gmail/poller.ts#L5"
+            },
+            {
+              "file": "apps/sim/lib/chat-deployments/application/workflow-chat-deployment.ts",
+              "lines": "191",
+              "contains": "input.authType ?? 'public'",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/chat-deployments/application/workflow-chat-deployment.ts#L191"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The summary labelling is hard-coded and always on.",
+          "gap": "The mechanism is not a control that resists configuration changes; L3 needs a warned, explicit disable path for a real limit.",
+          "evidence": [
+            {
+              "file": "apps/sim/providers/conversation-summary.ts",
+              "lines": "56",
+              "contains": "untrusted_conversation_summary",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/providers/conversation-summary.ts#L56"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked Agent block can exfiltrate via http_request or function fetch and send email or run SQL deletes unattended, with the owner's credentials.",
+          "gap": "Leak and irreversible action are both possible with no human; L1 needs one of them blocked.",
+          "evidence": [
+            {
+              "file": "apps/sim/tools/http/request.ts",
+              "lines": "17-20",
+              "contains": "visibility: 'user-or-llm'",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/http/request.ts#L17-L20"
+            },
+            {
+              "file": "apps/sim/lib/execution/isolated-vm.ts",
+              "lines": "260",
+              "contains": "profile: 'requestTarget'",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/execution/isolated-vm.ts#L260"
+            },
+            {
+              "file": "apps/sim/tools/gmail/send.ts",
+              "lines": "5",
+              "contains": "id: 'gmail_send'",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/gmail/send.ts#L5"
+            },
+            {
+              "file": "apps/sim/lib/function-execution/execute-request.ts",
+              "lines": "844",
+              "contains": "if (scope !== 'selected') return envVars",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/function-execution/execute-request.ts#L844"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.25,
+          "cap": {
+            "id": "C5-PUBLICTRIGGER",
+            "max": 0.25,
+            "reason": "Chat deployments default to public and inbound triggers start runs that use the owner's write credentials with no check that the requester is a principal."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only labelling: compacted history is wrapped as untrusted_conversation_summary; no capability restriction after untrusted input.",
+              "gap": "No human approval or capability drop once untrusted content is read; L2 needs at least some dangerous capabilities gated.",
+              "evidence": [
+                {
+                  "file": "apps/sim/providers/conversation-summary.ts",
+                  "lines": "56",
+                  "contains": "untrusted_conversation_summary",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/providers/conversation-summary.ts#L56"
+                },
+                {
+                  "search": "rg -n -i 'requiresApproval|needsApproval'",
+                  "scope": "apps/sim/executor apps/sim/providers/index.ts apps/sim/providers/utils.ts",
+                  "hits": 0,
+                  "note": "the workflow executor and the Agent block provider tool loop have no approval concept"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The label covers memory summaries; tool results, trigger payloads, MCP results and chat messages enter context unmarked.",
+              "gap": "Tool, trigger and MCP outputs are not distinguished; L2 needs most sources handled.",
+              "evidence": [
+                {
+                  "file": "apps/sim/providers/conversation-summary.ts",
+                  "lines": "56",
+                  "contains": "untrusted_conversation_summary",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/providers/conversation-summary.ts#L56"
+                },
+                {
+                  "file": "apps/sim/triggers/gmail/poller.ts",
+                  "lines": "5",
+                  "contains": "id: 'gmail_poller'",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/triggers/gmail/poller.ts#L5"
+                },
+                {
+                  "file": "apps/sim/lib/chat-deployments/application/workflow-chat-deployment.ts",
+                  "lines": "191",
+                  "contains": "input.authType ?? 'public'",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/chat-deployments/application/workflow-chat-deployment.ts#L191"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The summary labelling is hard-coded and always on.",
+              "gap": "The mechanism is not a control that resists configuration changes; L3 needs a warned, explicit disable path for a real limit.",
+              "evidence": [
+                {
+                  "file": "apps/sim/providers/conversation-summary.ts",
+                  "lines": "56",
+                  "contains": "untrusted_conversation_summary",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/providers/conversation-summary.ts#L56"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked Agent block can exfiltrate via http_request or function fetch and send email or run SQL deletes unattended, with the owner's credentials.",
+              "gap": "Leak and irreversible action are both possible with no human; L1 needs one of them blocked.",
+              "evidence": [
+                {
+                  "file": "apps/sim/tools/http/request.ts",
+                  "lines": "17-20",
+                  "contains": "visibility: 'user-or-llm'",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/http/request.ts#L17-L20"
+                },
+                {
+                  "file": "apps/sim/lib/execution/isolated-vm.ts",
+                  "lines": "260",
+                  "contains": "profile: 'requestTarget'",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/execution/isolated-vm.ts#L260"
+                },
+                {
+                  "file": "apps/sim/tools/gmail/send.ts",
+                  "lines": "5",
+                  "contains": "id: 'gmail_send'",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/gmail/send.ts#L5"
+                },
+                {
+                  "file": "apps/sim/lib/function-execution/execute-request.ts",
+                  "lines": "844",
+                  "contains": "if (scope !== 'selected') return envVars",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/function-execution/execute-request.ts#L844"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "Agent memory is off by default. When enabled, conversations are stored per workspace under an ID the workflow author chooses, and replayed as history. Agents can also be given tools that write to workspace-wide knowledge bases and memory, which later runs and other users retrieve. Writes are not validated or reviewed, and only compacted summaries are labelled as untrusted. A poisoned entry can therefore keep steering tool use in later sessions and for other users of the workspace.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.2,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Memory and knowledge-base writes are stored unvalidated; only compacted summaries carry an untrusted label.",
+          "gap": "No provenance on replayed memory entries or retrieved chunks; L2 needs them presented as tagged data.",
+          "evidence": [
+            {
+              "file": "apps/sim/executor/handlers/agent/memory.ts",
+              "lines": "659",
+              "contains": "eq(memory.workspaceId, workspaceId), eq(memory.key, key)",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/executor/handlers/agent/memory.ts#L659"
+            },
+            {
+              "file": "apps/sim/providers/conversation-summary.ts",
+              "lines": "56",
+              "contains": "untrusted_conversation_summary",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/providers/conversation-summary.ts#L56"
+            },
+            {
+              "file": "apps/sim/tools/knowledge/upload_chunk.ts",
+              "lines": "5",
+              "contains": "knowledge_upload_chunk",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/knowledge/upload_chunk.ts#L5"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The summary label applies to one path; raw history replay, knowledge-base retrieval and memory tools have no control.",
+          "gap": "Knowledge bases and memory tools are uncontrolled; L2 needs the main memory store controlled.",
+          "evidence": [
+            {
+              "file": "apps/sim/providers/conversation-summary.ts",
+              "lines": "56",
+              "contains": "untrusted_conversation_summary",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/providers/conversation-summary.ts#L56"
+            },
+            {
+              "file": "apps/sim/tools/knowledge/upload_chunk.ts",
+              "lines": "5",
+              "contains": "knowledge_upload_chunk",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/knowledge/upload_chunk.ts#L5"
+            },
+            {
+              "file": "apps/sim/tools/memory/add.ts",
+              "lines": "5",
+              "contains": "memory_add",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/memory/add.ts#L5"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Queries are scoped to the workspace, but per-user separation depends on the conversation ID the author configures.",
+          "gap": "No per-user or per-session namespace by default inside a workspace; L2 needs it enforced in queries.",
+          "evidence": [
+            {
+              "file": "apps/sim/executor/handlers/agent/memory.ts",
+              "lines": "659",
+              "contains": "eq(memory.workspaceId, workspaceId), eq(memory.key, key)",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/executor/handlers/agent/memory.ts#L659"
+            },
+            {
+              "file": "apps/sim/blocks/blocks/agent.ts",
+              "lines": "292-302",
+              "contains": "defaultValue: 'none'",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/blocks/blocks/agent.ts#L292-L302"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Poisoned knowledge-base or memory content persists across sessions and workspace users and can trigger tool use.",
+          "gap": "Persists across users and can drive tools; L1 needs it confined to one user's sessions.",
+          "evidence": [
+            {
+              "file": "apps/sim/tools/knowledge/upload_chunk.ts",
+              "lines": "5",
+              "contains": "knowledge_upload_chunk",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/knowledge/upload_chunk.ts#L5"
+            },
+            {
+              "file": "apps/sim/tools/memory/add.ts",
+              "lines": "5",
+              "contains": "memory_add",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/memory/add.ts#L5"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.2,
+          "raw": 0.2,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Memory and knowledge-base writes are stored unvalidated; only compacted summaries carry an untrusted label.",
+              "gap": "No provenance on replayed memory entries or retrieved chunks; L2 needs them presented as tagged data.",
+              "evidence": [
+                {
+                  "file": "apps/sim/executor/handlers/agent/memory.ts",
+                  "lines": "659",
+                  "contains": "eq(memory.workspaceId, workspaceId), eq(memory.key, key)",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/executor/handlers/agent/memory.ts#L659"
+                },
+                {
+                  "file": "apps/sim/providers/conversation-summary.ts",
+                  "lines": "56",
+                  "contains": "untrusted_conversation_summary",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/providers/conversation-summary.ts#L56"
+                },
+                {
+                  "file": "apps/sim/tools/knowledge/upload_chunk.ts",
+                  "lines": "5",
+                  "contains": "knowledge_upload_chunk",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/knowledge/upload_chunk.ts#L5"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The summary label applies to one path; raw history replay, knowledge-base retrieval and memory tools have no control.",
+              "gap": "Knowledge bases and memory tools are uncontrolled; L2 needs the main memory store controlled.",
+              "evidence": [
+                {
+                  "file": "apps/sim/providers/conversation-summary.ts",
+                  "lines": "56",
+                  "contains": "untrusted_conversation_summary",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/providers/conversation-summary.ts#L56"
+                },
+                {
+                  "file": "apps/sim/tools/knowledge/upload_chunk.ts",
+                  "lines": "5",
+                  "contains": "knowledge_upload_chunk",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/knowledge/upload_chunk.ts#L5"
+                },
+                {
+                  "file": "apps/sim/tools/memory/add.ts",
+                  "lines": "5",
+                  "contains": "memory_add",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/memory/add.ts#L5"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Queries are scoped to the workspace, but per-user separation depends on the conversation ID the author configures.",
+              "gap": "No per-user or per-session namespace by default inside a workspace; L2 needs it enforced in queries.",
+              "evidence": [
+                {
+                  "file": "apps/sim/executor/handlers/agent/memory.ts",
+                  "lines": "659",
+                  "contains": "eq(memory.workspaceId, workspaceId), eq(memory.key, key)",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/executor/handlers/agent/memory.ts#L659"
+                },
+                {
+                  "file": "apps/sim/blocks/blocks/agent.ts",
+                  "lines": "292-302",
+                  "contains": "defaultValue: 'none'",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/blocks/blocks/agent.ts#L292-L302"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Poisoned knowledge-base or memory content persists across sessions and workspace users and can trigger tool use.",
+              "gap": "Persists across users and can drive tools; L1 needs it confined to one user's sessions.",
+              "evidence": [
+                {
+                  "file": "apps/sim/tools/knowledge/upload_chunk.ts",
+                  "lines": "5",
+                  "contains": "knowledge_upload_chunk",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/knowledge/upload_chunk.ts#L5"
+                },
+                {
+                  "file": "apps/sim/tools/memory/add.ts",
+                  "lines": "5",
+                  "contains": "memory_add",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/memory/add.ts#L5"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "Sim does not run third-party extension code in its own process. MCP servers are reached only as remote HTTP endpoints, and nothing is launched locally. A workspace member adds each server by URL, and a malicious server gets only the arguments and headers sent to it. Servers are not pinned or verified, however. Any domain is allowed unless the operator sets ALLOWED_MCP_DOMAINS, and tool lists are re-fetched, with only schema changes flagged.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.4,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "User-chosen remote MCP URLs, unpinned; schema changes are detected but descriptions and behaviour are not.",
+          "gap": "No version pinning or integrity check of MCP servers; L2 needs pinned versions.",
+          "evidence": [
+            {
+              "file": "apps/sim/lib/mcp/client.ts",
+              "lines": "145",
+              "contains": "new StreamableHTTPClientTransport",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/mcp/client.ts#L145"
+            },
+            {
+              "file": "apps/sim/lib/mcp/tool-validation.ts",
+              "lines": "29",
+              "contains": "export function hasSchemaChanged",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/mcp/tool-validation.ts#L29"
+            },
+            {
+              "file": "apps/sim/lib/core/config/env.ts",
+              "lines": "290",
+              "contains": "Empty = all allowed",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/core/config/env.ts#L290"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Schema-change detection covers MCP tools only.",
+          "gap": "Other extension types (A2A agents, templates) are unverified; L2 needs most types covered.",
+          "evidence": [
+            {
+              "file": "apps/sim/lib/mcp/tool-validation.ts",
+              "lines": "29",
+              "contains": "export function hasSchemaChanged",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/mcp/tool-validation.ts#L29"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No MCP server is configured by default; adding one is an explicit, authenticated workspace action that shows the URL.",
+          "gap": "Any domain is allowed by default; L3 needs a narrower default with the exact endpoint and permissions shown.",
+          "evidence": [
+            {
+              "file": "apps/sim/lib/mcp/client.ts",
+              "lines": "145",
+              "contains": "new StreamableHTTPClientTransport",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/mcp/client.ts#L145"
+            },
+            {
+              "file": "apps/sim/lib/core/config/env.ts",
+              "lines": "290",
+              "contains": "Empty = all allowed",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/core/config/env.ts#L290"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A malicious MCP server runs on its own infrastructure and receives only its tool arguments and its own configured headers.",
+          "gap": "Network and data access is not limited to what the extension declares.",
+          "evidence": [
+            {
+              "file": "apps/sim/lib/mcp/client.ts",
+              "lines": "145",
+              "contains": "new StreamableHTTPClientTransport",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/mcp/client.ts#L145"
+            },
+            {
+              "search": "rg -n -S 'StdioClientTransport|stdio'",
+              "scope": "apps/sim/lib/mcp",
+              "hits": 0,
+              "note": "MCP client only connects to remote Streamable HTTP servers; nothing is launched locally"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.4,
+          "raw": 0.4,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "User-chosen remote MCP URLs, unpinned; schema changes are detected but descriptions and behaviour are not.",
+              "gap": "No version pinning or integrity check of MCP servers; L2 needs pinned versions.",
+              "evidence": [
+                {
+                  "file": "apps/sim/lib/mcp/client.ts",
+                  "lines": "145",
+                  "contains": "new StreamableHTTPClientTransport",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/mcp/client.ts#L145"
+                },
+                {
+                  "file": "apps/sim/lib/mcp/tool-validation.ts",
+                  "lines": "29",
+                  "contains": "export function hasSchemaChanged",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/mcp/tool-validation.ts#L29"
+                },
+                {
+                  "file": "apps/sim/lib/core/config/env.ts",
+                  "lines": "290",
+                  "contains": "Empty = all allowed",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/core/config/env.ts#L290"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Schema-change detection covers MCP tools only.",
+              "gap": "Other extension types (A2A agents, templates) are unverified; L2 needs most types covered.",
+              "evidence": [
+                {
+                  "file": "apps/sim/lib/mcp/tool-validation.ts",
+                  "lines": "29",
+                  "contains": "export function hasSchemaChanged",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/mcp/tool-validation.ts#L29"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No MCP server is configured by default; adding one is an explicit, authenticated workspace action that shows the URL.",
+              "gap": "Any domain is allowed by default; L3 needs a narrower default with the exact endpoint and permissions shown.",
+              "evidence": [
+                {
+                  "file": "apps/sim/lib/mcp/client.ts",
+                  "lines": "145",
+                  "contains": "new StreamableHTTPClientTransport",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/mcp/client.ts#L145"
+                },
+                {
+                  "file": "apps/sim/lib/core/config/env.ts",
+                  "lines": "290",
+                  "contains": "Empty = all allowed",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/core/config/env.ts#L290"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A malicious MCP server runs on its own infrastructure and receives only its tool arguments and its own configured headers.",
+              "gap": "Network and data access is not limited to what the extension declares.",
+              "evidence": [
+                {
+                  "file": "apps/sim/lib/mcp/client.ts",
+                  "lines": "145",
+                  "contains": "new StreamableHTTPClientTransport",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/mcp/client.ts#L145"
+                },
+                {
+                  "search": "rg -n -S 'StdioClientTransport|stdio'",
+                  "scope": "apps/sim/lib/mcp",
+                  "hits": 0,
+                  "note": "MCP client only connects to remote Streamable HTTP servers; nothing is launched locally"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "Workspace secrets are encrypted with AES-256-GCM. A provenance system replaces resolved secret values with [REDACTED_SECRET] in model-bound content, traces and tool logs, and the code worker gets a scrubbed environment. OAuth access and refresh tokens, however, sit in plaintext in the database. The shipped compose file also leaves server telemetry on: it exports traces and every log line, including tool error payloads, to telemetry.simstudio.ai. Model-written function code receives all workspace secrets by default.",
+      "max": 1.0,
+      "notes": "D is L0 because server telemetry ships enabled and exports log content, not because redaction is opt-in; redaction itself is always on.",
+      "status": "scored",
+      "score": 0.375,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Env secrets encrypted with AES-256-GCM and resolved-secret redaction on logs, traces and model-bound content, but OAuth tokens are stored in plaintext.",
+          "gap": "OAuth access/refresh tokens are not encrypted at rest; L3 needs all stored credentials encrypted.",
+          "evidence": [
+            {
+              "file": "apps/sim/lib/core/security/encryption.ts",
+              "lines": "22",
+              "contains": "export async function encryptSecret",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/core/security/encryption.ts#L22"
+            },
+            {
+              "file": "apps/sim/executor/utils/resolved-secret-content-projection.ts",
+              "lines": "33-36",
+              "contains": "modelEgressMatcherCache",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/executor/utils/resolved-secret-content-projection.ts#L33-L36"
+            },
+            {
+              "file": "apps/sim/executor/utils/resolved-secret-matcher.ts",
+              "lines": "11",
+              "contains": "[REDACTED_SECRET]",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/executor/utils/resolved-secret-matcher.ts#L11"
+            },
+            {
+              "file": "packages/db/schema.ts",
+              "lines": "164-165",
+              "contains": "refreshToken: text('refresh_token')",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/packages/db/schema.ts#L164-L165"
+            },
+            {
+              "file": "apps/sim/lib/oauth/credential-service.ts",
+              "lines": "1126",
+              "contains": "eq(account.refreshToken, refreshToken)",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/oauth/credential-service.ts#L1126"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Redaction covers logs, traces, model-bound messages, logger error parameters and the sandbox worker environment.",
+          "gap": "Function code receives every workspace secret unless scoped; L4 needs all paths covered.",
+          "evidence": [
+            {
+              "file": "apps/sim/lib/logs/execution/trace-secret-projection.ts",
+              "lines": "1557",
+              "contains": "export async function projectTraceSpansForSecrets",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/logs/execution/trace-secret-projection.ts#L1557"
+            },
+            {
+              "file": "apps/sim/executor/utils/resolved-secret-content-projection.ts",
+              "lines": "33-36",
+              "contains": "modelEgressMatcherCache",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/executor/utils/resolved-secret-content-projection.ts#L33-L36"
+            },
+            {
+              "file": "apps/sim/lib/execution/isolated-vm.ts",
+              "lines": "956-958",
+              "contains": "function buildWorkerEnv",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/execution/isolated-vm.ts#L956-L958"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Server telemetry is on by default and exports every logger line to telemetry.simstudio.ai, including tool error payloads.",
+          "gap": "Telemetry carrying tool output is on by default; L1 needs default telemetry to be content-free.",
+          "evidence": [
+            {
+              "file": "apps/sim/telemetry.config.ts",
+              "lines": "34",
+              "contains": "https://telemetry.simstudio.ai/v1/traces",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/telemetry.config.ts#L34"
+            },
+            {
+              "file": "apps/sim/telemetry.config.ts",
+              "lines": "113-114",
+              "contains": "enabled: true",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/telemetry.config.ts#L113-L114"
+            },
+            {
+              "file": "apps/sim/instrumentation-node.ts",
+              "lines": "154",
+              "contains": "NEXT_TELEMETRY_DISABLED === '1'",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/instrumentation-node.ts#L154"
+            },
+            {
+              "file": "apps/sim/instrumentation-node.ts",
+              "lines": "293-297",
+              "contains": "new OTLPLogExporter",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/instrumentation-node.ts#L293-L297"
+            },
+            {
+              "file": "apps/sim/tools/index.ts",
+              "lines": "3001-3006",
+              "contains": "errorData: errorInfo.data",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/index.ts#L3001-L3006"
+            },
+            {
+              "search": "rg -n 'TELEMETRY'",
+              "scope": "docker-compose.prod.yml",
+              "hits": 0,
+              "note": "the shipped compose file never sets NEXT_TELEMETRY_DISABLED, so server telemetry stays on (the Helm chart does disable it)"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Long-lived, high-privilege workspace secrets reach model-written code by default, and plaintext refresh tokens sit in the database.",
+          "gap": "Long-lived keys reachable by model-authored code; L1 needs them moderately scoped and kept away from model-written code.",
+          "evidence": [
+            {
+              "file": "apps/sim/lib/function-execution/execute-request.ts",
+              "lines": "844",
+              "contains": "if (scope !== 'selected') return envVars",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/function-execution/execute-request.ts#L844"
+            },
+            {
+              "file": "apps/sim/tools/function/execute.ts",
+              "lines": "114-117",
+              "contains": "visibility: 'user-or-llm'",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/function/execute.ts#L114-L117"
+            },
+            {
+              "file": "packages/db/schema.ts",
+              "lines": "164-165",
+              "contains": "refreshToken: text('refresh_token')",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/packages/db/schema.ts#L164-L165"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.375,
+          "raw": 0.375,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Env secrets encrypted with AES-256-GCM and resolved-secret redaction on logs, traces and model-bound content, but OAuth tokens are stored in plaintext.",
+              "gap": "OAuth access/refresh tokens are not encrypted at rest; L3 needs all stored credentials encrypted.",
+              "evidence": [
+                {
+                  "file": "apps/sim/lib/core/security/encryption.ts",
+                  "lines": "22",
+                  "contains": "export async function encryptSecret",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/core/security/encryption.ts#L22"
+                },
+                {
+                  "file": "apps/sim/executor/utils/resolved-secret-content-projection.ts",
+                  "lines": "33-36",
+                  "contains": "modelEgressMatcherCache",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/executor/utils/resolved-secret-content-projection.ts#L33-L36"
+                },
+                {
+                  "file": "apps/sim/executor/utils/resolved-secret-matcher.ts",
+                  "lines": "11",
+                  "contains": "[REDACTED_SECRET]",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/executor/utils/resolved-secret-matcher.ts#L11"
+                },
+                {
+                  "file": "packages/db/schema.ts",
+                  "lines": "164-165",
+                  "contains": "refreshToken: text('refresh_token')",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/packages/db/schema.ts#L164-L165"
+                },
+                {
+                  "file": "apps/sim/lib/oauth/credential-service.ts",
+                  "lines": "1126",
+                  "contains": "eq(account.refreshToken, refreshToken)",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/oauth/credential-service.ts#L1126"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Redaction covers logs, traces, model-bound messages, logger error parameters and the sandbox worker environment.",
+              "gap": "Function code receives every workspace secret unless scoped; L4 needs all paths covered.",
+              "evidence": [
+                {
+                  "file": "apps/sim/lib/logs/execution/trace-secret-projection.ts",
+                  "lines": "1557",
+                  "contains": "export async function projectTraceSpansForSecrets",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/logs/execution/trace-secret-projection.ts#L1557"
+                },
+                {
+                  "file": "apps/sim/executor/utils/resolved-secret-content-projection.ts",
+                  "lines": "33-36",
+                  "contains": "modelEgressMatcherCache",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/executor/utils/resolved-secret-content-projection.ts#L33-L36"
+                },
+                {
+                  "file": "apps/sim/lib/execution/isolated-vm.ts",
+                  "lines": "956-958",
+                  "contains": "function buildWorkerEnv",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/execution/isolated-vm.ts#L956-L958"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Server telemetry is on by default and exports every logger line to telemetry.simstudio.ai, including tool error payloads.",
+              "gap": "Telemetry carrying tool output is on by default; L1 needs default telemetry to be content-free.",
+              "evidence": [
+                {
+                  "file": "apps/sim/telemetry.config.ts",
+                  "lines": "34",
+                  "contains": "https://telemetry.simstudio.ai/v1/traces",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/telemetry.config.ts#L34"
+                },
+                {
+                  "file": "apps/sim/telemetry.config.ts",
+                  "lines": "113-114",
+                  "contains": "enabled: true",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/telemetry.config.ts#L113-L114"
+                },
+                {
+                  "file": "apps/sim/instrumentation-node.ts",
+                  "lines": "154",
+                  "contains": "NEXT_TELEMETRY_DISABLED === '1'",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/instrumentation-node.ts#L154"
+                },
+                {
+                  "file": "apps/sim/instrumentation-node.ts",
+                  "lines": "293-297",
+                  "contains": "new OTLPLogExporter",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/instrumentation-node.ts#L293-L297"
+                },
+                {
+                  "file": "apps/sim/tools/index.ts",
+                  "lines": "3001-3006",
+                  "contains": "errorData: errorInfo.data",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/index.ts#L3001-L3006"
+                },
+                {
+                  "search": "rg -n 'TELEMETRY'",
+                  "scope": "docker-compose.prod.yml",
+                  "hits": 0,
+                  "note": "the shipped compose file never sets NEXT_TELEMETRY_DISABLED, so server telemetry stays on (the Helm chart does disable it)"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Long-lived, high-privilege workspace secrets reach model-written code by default, and plaintext refresh tokens sit in the database.",
+              "gap": "Long-lived keys reachable by model-authored code; L1 needs them moderately scoped and kept away from model-written code.",
+              "evidence": [
+                {
+                  "file": "apps/sim/lib/function-execution/execute-request.ts",
+                  "lines": "844",
+                  "contains": "if (scope !== 'selected') return envVars",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/function-execution/execute-request.ts#L844"
+                },
+                {
+                  "file": "apps/sim/tools/function/execute.ts",
+                  "lines": "114-117",
+                  "contains": "visibility: 'user-or-llm'",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/function/execute.ts#L114-L117"
+                },
+                {
+                  "file": "packages/db/schema.ts",
+                  "lines": "164-165",
+                  "contains": "refreshToken: text('refresh_token')",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/packages/db/schema.ts#L164-L165"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "Every workflow run is recorded in Postgres with its trigger type and trace spans, including each tool call's arguments and results (size-bounded), and credential use and platform changes go to a separate audit log. These records are written by the platform, not by the model. The audit log is fire-and-forget, though, and per-block progress is kept in Redis and written once when the run ends. A crash can therefore lose the record of actions already taken. There is no tamper-evidence, and the record does not separate the person who triggered a run from the owner whose credentials it used.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.5,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Structured trace spans with tool calls, arguments and results plus trigger type, and a separate audit_log with actor fields.",
+          "gap": "No attribution of requesting principal versus credential owner or approver on execution records; L3 needs it.",
+          "evidence": [
+            {
+              "file": "apps/sim/lib/logs/execution/logger.ts",
+              "lines": "242-252",
+              "contains": "function compactModelToolCalls",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/logs/execution/logger.ts#L242-L252"
+            },
+            {
+              "file": "packages/db/schema.ts",
+              "lines": "539-540",
+              "contains": "trigger: text('trigger').notNull()",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/packages/db/schema.ts#L539-L540"
+            },
+            {
+              "file": "apps/sim/lib/oauth/token-resolution.ts",
+              "lines": "276-284",
+              "contains": "recordCredentialAccess({",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/oauth/token-resolution.ts#L276-L284"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All built-in and MCP tool calls in the Agent loop appear in trace spans, and credential access is audited.",
+          "gap": "Approvals and memory writes are not verified to be recorded; L3 needs approvals and denials included.",
+          "evidence": [
+            {
+              "file": "apps/sim/lib/logs/execution/logger.ts",
+              "lines": "242-252",
+              "contains": "function compactModelToolCalls",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/logs/execution/logger.ts#L242-L252"
+            },
+            {
+              "file": "apps/sim/lib/oauth/token-resolution.ts",
+              "lines": "276-284",
+              "contains": "recordCredentialAccess({",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/oauth/token-resolution.ts#L276-L284"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "On by default and written by the executor to Postgres; agent-facing log tools are read-only.",
+          "gap": "Logging can be altered by operators without a logged trail; L4 needs disabling to be itself logged.",
+          "evidence": [
+            {
+              "file": "packages/db/schema.ts",
+              "lines": "539-540",
+              "contains": "trigger: text('trigger').notNull()",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/packages/db/schema.ts#L539-L540"
+            },
+            {
+              "file": "apps/sim/lib/logs/execution/logger.ts",
+              "lines": "242-252",
+              "contains": "function compactModelToolCalls",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/logs/execution/logger.ts#L242-L252"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Audit writes are fire-and-forget and execution progress is folded into one terminal update at completion.",
+          "gap": "Records flush late and failures are only logged; L2 needs per-action flushing.",
+          "evidence": [
+            {
+              "file": "packages/audit/src/log.ts",
+              "lines": "35-38",
+              "contains": "insertAuditLog(params).catch",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/packages/audit/src/log.ts#L35-L38"
+            },
+            {
+              "file": "apps/sim/lib/logs/execution/progress-markers.ts",
+              "lines": "16-18",
+              "contains": "folded into the single terminal UPDATE",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/logs/execution/progress-markers.ts#L16-L18"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.5,
+          "raw": 0.5,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Structured trace spans with tool calls, arguments and results plus trigger type, and a separate audit_log with actor fields.",
+              "gap": "No attribution of requesting principal versus credential owner or approver on execution records; L3 needs it.",
+              "evidence": [
+                {
+                  "file": "apps/sim/lib/logs/execution/logger.ts",
+                  "lines": "242-252",
+                  "contains": "function compactModelToolCalls",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/logs/execution/logger.ts#L242-L252"
+                },
+                {
+                  "file": "packages/db/schema.ts",
+                  "lines": "539-540",
+                  "contains": "trigger: text('trigger').notNull()",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/packages/db/schema.ts#L539-L540"
+                },
+                {
+                  "file": "apps/sim/lib/oauth/token-resolution.ts",
+                  "lines": "276-284",
+                  "contains": "recordCredentialAccess({",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/oauth/token-resolution.ts#L276-L284"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All built-in and MCP tool calls in the Agent loop appear in trace spans, and credential access is audited.",
+              "gap": "Approvals and memory writes are not verified to be recorded; L3 needs approvals and denials included.",
+              "evidence": [
+                {
+                  "file": "apps/sim/lib/logs/execution/logger.ts",
+                  "lines": "242-252",
+                  "contains": "function compactModelToolCalls",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/logs/execution/logger.ts#L242-L252"
+                },
+                {
+                  "file": "apps/sim/lib/oauth/token-resolution.ts",
+                  "lines": "276-284",
+                  "contains": "recordCredentialAccess({",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/oauth/token-resolution.ts#L276-L284"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "On by default and written by the executor to Postgres; agent-facing log tools are read-only.",
+              "gap": "Logging can be altered by operators without a logged trail; L4 needs disabling to be itself logged.",
+              "evidence": [
+                {
+                  "file": "packages/db/schema.ts",
+                  "lines": "539-540",
+                  "contains": "trigger: text('trigger').notNull()",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/packages/db/schema.ts#L539-L540"
+                },
+                {
+                  "file": "apps/sim/lib/logs/execution/logger.ts",
+                  "lines": "242-252",
+                  "contains": "function compactModelToolCalls",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/logs/execution/logger.ts#L242-L252"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Audit writes are fire-and-forget and execution progress is folded into one terminal update at completion.",
+              "gap": "Records flush late and failures are only logged; L2 needs per-action flushing.",
+              "evidence": [
+                {
+                  "file": "packages/audit/src/log.ts",
+                  "lines": "35-38",
+                  "contains": "insertAuditLog(params).catch",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/packages/audit/src/log.ts#L35-L38"
+                },
+                {
+                  "file": "apps/sim/lib/logs/execution/progress-markers.ts",
+                  "lines": "16-18",
+                  "contains": "folded into the single terminal UPDATE",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/logs/execution/progress-markers.ts#L16-L18"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "An Agent block makes at most 20 tool round-trips, nested workflow calls stop at depth 25, and loops and parallel branches have default caps. Cancelling a run passes an abort signal down to in-flight tool calls and code execution. On a self-hosted install with billing disabled (the default), though, workflow runs have no wall-clock limit. There is also no token or spend ceiling, so a runaway workflow or schedule can keep calling paid models and tools.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.4,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Iteration caps (20 tool rounds, 1000 loop iterations, depth 25) plus per-execution timeouts, with cancellation propagated via AbortSignal.",
+          "gap": "No per-run token or cost cap and no rate limit on side-effecting tools; L3 needs all three cap types.",
+          "evidence": [
+            {
+              "file": "apps/sim/providers/index.ts",
+              "lines": "135",
+              "contains": "DEFAULT_MAX_TOOL_ITERATIONS = 20",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/providers/index.ts#L135"
+            },
+            {
+              "file": "apps/sim/lib/execution/call-chain.ts",
+              "lines": "10",
+              "contains": "MAX_CALL_CHAIN_DEPTH = 25",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/execution/call-chain.ts#L10"
+            },
+            {
+              "file": "apps/sim/executor/constants.ts",
+              "lines": "198-199",
+              "contains": "DEFAULT_LOOP_ITERATIONS: 1000",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/executor/constants.ts#L198-L199"
+            },
+            {
+              "file": "apps/sim/tools/index.ts",
+              "lines": "1686",
+              "contains": "const effectiveSignal = signal ?? executionContext?.abortSignal",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/index.ts#L1686"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The tool loop and nested workflow calls are bounded, and function execution inherits the remaining execution deadline.",
+          "gap": "Child workflows and schedules are not verified to share one budget; L3 needs that.",
+          "evidence": [
+            {
+              "file": "apps/sim/lib/execution/call-chain.ts",
+              "lines": "10",
+              "contains": "MAX_CALL_CHAIN_DEPTH = 25",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/execution/call-chain.ts#L10"
+            },
+            {
+              "file": "apps/sim/providers/index.ts",
+              "lines": "135",
+              "contains": "DEFAULT_MAX_TOOL_ITERATIONS = 20",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/providers/index.ts#L135"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "With billing disabled, getExecutionTimeout returns 0 (untimed) unless the operator sets EXECUTION_TIMEOUT_FREE.",
+          "gap": "No wall-clock or spend default on self-hosted installs; L2 needs sensible defaults.",
+          "evidence": [
+            {
+              "file": "apps/sim/lib/core/execution-limits/types.ts",
+              "lines": "85-89",
+              "contains": "override > 0 ? EXECUTION_TIMEOUTS.free[type] : 0",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/core/execution-limits/types.ts#L85-L89"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A runaway run has no time or spend ceiling by default, though stopping aborts in-flight calls.",
+          "gap": "Ceilings are unlimited by default; L2 needs moderate ceilings.",
+          "evidence": [
+            {
+              "file": "apps/sim/lib/core/execution-limits/types.ts",
+              "lines": "85-89",
+              "contains": "override > 0 ? EXECUTION_TIMEOUTS.free[type] : 0",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/core/execution-limits/types.ts#L85-L89"
+            },
+            {
+              "file": "apps/sim/tools/index.ts",
+              "lines": "1686",
+              "contains": "const effectiveSignal = signal ?? executionContext?.abortSignal",
+              "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/index.ts#L1686"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.4,
+          "raw": 0.4,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Iteration caps (20 tool rounds, 1000 loop iterations, depth 25) plus per-execution timeouts, with cancellation propagated via AbortSignal.",
+              "gap": "No per-run token or cost cap and no rate limit on side-effecting tools; L3 needs all three cap types.",
+              "evidence": [
+                {
+                  "file": "apps/sim/providers/index.ts",
+                  "lines": "135",
+                  "contains": "DEFAULT_MAX_TOOL_ITERATIONS = 20",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/providers/index.ts#L135"
+                },
+                {
+                  "file": "apps/sim/lib/execution/call-chain.ts",
+                  "lines": "10",
+                  "contains": "MAX_CALL_CHAIN_DEPTH = 25",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/execution/call-chain.ts#L10"
+                },
+                {
+                  "file": "apps/sim/executor/constants.ts",
+                  "lines": "198-199",
+                  "contains": "DEFAULT_LOOP_ITERATIONS: 1000",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/executor/constants.ts#L198-L199"
+                },
+                {
+                  "file": "apps/sim/tools/index.ts",
+                  "lines": "1686",
+                  "contains": "const effectiveSignal = signal ?? executionContext?.abortSignal",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/index.ts#L1686"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The tool loop and nested workflow calls are bounded, and function execution inherits the remaining execution deadline.",
+              "gap": "Child workflows and schedules are not verified to share one budget; L3 needs that.",
+              "evidence": [
+                {
+                  "file": "apps/sim/lib/execution/call-chain.ts",
+                  "lines": "10",
+                  "contains": "MAX_CALL_CHAIN_DEPTH = 25",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/execution/call-chain.ts#L10"
+                },
+                {
+                  "file": "apps/sim/providers/index.ts",
+                  "lines": "135",
+                  "contains": "DEFAULT_MAX_TOOL_ITERATIONS = 20",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/providers/index.ts#L135"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "With billing disabled, getExecutionTimeout returns 0 (untimed) unless the operator sets EXECUTION_TIMEOUT_FREE.",
+              "gap": "No wall-clock or spend default on self-hosted installs; L2 needs sensible defaults.",
+              "evidence": [
+                {
+                  "file": "apps/sim/lib/core/execution-limits/types.ts",
+                  "lines": "85-89",
+                  "contains": "override > 0 ? EXECUTION_TIMEOUTS.free[type] : 0",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/core/execution-limits/types.ts#L85-L89"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A runaway run has no time or spend ceiling by default, though stopping aborts in-flight calls.",
+              "gap": "Ceilings are unlimited by default; L2 needs moderate ceilings.",
+              "evidence": [
+                {
+                  "file": "apps/sim/lib/core/execution-limits/types.ts",
+                  "lines": "85-89",
+                  "contains": "override > 0 ? EXECUTION_TIMEOUTS.free[type] : 0",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/core/execution-limits/types.ts#L85-L89"
+                },
+                {
+                  "file": "apps/sim/tools/index.ts",
+                  "lines": "1686",
+                  "contains": "const effectiveSignal = signal ?? executionContext?.abortSignal",
+                  "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/index.ts#L1686"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "Agent block tool calls, including code execution, generic HTTP, SSH and email send, run with no approval gate in the default configuration.",
+      "criterion": "C2",
+      "owasp": [
+        "ASI02",
+        "ASI09"
+      ],
+      "evidence": [
+        {
+          "file": "apps/sim/tools/function/execute.ts",
+          "lines": "114-117",
+          "contains": "visibility: 'user-or-llm'",
+          "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/function/execute.ts#L114-L117"
+        },
+        {
+          "file": "apps/sim/tools/http/request.ts",
+          "lines": "17-20",
+          "contains": "visibility: 'user-or-llm'",
+          "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/http/request.ts#L17-L20"
+        },
+        {
+          "file": "apps/sim/tools/ssh/execute_command.ts",
+          "lines": "47-51",
+          "contains": "Shell command to execute on the remote server",
+          "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/ssh/execute_command.ts#L47-L51"
+        }
+      ]
+    },
+    {
+      "summary": "A hijacked agent can exfiltrate data and take irreversible actions unattended; public-by-default chat deployments and inbound triggers start runs that use the owner's write credentials.",
+      "criterion": "C5",
+      "owasp": [
+        "ASI01"
+      ],
+      "evidence": [
+        {
+          "file": "apps/sim/lib/chat-deployments/application/workflow-chat-deployment.ts",
+          "lines": "191",
+          "contains": "input.authType ?? 'public'",
+          "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/chat-deployments/application/workflow-chat-deployment.ts#L191"
+        },
+        {
+          "file": "apps/sim/tools/http/request.ts",
+          "lines": "17-20",
+          "contains": "visibility: 'user-or-llm'",
+          "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/http/request.ts#L17-L20"
+        },
+        {
+          "file": "apps/sim/tools/gmail/send.ts",
+          "lines": "5",
+          "contains": "id: 'gmail_send'",
+          "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/gmail/send.ts#L5"
+        }
+      ]
+    },
+    {
+      "summary": "Model-written function code receives every workspace secret by default together with a fetch() that reaches any public host.",
+      "criterion": "C4",
+      "owasp": [
+        "ASI05",
+        "ASI03"
+      ],
+      "evidence": [
+        {
+          "file": "apps/sim/lib/function-execution/execute-request.ts",
+          "lines": "844",
+          "contains": "if (scope !== 'selected') return envVars",
+          "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/function-execution/execute-request.ts#L844"
+        },
+        {
+          "file": "apps/sim/tools/function/execute.ts",
+          "lines": "114-117",
+          "contains": "visibility: 'user-or-llm'",
+          "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/tools/function/execute.ts#L114-L117"
+        },
+        {
+          "file": "apps/sim/lib/execution/isolated-vm.ts",
+          "lines": "260",
+          "contains": "profile: 'requestTarget'",
+          "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/execution/isolated-vm.ts#L260"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "public chat deployments (workflow-chat-deployment.ts:191), inbound triggers such as gmail_poller (triggers/gmail/poller.ts:5), http_request results",
+    "sensitive_data": "workspace OAuth grants and secrets (oauth.ts:163-165, execute-request.ts:844)",
+    "state_change_or_egress": "http_request to any public URL (tools/http/request.ts:17-20), gmail_send, function fetch (isolated-vm.ts:260)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Default function blocks and agent-authored code to no secrets (secretScope 'selected' with an empty list) and require explicit mounting.",
+      "criterion": "C4",
+      "parameter": "B",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 4, step 2",
+      "estimated_gain": 0.1
+    },
+    {
+      "summary": "Ship NEXT_TELEMETRY_DISABLED=1 in docker-compose.prod.yml (as the Helm chart does) and stop exporting log arguments in telemetry.",
+      "criterion": "C8",
+      "parameter": "D",
+      "from_level": 0,
+      "to_level": 2,
+      "estimated_gain": 0.1
+    },
+    {
+      "summary": "Add a per-tool approval option in the Agent block tool loop that pauses through the existing HITL resume flow and shows the exact arguments.",
+      "criterion": "C2",
+      "parameter": "S",
+      "from_level": 0,
+      "to_level": 3,
+      "playbook": "Playbook 5, step 1",
+      "estimated_gain": 0.225
+    },
+    {
+      "summary": "Set a default wall-clock timeout for self-hosted runs and a per-run model spend cap.",
+      "criterion": "C10",
+      "parameter": "D",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 3, step 3",
+      "estimated_gain": 0.05
+    },
+    {
+      "summary": "Enable Better Auth OAuth token encryption so stored access and refresh tokens are encrypted with the instance key.",
+      "criterion": "C8",
+      "parameter": "S",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 4, step 1",
+      "estimated_gain": 0.075
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was built, installed or run.",
+    "Scored the self-hosted compose deployment. The hosted sim.ai service (billing limits, hosted telemetry), the Helm chart (which disables telemetry), the Copilot/Mothership surface (needs COPILOT_API_KEY) and the macOS desktop app's local terminal were not scored.",
+    "Very large monorepo (351 tool directories, 78 trigger integrations); individual integration tools were sampled, not exhaustively reviewed.",
+    "The impact of an isolated-vm escape (reading the same-uid app process environment) is inferred; the isolate's access to workspace secrets is verified.",
+    "Better Auth's default of not encrypting OAuth tokens is inferred from the library; the code storing and comparing raw refresh tokens is verified.",
+    "No reviewer-injection text was found in the repository's markdown files."
+  ]
+}

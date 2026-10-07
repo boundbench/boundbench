@@ -1,0 +1,2688 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "azure-mcp-server",
+  "name": "Azure MCP Server",
+  "repo_url": "https://github.com/microsoft/mcp",
+  "subpath": "servers/Azure.Mcp.Server",
+  "description": "Official Microsoft MCP server for Azure services",
+  "category": "infrastructure_ops",
+  "pinned_commit": "040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6",
+  "version": null,
+  "scored_date": "2026-10-03",
+  "scored_configuration": "Local stdio server started with 'azmcp server start' and no flags: namespace mode, all service areas, proxy tools on, elicitation on, read-only off, the user's ambient Azure credentials, telemetry on.",
+  "score": 2.7,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 10,
+    "score": 2.67,
+    "max": 10.0,
+    "percent": 27
+  },
+  "capability_profile": {
+    "code_execution": "yes",
+    "filesystem_write": "yes",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "yes",
+    "untrusted_input": "yes",
+    "third_party_extensions": "yes",
+    "sub_agents": "yes",
+    "external_communication": "yes"
+  },
+  "headline": "Azure MCP Server acts with the signed-in user's full Azure authority across every subscription and service area by default, so a hijacked host model can do whatever the user can. Its strongest control is a server-side confirmation prompt for commands marked destructive or secret, which fails closed when the client can't ask; but about 60 state-changing commands (email/SMS send, blob upload, SRE Agent memory, scheduled tasks and an auto-approving 'yolo' investigation) skip it, and proxied MCP tools bypass it entirely. Run it with --read-only and a narrow --namespace list, or as a remote server with on-behalf-of auth, wherever possible.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "In its default local (stdio) mode the server signs in with whatever Azure identity the user already has (VS Code, Azure CLI, environment, managed identity or an interactive browser login) and every tool uses that one identity, so it can do anything the user can do across all their subscriptions and tenants. There is no narrower identity, no per-tool credential and no authorization check of its own beyond Azure RBAC; local helper processes (azd, azqr) inherit the full environment. When deployed as an authenticated remote HTTP server it instead exchanges each caller's token on-behalf-of that user, checks the tenant and fails closed, which is a much better design but is not the default deployment.",
+      "max": 1.0,
+      "notes": "Score = the opt-in remote OBO mode capped by G1; the default stdio mode scores 0.",
+      "status": "scored",
+      "score": 0.5,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "In authenticated HTTP mode the default outgoing strategy is on-behalf-of: each request's Entra token is exchanged for a downstream token for that user, with a tenant-match check.",
+          "gap": "Intersect the requesting user's authority with a server-side least-privilege policy and downscope tokens per task.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs",
+              "lines": "876-892",
+              "contains": "OutgoingAuthStrategy.UseOnBehalfOf;",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs#L876-L892"
+            },
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs",
+              "lines": "474-481",
+              "contains": "services.AddHttpOnBehalfOfTokenCredentialProvider();",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs#L474-L481"
+            },
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Services/Azure/Authentication/HttpOnBehalfOfTokenCredentialProvider.cs",
+              "lines": "21-54",
+              "contains": "The current HTTP request must be authenticated to make an on-behalf-of token request.",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Services/Azure/Authentication/HttpOnBehalfOfTokenCredentialProvider.cs#L21-L54"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All in-process tools and the registry HTTP servers use the OBO provider; unauthenticated requests throw (fail closed) and local-only tools are filtered out in HTTP mode.",
+          "gap": "Authorization against a server-side policy in addition to the user's own RBAC on every path.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/RegistryServerServiceCollectionExtensions.cs",
+              "lines": "78-84",
+              "contains": "return new AccessTokenHandler(provider, oauthScopes);",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/RegistryServerServiceCollectionExtensions.cs#L78-L84"
+            },
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/BaseToolLoader.cs",
+              "lines": "451-457",
+              "contains": "(!configuration.IsHttpMode || !command.Metadata.LocalRequired)",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/BaseToolLoader.cs#L451-L457"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "OBO is the automatic default once HTTP transport is chosen with auth on, but the operator can switch to the hosting identity or disable incoming auth with a dangerously-named flag.",
+          "gap": "Make the remote mode read-only or minimally privileged by default.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs",
+              "lines": "60-61",
+              "contains": "public bool DangerouslyDisableHttpIncomingAuth { get; set; } = false;",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs#L60-L61"
+            },
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs",
+              "lines": "876-892",
+              "contains": "return options.DangerouslyDisableHttpIncomingAuth",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs#L876-L892"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked remote session still holds the calling user's full Azure rights (write across many services) for the token lifetime.",
+          "gap": "Limit OBO tokens to read or to a narrow resource scope.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs",
+              "lines": "466-472",
+              "contains": "allowedScopeValues: [\"Mcp.Tools.ReadWrite\"],",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs#L466-L472"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The stdio default builds a chained credential from the user's ambient sources (VS Code, DefaultAzureCredential chain, interactive browser) and uses it for every tool.",
+              "gap": "A dedicated, narrowly scoped identity (or per-tool scoped credentials) instead of the user's full ambient Azure authority.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Services/Azure/Authentication/CustomChainedCredential.cs",
+                  "lines": "165-173",
+                  "contains": "creds.Add(CreateDefaultCredential(tenantId, logger));",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Services/Azure/Authentication/CustomChainedCredential.cs#L165-L173"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Services/Azure/Authentication/CustomChainedCredential.cs",
+                  "lines": "202-224",
+                  "contains": "return new ChainedTokenCredential([.. creds]);",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Services/Azure/Authentication/CustomChainedCredential.cs#L202-L224"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs",
+                  "lines": "876-892",
+                  "contains": "return OutgoingAuthStrategy.UseHostingEnvironmentIdentity;",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs#L876-L892"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All tools obtain tokens from the same ambient credential provider with no authorization layer between tool call and Azure; subprocesses (azqr, azd) receive the full process environment.",
+              "gap": "An authorization check in code on every tool path, with subprocesses given only scoped credentials.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs",
+                  "lines": "370-373",
+                  "contains": "services.AddSingleIdentityTokenCredentialProvider();",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs#L370-L373"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs",
+                  "lines": "246-270",
+                  "contains": "var startInfo = new ProcessStartInfo",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs#L246-L270"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryServerProvider.cs",
+                  "lines": "338-356",
+                  "contains": "Environment.GetEnvironmentVariables()",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryServerProvider.cs#L338-L356"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A fresh stdio install runs with the signed-in user's full Azure privileges; narrowing requires the operator to choose a different identity or pass --read-only.",
+              "gap": "A least-privilege default (read-only or minimal role) with write requiring explicit elevation.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs",
+                  "lines": "46-47",
+                  "contains": "public bool? ReadOnly { get; set; } = null;",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs#L46-L47"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs",
+                  "lines": "876-892",
+                  "contains": "return OutgoingAuthStrategy.UseHostingEnvironmentIdentity;",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs#L876-L892"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked session can act with the user's full Azure rights on every subscription and tenant the user can reach (60+ service areas including delete, KV secrets, SQL, email).",
+              "gap": "Scope the identity to one subscription/resource group or read-only so a hijack cannot reach the whole account.",
+              "evidence": [
+                {
+                  "file": "servers/Azure.Mcp.Server/src/Program.cs",
+                  "lines": "172-243",
+                  "contains": "new Azure.Mcp.Tools.KeyVault.KeyVaultSetup(),",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/servers/Azure.Mcp.Server/src/Program.cs#L172-L243"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "Remote HTTP mode with incoming Entra auth and on-behalf-of token exchange",
+          "score": 0.5,
+          "raw": 0.6,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "In authenticated HTTP mode the default outgoing strategy is on-behalf-of: each request's Entra token is exchanged for a downstream token for that user, with a tenant-match check.",
+              "gap": "Intersect the requesting user's authority with a server-side least-privilege policy and downscope tokens per task.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs",
+                  "lines": "876-892",
+                  "contains": "OutgoingAuthStrategy.UseOnBehalfOf;",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs#L876-L892"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs",
+                  "lines": "474-481",
+                  "contains": "services.AddHttpOnBehalfOfTokenCredentialProvider();",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs#L474-L481"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Services/Azure/Authentication/HttpOnBehalfOfTokenCredentialProvider.cs",
+                  "lines": "21-54",
+                  "contains": "The current HTTP request must be authenticated to make an on-behalf-of token request.",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Services/Azure/Authentication/HttpOnBehalfOfTokenCredentialProvider.cs#L21-L54"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All in-process tools and the registry HTTP servers use the OBO provider; unauthenticated requests throw (fail closed) and local-only tools are filtered out in HTTP mode.",
+              "gap": "Authorization against a server-side policy in addition to the user's own RBAC on every path.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/RegistryServerServiceCollectionExtensions.cs",
+                  "lines": "78-84",
+                  "contains": "return new AccessTokenHandler(provider, oauthScopes);",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/RegistryServerServiceCollectionExtensions.cs#L78-L84"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/BaseToolLoader.cs",
+                  "lines": "451-457",
+                  "contains": "(!configuration.IsHttpMode || !command.Metadata.LocalRequired)",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/BaseToolLoader.cs#L451-L457"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "OBO is the automatic default once HTTP transport is chosen with auth on, but the operator can switch to the hosting identity or disable incoming auth with a dangerously-named flag.",
+              "gap": "Make the remote mode read-only or minimally privileged by default.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs",
+                  "lines": "60-61",
+                  "contains": "public bool DangerouslyDisableHttpIncomingAuth { get; set; } = false;",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs#L60-L61"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs",
+                  "lines": "876-892",
+                  "contains": "return options.DangerouslyDisableHttpIncomingAuth",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs#L876-L892"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked remote session still holds the calling user's full Azure rights (write across many services) for the token lifetime.",
+              "gap": "Limit OBO tokens to read or to a narrow resource scope.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs",
+                  "lines": "466-472",
+                  "contains": "allowedScopeValues: [\"Mcp.Tools.ReadWrite\"],",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs#L466-L472"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "The server has a real, server-side confirmation step: commands marked destructive or secret-handling trigger an MCP elicitation asking the user to approve or reject, the run is refused if the client cannot show the prompt, and command metadata defaults to destructive when a developer forgets to set it. But in the default namespace mode the tools the host sees carry no read-only or destructive hints, the prompt names the tool without showing its arguments, about 60 state-changing commands are marked non-destructive and run without confirmation (sending email and SMS, uploading local files to blob storage, writing SRE Agent memory and scheduled tasks), and proxied tools from other MCP servers (ARM, Foundry, azd) skip the gate. One tool, SRE Agent 'investigate_yolo', is marked non-destructive and automatically grants every pending SRE Agent approval request in the user's name, so the model can satisfy another agent's human-approval gate.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.15,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "C2-SELFAPPROVE",
+        "max": 0.25,
+        "reason": "investigate_yolo (labelled non-destructive in every mode) auto-approves pending SRE Agent approvals in the user's name."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "In 'all' mode each command is its own tool carrying readOnlyHint/destructiveHint from its metadata, but several mutating commands are labelled non-destructive (investigate_yolo, storage-sync update, App Config lock set).",
+          "gap": "Correct annotations on every mutating tool.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/BaseToolLoader.cs",
+              "lines": "406-414",
+              "contains": "DestructiveHint = metadata.Destructive,",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/BaseToolLoader.cs#L406-L414"
+            },
+            {
+              "file": "tools/Azure.Mcp.Tools.StorageSync/src/Commands/StorageSyncService/StorageSyncServiceUpdateCommand.cs",
+              "lines": "17-21",
+              "contains": "Destructive = false,",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.StorageSync/src/Commands/StorageSyncService/StorageSyncServiceUpdateCommand.cs#L17-L21"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The elicitation gate covers only commands flagged destructive/secret; proxied registry tools bypass it.",
+          "gap": "Gate every state-changing command and proxied tool.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/CommandFactoryToolLoader.cs",
+              "lines": "183-187",
+              "contains": "var elicitationResult = await HandleElicitationAsync(",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/CommandFactoryToolLoader.cs#L183-L187"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "'all' mode is opt-in; the default is namespace mode.",
+          "gap": "Make per-command tools the default.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Options/ModeTypes.cs",
+              "lines": "14",
+              "contains": "public const string Default = NamespaceProxy;",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Options/ModeTypes.cs#L14"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Same irreversible actions (resource deletion, email/SMS) with no preview or rollback.",
+          "gap": "Previews/dry-runs and recoverable deletes.",
+          "evidence": [
+            {
+              "search": "rg -n -i --type cs \"dry-?run|whatif|what-if\"",
+              "scope": "core tools",
+              "hits": 0,
+              "note": "No preview or dry-run facility."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.125,
+          "raw": 0.125,
+          "cap": {
+            "id": "C2-SELFAPPROVE",
+            "max": 0.25,
+            "reason": "The investigate_yolo tool (non-destructive, so never elicited) auto-approves all pending SRE Agent approval requests in the user's name, letting the model satisfy a human approval gate."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "In the default namespace mode each exposed tool (e.g. 'storage') routes both read and write commands, its annotations come from group.ToolMetadata which is null outside consolidated mode, and the learn response omits per-command hints; the server-side elicitation exists but the host gets no risk signal.",
+              "gap": "Separate read and write tools (or per-command annotations) visible to the host in the default mode, with accurate destructive/read-only labels.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/NamespaceToolLoader.cs",
+                  "lines": "142-149",
+                  "contains": "ReadOnlyHint = group.ToolMetadata?.ReadOnly,",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/NamespaceToolLoader.cs#L142-L149"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Commands/CommandGroup.cs",
+                  "lines": "17",
+                  "contains": "public ToolMetadata? ToolMetadata { get; set; }",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Commands/CommandGroup.cs#L17"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/ConsolidatedToolDiscoveryStrategy.cs",
+                  "lines": "255",
+                  "contains": "commandGroup.ToolMetadata = _consolidatedTool.ToolMetadata;",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/ConsolidatedToolDiscoveryStrategy.cs#L255"
+                },
+                {
+                  "file": "tools/Azure.Mcp.Tools.SreAgent/src/Commands/Threads/ThreadsInvestigateYoloCommand.cs",
+                  "lines": "17-24",
+                  "contains": "Destructive = false,",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.SreAgent/src/Commands/Threads/ThreadsInvestigateYoloCommand.cs#L17-L24"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/BaseToolLoader.cs",
+                  "lines": "255-261",
+                  "contains": "if (!isSecret && !isDestructive)",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/BaseToolLoader.cs#L255-L261"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Models/ToolCommandInfo.cs",
+                  "lines": "32-44",
+                  "contains": "InputSchema = tool.InputSchema;",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Models/ToolCommandInfo.cs#L32-L44"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only commands flagged Destructive or Secret are gated; non-destructive writes (email/SMS send, blob upload, SRE yolo) and all proxied registry tools reach their action without the server's elicitation.",
+              "gap": "Gate every state-changing and egress command, including proxied MCP tools, not only those flagged destructive.",
+              "evidence": [
+                {
+                  "file": "tools/Azure.Mcp.Tools.Communication/src/Commands/Email/EmailSendCommand.cs",
+                  "lines": "18-25",
+                  "contains": "Destructive = false,",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.Communication/src/Commands/Email/EmailSendCommand.cs#L18-L25"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/RegistryToolLoader.cs",
+                  "lines": "185-191",
+                  "contains": "return await kvp.Client.CallToolAsync(kvp.OriginalToolName, parameters, cancellationToken: cancellationToken);",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/RegistryToolLoader.cs#L185-L191"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/ServerToolLoader.cs",
+                  "lines": "316-320",
+                  "contains": "var toolCallResponse = await client.CallToolAsync(command, parameters, cancellationToken: cancellationToken);",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/ServerToolLoader.cs#L316-L320"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/NamespaceToolLoader.cs",
+                  "lines": "409-416",
+                  "contains": "var elicitationResult = await HandleElicitationAsync(",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/NamespaceToolLoader.cs#L409-L416"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Elicitation is on by default, fails closed when the client lacks elicitation, and is disabled only by --dangerously-disable-elicitation (logged as a warning); rated L1 because D may be at most one level above S.",
+              "gap": "Strength must rise first; the default/tamper element itself would merit L3.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs",
+                  "lines": "67-68",
+                  "contains": "public bool DangerouslyDisableElicitation { get; set; } = false;",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs#L67-L68"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/BaseToolLoader.cs",
+                  "lines": "271-284",
+                  "contains": "Operation rejected for security.",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/BaseToolLoader.cs#L271-L284"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Commands/ToolMetadata.cs",
+                  "lines": "36",
+                  "contains": "public bool Destructive { get; init; } = true;",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Commands/ToolMetadata.cs#L36"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A wrongly approved or ungated call can delete Azure resources, send external email/SMS, or auto-approve SRE Agent actions; there is no preview, dry-run, or rollback.",
+              "gap": "Previews/dry-runs for destructive operations and recoverable deletes.",
+              "evidence": [
+                {
+                  "search": "rg -n -i --type cs \"dry-?run|whatif|what-if\"",
+                  "scope": "core tools",
+                  "hits": 0,
+                  "note": "No preview or dry-run facility exists anywhere in core or tools."
+                },
+                {
+                  "file": "tools/Azure.Mcp.Tools.Communication/src/Commands/Email/EmailSendCommand.cs",
+                  "lines": "18-25",
+                  "contains": "Send emails to one or multiple recipients",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.Communication/src/Commands/Email/EmailSendCommand.cs#L18-L25"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "--mode all (one MCP tool per command with per-command annotations)",
+          "score": 0.15,
+          "raw": 0.15,
+          "cap": {
+            "id": "C2-SELFAPPROVE",
+            "max": 0.25,
+            "reason": "investigate_yolo (labelled non-destructive in every mode) auto-approves pending SRE Agent approvals in the user's name."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "In 'all' mode each command is its own tool carrying readOnlyHint/destructiveHint from its metadata, but several mutating commands are labelled non-destructive (investigate_yolo, storage-sync update, App Config lock set).",
+              "gap": "Correct annotations on every mutating tool.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/BaseToolLoader.cs",
+                  "lines": "406-414",
+                  "contains": "DestructiveHint = metadata.Destructive,",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/BaseToolLoader.cs#L406-L414"
+                },
+                {
+                  "file": "tools/Azure.Mcp.Tools.StorageSync/src/Commands/StorageSyncService/StorageSyncServiceUpdateCommand.cs",
+                  "lines": "17-21",
+                  "contains": "Destructive = false,",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.StorageSync/src/Commands/StorageSyncService/StorageSyncServiceUpdateCommand.cs#L17-L21"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The elicitation gate covers only commands flagged destructive/secret; proxied registry tools bypass it.",
+              "gap": "Gate every state-changing command and proxied tool.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/CommandFactoryToolLoader.cs",
+                  "lines": "183-187",
+                  "contains": "var elicitationResult = await HandleElicitationAsync(",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/CommandFactoryToolLoader.cs#L183-L187"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "'all' mode is opt-in; the default is namespace mode.",
+              "gap": "Make per-command tools the default.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Options/ModeTypes.cs",
+                  "lines": "14",
+                  "contains": "public const string Default = NamespaceProxy;",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Options/ModeTypes.cs#L14"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Same irreversible actions (resource deletion, email/SMS) with no preview or rollback.",
+              "gap": "Previews/dry-runs and recoverable deletes.",
+              "evidence": [
+                {
+                  "search": "rg -n -i --type cs \"dry-?run|whatif|what-if\"",
+                  "scope": "core tools",
+                  "hits": 0,
+                  "note": "No preview or dry-run facility."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "Tools are typed commands with named options rather than a generic HTTP or shell tool, and many service endpoints pass through an allowlist-based SSRF validator (HTTPS only, Azure domain suffixes, private-IP and DNS checks). SQL and KQL tools accept raw queries filtered only by single-statement, no-comment and management-command denylists; the blob upload tool reads any local file path without containment; validation is per tool rather than one central policy. A --read-only switch and --namespace/--tool filters exist, but by default every service area including write tools is exposed against all of the user's subscriptions.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.45,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Typed options plus host allowlists for endpoints, but raw SQL/KQL is passed through behind denylist filters and local file paths are unconstrained.",
+          "gap": "Parameterized/narrow query tools and resolved-path containment for local files on every tool.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Helpers/EndpointValidator.cs",
+              "lines": "130-155",
+              "contains": "Endpoint must use HTTPS protocol. Got: {uriUnderTest.Scheme}",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Helpers/EndpointValidator.cs#L130-L155"
+            },
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Helpers/EndpointValidator.cs",
+              "lines": "283-320",
+              "contains": "if (IsPrivateOrReservedIP(ipAddress))",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Helpers/EndpointValidator.cs#L283-L320"
+            },
+            {
+              "file": "tools/Azure.Mcp.Tools.Postgres/src/Validation/SqlQueryValidator.cs",
+              "lines": "50-60",
+              "contains": "Multiple or stacked SQL statements are not allowed.",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.Postgres/src/Validation/SqlQueryValidator.cs#L50-L60"
+            },
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Validation/KqlQueryValidator.cs",
+              "lines": "27-41",
+              "contains": "\".drop\",",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Validation/KqlQueryValidator.cs#L27-L41"
+            },
+            {
+              "file": "tools/Azure.Mcp.Tools.Storage/src/Services/StorageService.cs",
+              "lines": "380-390",
+              "contains": "using var fileStream = File.OpenRead(localFilePath);",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.Storage/src/Services/StorageService.cs#L380-L390"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Endpoint validation is called in 28 tool areas and query validators in the SQL/KQL tools, but each tool opts in individually; proxied MCP tools are not validated by this server.",
+          "gap": "A shared validation layer that every tool, including proxied ones, inherits automatically.",
+          "evidence": [
+            {
+              "search": "rg -l --type cs \"EndpointValidator\\.Validate\" -g !**/tests/**",
+              "scope": "tools",
+              "hits": 33,
+              "note": "33 non-test source files across 28 tool areas call the validator individually; no central policy layer."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Namespaces and individual tools are selectable and a read-only switch exists, but the default exposes every area including write tools.",
+          "gap": "Default to the read-only tool set with write tools enabled explicitly.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs",
+              "lines": "25-26",
+              "contains": "public string[]? Namespace { get; set; } = null;",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs#L25-L26"
+            },
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs",
+              "lines": "46-47",
+              "contains": "public bool? ReadOnly { get; set; } = null;",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs#L46-L47"
+            },
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Options/ModeTypes.cs",
+              "lines": "14",
+              "contains": "public const string Default = NamespaceProxy;",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Options/ModeTypes.cs#L14"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A misused tool reaches every subscription and resource the user can access; only some tools have row caps or query length limits.",
+          "gap": "Scope tools to a configured subscription/resource group and bound quantities on write tools.",
+          "evidence": [
+            {
+              "file": "tools/Azure.Mcp.Tools.MySql/src/Services/MySqlService.cs",
+              "lines": "21",
+              "contains": "private const int MaxRowCount = 10_000;",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.MySql/src/Services/MySqlService.cs#L21"
+            },
+            {
+              "file": "servers/Azure.Mcp.Server/src/Program.cs",
+              "lines": "172-243",
+              "contains": "new Azure.Mcp.Tools.Storage.StorageSetup(),",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/servers/Azure.Mcp.Server/src/Program.cs#L172-L243"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.45,
+          "raw": 0.45,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Typed options plus host allowlists for endpoints, but raw SQL/KQL is passed through behind denylist filters and local file paths are unconstrained.",
+              "gap": "Parameterized/narrow query tools and resolved-path containment for local files on every tool.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Helpers/EndpointValidator.cs",
+                  "lines": "130-155",
+                  "contains": "Endpoint must use HTTPS protocol. Got: {uriUnderTest.Scheme}",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Helpers/EndpointValidator.cs#L130-L155"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Helpers/EndpointValidator.cs",
+                  "lines": "283-320",
+                  "contains": "if (IsPrivateOrReservedIP(ipAddress))",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Helpers/EndpointValidator.cs#L283-L320"
+                },
+                {
+                  "file": "tools/Azure.Mcp.Tools.Postgres/src/Validation/SqlQueryValidator.cs",
+                  "lines": "50-60",
+                  "contains": "Multiple or stacked SQL statements are not allowed.",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.Postgres/src/Validation/SqlQueryValidator.cs#L50-L60"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Validation/KqlQueryValidator.cs",
+                  "lines": "27-41",
+                  "contains": "\".drop\",",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Validation/KqlQueryValidator.cs#L27-L41"
+                },
+                {
+                  "file": "tools/Azure.Mcp.Tools.Storage/src/Services/StorageService.cs",
+                  "lines": "380-390",
+                  "contains": "using var fileStream = File.OpenRead(localFilePath);",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.Storage/src/Services/StorageService.cs#L380-L390"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Endpoint validation is called in 28 tool areas and query validators in the SQL/KQL tools, but each tool opts in individually; proxied MCP tools are not validated by this server.",
+              "gap": "A shared validation layer that every tool, including proxied ones, inherits automatically.",
+              "evidence": [
+                {
+                  "search": "rg -l --type cs \"EndpointValidator\\.Validate\" -g !**/tests/**",
+                  "scope": "tools",
+                  "hits": 33,
+                  "note": "33 non-test source files across 28 tool areas call the validator individually; no central policy layer."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Namespaces and individual tools are selectable and a read-only switch exists, but the default exposes every area including write tools.",
+              "gap": "Default to the read-only tool set with write tools enabled explicitly.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs",
+                  "lines": "25-26",
+                  "contains": "public string[]? Namespace { get; set; } = null;",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs#L25-L26"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs",
+                  "lines": "46-47",
+                  "contains": "public bool? ReadOnly { get; set; } = null;",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs#L46-L47"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Options/ModeTypes.cs",
+                  "lines": "14",
+                  "contains": "public const string Default = NamespaceProxy;",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Options/ModeTypes.cs#L14"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A misused tool reaches every subscription and resource the user can access; only some tools have row caps or query length limits.",
+              "gap": "Scope tools to a configured subscription/resource group and bound quantities on write tools.",
+              "evidence": [
+                {
+                  "file": "tools/Azure.Mcp.Tools.MySql/src/Services/MySqlService.cs",
+                  "lines": "21",
+                  "contains": "private const int MaxRowCount = 10_000;",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.MySql/src/Services/MySqlService.cs#L21"
+                },
+                {
+                  "file": "servers/Azure.Mcp.Server/src/Program.cs",
+                  "lines": "172-243",
+                  "contains": "new Azure.Mcp.Tools.Storage.StorageSetup(),",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/servers/Azure.Mcp.Server/src/Program.cs#L172-L243"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "The server does not run a shell, but model-influenced text is interpreted in several places: raw SQL and KQL queries run on remote databases under the user's identity, the azqr tool launches an external process whose argument handling is not strict, and the azd MCP server is launched as a local subprocess. None of this runs inside any isolation boundary: subprocesses run as the user with the server's full environment, including any Azure credentials in environment variables. No sandbox, container or restricted runtime exists in the code.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Subprocesses (azqr, azd) are same-user processes and queries execute directly against remote services; there is no isolation primitive.",
+          "gap": "Run external processes in an OS sandbox or container with a reduced environment.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs",
+              "lines": "246-270",
+              "contains": "var startInfo = new ProcessStartInfo",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs#L246-L270"
+            },
+            {
+              "search": "rg -n -i --type cs \"seccomp|landlock|sandbox\"",
+              "scope": "core tools",
+              "hits": 1,
+              "note": "Only hit is an ALZ archetype file name ('sandbox.alz_archetype_definition.json'); no isolation code."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No execution path is sandboxed: ExternalProcessService, the azd stdio launch, and remote query execution all run unconfined.",
+          "gap": "Route every subprocess launch through an isolation layer.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryServerProvider.cs",
+              "lines": "331-359",
+              "contains": "var clientTransport = new StdioClientTransport(transportOptions);",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryServerProvider.cs#L331-L359"
+            },
+            {
+              "file": "tools/Azure.Mcp.Tools.Postgres/src/Commands/Database/DatabaseQueryCommand.cs",
+              "lines": "14-17",
+              "contains": "Executes a SQL query on an Azure Database for PostgreSQL server",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.Postgres/src/Commands/Database/DatabaseQueryCommand.cs#L14-L17"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "There is no isolation to turn on.",
+          "gap": "An isolation boundary enabled by default for subprocess launches.",
+          "evidence": [
+            {
+              "search": "rg -n -i --type cs \"seccomp|landlock|sandbox\"",
+              "scope": "core tools",
+              "hits": 1,
+              "note": "No sandbox configuration exists."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Spawned processes inherit the full server environment (Azure credential env vars included) and the user's filesystem and network.",
+          "gap": "Scrub the environment and restrict filesystem/network for spawned processes.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryServerProvider.cs",
+              "lines": "338-356",
+              "contains": "Environment.GetEnvironmentVariables()",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryServerProvider.cs#L338-L356"
+            },
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs",
+              "lines": "265-270",
+              "contains": "startInfo.EnvironmentVariables[pair.Key] = pair.Value;",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs#L265-L270"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Subprocesses (azqr, azd) are same-user processes and queries execute directly against remote services; there is no isolation primitive.",
+              "gap": "Run external processes in an OS sandbox or container with a reduced environment.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs",
+                  "lines": "246-270",
+                  "contains": "var startInfo = new ProcessStartInfo",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs#L246-L270"
+                },
+                {
+                  "search": "rg -n -i --type cs \"seccomp|landlock|sandbox\"",
+                  "scope": "core tools",
+                  "hits": 1,
+                  "note": "Only hit is an ALZ archetype file name ('sandbox.alz_archetype_definition.json'); no isolation code."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No execution path is sandboxed: ExternalProcessService, the azd stdio launch, and remote query execution all run unconfined.",
+              "gap": "Route every subprocess launch through an isolation layer.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryServerProvider.cs",
+                  "lines": "331-359",
+                  "contains": "var clientTransport = new StdioClientTransport(transportOptions);",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryServerProvider.cs#L331-L359"
+                },
+                {
+                  "file": "tools/Azure.Mcp.Tools.Postgres/src/Commands/Database/DatabaseQueryCommand.cs",
+                  "lines": "14-17",
+                  "contains": "Executes a SQL query on an Azure Database for PostgreSQL server",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.Postgres/src/Commands/Database/DatabaseQueryCommand.cs#L14-L17"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "There is no isolation to turn on.",
+              "gap": "An isolation boundary enabled by default for subprocess launches.",
+              "evidence": [
+                {
+                  "search": "rg -n -i --type cs \"seccomp|landlock|sandbox\"",
+                  "scope": "core tools",
+                  "hits": 1,
+                  "note": "No sandbox configuration exists."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Spawned processes inherit the full server environment (Azure credential env vars included) and the user's filesystem and network.",
+              "gap": "Scrub the environment and restrict filesystem/network for spawned processes.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryServerProvider.cs",
+                  "lines": "338-356",
+                  "contains": "Environment.GetEnvironmentVariables()",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryServerProvider.cs#L338-L356"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs",
+                  "lines": "265-270",
+                  "contains": "startInfo.EnvironmentVariables[pair.Key] = pair.Value;",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs#L265-L270"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "The server returns results as a JSON envelope (status, message, results) that separates data from metadata, but nothing marks returned content (blob data, Cosmos items, log rows, SRE Agent messages, proxied MCP results) as untrusted, and the server's own description and some error responses carry instructions to the model mixed with returned content. The read-only mode that would remove the state-change leg is off by default. If the host model is hijacked by content it reads, it can exfiltrate data through ungated tools such as email or SMS send without any human prompt, while destructive Azure operations still require the user's approval through elicitation.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.225,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Results are JSON-serialized CommandResponse objects but carry no provenance or untrusted flag; tool descriptions and missing-parameter responses embed directives to the model.",
+          "gap": "Provenance/untrusted markers on returned content and no directives mixed into outputs.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Models/Command/CommandResponse.cs",
+              "lines": "12-31",
+              "contains": "public ResponseResult? Results { get; set; }",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Models/Command/CommandResponse.cs#L12-L31"
+            },
+            {
+              "file": "servers/Azure.Mcp.Server/src/appsettings.json",
+              "lines": "7",
+              "contains": "Always use this tool for any Azure",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/servers/Azure.Mcp.Server/src/appsettings.json#L7"
+            },
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/NamespaceToolLoader.cs",
+              "lines": "486-502",
+              "contains": "Review the following command spec and identify the required arguments from the input schema.",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/NamespaceToolLoader.cs#L486-L502"
+            },
+            {
+              "search": "rg -n -i --type cs \"untrusted\"",
+              "scope": "core/Microsoft.Mcp.Core/src",
+              "hits": 1,
+              "note": "Single hit is a comment about W3C trace headers; no untrusted-content tagging."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No source of untrusted content (storage, databases, logs, SRE Agent threads, proxied MCP results) is distinguished from other output.",
+          "gap": "Tag every result from data-plane reads and proxied servers as untrusted.",
+          "evidence": [
+            {
+              "file": "tools/Azure.Mcp.Tools.Monitor/src/Commands/Log/WorkspaceLogQueryCommand.cs",
+              "lines": "18",
+              "contains": "Query Log Analytics Workspace",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.Monitor/src/Commands/Log/WorkspaceLogQueryCommand.cs#L18"
+            },
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/ServerToolLoader.cs",
+              "lines": "370-372",
+              "contains": "return toolCallResponse;",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/ServerToolLoader.cs#L370-L372"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The JSON envelope is always on and cannot be changed by content, but the read-only mode that drops a Rule-of-Two leg is off by default (capped one level above S).",
+          "gap": "Ship read-only or no-egress as the default mode.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs",
+              "lines": "46-47",
+              "contains": "public bool? ReadOnly { get; set; } = null;",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs#L46-L47"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked host can read data and send it out via email/SMS/event publishing with no human step; destructive operations still need elicitation approval.",
+          "gap": "Require approval for every egress/communication tool so exfiltration also needs a human.",
+          "evidence": [
+            {
+              "file": "tools/Azure.Mcp.Tools.Communication/src/Commands/Email/EmailSendCommand.cs",
+              "lines": "18-25",
+              "contains": "Destructive = false,",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.Communication/src/Commands/Email/EmailSendCommand.cs#L18-L25"
+            },
+            {
+              "file": "tools/Azure.Mcp.Tools.Communication/src/Commands/Sms/SmsSendCommand.cs",
+              "lines": "15-22",
+              "contains": "Destructive = false,",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.Communication/src/Commands/Sms/SmsSendCommand.cs#L15-L22"
+            },
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/BaseToolLoader.cs",
+              "lines": "255-261",
+              "contains": "if (!isSecret && !isDestructive)",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/BaseToolLoader.cs#L255-L261"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.225,
+          "raw": 0.225,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Results are JSON-serialized CommandResponse objects but carry no provenance or untrusted flag; tool descriptions and missing-parameter responses embed directives to the model.",
+              "gap": "Provenance/untrusted markers on returned content and no directives mixed into outputs.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Models/Command/CommandResponse.cs",
+                  "lines": "12-31",
+                  "contains": "public ResponseResult? Results { get; set; }",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Models/Command/CommandResponse.cs#L12-L31"
+                },
+                {
+                  "file": "servers/Azure.Mcp.Server/src/appsettings.json",
+                  "lines": "7",
+                  "contains": "Always use this tool for any Azure",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/servers/Azure.Mcp.Server/src/appsettings.json#L7"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/NamespaceToolLoader.cs",
+                  "lines": "486-502",
+                  "contains": "Review the following command spec and identify the required arguments from the input schema.",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/NamespaceToolLoader.cs#L486-L502"
+                },
+                {
+                  "search": "rg -n -i --type cs \"untrusted\"",
+                  "scope": "core/Microsoft.Mcp.Core/src",
+                  "hits": 1,
+                  "note": "Single hit is a comment about W3C trace headers; no untrusted-content tagging."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No source of untrusted content (storage, databases, logs, SRE Agent threads, proxied MCP results) is distinguished from other output.",
+              "gap": "Tag every result from data-plane reads and proxied servers as untrusted.",
+              "evidence": [
+                {
+                  "file": "tools/Azure.Mcp.Tools.Monitor/src/Commands/Log/WorkspaceLogQueryCommand.cs",
+                  "lines": "18",
+                  "contains": "Query Log Analytics Workspace",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.Monitor/src/Commands/Log/WorkspaceLogQueryCommand.cs#L18"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/ServerToolLoader.cs",
+                  "lines": "370-372",
+                  "contains": "return toolCallResponse;",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/ServerToolLoader.cs#L370-L372"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The JSON envelope is always on and cannot be changed by content, but the read-only mode that drops a Rule-of-Two leg is off by default (capped one level above S).",
+              "gap": "Ship read-only or no-egress as the default mode.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs",
+                  "lines": "46-47",
+                  "contains": "public bool? ReadOnly { get; set; } = null;",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs#L46-L47"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked host can read data and send it out via email/SMS/event publishing with no human step; destructive operations still need elicitation approval.",
+              "gap": "Require approval for every egress/communication tool so exfiltration also needs a human.",
+              "evidence": [
+                {
+                  "file": "tools/Azure.Mcp.Tools.Communication/src/Commands/Email/EmailSendCommand.cs",
+                  "lines": "18-25",
+                  "contains": "Destructive = false,",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.Communication/src/Commands/Email/EmailSendCommand.cs#L18-L25"
+                },
+                {
+                  "file": "tools/Azure.Mcp.Tools.Communication/src/Commands/Sms/SmsSendCommand.cs",
+                  "lines": "15-22",
+                  "contains": "Destructive = false,",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.Communication/src/Commands/Sms/SmsSendCommand.cs#L15-L22"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/BaseToolLoader.cs",
+                  "lines": "255-261",
+                  "contains": "if (!isSecret && !isDestructive)",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/BaseToolLoader.cs#L255-L261"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "The server itself keeps no long-term memory (caches are in-memory) and loads its settings only from its install directory, environment variables and command-line flags, never from the user's workspace. However, it exposes SRE Agent tools that write to that agent's persistent knowledge base, common prompts and scheduled tasks; these are marked non-destructive, so they run without any confirmation, and whatever the model writes there is retrieved by the SRE Agent in later investigations for every user of that agent and can trigger its actions. Poisoned content read in one session can therefore become a durable instruction for another agent.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.075,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The model can write arbitrary documents into the SRE Agent RAG knowledge base and create scheduled tasks/prompts with no validation or approval.",
+          "gap": "Gate or validate writes to agent memory/prompts/scheduled tasks (human approval or source restrictions).",
+          "evidence": [
+            {
+              "file": "tools/Azure.Mcp.Tools.SreAgent/src/Commands/Docs/MemoriesAddCommand.cs",
+              "lines": "17-21",
+              "contains": "Uploads markdown content that will be indexed for RAG-based knowledge retrieval.",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.SreAgent/src/Commands/Docs/MemoriesAddCommand.cs#L17-L21"
+            },
+            {
+              "file": "tools/Azure.Mcp.Tools.SreAgent/src/Commands/ScheduledTasks/ScheduledTasksCreateCommand.cs",
+              "lines": "17-21",
+              "contains": "Create an SRE Agent scheduled task.",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.SreAgent/src/Commands/ScheduledTasks/ScheduledTasksCreateCommand.cs#L17-L21"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Server configuration is protected (loaded from the install directory and env, not the workspace), but the agent-memory, common-prompt and scheduled-task paths are not.",
+          "gap": "Control every persistent write path, including downstream agent memory.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServiceCollectionExtensions.cs",
+              "lines": "305-315",
+              "contains": "var configurationBuilder = new ConfigurationBuilder().SetBasePath(AppContext.BaseDirectory);",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServiceCollectionExtensions.cs#L305-L315"
+            },
+            {
+              "file": "tools/Azure.Mcp.Tools.SreAgent/src/Commands/CommonPrompts/CommonPromptsCreateCommand.cs",
+              "lines": "17-21",
+              "contains": "Create or update a named common prompt on the SRE Agent.",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.SreAgent/src/Commands/CommonPrompts/CommonPromptsCreateCommand.cs#L17-L21"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Entries written to the SRE Agent knowledge base are shared by every user of that agent; the tool offers no per-user namespace.",
+          "gap": "Per-user or per-session namespaces for written memory.",
+          "evidence": [
+            {
+              "file": "tools/Azure.Mcp.Tools.SreAgent/src/Commands/Docs/MemoriesAddCommand.cs",
+              "lines": "17-21",
+              "contains": "Add a document to the SRE Agent knowledge base by name.",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.SreAgent/src/Commands/Docs/MemoriesAddCommand.cs#L17-L21"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Poisoned memory or a scheduled task persists across sessions and users and drives the SRE Agent's later investigations and actions.",
+          "gap": "Require human review before persisted entries take effect.",
+          "evidence": [
+            {
+              "file": "servers/Azure.Mcp.Server/src/Program.cs",
+              "lines": "237",
+              "contains": "new Azure.Mcp.Tools.SreAgent.SreAgentSetup(),",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/servers/Azure.Mcp.Server/src/Program.cs#L237"
+            },
+            {
+              "file": "tools/Azure.Mcp.Tools.SreAgent/src/Commands/ScheduledTasks/ScheduledTasksCreateCommand.cs",
+              "lines": "17-21",
+              "contains": "Destructive = false,",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.SreAgent/src/Commands/ScheduledTasks/ScheduledTasksCreateCommand.cs#L17-L21"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.075,
+          "raw": 0.075,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The model can write arbitrary documents into the SRE Agent RAG knowledge base and create scheduled tasks/prompts with no validation or approval.",
+              "gap": "Gate or validate writes to agent memory/prompts/scheduled tasks (human approval or source restrictions).",
+              "evidence": [
+                {
+                  "file": "tools/Azure.Mcp.Tools.SreAgent/src/Commands/Docs/MemoriesAddCommand.cs",
+                  "lines": "17-21",
+                  "contains": "Uploads markdown content that will be indexed for RAG-based knowledge retrieval.",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.SreAgent/src/Commands/Docs/MemoriesAddCommand.cs#L17-L21"
+                },
+                {
+                  "file": "tools/Azure.Mcp.Tools.SreAgent/src/Commands/ScheduledTasks/ScheduledTasksCreateCommand.cs",
+                  "lines": "17-21",
+                  "contains": "Create an SRE Agent scheduled task.",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.SreAgent/src/Commands/ScheduledTasks/ScheduledTasksCreateCommand.cs#L17-L21"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Server configuration is protected (loaded from the install directory and env, not the workspace), but the agent-memory, common-prompt and scheduled-task paths are not.",
+              "gap": "Control every persistent write path, including downstream agent memory.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServiceCollectionExtensions.cs",
+                  "lines": "305-315",
+                  "contains": "var configurationBuilder = new ConfigurationBuilder().SetBasePath(AppContext.BaseDirectory);",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServiceCollectionExtensions.cs#L305-L315"
+                },
+                {
+                  "file": "tools/Azure.Mcp.Tools.SreAgent/src/Commands/CommonPrompts/CommonPromptsCreateCommand.cs",
+                  "lines": "17-21",
+                  "contains": "Create or update a named common prompt on the SRE Agent.",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.SreAgent/src/Commands/CommonPrompts/CommonPromptsCreateCommand.cs#L17-L21"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Entries written to the SRE Agent knowledge base are shared by every user of that agent; the tool offers no per-user namespace.",
+              "gap": "Per-user or per-session namespaces for written memory.",
+              "evidence": [
+                {
+                  "file": "tools/Azure.Mcp.Tools.SreAgent/src/Commands/Docs/MemoriesAddCommand.cs",
+                  "lines": "17-21",
+                  "contains": "Add a document to the SRE Agent knowledge base by name.",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.SreAgent/src/Commands/Docs/MemoriesAddCommand.cs#L17-L21"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Poisoned memory or a scheduled task persists across sessions and users and drives the SRE Agent's later investigations and actions.",
+              "gap": "Require human review before persisted entries take effect.",
+              "evidence": [
+                {
+                  "file": "servers/Azure.Mcp.Server/src/Program.cs",
+                  "lines": "237",
+                  "contains": "new Azure.Mcp.Tools.SreAgent.SreAgentSetup(),",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/servers/Azure.Mcp.Server/src/Program.cs#L237"
+                },
+                {
+                  "file": "tools/Azure.Mcp.Tools.SreAgent/src/Commands/ScheduledTasks/ScheduledTasksCreateCommand.cs",
+                  "lines": "17-21",
+                  "contains": "Destructive = false,",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.SreAgent/src/Commands/ScheduledTasks/ScheduledTasksCreateCommand.cs#L17-L21"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "Besides its own tools, the server proxies other MCP servers listed in a registry file compiled into the binary: Microsoft Learn docs, Foundry and ARM remote servers, and the azd CLI, which it launches locally from whatever 'azd' is first on PATH with only a minimum-version check. This proxying is on by default with no consent prompt, nothing is pinned or integrity-checked, and remote tool definitions are fetched at runtime without detecting changes. The workspace cannot add servers, but the launched azd process runs as the user with the server's entire environment.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.2,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Extension sources are fixed in an embedded registry, but azd is resolved from PATH with only a minVersion floor and remote tool lists are used as fetched; no pinning or integrity checks.",
+          "gap": "Pin extension versions (or verify hashes/signatures) and detect tool-definition changes.",
+          "evidence": [
+            {
+              "file": "servers/Azure.Mcp.Server/src/Resources/registry.json",
+              "lines": "8-13",
+              "contains": "\"command\": \"azd\",",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/servers/Azure.Mcp.Server/src/Resources/registry.json#L8-L13"
+            },
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryServerProvider.cs",
+              "lines": "119-132",
+              "contains": "var versionError = await CheckCommandVersionAsync(",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryServerProvider.cs#L119-L132"
+            },
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryDiscoveryStrategy.cs",
+              "lines": "11",
+              "contains": "Discovers MCP servers from an embedded registry.json resource file.",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryDiscoveryStrategy.cs#L11"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only the stdio server gets a version floor; HTTP remote servers get HTTPS/OAuth-scope checks but no verification of tool definitions.",
+          "gap": "Verification for every extension type, including remote tool definitions.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryServerProvider.cs",
+              "lines": "64-90",
+              "contains": "has OAuthScopes configured but does not use HTTPS",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryServerProvider.cs#L64-L90"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Proxy tools are enabled automatically by default (DisableProxyTools=false) with no consent or display of what will run.",
+          "gap": "Leave proxied servers off by default and show the exact command/package when enabling one.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs",
+              "lines": "131-132",
+              "contains": "public bool DisableProxyTools { get; set; } = false;",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs#L131-L132"
+            },
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServiceCollectionExtensions.cs",
+              "lines": "66-70",
+              "contains": "if (!serverStartOptions.DisableProxyTools)",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServiceCollectionExtensions.cs#L66-L70"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "azd runs as a separate process, same user, with the full environment merged from the server process.",
+          "gap": "Launch extensions with a scrubbed environment containing only their own configuration.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryServerProvider.cs",
+              "lines": "338-356",
+              "contains": "Environment.GetEnvironmentVariables()",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryServerProvider.cs#L338-L356"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.2,
+          "raw": 0.2,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Extension sources are fixed in an embedded registry, but azd is resolved from PATH with only a minVersion floor and remote tool lists are used as fetched; no pinning or integrity checks.",
+              "gap": "Pin extension versions (or verify hashes/signatures) and detect tool-definition changes.",
+              "evidence": [
+                {
+                  "file": "servers/Azure.Mcp.Server/src/Resources/registry.json",
+                  "lines": "8-13",
+                  "contains": "\"command\": \"azd\",",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/servers/Azure.Mcp.Server/src/Resources/registry.json#L8-L13"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryServerProvider.cs",
+                  "lines": "119-132",
+                  "contains": "var versionError = await CheckCommandVersionAsync(",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryServerProvider.cs#L119-L132"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryDiscoveryStrategy.cs",
+                  "lines": "11",
+                  "contains": "Discovers MCP servers from an embedded registry.json resource file.",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryDiscoveryStrategy.cs#L11"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only the stdio server gets a version floor; HTTP remote servers get HTTPS/OAuth-scope checks but no verification of tool definitions.",
+              "gap": "Verification for every extension type, including remote tool definitions.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryServerProvider.cs",
+                  "lines": "64-90",
+                  "contains": "has OAuthScopes configured but does not use HTTPS",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryServerProvider.cs#L64-L90"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Proxy tools are enabled automatically by default (DisableProxyTools=false) with no consent or display of what will run.",
+              "gap": "Leave proxied servers off by default and show the exact command/package when enabling one.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs",
+                  "lines": "131-132",
+                  "contains": "public bool DisableProxyTools { get; set; } = false;",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs#L131-L132"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServiceCollectionExtensions.cs",
+                  "lines": "66-70",
+                  "contains": "if (!serverStartOptions.DisableProxyTools)",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServiceCollectionExtensions.cs#L66-L70"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "azd runs as a separate process, same user, with the full environment merged from the server process.",
+              "gap": "Launch extensions with a scrubbed environment containing only their own configuration.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryServerProvider.cs",
+                  "lines": "338-356",
+                  "contains": "Environment.GetEnvironmentVariables()",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryServerProvider.cs#L338-L356"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "The server stores no API keys of its own and relies on Azure Identity for tokens. Secret-returning tools (Key Vault secret get, app settings) are flagged and require user confirmation before secret values are sent to the model, and SRE Agent connector secrets are redacted in results. Usage telemetry is on by default and goes to Microsoft; it records tool names, parameter names (not values), the subscription ID and exception stack traces. There is no general redaction layer for logs or tool results, and spawned processes inherit the full environment.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Masking exists only in specific paths (SRE Agent connector secrets, parameter-name-only telemetry); no general redaction for logs or model-bound results.",
+          "gap": "Redaction before logs and model-bound messages on all major paths.",
+          "evidence": [
+            {
+              "file": "tools/Azure.Mcp.Tools.SreAgent/src/Services/SreAgentService.cs",
+              "lines": "775",
+              "contains": "RedactSecretsInPlace(connector.ExtendedProperties);",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.SreAgent/src/Services/SreAgentService.cs#L775"
+            },
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Helpers/McpHelper.cs",
+              "lines": "78-84",
+              "contains": "public static string? CreateToolParametersTelemetry(IEnumerable<string>? parameterNames)",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Helpers/McpHelper.cs#L78-L84"
+            },
+            {
+              "search": "rg -n -i --type cs \"redact\"",
+              "scope": "core/Microsoft.Mcp.Core/src",
+              "hits": 0,
+              "note": "No shared redaction helper in core."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Telemetry is content-minimised and secret tools are consent-gated, but logs, error messages and subprocess environments are not filtered.",
+          "gap": "Protect logs, error paths and subprocess environments as well.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Extensions/OpenTelemetryExtensions.cs",
+              "lines": "135",
+              "contains": "We don't configure logging for Microsoft telemetry to avoid sending potentially sensitive log data to Microsoft.",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Extensions/OpenTelemetryExtensions.cs#L135"
+            },
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs",
+              "lines": "246-270",
+              "contains": "var startInfo = new ProcessStartInfo",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs#L246-L270"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Telemetry to a Microsoft-owned App Insights instance is on by default (content-light: tool/parameter names, subscription GUID, stack traces); verbose support logging is behind a dangerously-named flag.",
+          "gap": "Make telemetry opt-in.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Extensions/OpenTelemetryExtensions.cs",
+              "lines": "26",
+              "contains": "MicrosoftOwnedAppInsightsConnectionString",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Extensions/OpenTelemetryExtensions.cs#L26"
+            },
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServiceCollectionExtensions.cs",
+              "lines": "292",
+              "contains": "options.IsTelemetryEnabled = rootConfiguration.GetValue(\"AZURE_MCP_COLLECT_TELEMETRY\", true);",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServiceCollectionExtensions.cs#L292"
+            },
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Runtime/McpRuntime.cs",
+              "lines": "61-73",
+              "contains": "activity?.AddTag(AzureTagName.SubscriptionGuid, subscription);",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Runtime/McpRuntime.cs#L61-L73"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Long-lived Key Vault secrets can be returned to the model (after consent) and env-var credentials reach every subprocess.",
+          "gap": "Keep secrets out of model context by design (handles) and scrub subprocess env.",
+          "evidence": [
+            {
+              "file": "tools/Azure.Mcp.Tools.KeyVault/src/Commands/Secret/SecretGetCommand.cs",
+              "lines": "17-23",
+              "contains": "Secret = true,",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.KeyVault/src/Commands/Secret/SecretGetCommand.cs#L17-L23"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.25,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Masking exists only in specific paths (SRE Agent connector secrets, parameter-name-only telemetry); no general redaction for logs or model-bound results.",
+              "gap": "Redaction before logs and model-bound messages on all major paths.",
+              "evidence": [
+                {
+                  "file": "tools/Azure.Mcp.Tools.SreAgent/src/Services/SreAgentService.cs",
+                  "lines": "775",
+                  "contains": "RedactSecretsInPlace(connector.ExtendedProperties);",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.SreAgent/src/Services/SreAgentService.cs#L775"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Helpers/McpHelper.cs",
+                  "lines": "78-84",
+                  "contains": "public static string? CreateToolParametersTelemetry(IEnumerable<string>? parameterNames)",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Helpers/McpHelper.cs#L78-L84"
+                },
+                {
+                  "search": "rg -n -i --type cs \"redact\"",
+                  "scope": "core/Microsoft.Mcp.Core/src",
+                  "hits": 0,
+                  "note": "No shared redaction helper in core."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Telemetry is content-minimised and secret tools are consent-gated, but logs, error messages and subprocess environments are not filtered.",
+              "gap": "Protect logs, error paths and subprocess environments as well.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Extensions/OpenTelemetryExtensions.cs",
+                  "lines": "135",
+                  "contains": "We don't configure logging for Microsoft telemetry to avoid sending potentially sensitive log data to Microsoft.",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Extensions/OpenTelemetryExtensions.cs#L135"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs",
+                  "lines": "246-270",
+                  "contains": "var startInfo = new ProcessStartInfo",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs#L246-L270"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Telemetry to a Microsoft-owned App Insights instance is on by default (content-light: tool/parameter names, subscription GUID, stack traces); verbose support logging is behind a dangerously-named flag.",
+              "gap": "Make telemetry opt-in.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Extensions/OpenTelemetryExtensions.cs",
+                  "lines": "26",
+                  "contains": "MicrosoftOwnedAppInsightsConnectionString",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Extensions/OpenTelemetryExtensions.cs#L26"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServiceCollectionExtensions.cs",
+                  "lines": "292",
+                  "contains": "options.IsTelemetryEnabled = rootConfiguration.GetValue(\"AZURE_MCP_COLLECT_TELEMETRY\", true);",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServiceCollectionExtensions.cs#L292"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Runtime/McpRuntime.cs",
+                  "lines": "61-73",
+                  "contains": "activity?.AddTag(AzureTagName.SubscriptionGuid, subscription);",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Runtime/McpRuntime.cs#L61-L73"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Long-lived Key Vault secrets can be returned to the model (after consent) and env-var credentials reach every subprocess.",
+              "gap": "Keep secrets out of model context by design (handles) and scrub subprocess env.",
+              "evidence": [
+                {
+                  "file": "tools/Azure.Mcp.Tools.KeyVault/src/Commands/Secret/SecretGetCommand.cs",
+                  "lines": "17-23",
+                  "contains": "Secret = true,",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.KeyVault/src/Commands/Secret/SecretGetCommand.cs#L17-L23"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "By default the operator gets no local record of tool calls: the stdio host logs only to an in-process EventSource, and per-call logging is at Trace level. Each call does produce a structured telemetry span (tool, parameter names, status, subscription), but by default it goes only to Microsoft. Operators can opt in to sending these spans and logs to their own Application Insights or an OTLP collector, which gives an off-host, correlated record, though it never includes argument values and export is best-effort.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.275,
+      "counted": "alt",
+      "confidence": "medium",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Spans per tool call with tool id, parameter names, status, subscription and W3C trace context, shipped off-host; argument values are never recorded.",
+          "gap": "Include argument values (redacted where sensitive) and actor/approver attribution.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Extensions/OpenTelemetryExtensions.cs",
+              "lines": "88-93",
+              "contains": "var userProvidedAppInsightsConnectionString = Environment.GetEnvironmentVariable(\"APPLICATIONINSIGHTS_CONNECTION_STRING\");",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Extensions/OpenTelemetryExtensions.cs#L88-L93"
+            },
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Runtime/McpRuntime.cs",
+              "lines": "142-150",
+              "contains": "activity.AddTag(TagName.TraceParent, traceParent);",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Runtime/McpRuntime.cs#L142-L150"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Spans cover in-process and proxied tool calls; elicitation decisions appear as logs.",
+          "gap": "Record config changes and credential use too, and approvals as structured events.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/NamespaceToolLoader.cs",
+              "lines": "370-373",
+              "contains": "SetTag(TagName.ToolSource, \"internal\")",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/NamespaceToolLoader.cs#L370-L373"
+            },
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/ServerToolLoader.cs",
+              "lines": "243",
+              "contains": "activity?.SetTag(TagName.ToolSource, \"external.\" + client.ServerInfo.Name);",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/ServerToolLoader.cs#L243"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Export to the operator's own sink is opt-in via environment variable.",
+          "gap": "On by default.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Extensions/OpenTelemetryExtensions.cs",
+              "lines": "88-93",
+              "contains": "if (!string.IsNullOrWhiteSpace(userProvidedAppInsightsConnectionString))",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Extensions/OpenTelemetryExtensions.cs#L88-L93"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "Export uses the batched Azure Monitor / OTLP exporters, so records are best-effort and flushed late (library behaviour).",
+          "gap": "Per-action durable records.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Extensions/OpenTelemetryExtensions.cs",
+              "lines": "88-93",
+              "contains": "ConfigureUserProvidedAzureMonitorExporter(otelBuilder, userProvidedAppInsightsConnectionString);",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Extensions/OpenTelemetryExtensions.cs#L88-L93"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.125,
+          "raw": 0.125,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default stdio logging goes only to EventSource; per-call execution logs are LogTrace; the per-call spans are exported only to Microsoft.",
+              "gap": "A structured per-call record (tool, arguments, status, time) available to the operator by default.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs",
+                  "lines": "340-367",
+                  "contains": "logging.AddEventSourceLogger();",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs#L340-L367"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/NamespaceToolLoader.cs",
+                  "lines": "458",
+                  "contains": "_logger.LogTrace(\"Executing namespace command '{Namespace} {Command}'\", namespaceName, command);",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/NamespaceToolLoader.cs#L458"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Elicitation outcomes are logged at Information and telemetry spans cover in-process and proxied calls, but nothing reaches the operator by default.",
+              "gap": "Record every tool call and approval decision to an operator-visible sink.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/BaseToolLoader.cs",
+                  "lines": "345-357",
+                  "contains": "User did not approve the elicitation for tool",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/BaseToolLoader.cs#L345-L357"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Extensions/OpenTelemetryExtensions.cs",
+                  "lines": "98-107",
+                  "contains": "if (shouldCollectMicrosoftTelemetry)",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Extensions/OpenTelemetryExtensions.cs#L98-L107"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The only default record is vendor telemetry, which the operator can't read and can turn off with an env var.",
+              "gap": "An operator-readable record written by default outside the model's control.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServiceCollectionExtensions.cs",
+                  "lines": "292",
+                  "contains": "options.IsTelemetryEnabled = rootConfiguration.GetValue(\"AZURE_MCP_COLLECT_TELEMETRY\", true);",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServiceCollectionExtensions.cs#L292"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "If no exporter is configured, tool calls proceed with no operator record; nothing fails closed.",
+              "gap": "Durable, per-action records that are flushed before the action completes.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs",
+                  "lines": "340-367",
+                  "contains": "logging.ClearProviders();",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs#L340-L367"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "Opt-in export to the operator's Application Insights / OTLP collector",
+          "score": 0.275,
+          "raw": 0.275,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Spans per tool call with tool id, parameter names, status, subscription and W3C trace context, shipped off-host; argument values are never recorded.",
+              "gap": "Include argument values (redacted where sensitive) and actor/approver attribution.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Extensions/OpenTelemetryExtensions.cs",
+                  "lines": "88-93",
+                  "contains": "var userProvidedAppInsightsConnectionString = Environment.GetEnvironmentVariable(\"APPLICATIONINSIGHTS_CONNECTION_STRING\");",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Extensions/OpenTelemetryExtensions.cs#L88-L93"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Runtime/McpRuntime.cs",
+                  "lines": "142-150",
+                  "contains": "activity.AddTag(TagName.TraceParent, traceParent);",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Runtime/McpRuntime.cs#L142-L150"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Spans cover in-process and proxied tool calls; elicitation decisions appear as logs.",
+              "gap": "Record config changes and credential use too, and approvals as structured events.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/NamespaceToolLoader.cs",
+                  "lines": "370-373",
+                  "contains": "SetTag(TagName.ToolSource, \"internal\")",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/NamespaceToolLoader.cs#L370-L373"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/ServerToolLoader.cs",
+                  "lines": "243",
+                  "contains": "activity?.SetTag(TagName.ToolSource, \"external.\" + client.ServerInfo.Name);",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ToolLoading/ServerToolLoader.cs#L243"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Export to the operator's own sink is opt-in via environment variable.",
+              "gap": "On by default.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Extensions/OpenTelemetryExtensions.cs",
+                  "lines": "88-93",
+                  "contains": "if (!string.IsNullOrWhiteSpace(userProvidedAppInsightsConnectionString))",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Extensions/OpenTelemetryExtensions.cs#L88-L93"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "Export uses the batched Azure Monitor / OTLP exporters, so records are best-effort and flushed late (library behaviour).",
+              "gap": "Per-action durable records.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Extensions/OpenTelemetryExtensions.cs",
+                  "lines": "88-93",
+                  "contains": "ConfigureUserProvidedAzureMonitorExporter(otelBuilder, userProvidedAppInsightsConnectionString);",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Extensions/OpenTelemetryExtensions.cs#L88-L93"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "The server enforces some bounds on its own work: Azure SDK retries, delays and network timeouts are clamped to hard ceilings (10 retries, 60 s delay, 300 s timeout) that callers can't exceed unless the operator passes a dangerously-named flag, external processes time out after 300 s and are killed on timeout or cancellation, and query tools cap length and rows. There is no rate limiting on side-effecting tools and no overall cap on how many calls run, and long-running Azure operations continue in Azure after a call is cancelled.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.55,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Server-enforced timeouts and retry ceilings, process kill on timeout/cancel, query length and row caps on some tools.",
+          "gap": "Caps on every operation plus concurrency or rate limits.",
+          "evidence": [
+            {
+              "file": "core/Azure.Mcp.Core/src/Services/Azure/Helpers/AzureHelper.cs",
+              "lines": "20-22",
+              "contains": "private const double MaxAllowedNetworkTimeoutSeconds = 300;",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Azure.Mcp.Core/src/Services/Azure/Helpers/AzureHelper.cs#L20-L22"
+            },
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs",
+              "lines": "132-137",
+              "contains": "int operationTimeoutSeconds = 300,",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs#L132-L137"
+            },
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs",
+              "lines": "280-283",
+              "contains": "process.TryKill(logger);",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs#L280-L283"
+            },
+            {
+              "search": "rg -n --type cs \"RateLimiter|AddRateLimiter\"",
+              "scope": "core",
+              "hits": 0,
+              "note": "No rate limiting anywhere in core."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Retry/timeout clamps apply to all Azure SDK clients via the shared helper and to subprocesses; proxied server calls and LROs rely on others' limits.",
+          "gap": "Bounds that also cover proxied calls and limits on concurrent work.",
+          "evidence": [
+            {
+              "file": "core/Azure.Mcp.Core/src/Services/Azure/Helpers/AzureHelper.cs",
+              "lines": "119-139",
+              "contains": "Math.Min(MaxAllowedRetries, maxRetries)",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Azure.Mcp.Core/src/Services/Azure/Helpers/AzureHelper.cs#L119-L139"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Defaults are sensible and model-supplied retry options are clamped to hard ceilings; only an operator dangerously-named flag removes them.",
+          "gap": "Hard ceilings that no configuration can exceed.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs",
+              "lines": "99-100",
+              "contains": "public bool DangerouslyDisableRetryLimits { get; set; } = false;",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs#L99-L100"
+            },
+            {
+              "file": "core/Azure.Mcp.Core/src/Services/Azure/Helpers/AzureHelper.cs",
+              "lines": "125-129",
+              "contains": "Math.Min(MaxAllowedRetries, maxRetries)",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Azure.Mcp.Core/src/Services/Azure/Helpers/AzureHelper.cs#L125-L129"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Per-call ceilings are moderate; cancellation stops waiting and kills subprocesses but Azure long-running operations continue server-side.",
+          "gap": "Cancellation of outstanding remote operations and tighter per-session ceilings.",
+          "evidence": [
+            {
+              "file": "core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs",
+              "lines": "167-176",
+              "contains": "HandleCancellation(process, fileName, arguments, oce);",
+              "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs#L167-L176"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.55,
+          "raw": 0.55,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Server-enforced timeouts and retry ceilings, process kill on timeout/cancel, query length and row caps on some tools.",
+              "gap": "Caps on every operation plus concurrency or rate limits.",
+              "evidence": [
+                {
+                  "file": "core/Azure.Mcp.Core/src/Services/Azure/Helpers/AzureHelper.cs",
+                  "lines": "20-22",
+                  "contains": "private const double MaxAllowedNetworkTimeoutSeconds = 300;",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Azure.Mcp.Core/src/Services/Azure/Helpers/AzureHelper.cs#L20-L22"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs",
+                  "lines": "132-137",
+                  "contains": "int operationTimeoutSeconds = 300,",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs#L132-L137"
+                },
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs",
+                  "lines": "280-283",
+                  "contains": "process.TryKill(logger);",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs#L280-L283"
+                },
+                {
+                  "search": "rg -n --type cs \"RateLimiter|AddRateLimiter\"",
+                  "scope": "core",
+                  "hits": 0,
+                  "note": "No rate limiting anywhere in core."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Retry/timeout clamps apply to all Azure SDK clients via the shared helper and to subprocesses; proxied server calls and LROs rely on others' limits.",
+              "gap": "Bounds that also cover proxied calls and limits on concurrent work.",
+              "evidence": [
+                {
+                  "file": "core/Azure.Mcp.Core/src/Services/Azure/Helpers/AzureHelper.cs",
+                  "lines": "119-139",
+                  "contains": "Math.Min(MaxAllowedRetries, maxRetries)",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Azure.Mcp.Core/src/Services/Azure/Helpers/AzureHelper.cs#L119-L139"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Defaults are sensible and model-supplied retry options are clamped to hard ceilings; only an operator dangerously-named flag removes them.",
+              "gap": "Hard ceilings that no configuration can exceed.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs",
+                  "lines": "99-100",
+                  "contains": "public bool DangerouslyDisableRetryLimits { get; set; } = false;",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Options/ServerStartOptions.cs#L99-L100"
+                },
+                {
+                  "file": "core/Azure.Mcp.Core/src/Services/Azure/Helpers/AzureHelper.cs",
+                  "lines": "125-129",
+                  "contains": "Math.Min(MaxAllowedRetries, maxRetries)",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Azure.Mcp.Core/src/Services/Azure/Helpers/AzureHelper.cs#L125-L129"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Per-call ceilings are moderate; cancellation stops waiting and kills subprocesses but Azure long-running operations continue server-side.",
+              "gap": "Cancellation of outstanding remote operations and tighter per-session ceilings.",
+              "evidence": [
+                {
+                  "file": "core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs",
+                  "lines": "167-176",
+                  "contains": "HandleCancellation(process, fileName, arguments, oce);",
+                  "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs#L167-L176"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "In the default stdio mode every tool uses the user's ambient Azure credential, giving a hijacked session the user's full rights across all subscriptions and tenants.",
+      "criterion": "C1",
+      "owasp": [
+        "ASI03",
+        "T3",
+        "LLM06"
+      ],
+      "evidence": [
+        {
+          "file": "core/Microsoft.Mcp.Core/src/Services/Azure/Authentication/CustomChainedCredential.cs",
+          "lines": "165-173",
+          "contains": "creds.Add(CreateDefaultCredential(tenantId, logger));",
+          "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Services/Azure/Authentication/CustomChainedCredential.cs#L165-L173"
+        },
+        {
+          "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs",
+          "lines": "876-892",
+          "contains": "return OutgoingAuthStrategy.UseHostingEnvironmentIdentity;",
+          "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/ServerStartCommand.cs#L876-L892"
+        }
+      ]
+    },
+    {
+      "summary": "investigate_yolo is marked non-destructive (so never elicited) and auto-approves every pending SRE Agent approval in the user's name, letting the model satisfy another agent's human approval gate.",
+      "criterion": "C2",
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "LLM06"
+      ],
+      "evidence": [
+        {
+          "file": "tools/Azure.Mcp.Tools.SreAgent/src/Commands/Threads/ThreadsInvestigateYoloCommand.cs",
+          "lines": "17-24",
+          "contains": "automatically grants all pending approval requests without waiting for human confirmation",
+          "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.SreAgent/src/Commands/Threads/ThreadsInvestigateYoloCommand.cs#L17-L24"
+        },
+        {
+          "file": "tools/Azure.Mcp.Tools.SreAgent/src/Services/SreAgentService.cs",
+          "lines": "1028-1030",
+          "contains": "await service.ApproveApprovalAsync(endpoint, approvalId, new(userId), tenant, cancellationToken);",
+          "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/tools/Azure.Mcp.Tools.SreAgent/src/Services/SreAgentService.cs#L1028-L1030"
+        }
+      ]
+    },
+    {
+      "summary": "azqr and the azd MCP server are spawned as unconfined same-user processes that inherit the server's full environment, including any Azure credential env vars.",
+      "criterion": "C4",
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "evidence": [
+        {
+          "file": "core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryServerProvider.cs",
+          "lines": "338-356",
+          "contains": "Environment.GetEnvironmentVariables()",
+          "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Areas/Server/Commands/Discovery/RegistryServerProvider.cs#L338-L356"
+        },
+        {
+          "file": "core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs",
+          "lines": "246-270",
+          "contains": "var startInfo = new ProcessStartInfo",
+          "url": "https://github.com/microsoft/mcp/blob/040fb3ee4a31d55463b53ae0b0607b6f1a02c3e6/core/Microsoft.Mcp.Core/src/Services/ProcessExecution/ExternalProcessService.cs#L246-L270"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "Data-plane reads such as log queries, Cosmos items, blob data, SRE Agent threads and proxied MCP results (tools/Azure.Mcp.Tools.Monitor/src/Commands/Log/WorkspaceLogQueryCommand.cs:18)",
+    "sensitive_data": "Key Vault secrets and all resources reachable with the user's Azure identity (tools/Azure.Mcp.Tools.KeyVault/src/Commands/Secret/SecretGetCommand.cs:23)",
+    "state_change_or_egress": "Ungated email/SMS send and blob upload, plus elicited deletes and writes (tools/Azure.Mcp.Tools.Communication/src/Commands/Email/EmailSendCommand.cs:22)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Mark every state-changing or egress command (email/SMS send, blob upload, SRE Agent writes, investigate_yolo, storage-sync updates) as requiring elicitation, and remove or gate the auto-approve 'yolo' tool.",
+      "criterion": "C2",
+      "parameter": "C",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 5",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Expose per-command readOnly/destructive annotations in namespace mode (e.g. split read and write namespace tools and include hints in learn output).",
+      "criterion": "C2",
+      "parameter": "S",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 5",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Default to --read-only, requiring an explicit flag to enable write tools.",
+      "criterion": "C3",
+      "parameter": "D",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.05
+    },
+    {
+      "summary": "Launch azd/azqr with a scrubbed environment containing only what each needs.",
+      "criterion": "C7",
+      "parameter": "B",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.05
+    },
+    {
+      "summary": "Write a structured local audit log of every tool call and elicitation decision by default.",
+      "criterion": "C9",
+      "parameter": "S",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 1 step 3",
+      "estimated_gain": 0.15
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was executed, installed, or probed.",
+    "The subpath servers/Azure.Mcp.Server contains only the entry point and resources; the server's tools and runtime are compiled in from core/ and tools/Azure.* (see Azure.Mcp.Server.csproj), so those directories were reviewed as part of the server. Fabric.* tool projects are not registered by Program.cs and were not scored.",
+    "Command metadata was surveyed across all 473 [CommandMetadata] declarations with a script, but individual service implementations (60+ areas) were sampled, not read in full.",
+    "Remote proxied MCP servers (learn.microsoft.com, mcp.ai.azure.com, mcp.management.azure.com) and the azd CLI are outside this repository; their own gates and annotations were not examined.",
+    "No reviewer-injection attempts were found in the repository."
+  ]
+}

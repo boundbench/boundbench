@@ -1,0 +1,2420 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "linux-mcp-server",
+  "name": "Linux MCP Server (RHEL Lightspeed)",
+  "repo_url": "https://github.com/rhel-lightspeed/linux-mcp-server",
+  "subpath": null,
+  "description": "MCP server for read-only Linux system administration and diagnostics on RHEL-based systems, locally or over SSH.",
+  "category": "infrastructure_ops",
+  "pinned_commit": "11e303597c02d357144f9d05d4994e1d945f7e86",
+  "version": "1.7.0",
+  "scored_date": "2026-10-04",
+  "scored_configuration": "`linux-mcp-server` run as a local stdio server with no environment overrides: fixed read-only toolset, host_mode 'any' on a Linux host, no authorization policy, host-key verification on, and the operator's ambient SSH keys/agent.",
+  "score": 5.6,
+  "max_score": 10.0,
+  "band": {
+    "id": "moderate",
+    "label": "Moderate",
+    "color": "amber"
+  },
+  "applicable": {
+    "count": 8,
+    "score": 3.62,
+    "max": 8.0,
+    "percent": 45
+  },
+  "capability_profile": {
+    "code_execution": "opt_in",
+    "filesystem_write": "opt_in",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "no",
+    "untrusted_input": "yes",
+    "third_party_extensions": "no",
+    "sub_agents": "no",
+    "external_communication": "no"
+  },
+  "headline": "As shipped, Linux MCP Server only exposes fixed, genuinely read-only diagnostic commands, run as argument lists with timeouts and size caps, so it cannot change your systems. The main risk is what it can read and where it can reach: read_file opens any file your account can read, including SSH private keys, and the model can point any tool at any host name using your own SSH identity, which also gives a hijacked session a way to leak what it read. Its strong authorization policy and the sandbox for the optional script-execution mode are opt-in, and that script mode is much weaker than the default.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "In its default local setup the server runs as whoever launched it and, with no policy file, the authorization middleware allows every tool call on every host. Remote calls use the operator's own SSH identity (default keys or agent) against any host name the model supplies, and local commands inherit the server's full environment. The project does ship a real, deterministic authorization layer: a YAML policy that maps tool, host and token claims to deny, local, or SSH with a specific per-rule key and user, and denies anything unmatched. It is opt-in, so it can only lift this criterion to the off-by-default ceiling.",
+      "max": 1.0,
+      "notes": "Default scored is stdio without policy. HTTP transport with auth providers (Google, GitHub, JWT, introspection) is also opt-in.",
+      "status": "scored",
+      "score": 0.5,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A deterministic policy maps each call's tool, host and token claims to deny/local/ssh_default/ssh_key, with a per-rule SSH key and user, failing closed when nothing matches.",
+          "gap": "Credentials are still static keys; no short-lived or downscoped per-request credentials.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/auth_policy.py",
+              "lines": "147-159",
+              "contains": "self.matches_host(target_host)",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/auth_policy.py#L147-L159"
+            },
+            {
+              "file": "src/linux_mcp_server/auth_policy.py",
+              "lines": "197-198",
+              "contains": "return PolicyAction.DENY, None, False",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/auth_policy.py#L197-L198"
+            },
+            {
+              "file": "src/linux_mcp_server/server.py",
+              "lines": "313-320",
+              "contains": "ssh_key_path=Path(ssh_key_config.path),",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/server.py#L313-L320"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All tool calls traverse the same middleware, which evaluates the policy against the requesting principal's claims; a missing policy file yields an empty rule set that denies everything.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/server.py",
+              "lines": "284-302",
+              "contains": "action, ssh_key_config = evaluate_policy(tool, target_host, claims)",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/server.py#L284-L302"
+            },
+            {
+              "file": "src/linux_mcp_server/auth_policy.py",
+              "lines": "205-207",
+              "contains": "all requests will be denied",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/auth_policy.py#L205-L207"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Operator sets the policy file path; widening is an operator edit to that file without warning.",
+          "gap": "Needs elevation that is time-bounded and a default that is minimal without operator setup.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/config.py",
+              "lines": "271-272",
+              "contains": "policy_path: Path | None = None",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L271-L272"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "With policy, the server still reaches any matched host with static SSH keys, but only via the fixed read-only tools unless run_script is enabled.",
+          "gap": "Keys are long-lived; blast radius is read access across many sensitive hosts.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/server.py",
+              "lines": "313-320",
+              "contains": "ssh_key_path=Path(ssh_key_config.path),",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/server.py#L313-L320"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.175,
+          "raw": 0.175,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "With no policy configured, the server acts with the launching user's ambient authority: local commands as that user and SSH with asyncssh's default keys/agent for any model-chosen host.",
+              "gap": "Needs a narrowed default identity, e.g. a dedicated read-only SSH user or a default policy, rather than ambient keys.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/server.py",
+                  "lines": "266-270",
+                  "contains": "CONFIG.transport == Transport.stdio and CONFIG.policy_path is None",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/server.py#L266-L270"
+                },
+                {
+                  "file": "src/linux_mcp_server/connection/ssh.py",
+                  "lines": "166-168",
+                  "contains": "if ssh_key:",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/connection/ssh.py#L166-L168"
+                },
+                {
+                  "file": "src/linux_mcp_server/utils/types.py",
+                  "lines": "11-18",
+                  "contains": "Host = t.Annotated[",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/utils/types.py#L11-L18"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every tool passes through one middleware and execution context, but in the default stdio mode that context allows local and default-SSH execution for all tools, and local subprocesses inherit the full environment.",
+              "gap": "Default mode needs an authorization check per call and a scrubbed subprocess environment.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/server.py",
+                  "lines": "266-270",
+                  "contains": "CONFIG.transport == Transport.stdio and CONFIG.policy_path is None",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/server.py#L266-L270"
+                },
+                {
+                  "file": "src/linux_mcp_server/connection/ssh.py",
+                  "lines": "488-494",
+                  "contains": "start_new_session=True",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/connection/ssh.py#L488-L494"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default install runs with the operator's privilege; the read-only fixed toolset narrows what tools do, but not the credentials, and host_mode defaults to any host.",
+              "gap": "Needs a least-privilege default identity or default-deny policy without manual hardening.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/config.py",
+                  "lines": "63-74",
+                  "contains": "return HostMode.ANY",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L63-L74"
+                },
+                {
+                  "file": "src/linux_mcp_server/config.py",
+                  "lines": "250-251",
+                  "contains": "toolset: Toolset = Toolset.FIXED",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L250-L251"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The ambient SSH identity typically grants shell on every host in known_hosts, and read_file can return those private keys to the model, so a hijacked session exposes write-capable credentials across systems.",
+              "gap": "Credentials should be scoped per host/read-only and not readable through the server's own tools.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/tools/storage.py",
+                  "lines": "223-251",
+                  "contains": "limit = CONFIG.max_file_read_bytes",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/storage.py#L223-L251"
+                },
+                {
+                  "file": "src/linux_mcp_server/utils/validation.py",
+                  "lines": "49-68",
+                  "contains": "if \"..\" in path.split(\"/\"):",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/utils/validation.py#L49-L68"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in YAML authorization policy (LINUX_MCP_POLICY_PATH)",
+          "score": 0.5,
+          "raw": 0.725,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A deterministic policy maps each call's tool, host and token claims to deny/local/ssh_default/ssh_key, with a per-rule SSH key and user, failing closed when nothing matches.",
+              "gap": "Credentials are still static keys; no short-lived or downscoped per-request credentials.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/auth_policy.py",
+                  "lines": "147-159",
+                  "contains": "self.matches_host(target_host)",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/auth_policy.py#L147-L159"
+                },
+                {
+                  "file": "src/linux_mcp_server/auth_policy.py",
+                  "lines": "197-198",
+                  "contains": "return PolicyAction.DENY, None, False",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/auth_policy.py#L197-L198"
+                },
+                {
+                  "file": "src/linux_mcp_server/server.py",
+                  "lines": "313-320",
+                  "contains": "ssh_key_path=Path(ssh_key_config.path),",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/server.py#L313-L320"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All tool calls traverse the same middleware, which evaluates the policy against the requesting principal's claims; a missing policy file yields an empty rule set that denies everything.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/server.py",
+                  "lines": "284-302",
+                  "contains": "action, ssh_key_config = evaluate_policy(tool, target_host, claims)",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/server.py#L284-L302"
+                },
+                {
+                  "file": "src/linux_mcp_server/auth_policy.py",
+                  "lines": "205-207",
+                  "contains": "all requests will be denied",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/auth_policy.py#L205-L207"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Operator sets the policy file path; widening is an operator edit to that file without warning.",
+              "gap": "Needs elevation that is time-bounded and a default that is minimal without operator setup.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/config.py",
+                  "lines": "271-272",
+                  "contains": "policy_path: Path | None = None",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L271-L272"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "With policy, the server still reaches any matched host with static SSH keys, but only via the fixed read-only tools unless run_script is enabled.",
+              "gap": "Keys are long-lived; blast radius is read access across many sensitive hosts.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/server.py",
+                  "lines": "313-320",
+                  "contains": "ssh_key_path=Path(ssh_key_config.path),",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/server.py#L313-L320"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "As a tool server, the host owns the approval prompt, so this rates what the server tells the host. In the default 'fixed' toolset every tool is genuinely read-only and annotated readOnlyHint, the server refuses calls to tools outside the configured toolset, and nothing it exposes changes state, so a wrongly approved call can't change anything. The opt-in run_script toolset is weaker: the 'read-only' run_script tool trusts a flag the model sets (checked by an LLM gatekeeper), run_script_with_confirmation executes immediately on the server side; approval enforcement on the app-only script path is also not complete.",
+      "max": 1.0,
+      "notes": "One default tool's argument handling is not strict. No state-changing action is reachable through it.",
+      "status": "scored",
+      "score": 0.65,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Read and write tools are separate with accurate annotations in the default toolset, and the read-only default is server-enforced; but there is no server-side preview or confirmation for the opt-in mutating tools.",
+          "gap": "Needs a dry-run/preview or server-enforced confirmation for destructive script runs; run_script's readOnlyHint rests on a model-declared flag.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/tools/storage.py",
+              "lines": "199-204",
+              "contains": "annotations=ToolAnnotations(readOnlyHint=True)",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/storage.py#L199-L204"
+            },
+            {
+              "file": "src/linux_mcp_server/tools/run_script.py",
+              "lines": "472-477",
+              "contains": "annotations=ToolAnnotations(readOnlyHint=True)",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/run_script.py#L472-L477"
+            },
+            {
+              "file": "src/linux_mcp_server/tools/run_script.py",
+              "lines": "63-65",
+              "contains": "return not self.readonly or CONFIG.always_confirm_scripts",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/run_script.py#L63-L65"
+            },
+            {
+              "file": "src/linux_mcp_server/tools/run_script.py",
+              "lines": "570-572",
+              "contains": "returncode, stdout, stderr = await execute_command(command, host=execute_details.host)",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/run_script.py#L570-L572"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every default tool carries accurate annotations and unknown/out-of-toolset tools are rejected, but in the opt-in MCP-app mode approval enforcement does not cover every path.",
+          "gap": "Every tool path, including app-only tools, must carry risk annotations and server-checked approval.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/server.py",
+              "lines": "259-262",
+              "contains": "raise NotFoundError",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/server.py#L259-L262"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Read-only toolset is the default; enabling scripts needs LINUX_MCP_TOOLSET plus gatekeeper configuration, which the model cannot change.",
+          "gap": "Needs time-bounded elevated modes and approvals tied to an authenticated principal.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/config.py",
+              "lines": "250-251",
+              "contains": "toolset: Toolset = Toolset.FIXED",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L250-L251"
+            },
+            {
+              "file": "src/linux_mcp_server/config.py",
+              "lines": "310-318",
+              "contains": "if self.toolset != Toolset.FIXED and self.gatekeeper is None:",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L310-L318"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "In the default configuration no tool performs a consequential action; all fixed tools run fixed read-only argv commands.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/config.py",
+              "lines": "250-251",
+              "contains": "toolset: Toolset = Toolset.FIXED",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L250-L251"
+            },
+            {
+              "file": "src/linux_mcp_server/tools/storage.py",
+              "lines": "199-204",
+              "contains": "annotations=ToolAnnotations(readOnlyHint=True)",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/storage.py#L199-L204"
+            },
+            {
+              "file": "src/linux_mcp_server/commands.py",
+              "lines": "90-95",
+              "contains": "\"systemctl\", \"list-units\", \"--type=service\", \"--all\", \"--no-pager\"",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/commands.py#L90-L95"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.65,
+          "raw": 0.65,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Read and write tools are separate with accurate annotations in the default toolset, and the read-only default is server-enforced; but there is no server-side preview or confirmation for the opt-in mutating tools.",
+              "gap": "Needs a dry-run/preview or server-enforced confirmation for destructive script runs; run_script's readOnlyHint rests on a model-declared flag.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/tools/storage.py",
+                  "lines": "199-204",
+                  "contains": "annotations=ToolAnnotations(readOnlyHint=True)",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/storage.py#L199-L204"
+                },
+                {
+                  "file": "src/linux_mcp_server/tools/run_script.py",
+                  "lines": "472-477",
+                  "contains": "annotations=ToolAnnotations(readOnlyHint=True)",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/run_script.py#L472-L477"
+                },
+                {
+                  "file": "src/linux_mcp_server/tools/run_script.py",
+                  "lines": "63-65",
+                  "contains": "return not self.readonly or CONFIG.always_confirm_scripts",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/run_script.py#L63-L65"
+                },
+                {
+                  "file": "src/linux_mcp_server/tools/run_script.py",
+                  "lines": "570-572",
+                  "contains": "returncode, stdout, stderr = await execute_command(command, host=execute_details.host)",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/run_script.py#L570-L572"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every default tool carries accurate annotations and unknown/out-of-toolset tools are rejected, but in the opt-in MCP-app mode approval enforcement does not cover every path.",
+              "gap": "Every tool path, including app-only tools, must carry risk annotations and server-checked approval.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/server.py",
+                  "lines": "259-262",
+                  "contains": "raise NotFoundError",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/server.py#L259-L262"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Read-only toolset is the default; enabling scripts needs LINUX_MCP_TOOLSET plus gatekeeper configuration, which the model cannot change.",
+              "gap": "Needs time-bounded elevated modes and approvals tied to an authenticated principal.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/config.py",
+                  "lines": "250-251",
+                  "contains": "toolset: Toolset = Toolset.FIXED",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L250-L251"
+                },
+                {
+                  "file": "src/linux_mcp_server/config.py",
+                  "lines": "310-318",
+                  "contains": "if self.toolset != Toolset.FIXED and self.gatekeeper is None:",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L310-L318"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "In the default configuration no tool performs a consequential action; all fixed tools run fixed read-only argv commands.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/config.py",
+                  "lines": "250-251",
+                  "contains": "toolset: Toolset = Toolset.FIXED",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L250-L251"
+                },
+                {
+                  "file": "src/linux_mcp_server/tools/storage.py",
+                  "lines": "199-204",
+                  "contains": "annotations=ToolAnnotations(readOnlyHint=True)",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/storage.py#L199-L204"
+                },
+                {
+                  "file": "src/linux_mcp_server/commands.py",
+                  "lines": "90-95",
+                  "contains": "\"systemctl\", \"list-units\", \"--type=service\", \"--all\", \"--no-pager\"",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/commands.py#L90-L95"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "Tools are narrow and well built in shape: each runs a fixed command as an argument list (no shell locally, shell-quoted over SSH), with typed parameters, numeric bounds, regex-validated PCP names, and a resolved-path allowlist for read_log_file. But path checking is shallow: read_file and the listing tools accept any absolute path without '..', so the model can read any file the user can read (SSH keys, cloud credentials), which makes the log allowlist moot. The host argument is any string with no allowlist, and other argument validation is not strict.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.55,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Typed schemas, numeric bounds and some validation exist, but paths are only checked for absolute form, '..', leading '-' and control characters, with no containment or allowlist.",
+          "gap": "Needs allowlisted path roots with resolved-path containment, a host allowlist, and complete argument validation.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/utils/validation.py",
+              "lines": "49-68",
+              "contains": "if \"..\" in path.split(\"/\"):",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/utils/validation.py#L49-L68"
+            },
+            {
+              "file": "src/linux_mcp_server/utils/validation.py",
+              "lines": "9",
+              "contains": "_PCP_NAME_RE = re.compile(",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/utils/validation.py#L9"
+            },
+            {
+              "file": "src/linux_mcp_server/tools/logs.py",
+              "lines": "118-124",
+              "contains": "le=10_000,",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/logs.py#L118-L124"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Most built-in tools validate their arguments; the host argument does not, and other argument validation is not strict.",
+          "gap": "Needs one central validation layer covering every argument, including host.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/utils/types.py",
+              "lines": "11-18",
+              "contains": "Host = t.Annotated[",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/utils/types.py#L11-L18"
+            },
+            {
+              "file": "src/linux_mcp_server/commands.py",
+              "lines": "440-443",
+              "contains": "Unsubstituted placeholder in command argument",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/commands.py#L440-L443"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The default toolset is read-only; script execution requires operator configuration, and the model cannot enable tools.",
+          "gap": "Needs per-task tool allowlists.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/config.py",
+              "lines": "250-251",
+              "contains": "toolset: Toolset = Toolset.FIXED",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L250-L251"
+            },
+            {
+              "file": "src/linux_mcp_server/config.py",
+              "lines": "310-318",
+              "contains": "if self.toolset != Toolset.FIXED and self.gatekeeper is None:",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L310-L318"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A misused tool reads anything the user can read on the local machine or any SSH host it can reach, but cannot write and outputs are size-bounded.",
+          "gap": "Needs scoping to configured paths and hosts.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/tools/storage.py",
+              "lines": "223-251",
+              "contains": "limit = CONFIG.max_file_read_bytes",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/storage.py#L223-L251"
+            },
+            {
+              "file": "src/linux_mcp_server/config.py",
+              "lines": "238-239",
+              "contains": "max_file_read_bytes: int = Field(default=1024 * 1024, ge=1)",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L238-L239"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.55,
+          "raw": 0.55,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Typed schemas, numeric bounds and some validation exist, but paths are only checked for absolute form, '..', leading '-' and control characters, with no containment or allowlist.",
+              "gap": "Needs allowlisted path roots with resolved-path containment, a host allowlist, and complete argument validation.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/utils/validation.py",
+                  "lines": "49-68",
+                  "contains": "if \"..\" in path.split(\"/\"):",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/utils/validation.py#L49-L68"
+                },
+                {
+                  "file": "src/linux_mcp_server/utils/validation.py",
+                  "lines": "9",
+                  "contains": "_PCP_NAME_RE = re.compile(",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/utils/validation.py#L9"
+                },
+                {
+                  "file": "src/linux_mcp_server/tools/logs.py",
+                  "lines": "118-124",
+                  "contains": "le=10_000,",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/logs.py#L118-L124"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Most built-in tools validate their arguments; the host argument does not, and other argument validation is not strict.",
+              "gap": "Needs one central validation layer covering every argument, including host.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/utils/types.py",
+                  "lines": "11-18",
+                  "contains": "Host = t.Annotated[",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/utils/types.py#L11-L18"
+                },
+                {
+                  "file": "src/linux_mcp_server/commands.py",
+                  "lines": "440-443",
+                  "contains": "Unsubstituted placeholder in command argument",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/commands.py#L440-L443"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The default toolset is read-only; script execution requires operator configuration, and the model cannot enable tools.",
+              "gap": "Needs per-task tool allowlists.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/config.py",
+                  "lines": "250-251",
+                  "contains": "toolset: Toolset = Toolset.FIXED",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L250-L251"
+                },
+                {
+                  "file": "src/linux_mcp_server/config.py",
+                  "lines": "310-318",
+                  "contains": "if self.toolset != Toolset.FIXED and self.gatekeeper is None:",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L310-L318"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A misused tool reads anything the user can read on the local machine or any SSH host it can reach, but cannot write and outputs are size-bounded.",
+              "gap": "Needs scoping to configured paths and hosts.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/tools/storage.py",
+                  "lines": "223-251",
+                  "contains": "limit = CONFIG.max_file_read_bytes",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/storage.py#L223-L251"
+                },
+                {
+                  "file": "src/linux_mcp_server/config.py",
+                  "lines": "238-239",
+                  "contains": "max_file_read_bytes: int = Field(default=1024 * 1024, ge=1)",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L238-L239"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "The default read-only toolset never runs model-written code: every command is a fixed argument list. Code execution exists only in the opt-in run_script toolset, which is therefore what this criterion rates. There, scripts flagged read-only by the model run under sudo systemd-run with a read-only filesystem and no network, but scripts flagged as modifying run as root with only PrivateTmp and NoNewPrivileges; the wrapper is also not a complete boundary. Because the score reflects that opt-in path, it says little about the default install, which has no execution surface.",
+      "max": 1.0,
+      "notes": "Score describes the opt-in run_script toolset; the default fixed toolset has no code-execution path.",
+      "status": "scored",
+      "score": 0.2,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "G2",
+        "max": 0.25,
+        "reason": "The model sets the readonly flag that selects the restricted profile, so it can opt a script out of the read-only/no-network sandbox at runtime."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "For read-only scripts the systemd-run profile sets ReadOnlyPaths=/, RestrictAddressFamilies=AF_UNIX, PrivateTmp and NoNewPrivileges, but runs as root with no seccomp or capability drop.",
+          "gap": "Needs a non-root, capability-dropped, seccomp-restricted profile (or stronger) for every script.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/tools/run_script.py",
+              "lines": "189-202",
+              "contains": "--property=ReadOnlyPaths=/",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/run_script.py#L189-L202"
+            },
+            {
+              "file": "src/linux_mcp_server/tools/run_script.py",
+              "lines": "249-262",
+              "contains": "if details.readonly:",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/run_script.py#L249-L262"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Scripts the model marks as modifying get no filesystem or network restriction, and the wrapper is not a complete boundary.",
+          "gap": "Every script path must run inside the restricted profile.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/tools/run_script.py",
+              "lines": "249-262",
+              "contains": "if details.readonly:",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/run_script.py#L249-L262"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Execution is off by default, but once enabled the model chooses readonly=false to drop the profile, and server-side nothing waits for a human before run_script_with_confirmation executes.",
+          "gap": "Escalation out of the profile must need a server-enforced human approval.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/config.py",
+              "lines": "250-251",
+              "contains": "toolset: Toolset = Toolset.FIXED",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L250-L251"
+            },
+            {
+              "file": "src/linux_mcp_server/tools/run_script.py",
+              "lines": "63-65",
+              "contains": "return not self.readonly or CONFIG.always_confirm_scripts",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/run_script.py#L63-L65"
+            },
+            {
+              "file": "src/linux_mcp_server/tools/run_script.py",
+              "lines": "570-572",
+              "contains": "returncode, stdout, stderr = await execute_command(command, host=execute_details.host)",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/run_script.py#L570-L572"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Modifying scripts run as root (via sudo) with host network and full filesystem.",
+          "gap": "Needs a non-root, no-network, resource-limited, ephemeral environment.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/tools/run_script.py",
+              "lines": "189-202",
+              "contains": "--property=ReadOnlyPaths=/",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/run_script.py#L189-L202"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.2,
+          "raw": 0.2,
+          "cap": {
+            "id": "G2",
+            "max": 0.25,
+            "reason": "The model sets the readonly flag that selects the restricted profile, so it can opt a script out of the read-only/no-network sandbox at runtime."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "For read-only scripts the systemd-run profile sets ReadOnlyPaths=/, RestrictAddressFamilies=AF_UNIX, PrivateTmp and NoNewPrivileges, but runs as root with no seccomp or capability drop.",
+              "gap": "Needs a non-root, capability-dropped, seccomp-restricted profile (or stronger) for every script.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/tools/run_script.py",
+                  "lines": "189-202",
+                  "contains": "--property=ReadOnlyPaths=/",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/run_script.py#L189-L202"
+                },
+                {
+                  "file": "src/linux_mcp_server/tools/run_script.py",
+                  "lines": "249-262",
+                  "contains": "if details.readonly:",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/run_script.py#L249-L262"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Scripts the model marks as modifying get no filesystem or network restriction, and the wrapper is not a complete boundary.",
+              "gap": "Every script path must run inside the restricted profile.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/tools/run_script.py",
+                  "lines": "249-262",
+                  "contains": "if details.readonly:",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/run_script.py#L249-L262"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Execution is off by default, but once enabled the model chooses readonly=false to drop the profile, and server-side nothing waits for a human before run_script_with_confirmation executes.",
+              "gap": "Escalation out of the profile must need a server-enforced human approval.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/config.py",
+                  "lines": "250-251",
+                  "contains": "toolset: Toolset = Toolset.FIXED",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L250-L251"
+                },
+                {
+                  "file": "src/linux_mcp_server/tools/run_script.py",
+                  "lines": "63-65",
+                  "contains": "return not self.readonly or CONFIG.always_confirm_scripts",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/run_script.py#L63-L65"
+                },
+                {
+                  "file": "src/linux_mcp_server/tools/run_script.py",
+                  "lines": "570-572",
+                  "contains": "returncode, stdout, stderr = await execute_command(command, host=execute_details.host)",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/run_script.py#L570-L572"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Modifying scripts run as root (via sudo) with host network and full filesystem.",
+              "gap": "Needs a non-root, no-network, resource-limited, ephemeral environment.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/tools/run_script.py",
+                  "lines": "189-202",
+                  "contains": "--property=ReadOnlyPaths=/",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/run_script.py#L189-L202"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "The server feeds the model content that others can write: journal entries, log files, service output, process command lines and arbitrary file contents. Some tools return structured models (log entries with their unit or path), but read_file and several status tools return plain text with no marker that it is untrusted. In the default mode a hijacked model can read local secrets such as SSH keys and then leak them through the host name argument, which triggers DNS lookups and SSH connection attempts to any name it chooses. No tool can change state, so the worst case is data exfiltration, not destruction.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.3,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Outputs are mostly plain text; some tools return structured models, but none carry an untrusted/provenance flag.",
+          "gap": "Needs structured outputs separating content from metadata on every tool, plus provenance.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/tools/storage.py",
+              "lines": "223-251",
+              "contains": "limit = CONFIG.max_file_read_bytes",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/storage.py#L223-L251"
+            },
+            {
+              "file": "src/linux_mcp_server/tools/logs.py",
+              "lines": "171-176",
+              "contains": "return LogEntries(",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/logs.py#L171-L176"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only a few tools structure their results; file contents and status text come back unmarked.",
+          "gap": "Needs consistent treatment across all content-returning tools.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/tools/storage.py",
+              "lines": "223-251",
+              "contains": "limit = CONFIG.max_file_read_bytes",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/storage.py#L223-L251"
+            },
+            {
+              "file": "src/linux_mcp_server/tools/services.py",
+              "lines": "87",
+              "contains": "return format_service_status(stdout, service_name)",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/services.py#L87"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The structuring that exists is fixed in code and cannot be disabled by content.",
+          "gap": "Needs explicit, warned control over provenance features (currently none exist to toggle).",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/tools/logs.py",
+              "lines": "171-176",
+              "contains": "return LogEntries(",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/logs.py#L171-L176"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Default config combines untrusted input, readable secrets (any file via read_file) and an outbound channel (arbitrary SSH host names resolved and dialled), though no irreversible action is possible.",
+          "gap": "Needs a host allowlist or no-egress mode so read secrets can't leave, or path restrictions on sensitive files.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/tools/storage.py",
+              "lines": "223-251",
+              "contains": "limit = CONFIG.max_file_read_bytes",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/storage.py#L223-L251"
+            },
+            {
+              "file": "src/linux_mcp_server/utils/types.py",
+              "lines": "11-18",
+              "contains": "Host = t.Annotated[",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/utils/types.py#L11-L18"
+            },
+            {
+              "file": "src/linux_mcp_server/connection/ssh.py",
+              "lines": "154-158",
+              "contains": "known_hosts = str(CONFIG.effective_known_hosts_path)",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/connection/ssh.py#L154-L158"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.3,
+          "raw": 0.3,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Outputs are mostly plain text; some tools return structured models, but none carry an untrusted/provenance flag.",
+              "gap": "Needs structured outputs separating content from metadata on every tool, plus provenance.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/tools/storage.py",
+                  "lines": "223-251",
+                  "contains": "limit = CONFIG.max_file_read_bytes",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/storage.py#L223-L251"
+                },
+                {
+                  "file": "src/linux_mcp_server/tools/logs.py",
+                  "lines": "171-176",
+                  "contains": "return LogEntries(",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/logs.py#L171-L176"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only a few tools structure their results; file contents and status text come back unmarked.",
+              "gap": "Needs consistent treatment across all content-returning tools.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/tools/storage.py",
+                  "lines": "223-251",
+                  "contains": "limit = CONFIG.max_file_read_bytes",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/storage.py#L223-L251"
+                },
+                {
+                  "file": "src/linux_mcp_server/tools/services.py",
+                  "lines": "87",
+                  "contains": "return format_service_status(stdout, service_name)",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/services.py#L87"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The structuring that exists is fixed in code and cannot be disabled by content.",
+              "gap": "Needs explicit, warned control over provenance features (currently none exist to toggle).",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/tools/logs.py",
+                  "lines": "171-176",
+                  "contains": "return LogEntries(",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/logs.py#L171-L176"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default config combines untrusted input, readable secrets (any file via read_file) and an outbound channel (arbitrary SSH host names resolved and dialled), though no irreversible action is possible.",
+              "gap": "Needs a host allowlist or no-egress mode so read secrets can't leave, or path restrictions on sensitive files.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/tools/storage.py",
+                  "lines": "223-251",
+                  "contains": "limit = CONFIG.max_file_read_bytes",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/storage.py#L223-L251"
+                },
+                {
+                  "file": "src/linux_mcp_server/utils/types.py",
+                  "lines": "11-18",
+                  "contains": "Host = t.Annotated[",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/utils/types.py#L11-L18"
+                },
+                {
+                  "file": "src/linux_mcp_server/connection/ssh.py",
+                  "lines": "154-158",
+                  "contains": "known_hosts = str(CONFIG.effective_known_hosts_path)",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/connection/ssh.py#L154-L158"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "The server keeps no memory, conversation store or retrieval index, and reads no instruction or configuration files from a working directory. Settings come only from LINUX_MCP_* environment variables and command-line flags (pydantic-settings with no .env file), and the optional policy file comes from an explicit operator-supplied path. Validated scripts are held in memory only for the life of the process.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -S 'env_file|dotenv|load_dotenv|AGENTS.md|CLAUDE.md'",
+              "scope": "src/",
+              "hits": 0,
+              "note": "No .env or instruction-file loading."
+            },
+            {
+              "search": "rg -n -S 'sqlite|vector|chroma|memory_store|pickle'",
+              "scope": "src/",
+              "hits": 0,
+              "note": "No persistence store."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -S 'env_file|dotenv|load_dotenv|AGENTS.md|CLAUDE.md'",
+              "scope": "src/",
+              "hits": 0,
+              "note": "No .env or instruction-file loading."
+            },
+            {
+              "search": "rg -n -S 'sqlite|vector|chroma|memory_store|pickle'",
+              "scope": "src/",
+              "hits": 0,
+              "note": "No persistence store."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -S 'env_file|dotenv|load_dotenv|AGENTS.md|CLAUDE.md'",
+              "scope": "src/",
+              "hits": 0,
+              "note": "No .env or instruction-file loading."
+            },
+            {
+              "search": "rg -n -S 'sqlite|vector|chroma|memory_store|pickle'",
+              "scope": "src/",
+              "hits": 0,
+              "note": "No persistence store."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -S 'env_file|dotenv|load_dotenv|AGENTS.md|CLAUDE.md'",
+              "scope": "src/",
+              "hits": 0,
+              "note": "No .env or instruction-file loading."
+            },
+            {
+              "search": "rg -n -S 'sqlite|vector|chroma|memory_store|pickle'",
+              "scope": "src/",
+              "hits": 0,
+              "note": "No persistence store."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -S 'env_file|dotenv|load_dotenv|AGENTS.md|CLAUDE.md'",
+                  "scope": "src/",
+                  "hits": 0,
+                  "note": "No .env or instruction-file loading."
+                },
+                {
+                  "search": "rg -n -S 'sqlite|vector|chroma|memory_store|pickle'",
+                  "scope": "src/",
+                  "hits": 0,
+                  "note": "No persistence store."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -S 'env_file|dotenv|load_dotenv|AGENTS.md|CLAUDE.md'",
+                  "scope": "src/",
+                  "hits": 0,
+                  "note": "No .env or instruction-file loading."
+                },
+                {
+                  "search": "rg -n -S 'sqlite|vector|chroma|memory_store|pickle'",
+                  "scope": "src/",
+                  "hits": 0,
+                  "note": "No persistence store."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -S 'env_file|dotenv|load_dotenv|AGENTS.md|CLAUDE.md'",
+                  "scope": "src/",
+                  "hits": 0,
+                  "note": "No .env or instruction-file loading."
+                },
+                {
+                  "search": "rg -n -S 'sqlite|vector|chroma|memory_store|pickle'",
+                  "scope": "src/",
+                  "hits": 0,
+                  "note": "No persistence store."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -S 'env_file|dotenv|load_dotenv|AGENTS.md|CLAUDE.md'",
+                  "scope": "src/",
+                  "hits": 0,
+                  "note": "No .env or instruction-file loading."
+                },
+                {
+                  "search": "rg -n -S 'sqlite|vector|chroma|memory_store|pickle'",
+                  "scope": "src/",
+                  "hits": 0,
+                  "note": "No persistence store."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n -S 'env_file|dotenv|load_dotenv|AGENTS.md|CLAUDE.md'",
+          "scope": "src/",
+          "hits": 0,
+          "note": "No .env or instruction-file loading."
+        },
+        {
+          "search": "rg -n -S 'sqlite|vector|chroma|memory_store|pickle'",
+          "scope": "src/",
+          "hits": 0,
+          "note": "No persistence store."
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "The server loads no third-party code at runtime: no plugin system, no MCP client, no package installs on the model's behalf, and no model files. The MCP App HTML/JS is read from the package's own resources. A _vendor directory lets downstream packagers bundle dependencies at build time, which is ordinary supply chain rather than runtime extension loading.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -S 'entry_points|trust_remote_code|npx|torch.load|__import__|import_module'",
+              "scope": "src/",
+              "hits": 0,
+              "note": "No dynamic plugin or remote-code loading."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -S 'entry_points|trust_remote_code|npx|torch.load|__import__|import_module'",
+              "scope": "src/",
+              "hits": 0,
+              "note": "No dynamic plugin or remote-code loading."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -S 'entry_points|trust_remote_code|npx|torch.load|__import__|import_module'",
+              "scope": "src/",
+              "hits": 0,
+              "note": "No dynamic plugin or remote-code loading."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -S 'entry_points|trust_remote_code|npx|torch.load|__import__|import_module'",
+              "scope": "src/",
+              "hits": 0,
+              "note": "No dynamic plugin or remote-code loading."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -S 'entry_points|trust_remote_code|npx|torch.load|__import__|import_module'",
+                  "scope": "src/",
+                  "hits": 0,
+                  "note": "No dynamic plugin or remote-code loading."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -S 'entry_points|trust_remote_code|npx|torch.load|__import__|import_module'",
+                  "scope": "src/",
+                  "hits": 0,
+                  "note": "No dynamic plugin or remote-code loading."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -S 'entry_points|trust_remote_code|npx|torch.load|__import__|import_module'",
+                  "scope": "src/",
+                  "hits": 0,
+                  "note": "No dynamic plugin or remote-code loading."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -S 'entry_points|trust_remote_code|npx|torch.load|__import__|import_module'",
+                  "scope": "src/",
+                  "hits": 0,
+                  "note": "No dynamic plugin or remote-code loading."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n -S 'entry_points|trust_remote_code|npx|torch.load|__import__|import_module'",
+          "scope": "src/",
+          "hits": 0,
+          "note": "No dynamic plugin or remote-code loading."
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "The few secrets the server holds (SSH key passphrase, OAuth client secrets) are SecretStr values, there is no telemetry, and tool-call logging redacts any parameter whose name looks sensitive. But nothing stops secrets reaching the model: read_file returns any file the user can read, including private SSH keys and cloud credential files, and local commands inherit the server's full environment, including gatekeeper API keys when that toolset is enabled.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.375,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "SecretStr for configured secrets and key-name redaction in tool-call logs.",
+          "gap": "Needs redaction or blocking of secrets before model-bound output, and a secret manager for stored credentials.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/config.py",
+              "lines": "242-244",
+              "contains": "key_passphrase: SecretStr = SecretStr(\"\")",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L242-L244"
+            },
+            {
+              "file": "src/linux_mcp_server/audit.py",
+              "lines": "24-37",
+              "contains": "SENSITIVE_FIELDS = {",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/audit.py#L24-L37"
+            },
+            {
+              "file": "src/linux_mcp_server/audit.py",
+              "lines": "136",
+              "contains": "safe_params = sanitize_parameters(params)",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/audit.py#L136"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only the tool-call log path is protected; model-bound tool results and subprocess environments are not.",
+          "gap": "Needs protection on model-bound results and subprocess environments too.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/tools/storage.py",
+              "lines": "223-251",
+              "contains": "limit = CONFIG.max_file_read_bytes",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/storage.py#L223-L251"
+            },
+            {
+              "file": "src/linux_mcp_server/connection/ssh.py",
+              "lines": "488-494",
+              "contains": "start_new_session=True",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/connection/ssh.py#L488-L494"
+            },
+            {
+              "file": "src/linux_mcp_server/gatekeeper/openai_client.py",
+              "lines": "87",
+              "contains": "api_key = os.environ.get(\"OPENAI_API_KEY\")",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/gatekeeper/openai_client.py#L87"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No telemetry exists, logging defaults to INFO, and log redaction is always on.",
+          "gap": "Needs minimised/encrypted stored records by default.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/config.py",
+              "lines": "232",
+              "contains": "log_level: UpperCase = \"INFO\"",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L232"
+            },
+            {
+              "file": "src/linux_mcp_server/audit.py",
+              "lines": "136",
+              "contains": "safe_params = sanitize_parameters(params)",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/audit.py#L136"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Long-lived, high-privilege SSH private keys and other credential files are readable by the model through read_file.",
+          "gap": "Needs sensitive paths blocked or an ambient-only design that never exposes key material.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/tools/storage.py",
+              "lines": "223-251",
+              "contains": "limit = CONFIG.max_file_read_bytes",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/storage.py#L223-L251"
+            },
+            {
+              "file": "src/linux_mcp_server/utils/validation.py",
+              "lines": "49-68",
+              "contains": "if \"..\" in path.split(\"/\"):",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/utils/validation.py#L49-L68"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.375,
+          "raw": 0.375,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "SecretStr for configured secrets and key-name redaction in tool-call logs.",
+              "gap": "Needs redaction or blocking of secrets before model-bound output, and a secret manager for stored credentials.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/config.py",
+                  "lines": "242-244",
+                  "contains": "key_passphrase: SecretStr = SecretStr(\"\")",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L242-L244"
+                },
+                {
+                  "file": "src/linux_mcp_server/audit.py",
+                  "lines": "24-37",
+                  "contains": "SENSITIVE_FIELDS = {",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/audit.py#L24-L37"
+                },
+                {
+                  "file": "src/linux_mcp_server/audit.py",
+                  "lines": "136",
+                  "contains": "safe_params = sanitize_parameters(params)",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/audit.py#L136"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only the tool-call log path is protected; model-bound tool results and subprocess environments are not.",
+              "gap": "Needs protection on model-bound results and subprocess environments too.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/tools/storage.py",
+                  "lines": "223-251",
+                  "contains": "limit = CONFIG.max_file_read_bytes",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/storage.py#L223-L251"
+                },
+                {
+                  "file": "src/linux_mcp_server/connection/ssh.py",
+                  "lines": "488-494",
+                  "contains": "start_new_session=True",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/connection/ssh.py#L488-L494"
+                },
+                {
+                  "file": "src/linux_mcp_server/gatekeeper/openai_client.py",
+                  "lines": "87",
+                  "contains": "api_key = os.environ.get(\"OPENAI_API_KEY\")",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/gatekeeper/openai_client.py#L87"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No telemetry exists, logging defaults to INFO, and log redaction is always on.",
+              "gap": "Needs minimised/encrypted stored records by default.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/config.py",
+                  "lines": "232",
+                  "contains": "log_level: UpperCase = \"INFO\"",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L232"
+                },
+                {
+                  "file": "src/linux_mcp_server/audit.py",
+                  "lines": "136",
+                  "contains": "safe_params = sanitize_parameters(params)",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/audit.py#L136"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Long-lived, high-privilege SSH private keys and other credential files are readable by the model through read_file.",
+              "gap": "Needs sensitive paths blocked or an ambient-only design that never exposes key material.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/tools/storage.py",
+                  "lines": "223-251",
+                  "contains": "limit = CONFIG.max_file_read_bytes",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/storage.py#L223-L251"
+                },
+                {
+                  "file": "src/linux_mcp_server/utils/validation.py",
+                  "lines": "49-68",
+                  "contains": "if \"..\" in path.split(\"/\"):",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/utils/validation.py#L49-L68"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "Every one of the server's 30 tools is wrapped by a logging decorator that writes a structured record (tool, sanitized arguments, host, status, duration, timestamp) to rotating text and JSON files under ~/.local/share, and remote commands are logged with their exact command line and exit code. Local commands are logged only at debug level, and in the default local mode there is no user identity and authorization decisions are logged only at debug. The files are ordinary user-writable files kept for ten days.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.5,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Structured per-call records with arguments, status and timestamps in JSON and text logs.",
+          "gap": "Needs actor attribution (requesting principal, approver) in the default mode and tamper evidence.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/audit.py",
+              "lines": "136-158",
+              "contains": "logger.info(message, extra=extra)",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/audit.py#L136-L158"
+            },
+            {
+              "file": "src/linux_mcp_server/logging_config.py",
+              "lines": "133-158",
+              "contains": "json_handler = logging.handlers.TimedRotatingFileHandler(",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/logging_config.py#L133-L158"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All built-in tools are logged and remote commands are recorded, but local commands and authorization decisions are only at debug level in stdio mode.",
+          "gap": "Needs every executed command and every approval/denial recorded at the default level.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/connection/ssh.py",
+              "lines": "411",
+              "contains": "logger.debug(f\"LOCAL_EXEC: {cmd_str}\")",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/connection/ssh.py#L411"
+            },
+            {
+              "file": "src/linux_mcp_server/connection/ssh.py",
+              "lines": "273",
+              "contains": "log_ssh_command(cmd_str, host, exit_code=return_code, duration=duration)",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/connection/ssh.py#L273"
+            },
+            {
+              "file": "src/linux_mcp_server/server.py",
+              "lines": "272-282",
+              "contains": "log_level = logger.info if CONFIG.transport != Transport.stdio else logger.debug",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/server.py#L272-L282"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "On by default and stored outside any workspace, but in a file the server's own user (and its opt-in script tools) can alter.",
+          "gap": "Needs the log written by a component the model can't control.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/config.py",
+              "lines": "231-233",
+              "contains": "log_dir: Path = Path.home() / \".local\" / \"share\" / \"linux-mcp-server\" / \"logs\"",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L231-L233"
+            },
+            {
+              "file": "src/linux_mcp_server/logging_config.py",
+              "lines": "133-158",
+              "contains": "json_handler = logging.handlers.TimedRotatingFileHandler(",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/logging_config.py#L133-L158"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "Records are written per call via stdlib file handlers that flush each record; logging failures don't block actions.",
+          "gap": "Needs replayable, durable records and fail-closed behaviour for high-risk actions.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/logging_config.py",
+              "lines": "133-158",
+              "contains": "json_handler = logging.handlers.TimedRotatingFileHandler(",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/logging_config.py#L133-L158"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.5,
+          "raw": 0.5,
+          "cap": null,
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Structured per-call records with arguments, status and timestamps in JSON and text logs.",
+              "gap": "Needs actor attribution (requesting principal, approver) in the default mode and tamper evidence.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/audit.py",
+                  "lines": "136-158",
+                  "contains": "logger.info(message, extra=extra)",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/audit.py#L136-L158"
+                },
+                {
+                  "file": "src/linux_mcp_server/logging_config.py",
+                  "lines": "133-158",
+                  "contains": "json_handler = logging.handlers.TimedRotatingFileHandler(",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/logging_config.py#L133-L158"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All built-in tools are logged and remote commands are recorded, but local commands and authorization decisions are only at debug level in stdio mode.",
+              "gap": "Needs every executed command and every approval/denial recorded at the default level.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/connection/ssh.py",
+                  "lines": "411",
+                  "contains": "logger.debug(f\"LOCAL_EXEC: {cmd_str}\")",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/connection/ssh.py#L411"
+                },
+                {
+                  "file": "src/linux_mcp_server/connection/ssh.py",
+                  "lines": "273",
+                  "contains": "log_ssh_command(cmd_str, host, exit_code=return_code, duration=duration)",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/connection/ssh.py#L273"
+                },
+                {
+                  "file": "src/linux_mcp_server/server.py",
+                  "lines": "272-282",
+                  "contains": "log_level = logger.info if CONFIG.transport != Transport.stdio else logger.debug",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/server.py#L272-L282"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "On by default and stored outside any workspace, but in a file the server's own user (and its opt-in script tools) can alter.",
+              "gap": "Needs the log written by a component the model can't control.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/config.py",
+                  "lines": "231-233",
+                  "contains": "log_dir: Path = Path.home() / \".local\" / \"share\" / \"linux-mcp-server\" / \"logs\"",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L231-L233"
+                },
+                {
+                  "file": "src/linux_mcp_server/logging_config.py",
+                  "lines": "133-158",
+                  "contains": "json_handler = logging.handlers.TimedRotatingFileHandler(",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/logging_config.py#L133-L158"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "Records are written per call via stdlib file handlers that flush each record; logging failures don't block actions.",
+              "gap": "Needs replayable, durable records and fail-closed behaviour for high-risk actions.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/logging_config.py",
+                  "lines": "133-158",
+                  "contains": "json_handler = logging.handlers.TimedRotatingFileHandler(",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/logging_config.py#L133-L158"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "Every command the server runs, locally or over SSH, has a 30-second default timeout; file reads are capped at 1 MiB, log and journal reads at 10,000 lines, and listings at depth one. There are no rate or concurrency limits, some outputs (process list, service list) are unbounded, and a local timeout kills only the direct child process, not any processes it spawned.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.55,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Server-enforced timeouts and output caps on most operations.",
+          "gap": "Needs caps on every output plus concurrency or rate limits.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/config.py",
+              "lines": "259-260",
+              "contains": "command_timeout: int = 30",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L259-L260"
+            },
+            {
+              "file": "src/linux_mcp_server/config.py",
+              "lines": "238-239",
+              "contains": "max_file_read_bytes: int = Field(default=1024 * 1024, ge=1)",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L238-L239"
+            },
+            {
+              "file": "src/linux_mcp_server/tools/logs.py",
+              "lines": "118-124",
+              "contains": "le=10_000,",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/logs.py#L118-L124"
+            },
+            {
+              "file": "src/linux_mcp_server/commands.py",
+              "lines": "164",
+              "contains": "\"ps\", \"aux\", \"--sort=-%cpu\"",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/commands.py#L164"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The timeout applies to every local and remote command.",
+          "gap": "Needs process-group kill so spawned processes count against the limit.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/connection/ssh.py",
+              "lines": "496-499",
+              "contains": "proc.kill()",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/connection/ssh.py#L496-L499"
+            },
+            {
+              "file": "src/linux_mcp_server/connection/ssh.py",
+              "lines": "248",
+              "contains": "timeout=timeout",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/connection/ssh.py#L248"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Sensible defaults that only the operator can change; the model has no way to raise them.",
+          "gap": "Needs hard ceilings configuration can't exceed.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/config.py",
+              "lines": "259-260",
+              "contains": "command_timeout: int = 30",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L259-L260"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Moderate ceilings; a timed-out local command's child processes may continue.",
+          "gap": "Needs cancellation of in-flight work and no orphaned processes.",
+          "evidence": [
+            {
+              "file": "src/linux_mcp_server/connection/ssh.py",
+              "lines": "496-499",
+              "contains": "proc.kill()",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/connection/ssh.py#L496-L499"
+            },
+            {
+              "file": "src/linux_mcp_server/connection/ssh.py",
+              "lines": "488-494",
+              "contains": "start_new_session=True",
+              "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/connection/ssh.py#L488-L494"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.55,
+          "raw": 0.55,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Server-enforced timeouts and output caps on most operations.",
+              "gap": "Needs caps on every output plus concurrency or rate limits.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/config.py",
+                  "lines": "259-260",
+                  "contains": "command_timeout: int = 30",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L259-L260"
+                },
+                {
+                  "file": "src/linux_mcp_server/config.py",
+                  "lines": "238-239",
+                  "contains": "max_file_read_bytes: int = Field(default=1024 * 1024, ge=1)",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L238-L239"
+                },
+                {
+                  "file": "src/linux_mcp_server/tools/logs.py",
+                  "lines": "118-124",
+                  "contains": "le=10_000,",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/logs.py#L118-L124"
+                },
+                {
+                  "file": "src/linux_mcp_server/commands.py",
+                  "lines": "164",
+                  "contains": "\"ps\", \"aux\", \"--sort=-%cpu\"",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/commands.py#L164"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The timeout applies to every local and remote command.",
+              "gap": "Needs process-group kill so spawned processes count against the limit.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/connection/ssh.py",
+                  "lines": "496-499",
+                  "contains": "proc.kill()",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/connection/ssh.py#L496-L499"
+                },
+                {
+                  "file": "src/linux_mcp_server/connection/ssh.py",
+                  "lines": "248",
+                  "contains": "timeout=timeout",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/connection/ssh.py#L248"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Sensible defaults that only the operator can change; the model has no way to raise them.",
+              "gap": "Needs hard ceilings configuration can't exceed.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/config.py",
+                  "lines": "259-260",
+                  "contains": "command_timeout: int = 30",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L259-L260"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Moderate ceilings; a timed-out local command's child processes may continue.",
+              "gap": "Needs cancellation of in-flight work and no orphaned processes.",
+              "evidence": [
+                {
+                  "file": "src/linux_mcp_server/connection/ssh.py",
+                  "lines": "496-499",
+                  "contains": "proc.kill()",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/connection/ssh.py#L496-L499"
+                },
+                {
+                  "file": "src/linux_mcp_server/connection/ssh.py",
+                  "lines": "488-494",
+                  "contains": "start_new_session=True",
+                  "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/connection/ssh.py#L488-L494"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "In the opt-in run_script toolset the model's own readonly flag selects the sandbox profile, so modifying scripts run as root via sudo systemd-run with host networking, and the sandbox is not a complete boundary.",
+      "criterion": "C4",
+      "owasp": [
+        "ASI05",
+        "T11"
+      ],
+      "evidence": [
+        {
+          "file": "src/linux_mcp_server/tools/run_script.py",
+          "lines": "189-202",
+          "contains": "--property=ReadOnlyPaths=/",
+          "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/run_script.py#L189-L202"
+        },
+        {
+          "file": "src/linux_mcp_server/tools/run_script.py",
+          "lines": "249-262",
+          "contains": "if details.readonly:",
+          "url": "https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/run_script.py#L249-L262"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "journal, log files, arbitrary files and process/service text returned to the model (src/linux_mcp_server/tools/storage.py:226-251)",
+    "sensitive_data": "any file readable by the server user, including ~/.ssh private keys (src/linux_mcp_server/utils/validation.py:49-68)",
+    "state_change_or_egress": "model-chosen SSH host names resolved and dialled with ambient credentials (src/linux_mcp_server/utils/types.py:11-18); no state change in default toolset",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Restrict read_file/list tools to configurable allowed path roots with resolved-path containment and a default denylist for ~/.ssh, credential files and /etc/shadow.",
+      "criterion": "C8",
+      "parameter": "B",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 4",
+      "estimated_gain": 0.1
+    },
+    {
+      "summary": "Add a host allowlist (or default to known_hosts entries only, checked before DNS resolution) for the host argument.",
+      "criterion": "C5",
+      "parameter": "B",
+      "from_level": 1,
+      "to_level": 3,
+      "playbook": "Playbook 1",
+      "estimated_gain": 0.1
+    },
+    {
+      "summary": "Validate every tool argument against a strict pattern before it reaches a command line.",
+      "criterion": "C3",
+      "parameter": "S",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Run every script (not only model-flagged read-only ones) under a non-root, no-network systemd-run profile.",
+      "criterion": "C4",
+      "parameter": "C",
+      "from_level": 0,
+      "to_level": 3,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.225
+    },
+    {
+      "summary": "Log local command lines and authorization decisions at INFO in stdio mode.",
+      "criterion": "C9",
+      "parameter": "C",
+      "from_level": 2,
+      "to_level": 3,
+      "estimated_gain": 0.075
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was executed, installed, or probed.",
+    "The project's installation docs live on an external site and were not reviewed; the scored default is taken from the code's config defaults (stdio, fixed toolset).",
+    "Behaviour of asyncssh (default key/agent use, DNS resolution before host-key check) and of system tools is inferred from library/tool documentation, not observed.",
+    "The LLM gatekeeper prompts and eval suite for the opt-in run_script mode were skimmed, not audited in depth."
+  ]
+}

@@ -1,0 +1,2177 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "kagent",
+  "name": "kagent",
+  "repo_url": "https://github.com/kagent-dev/kagent",
+  "subpath": null,
+  "description": "Kubernetes-native framework/platform for running AI agents declaratively in clusters, with built-in k8s/Helm/Istio/Prometheus tools",
+  "category": "infrastructure_ops",
+  "pinned_commit": "72a28f01403ab48f7d6df02d67e24e937c3a0459",
+  "version": null,
+  "scored_date": "2026-10-03",
+  "scored_configuration": "Helm chart defaults (controller.auth.mode=insecure, default NoopAuthorizer, cluster-scoped RBAC, kagent-tools, grafana-mcp and kmcp enabled, bundled Postgres) with the required Agent Substrate runtime on its default gVisor WorkerPool class, agents on the default kagent Go ADK harness.",
+  "score": 3.6,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 10,
+    "score": 3.55,
+    "max": 10.0,
+    "percent": 36
+  },
+  "capability_profile": {
+    "code_execution": "opt_in",
+    "filesystem_write": "yes",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "opt_in",
+    "untrusted_input": "yes",
+    "third_party_extensions": "yes",
+    "sub_agents": "yes",
+    "external_communication": "yes"
+  },
+  "headline": "kagent runs each agent in a gVisor-isolated Substrate actor whose network egress is limited to configured origins and whose model and MCP credentials are injected by an egress gateway rather than placed in the agent's environment - a genuinely strong isolation design. That design is undercut by the control plane it ships with: the default controller authentication mode is 'insecure' (any caller can claim any user, defaulting to admin) with a permit-all authorizer, and every agent actor is always allowed to reach that controller API, which can create agents, tool servers and model configs and call any registered MCP tool under a cluster-wide service account. Human approval of tool calls exists but is off by default, and there are no step, time or spend limits on the agent loop.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "Agent actors carry no Kubernetes service-account credentials of their own, and model/MCP keys are injected outside the actor, which is a good start. But every agent can always reach the kagent controller API, and by default that API trusts whatever user the caller claims (falling back to admin) and authorizes every action. Through it a caller can create or change agents, tool servers, model configs and call any registered MCP tool, all executed with the controller's cluster-wide service account that can create, update and delete every core, apps and batch resource. Least privilege therefore depends entirely on the operator switching to trusted-proxy mode and supplying a real authorizer.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.15,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "G2",
+        "max": 0.25,
+        "reason": "The default InsecureAuthenticator takes the acting user from the caller-controlled X-User-Id header or user_id query parameter, so any client - including an agent actor, whose egress always allows the controller - can impersonate any user at runtime."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Actors have a dedicated runtime identity, but the controller API they can always reach acts with a cluster-wide service account and accepts any caller-asserted user identity with a permit-all authorizer.",
+          "gap": "No per-tool or per-capability scoping: one controller ServiceAccount with wildcard core/apps/batch write serves every request.",
+          "evidence": [
+            {
+              "file": "go/core/internal/httpserver/auth/authn.go",
+              "lines": "24-31",
+              "contains": "userID = \"admin@kagent.dev\"",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/httpserver/auth/authn.go#L24-L31"
+            },
+            {
+              "file": "go/core/pkg/app/app.go",
+              "lines": "128-130",
+              "contains": "authorizer = &auth.NoopAuthorizer{}",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/pkg/app/app.go#L128-L130"
+            },
+            {
+              "file": "helm/kagent/templates/rbac/writer-role.yaml",
+              "lines": "50-58",
+              "contains": "- \"*\"",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/templates/rbac/writer-role.yaml#L50-L58"
+            },
+            {
+              "file": "go/core/internal/translator/kagent/compiler.go",
+              "lines": "71",
+              "contains": "\":8083\"",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/translator/kagent/compiler.go#L71"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Owner checks exist in the session/sandbox services, but other paths (CallMCPAppTool, agent/template/tool-server CRUD) only consult the authorizer, which is NoopAuthorizer by default.",
+          "gap": "Not every tool path goes through an authorization layer that actually restricts anything by default.",
+          "evidence": [
+            {
+              "file": "go/core/internal/service/tool/service.go",
+              "lines": "262-277",
+              "contains": "s.mcpClient.CallTool(ctx, ref, toolName, arguments)",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/service/tool/service.go#L262-L277"
+            },
+            {
+              "file": "go/core/internal/grpcserver/policy.go",
+              "lines": "46",
+              "contains": "ToolService_CallMCPAppTool_FullMethodName",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/grpcserver/policy.go#L46"
+            },
+            {
+              "file": "go/core/pkg/app/app.go",
+              "lines": "128-130",
+              "contains": "authorizer = &auth.NoopAuthorizer{}",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/pkg/app/app.go#L128-L130"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The shipped chart sets controller auth mode to insecure and cluster-scoped RBAC; least privilege requires manual hardening.",
+          "gap": "Default should require authenticated principals and a restrictive authorizer, with namespace-scoped RBAC.",
+          "evidence": [
+            {
+              "file": "helm/kagent/values.yaml",
+              "lines": "227-230",
+              "contains": "mode: insecure",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L227-L230"
+            },
+            {
+              "file": "helm/kagent/values.yaml",
+              "lines": "193-206",
+              "contains": "namespaces: []",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L193-L206"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "If the authorization layer fails (as it does by default), the controller ServiceAccount can create/update/delete all core resources cluster-wide, including Secrets and Pods.",
+          "gap": "Blast radius should be limited to one namespace/tenant and mostly read-only.",
+          "evidence": [
+            {
+              "file": "helm/kagent/templates/rbac/writer-role.yaml",
+              "lines": "50-58",
+              "contains": "- \"*\"",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/templates/rbac/writer-role.yaml#L50-L58"
+            },
+            {
+              "file": "helm/kagent/templates/rbac/getter-role.yaml",
+              "lines": "60-66",
+              "contains": "- \"*\"",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/templates/rbac/getter-role.yaml#L60-L66"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.15,
+          "raw": 0.15,
+          "cap": {
+            "id": "G2",
+            "max": 0.25,
+            "reason": "The default InsecureAuthenticator takes the acting user from the caller-controlled X-User-Id header or user_id query parameter, so any client - including an agent actor, whose egress always allows the controller - can impersonate any user at runtime."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Actors have a dedicated runtime identity, but the controller API they can always reach acts with a cluster-wide service account and accepts any caller-asserted user identity with a permit-all authorizer.",
+              "gap": "No per-tool or per-capability scoping: one controller ServiceAccount with wildcard core/apps/batch write serves every request.",
+              "evidence": [
+                {
+                  "file": "go/core/internal/httpserver/auth/authn.go",
+                  "lines": "24-31",
+                  "contains": "userID = \"admin@kagent.dev\"",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/httpserver/auth/authn.go#L24-L31"
+                },
+                {
+                  "file": "go/core/pkg/app/app.go",
+                  "lines": "128-130",
+                  "contains": "authorizer = &auth.NoopAuthorizer{}",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/pkg/app/app.go#L128-L130"
+                },
+                {
+                  "file": "helm/kagent/templates/rbac/writer-role.yaml",
+                  "lines": "50-58",
+                  "contains": "- \"*\"",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/templates/rbac/writer-role.yaml#L50-L58"
+                },
+                {
+                  "file": "go/core/internal/translator/kagent/compiler.go",
+                  "lines": "71",
+                  "contains": "\":8083\"",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/translator/kagent/compiler.go#L71"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Owner checks exist in the session/sandbox services, but other paths (CallMCPAppTool, agent/template/tool-server CRUD) only consult the authorizer, which is NoopAuthorizer by default.",
+              "gap": "Not every tool path goes through an authorization layer that actually restricts anything by default.",
+              "evidence": [
+                {
+                  "file": "go/core/internal/service/tool/service.go",
+                  "lines": "262-277",
+                  "contains": "s.mcpClient.CallTool(ctx, ref, toolName, arguments)",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/service/tool/service.go#L262-L277"
+                },
+                {
+                  "file": "go/core/internal/grpcserver/policy.go",
+                  "lines": "46",
+                  "contains": "ToolService_CallMCPAppTool_FullMethodName",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/grpcserver/policy.go#L46"
+                },
+                {
+                  "file": "go/core/pkg/app/app.go",
+                  "lines": "128-130",
+                  "contains": "authorizer = &auth.NoopAuthorizer{}",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/pkg/app/app.go#L128-L130"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The shipped chart sets controller auth mode to insecure and cluster-scoped RBAC; least privilege requires manual hardening.",
+              "gap": "Default should require authenticated principals and a restrictive authorizer, with namespace-scoped RBAC.",
+              "evidence": [
+                {
+                  "file": "helm/kagent/values.yaml",
+                  "lines": "227-230",
+                  "contains": "mode: insecure",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L227-L230"
+                },
+                {
+                  "file": "helm/kagent/values.yaml",
+                  "lines": "193-206",
+                  "contains": "namespaces: []",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L193-L206"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "If the authorization layer fails (as it does by default), the controller ServiceAccount can create/update/delete all core resources cluster-wide, including Secrets and Pods.",
+              "gap": "Blast radius should be limited to one namespace/tenant and mostly read-only.",
+              "evidence": [
+                {
+                  "file": "helm/kagent/templates/rbac/writer-role.yaml",
+                  "lines": "50-58",
+                  "contains": "- \"*\"",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/templates/rbac/writer-role.yaml#L50-L58"
+                },
+                {
+                  "file": "helm/kagent/templates/rbac/getter-role.yaml",
+                  "lines": "60-66",
+                  "contains": "- \"*\"",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/templates/rbac/getter-role.yaml#L60-L66"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "kagent has a real human-in-the-loop mechanism: an MCP tool binding can set requireApproval, which pauses the task and shows the approver the exact tool name and arguments before resuming the same stored call. It is off by default, though, and it only covers MCP tool bindings - the skills bash tool, the Claude harness (run with --dangerously-skip-permissions) and the Codex harness (danger-full-access) are not gated, and the controller's CallMCPAppTool API can invoke any registered MCP tool directly without any approval. Kubernetes writes made through these tools are generally irreversible.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C2-SELFAPPROVE",
+        "max": 0.25,
+        "reason": "Approval decisions arrive as A2A messages authenticated by the default InsecureAuthenticator, so any caller that sets X-User-Id to the session owner (including another agent actor, which can always reach the controller) can approve a pending call."
+      },
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "When enabled, each call of a bound MCP tool pauses as an A2A input-required task carrying the exact tool name and arguments, and the decision resumes that stored call.",
+          "gap": "No argument-level allow/deny/escalate policy; approval is all-or-nothing per binding.",
+          "evidence": [
+            {
+              "file": "go/api/v1alpha3/agenttemplate_types.go",
+              "lines": "61-65",
+              "contains": "RequireApproval bool",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/api/v1alpha3/agenttemplate_types.go#L61-L65"
+            },
+            {
+              "file": "go/adk/pkg/mcp/registry.go",
+              "lines": "193-195",
+              "contains": "tool.WithConfirmation(ts.inner, true, nil)",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/mcp/registry.go#L193-L195"
+            },
+            {
+              "file": "go/adk/pkg/a2a/hitl.go",
+              "lines": "389",
+              "contains": "Args: tool.args",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/a2a/hitl.go#L389"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only MCP bindings with requireApproval are gated; bash (skills), the Claude/Codex native tools and the controller CallMCPAppTool path bypass it.",
+          "gap": "Every tool path, including built-in shell, harness-native tools and the controller's direct MCP tool call API, should traverse the gate.",
+          "evidence": [
+            {
+              "file": "go/adk/pkg/tools/skills.go",
+              "lines": "281-284",
+              "contains": "Name:        \"bash\"",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/tools/skills.go#L281-L284"
+            },
+            {
+              "file": "go/harness/claude/internal/driver/process.go",
+              "lines": "129",
+              "contains": "--dangerously-skip-permissions",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/harness/claude/internal/driver/process.go#L129"
+            },
+            {
+              "file": "go/harness/codex/internal/driver/process.go",
+              "lines": "137",
+              "contains": "danger-full-access",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/harness/codex/internal/driver/process.go#L137"
+            },
+            {
+              "file": "go/core/internal/service/tool/service.go",
+              "lines": "262-277",
+              "contains": "s.mcpClient.CallTool(ctx, ref, toolName, arguments)",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/service/tool/service.go#L262-L277"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "requireApproval defaults to false (omitempty bool) and no shipped template sets it.",
+          "gap": "Approval should be on by default for mutating tools.",
+          "evidence": [
+            {
+              "file": "go/api/v1alpha3/agenttemplate_types.go",
+              "lines": "61-65",
+              "contains": "RequireApproval bool `json:\"requireApproval,omitempty\"`",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/api/v1alpha3/agenttemplate_types.go#L61-L65"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Bound Kubernetes/Helm tools can make destructive cluster changes that kagent cannot undo; checkpoints cover only agent conversation state.",
+          "gap": "No rollback or dry-run for external actions; no rate limits on consequential actions.",
+          "evidence": [
+            {
+              "file": "helm/kagent/templates/toolserver-kagent.yaml",
+              "lines": "21-23",
+              "contains": "Official KAgent tool server",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/templates/toolserver-kagent.yaml#L21-L23"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.35,
+          "cap": {
+            "id": "C2-SELFAPPROVE",
+            "max": 0.25,
+            "reason": "Approval decisions arrive as A2A messages authenticated by the default InsecureAuthenticator, so any caller that sets X-User-Id to the session owner (including another agent actor, which can always reach the controller) can approve a pending call."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "When enabled, each call of a bound MCP tool pauses as an A2A input-required task carrying the exact tool name and arguments, and the decision resumes that stored call.",
+              "gap": "No argument-level allow/deny/escalate policy; approval is all-or-nothing per binding.",
+              "evidence": [
+                {
+                  "file": "go/api/v1alpha3/agenttemplate_types.go",
+                  "lines": "61-65",
+                  "contains": "RequireApproval bool",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/api/v1alpha3/agenttemplate_types.go#L61-L65"
+                },
+                {
+                  "file": "go/adk/pkg/mcp/registry.go",
+                  "lines": "193-195",
+                  "contains": "tool.WithConfirmation(ts.inner, true, nil)",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/mcp/registry.go#L193-L195"
+                },
+                {
+                  "file": "go/adk/pkg/a2a/hitl.go",
+                  "lines": "389",
+                  "contains": "Args: tool.args",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/a2a/hitl.go#L389"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only MCP bindings with requireApproval are gated; bash (skills), the Claude/Codex native tools and the controller CallMCPAppTool path bypass it.",
+              "gap": "Every tool path, including built-in shell, harness-native tools and the controller's direct MCP tool call API, should traverse the gate.",
+              "evidence": [
+                {
+                  "file": "go/adk/pkg/tools/skills.go",
+                  "lines": "281-284",
+                  "contains": "Name:        \"bash\"",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/tools/skills.go#L281-L284"
+                },
+                {
+                  "file": "go/harness/claude/internal/driver/process.go",
+                  "lines": "129",
+                  "contains": "--dangerously-skip-permissions",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/harness/claude/internal/driver/process.go#L129"
+                },
+                {
+                  "file": "go/harness/codex/internal/driver/process.go",
+                  "lines": "137",
+                  "contains": "danger-full-access",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/harness/codex/internal/driver/process.go#L137"
+                },
+                {
+                  "file": "go/core/internal/service/tool/service.go",
+                  "lines": "262-277",
+                  "contains": "s.mcpClient.CallTool(ctx, ref, toolName, arguments)",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/service/tool/service.go#L262-L277"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "requireApproval defaults to false (omitempty bool) and no shipped template sets it.",
+              "gap": "Approval should be on by default for mutating tools.",
+              "evidence": [
+                {
+                  "file": "go/api/v1alpha3/agenttemplate_types.go",
+                  "lines": "61-65",
+                  "contains": "RequireApproval bool `json:\"requireApproval,omitempty\"`",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/api/v1alpha3/agenttemplate_types.go#L61-L65"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Bound Kubernetes/Helm tools can make destructive cluster changes that kagent cannot undo; checkpoints cover only agent conversation state.",
+              "gap": "No rollback or dry-run for external actions; no rate limits on consequential actions.",
+              "evidence": [
+                {
+                  "file": "helm/kagent/templates/toolserver-kagent.yaml",
+                  "lines": "21-23",
+                  "contains": "Official KAgent tool server",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/templates/toolserver-kagent.yaml#L21-L23"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "Tool bindings can restrict an agent to a named subset of an MCP server's tools, and the built-in file tools resolve symlinks and require the result to stay inside the session or skills directory. The bash tool registered with skills is raw shell passthrough, and argument validation for the bundled Kubernetes tools lives in the separate kagent-tools server, which is not in this repository. An omitted tool list exposes every tool on the server.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.45,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "File tools use EvalSymlinks plus root containment, but bash takes an arbitrary shell string and MCP tool arguments get no framework-side validation.",
+          "gap": "No allowlist validation for shell or MCP arguments; general tools are not replaced by narrow ones.",
+          "evidence": [
+            {
+              "file": "go/adk/pkg/tools/skills.go",
+              "lines": "370-379",
+              "contains": "WithinRoot(resolvedCandidate, root)",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/tools/skills.go#L370-L379"
+            },
+            {
+              "file": "go/adk/pkg/tools/shell.go",
+              "lines": "273",
+              "contains": "exec.CommandContext(ctx, \"bash\", \"-c\", command)",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/tools/shell.go#L273"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Built-in file tools validate paths; MCP extension tools and bash have no shared validation layer.",
+          "gap": "Extension tools should be wrapped by a shared validation layer.",
+          "evidence": [
+            {
+              "file": "go/api/v1alpha3/agenttemplate_types.go",
+              "lines": "53-60",
+              "contains": "Tools []string",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/api/v1alpha3/agenttemplate_types.go#L53-L60"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tool subsets are selectable per binding, but an omitted list exposes every server tool and the default tool server includes write tools.",
+          "gap": "Default should be a read-only tool set with write/exec requiring explicit enabling.",
+          "evidence": [
+            {
+              "file": "go/api/v1alpha3/agenttemplate_types.go",
+              "lines": "53-60",
+              "contains": "An omitted or empty",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/api/v1alpha3/agenttemplate_types.go#L53-L60"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "Misused Kubernetes tools reach the cluster with the tool server's authority; bash is confined to the actor.",
+          "gap": "Tools should be scoped and quantity-bounded.",
+          "evidence": [
+            {
+              "file": "helm/kagent/templates/toolserver-kagent.yaml",
+              "lines": "21-23",
+              "contains": "Official KAgent tool server",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/templates/toolserver-kagent.yaml#L21-L23"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.45,
+          "raw": 0.45,
+          "cap": null,
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "File tools use EvalSymlinks plus root containment, but bash takes an arbitrary shell string and MCP tool arguments get no framework-side validation.",
+              "gap": "No allowlist validation for shell or MCP arguments; general tools are not replaced by narrow ones.",
+              "evidence": [
+                {
+                  "file": "go/adk/pkg/tools/skills.go",
+                  "lines": "370-379",
+                  "contains": "WithinRoot(resolvedCandidate, root)",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/tools/skills.go#L370-L379"
+                },
+                {
+                  "file": "go/adk/pkg/tools/shell.go",
+                  "lines": "273",
+                  "contains": "exec.CommandContext(ctx, \"bash\", \"-c\", command)",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/tools/shell.go#L273"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Built-in file tools validate paths; MCP extension tools and bash have no shared validation layer.",
+              "gap": "Extension tools should be wrapped by a shared validation layer.",
+              "evidence": [
+                {
+                  "file": "go/api/v1alpha3/agenttemplate_types.go",
+                  "lines": "53-60",
+                  "contains": "Tools []string",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/api/v1alpha3/agenttemplate_types.go#L53-L60"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tool subsets are selectable per binding, but an omitted list exposes every server tool and the default tool server includes write tools.",
+              "gap": "Default should be a read-only tool set with write/exec requiring explicit enabling.",
+              "evidence": [
+                {
+                  "file": "go/api/v1alpha3/agenttemplate_types.go",
+                  "lines": "53-60",
+                  "contains": "An omitted or empty",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/api/v1alpha3/agenttemplate_types.go#L53-L60"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "Misused Kubernetes tools reach the cluster with the tool server's authority; bash is confined to the actor.",
+              "gap": "Tools should be scoped and quantity-bounded.",
+              "evidence": [
+                {
+                  "file": "helm/kagent/templates/toolserver-kagent.yaml",
+                  "lines": "21-23",
+                  "contains": "Official KAgent tool server",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/templates/toolserver-kagent.yaml#L21-L23"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "Every agent runs as a Substrate actor whose sandbox class defaults to gVisor (microVM optional), there is no host-execution fallback, standalone sandboxes run the same way with no egress, and the actor's network egress is compiled into a DNS-origin allowlist. The concern is what sits inside that allowlist: the controller API endpoint is always added, and in the default insecure mode it lets code in the actor create agents and tool servers (kmcp MCPServer pods run outside Substrate) and call any MCP tool. Actors also keep a durable /data directory across restarts.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.725,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Actor templates select the gVisor sandbox class by default and MicroVM optionally; unsupported classes are rejected.",
+          "evidence": [
+            {
+              "file": "go/core/internal/substrate/actor_template.go",
+              "lines": "217-229",
+              "contains": "SANDBOX_CLASS_GVISOR",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/substrate/actor_template.go#L217-L229"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All harness execution (Go/Python ADK, Claude, Codex, BYO) and standalone sandboxes run as Substrate actors; the controller API can still create kmcp MCPServer pods that run outside Substrate.",
+          "gap": "Processes created via the control plane (kmcp MCPServer deployments) are not confined to the sandbox.",
+          "evidence": [
+            {
+              "file": "go/core/internal/substrate/actor_template.go",
+              "lines": "217-229",
+              "contains": "SANDBOX_CLASS_GVISOR",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/substrate/actor_template.go#L217-L229"
+            },
+            {
+              "file": "go/core/internal/service/tool/service.go",
+              "lines": "161-166",
+              "contains": "case ServerTypeMCPServer:",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/service/tool/service.go#L161-L166"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The sandbox class comes from the operator's WorkerPool and there is no unsandboxed mode; but the egress allowlist is derived from Agent configuration that the unauthenticated API can modify for future sessions.",
+          "gap": "Sandbox and egress policy should be defined outside anything reachable from the actor.",
+          "evidence": [
+            {
+              "file": "go/core/internal/translator/revision.go",
+              "lines": "85-87",
+              "contains": "sandboxClass = atev1alpha1.SandboxClassGvisor",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/translator/revision.go#L85-L87"
+            },
+            {
+              "file": "go/core/internal/grpcserver/policy.go",
+              "lines": "66",
+              "contains": "AgentTemplateService_UpdateAgentTemplate_FullMethodName",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/grpcserver/policy.go#L66"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Egress is allowlisted and credentials are not in the actor env, but the allowlist always includes the controller API, which by default grants admin-equivalent control-plane access.",
+          "gap": "The allowlist should not include an unauthenticated control-plane endpoint with cluster-wide authority.",
+          "evidence": [
+            {
+              "file": "go/core/internal/translator/kagent/compiler.go",
+              "lines": "71",
+              "contains": "\":8083\"",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/translator/kagent/compiler.go#L71"
+            },
+            {
+              "file": "go/core/internal/substrate/policy.go",
+              "lines": "19-34",
+              "contains": "requires a DNS name",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/substrate/policy.go#L19-L34"
+            },
+            {
+              "file": "go/core/internal/httpserver/auth/authn.go",
+              "lines": "24-31",
+              "contains": "userID = \"admin@kagent.dev\"",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/httpserver/auth/authn.go#L24-L31"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.725,
+          "raw": 0.725,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Actor templates select the gVisor sandbox class by default and MicroVM optionally; unsupported classes are rejected.",
+              "evidence": [
+                {
+                  "file": "go/core/internal/substrate/actor_template.go",
+                  "lines": "217-229",
+                  "contains": "SANDBOX_CLASS_GVISOR",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/substrate/actor_template.go#L217-L229"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All harness execution (Go/Python ADK, Claude, Codex, BYO) and standalone sandboxes run as Substrate actors; the controller API can still create kmcp MCPServer pods that run outside Substrate.",
+              "gap": "Processes created via the control plane (kmcp MCPServer deployments) are not confined to the sandbox.",
+              "evidence": [
+                {
+                  "file": "go/core/internal/substrate/actor_template.go",
+                  "lines": "217-229",
+                  "contains": "SANDBOX_CLASS_GVISOR",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/substrate/actor_template.go#L217-L229"
+                },
+                {
+                  "file": "go/core/internal/service/tool/service.go",
+                  "lines": "161-166",
+                  "contains": "case ServerTypeMCPServer:",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/service/tool/service.go#L161-L166"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The sandbox class comes from the operator's WorkerPool and there is no unsandboxed mode; but the egress allowlist is derived from Agent configuration that the unauthenticated API can modify for future sessions.",
+              "gap": "Sandbox and egress policy should be defined outside anything reachable from the actor.",
+              "evidence": [
+                {
+                  "file": "go/core/internal/translator/revision.go",
+                  "lines": "85-87",
+                  "contains": "sandboxClass = atev1alpha1.SandboxClassGvisor",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/translator/revision.go#L85-L87"
+                },
+                {
+                  "file": "go/core/internal/grpcserver/policy.go",
+                  "lines": "66",
+                  "contains": "AgentTemplateService_UpdateAgentTemplate_FullMethodName",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/grpcserver/policy.go#L66"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Egress is allowlisted and credentials are not in the actor env, but the allowlist always includes the controller API, which by default grants admin-equivalent control-plane access.",
+              "gap": "The allowlist should not include an unauthenticated control-plane endpoint with cluster-wide authority.",
+              "evidence": [
+                {
+                  "file": "go/core/internal/translator/kagent/compiler.go",
+                  "lines": "71",
+                  "contains": "\":8083\"",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/translator/kagent/compiler.go#L71"
+                },
+                {
+                  "file": "go/core/internal/substrate/policy.go",
+                  "lines": "19-34",
+                  "contains": "requires a DNS name",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/substrate/policy.go#L19-L34"
+                },
+                {
+                  "file": "go/core/internal/httpserver/auth/authn.go",
+                  "lines": "24-31",
+                  "contains": "userID = \"admin@kagent.dev\"",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/httpserver/auth/authn.go#L24-L31"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "Nothing in kagent tracks whether untrusted content (Kubernetes logs and objects, MCP tool results, sub-agent replies, A2A messages from other callers) has entered a session, and approval is not tied to it. The main structural limit is Substrate's egress allowlist, which prevents a hijacked agent from posting data to arbitrary internet hosts. A hijacked agent with Kubernetes tools bound can still make irreversible cluster changes without a human by default.",
+      "max": 1.0,
+      "notes": "If a shell is present (skills, Claude or Codex harness), the always-allowed controller endpoint lets a hijacked agent read other users' sessions under the default insecure auth; that configuration would rate B one level lower.",
+      "status": "scored",
+      "score": 0.05,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No taint tracking, provenance marking, or approval tied to untrusted content in the agent runtime.",
+          "gap": "Disable or gate egress/state-changing tools once untrusted content is read.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'untrusted|taint|provenance|quarantin|spotlight'",
+              "scope": "go/adk/pkg",
+              "hits": 1,
+              "note": "The single hit is a test fixture header value in registry_test.go, not a control."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tool results enter context with the same standing as user instructions.",
+          "gap": "Untrusted sources should be distinguished at all.",
+          "evidence": [
+            {
+              "file": "go/adk/pkg/mcp/registry.go",
+              "lines": "139",
+              "contains": "httpTool.RequireApproval",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/mcp/registry.go#L139"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No control exists to be on by default.",
+          "gap": "An untrusted-content control on by default.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'untrusted|taint|provenance|quarantin|spotlight'",
+              "scope": "go/adk/pkg",
+              "hits": 1,
+              "note": "Test fixture only."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Irreversible cluster actions via bound tools are unattended by default, while exfiltration to arbitrary hosts is blocked by the actor egress allowlist.",
+          "gap": "Irreversible actions should require human approval after untrusted input.",
+          "evidence": [
+            {
+              "file": "go/core/internal/substrate/policy.go",
+              "lines": "19-34",
+              "contains": "expected an HTTP(S) origin",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/substrate/policy.go#L19-L34"
+            },
+            {
+              "file": "go/api/v1alpha3/agenttemplate_types.go",
+              "lines": "61-65",
+              "contains": "RequireApproval bool",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/api/v1alpha3/agenttemplate_types.go#L61-L65"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.05,
+          "raw": 0.05,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No taint tracking, provenance marking, or approval tied to untrusted content in the agent runtime.",
+              "gap": "Disable or gate egress/state-changing tools once untrusted content is read.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'untrusted|taint|provenance|quarantin|spotlight'",
+                  "scope": "go/adk/pkg",
+                  "hits": 1,
+                  "note": "The single hit is a test fixture header value in registry_test.go, not a control."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tool results enter context with the same standing as user instructions.",
+              "gap": "Untrusted sources should be distinguished at all.",
+              "evidence": [
+                {
+                  "file": "go/adk/pkg/mcp/registry.go",
+                  "lines": "139",
+                  "contains": "httpTool.RequireApproval",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/mcp/registry.go#L139"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No control exists to be on by default.",
+              "gap": "An untrusted-content control on by default.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'untrusted|taint|provenance|quarantin|spotlight'",
+                  "scope": "go/adk/pkg",
+                  "hits": 1,
+                  "note": "Test fixture only."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Irreversible cluster actions via bound tools are unattended by default, while exfiltration to arbitrary hosts is blocked by the actor egress allowlist.",
+              "gap": "Irreversible actions should require human approval after untrusted input.",
+              "evidence": [
+                {
+                  "file": "go/core/internal/substrate/policy.go",
+                  "lines": "19-34",
+                  "contains": "expected an HTTP(S) origin",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/substrate/policy.go#L19-L34"
+                },
+                {
+                  "file": "go/api/v1alpha3/agenttemplate_types.go",
+                  "lines": "61-65",
+                  "contains": "RequireApproval bool",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/api/v1alpha3/agenttemplate_types.go#L61-L65"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "Long-term memory is opt-in (pgvector disabled by default); when enabled, the model's save_memory tool writes arbitrary text that is preloaded into later sessions, and memory scoping is not enforced on every path. There are no auto-loaded workspace instruction files; skills are pinned to immutable commits. Agent system prompts and tool bindings live in AgentTemplates that the default unauthenticated API can rewrite, which would persist into every future session.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.3,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "save_memory stores any model-provided content without validation and preload_memory re-injects it; agent configuration is writable through the unauthenticated API.",
+          "gap": "Memory writes should be gated or validated with expiry, and configuration changes should need an explicit trust decision.",
+          "evidence": [
+            {
+              "file": "go/adk/pkg/memory/save_memory_tool.go",
+              "lines": "16-41",
+              "contains": "svc.storeMemory(toolCtx, in.Content, vector)",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/memory/save_memory_tool.go#L16-L41"
+            },
+            {
+              "file": "go/adk/pkg/agent/agent.go",
+              "lines": "215-219",
+              "contains": "preloadmemorytool.New()",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/agent/agent.go#L215-L219"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Prompt and skill sources are operator-scoped and skills are commit-pinned, but memory and template rewrites are uncontrolled.",
+          "gap": "All memory stores and configuration paths should be controlled.",
+          "evidence": [
+            {
+              "file": "go/core/internal/skillsinit/git.go",
+              "lines": "53-56",
+              "contains": "git commit must be a full SHA",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/skillsinit/git.go#L53-L56"
+            },
+            {
+              "file": "go/core/internal/grpcserver/policy.go",
+              "lines": "66",
+              "contains": "AgentTemplateService_UpdateAgentTemplate_FullMethodName",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/grpcserver/policy.go#L66"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Memory queries filter by agent and user, but that scoping is not enforced on every path.",
+          "gap": "Namespaces should be enforced from the authenticated identity.",
+          "evidence": [],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "By default persistence is session history; with memory enabled, poisoned entries persist across a user's sessions and can steer tool use.",
+          "gap": "Persistent state should be session-scoped or easily inspected and purged.",
+          "evidence": [
+            {
+              "file": "helm/kagent/values.yaml",
+              "lines": "113-116",
+              "contains": "vectorEnabled: false",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L113-L116"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.3,
+          "raw": 0.3,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "save_memory stores any model-provided content without validation and preload_memory re-injects it; agent configuration is writable through the unauthenticated API.",
+              "gap": "Memory writes should be gated or validated with expiry, and configuration changes should need an explicit trust decision.",
+              "evidence": [
+                {
+                  "file": "go/adk/pkg/memory/save_memory_tool.go",
+                  "lines": "16-41",
+                  "contains": "svc.storeMemory(toolCtx, in.Content, vector)",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/memory/save_memory_tool.go#L16-L41"
+                },
+                {
+                  "file": "go/adk/pkg/agent/agent.go",
+                  "lines": "215-219",
+                  "contains": "preloadmemorytool.New()",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/agent/agent.go#L215-L219"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Prompt and skill sources are operator-scoped and skills are commit-pinned, but memory and template rewrites are uncontrolled.",
+              "gap": "All memory stores and configuration paths should be controlled.",
+              "evidence": [
+                {
+                  "file": "go/core/internal/skillsinit/git.go",
+                  "lines": "53-56",
+                  "contains": "git commit must be a full SHA",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/skillsinit/git.go#L53-L56"
+                },
+                {
+                  "file": "go/core/internal/grpcserver/policy.go",
+                  "lines": "66",
+                  "contains": "AgentTemplateService_UpdateAgentTemplate_FullMethodName",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/grpcserver/policy.go#L66"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Memory queries filter by agent and user, but that scoping is not enforced on every path.",
+              "gap": "Namespaces should be enforced from the authenticated identity.",
+              "evidence": [],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "By default persistence is session history; with memory enabled, poisoned entries persist across a user's sessions and can steer tool use.",
+              "gap": "Persistent state should be session-scoped or easily inspected and purged.",
+              "evidence": [
+                {
+                  "file": "helm/kagent/values.yaml",
+                  "lines": "113-116",
+                  "contains": "vectorEnabled: false",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L113-L116"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "Code-bearing extensions are pinned: Harness images must be referenced by sha256 digest and skills by a full git commit or S3 object version, and the v1alpha3 compiler emits only HTTP/SSE MCP servers, not locally launched stdio servers. Remote MCP servers are not pinned, so their tool definitions can change between sessions without re-approval. Skill scripts run inside the agent's own actor with its full environment (which holds only credential placeholders).",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.525,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Images require a sha256 digest and skills a full commit SHA, giving integrity on code extensions.",
+          "gap": "No re-approval when an MCP server's tool definitions change.",
+          "evidence": [
+            {
+              "file": "go/api/v1alpha3/harness_types.go",
+              "lines": "115-116",
+              "contains": "@sha256:[a-f0-9]{64}",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/api/v1alpha3/harness_types.go#L115-L116"
+            },
+            {
+              "file": "go/core/internal/skillsinit/git.go",
+              "lines": "53-56",
+              "contains": "git commit must be a full SHA",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/skillsinit/git.go#L53-L56"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Images, skills and plugins are pinned; remote MCP servers are not verified.",
+          "gap": "MCP servers should also be pinned/verified.",
+          "evidence": [
+            {
+              "file": "go/adk/pkg/mcp/registry.go",
+              "lines": "101-118",
+              "contains": "stdioTools []adk.StdioMcpServerConfig",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/mcp/registry.go#L101-L118"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Extensions are added via Kubernetes resources, but the default unauthenticated API can also add tool servers (including kmcp MCPServer deployments).",
+          "gap": "Only authenticated admin scope should be able to add extensions, showing what will run.",
+          "evidence": [
+            {
+              "file": "go/core/internal/service/tool/service.go",
+              "lines": "161-166",
+              "contains": "case ServerTypeMCPServer:",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/service/tool/service.go#L161-L166"
+            },
+            {
+              "file": "go/core/internal/grpcserver/policy.go",
+              "lines": "42",
+              "contains": "ToolService_CreateToolServer_FullMethodName",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/grpcserver/policy.go#L42"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Skill code runs via bash as a subprocess in the same actor with the agent's full environment and controller access.",
+          "gap": "Extensions should run with a scrubbed environment and their own scoped credentials.",
+          "evidence": [
+            {
+              "file": "go/adk/pkg/tools/shell.go",
+              "lines": "273-274",
+              "contains": "cmd.Dir = workingDir",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/tools/shell.go#L273-L274"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.525,
+          "raw": 0.525,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Images require a sha256 digest and skills a full commit SHA, giving integrity on code extensions.",
+              "gap": "No re-approval when an MCP server's tool definitions change.",
+              "evidence": [
+                {
+                  "file": "go/api/v1alpha3/harness_types.go",
+                  "lines": "115-116",
+                  "contains": "@sha256:[a-f0-9]{64}",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/api/v1alpha3/harness_types.go#L115-L116"
+                },
+                {
+                  "file": "go/core/internal/skillsinit/git.go",
+                  "lines": "53-56",
+                  "contains": "git commit must be a full SHA",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/skillsinit/git.go#L53-L56"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Images, skills and plugins are pinned; remote MCP servers are not verified.",
+              "gap": "MCP servers should also be pinned/verified.",
+              "evidence": [
+                {
+                  "file": "go/adk/pkg/mcp/registry.go",
+                  "lines": "101-118",
+                  "contains": "stdioTools []adk.StdioMcpServerConfig",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/mcp/registry.go#L101-L118"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Extensions are added via Kubernetes resources, but the default unauthenticated API can also add tool servers (including kmcp MCPServer deployments).",
+              "gap": "Only authenticated admin scope should be able to add extensions, showing what will run.",
+              "evidence": [
+                {
+                  "file": "go/core/internal/service/tool/service.go",
+                  "lines": "161-166",
+                  "contains": "case ServerTypeMCPServer:",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/service/tool/service.go#L161-L166"
+                },
+                {
+                  "file": "go/core/internal/grpcserver/policy.go",
+                  "lines": "42",
+                  "contains": "ToolService_CreateToolServer_FullMethodName",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/grpcserver/policy.go#L42"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Skill code runs via bash as a subprocess in the same actor with the agent's full environment and controller access.",
+              "gap": "Extensions should run with a scrubbed environment and their own scoped credentials.",
+              "evidence": [
+                {
+                  "file": "go/adk/pkg/tools/shell.go",
+                  "lines": "273-274",
+                  "contains": "cmd.Dir = workingDir",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/tools/shell.go#L273-L274"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "Model API keys and Secret-backed MCP headers never enter the agent: the compiler replaces them with an inert placeholder and the Substrate egress gateway injects the real header only for the bound destination. Tool logging records only tool names and result keys, and OpenTelemetry export and message-content capture are off by default. There is no redaction of secrets returned by tools (for example Kubernetes Secret reads) before they reach the model or the stored history, the bundled Postgres ships fixed credentials, and credential binding through the control-plane API is not locked down.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.5,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Gateway credential injection with in-actor placeholders keeps keys out of the runtime, but there is no redaction of secrets in tool output, history or logs.",
+          "gap": "Redaction before logs and model-bound messages on all major paths.",
+          "evidence": [
+            {
+              "file": "go/core/internal/translator/credentials.go",
+              "lines": "15-20",
+              "contains": "CredentialPlaceholder",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/translator/credentials.go#L15-L20"
+            },
+            {
+              "file": "go/core/internal/substrate/policy.go",
+              "lines": "64",
+              "contains": "ReplaceHeaders",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/substrate/policy.go#L64"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Subprocess env, model-bound prompts, logs and telemetry are free of provider keys by design, but secrets returned by tools reach model-bound messages and stored A2A history unredacted.",
+          "gap": "Tool outputs sent to the model and stored A2A history should also be covered.",
+          "evidence": [
+            {
+              "file": "go/adk/pkg/agent/agent.go",
+              "lines": "513-516",
+              "contains": "result_keys",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/agent/agent.go#L513-L516"
+            },
+            {
+              "file": "helm/kagent/values.yaml",
+              "lines": "1008-1011",
+              "contains": "messageContent: false",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L1008-L1011"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Telemetry and content capture are opt-in, but the bundled database uses hardcoded credentials and the tool server logs at debug level by default.",
+          "gap": "No plaintext default credentials; redaction always on.",
+          "evidence": [
+            {
+              "file": "helm/kagent/values.yaml",
+              "lines": "150-151",
+              "contains": "hardcoded for the bundled instance",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L150-L151"
+            },
+            {
+              "file": "helm/kagent/values.yaml",
+              "lines": "839-840",
+              "contains": "loglevel: \"debug\"",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L839-L840"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "Keys are long-lived Kubernetes Secrets, and credential binding through the control-plane API is not locked down.",
+          "gap": "Credential bindings should be authorized and keys short-lived.",
+          "evidence": [],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.5,
+          "raw": 0.5,
+          "cap": null,
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Gateway credential injection with in-actor placeholders keeps keys out of the runtime, but there is no redaction of secrets in tool output, history or logs.",
+              "gap": "Redaction before logs and model-bound messages on all major paths.",
+              "evidence": [
+                {
+                  "file": "go/core/internal/translator/credentials.go",
+                  "lines": "15-20",
+                  "contains": "CredentialPlaceholder",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/translator/credentials.go#L15-L20"
+                },
+                {
+                  "file": "go/core/internal/substrate/policy.go",
+                  "lines": "64",
+                  "contains": "ReplaceHeaders",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/substrate/policy.go#L64"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Subprocess env, model-bound prompts, logs and telemetry are free of provider keys by design, but secrets returned by tools reach model-bound messages and stored A2A history unredacted.",
+              "gap": "Tool outputs sent to the model and stored A2A history should also be covered.",
+              "evidence": [
+                {
+                  "file": "go/adk/pkg/agent/agent.go",
+                  "lines": "513-516",
+                  "contains": "result_keys",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/agent/agent.go#L513-L516"
+                },
+                {
+                  "file": "helm/kagent/values.yaml",
+                  "lines": "1008-1011",
+                  "contains": "messageContent: false",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L1008-L1011"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Telemetry and content capture are opt-in, but the bundled database uses hardcoded credentials and the tool server logs at debug level by default.",
+              "gap": "No plaintext default credentials; redaction always on.",
+              "evidence": [
+                {
+                  "file": "helm/kagent/values.yaml",
+                  "lines": "150-151",
+                  "contains": "hardcoded for the bundled instance",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L150-L151"
+                },
+                {
+                  "file": "helm/kagent/values.yaml",
+                  "lines": "839-840",
+                  "contains": "loglevel: \"debug\"",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L839-L840"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "Keys are long-lived Kubernetes Secrets, and credential binding through the control-plane API is not locked down.",
+              "gap": "Credential bindings should be authorized and keys short-lived.",
+              "evidence": [],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "Every task's messages and events are persisted by the controller into PostgreSQL through a TaskStore API, and the runtime stops if a save fails, so there is a durable conversation and tool-call history outside the agent. Runtime logs record each tool start and completion by name and call ID, though not arguments. Attribution is weak by default: the user identity is whatever the caller claims, and the runtime's TaskStore identity is an unsigned header the project itself labels insecure.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.45,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "A2A history including function-call parts is persisted per task in PostgreSQL; tool callbacks log tool name, call ID and session.",
+          "gap": "Actor attribution cannot be trusted by default (caller-asserted user, unsigned runtime identity).",
+          "evidence": [
+            {
+              "file": "go/adk/pkg/agent/agent.go",
+              "lines": "487-494",
+              "contains": "tool execution started",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/agent/agent.go#L487-L494"
+            },
+            {
+              "file": "go/adk/pkg/a2a/converter.go",
+              "lines": "61-65",
+              "contains": "genai.NewPartFromFunctionCall(name, funcArgs)",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/a2a/converter.go#L61-L65"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All agent tool calls flow through the ADK event stream; calls made directly via the controller's CallMCPAppTool are not part of any agent task record.",
+          "gap": "Direct controller-side tool calls and configuration changes should be recorded too.",
+          "evidence": [
+            {
+              "file": "go/core/internal/service/tool/service.go",
+              "lines": "262-277",
+              "contains": "s.mcpClient.CallTool(ctx, ref, toolName, arguments)",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/service/tool/service.go#L262-L277"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Records are written by the controller, but the runtime identity is an unsigned header that a process in an actor could forge.",
+          "gap": "Records should be written by a component the agent cannot impersonate.",
+          "evidence": [
+            {
+              "file": "go/core/internal/service/taskstore/authority.go",
+              "lines": "15-23",
+              "contains": "InsecureRuntimeIdentityHeader",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/service/taskstore/authority.go#L15-L23"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Task persistence failures are surfaced and stop the run.",
+          "gap": "Durable per-action records with replayable trajectories.",
+          "evidence": [
+            {
+              "file": "go/adk/pkg/taskstore/executor.go",
+              "lines": "124-128",
+              "contains": "persistence_failure",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/taskstore/executor.go#L124-L128"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.45,
+          "raw": 0.45,
+          "cap": null,
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "A2A history including function-call parts is persisted per task in PostgreSQL; tool callbacks log tool name, call ID and session.",
+              "gap": "Actor attribution cannot be trusted by default (caller-asserted user, unsigned runtime identity).",
+              "evidence": [
+                {
+                  "file": "go/adk/pkg/agent/agent.go",
+                  "lines": "487-494",
+                  "contains": "tool execution started",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/agent/agent.go#L487-L494"
+                },
+                {
+                  "file": "go/adk/pkg/a2a/converter.go",
+                  "lines": "61-65",
+                  "contains": "genai.NewPartFromFunctionCall(name, funcArgs)",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/a2a/converter.go#L61-L65"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All agent tool calls flow through the ADK event stream; calls made directly via the controller's CallMCPAppTool are not part of any agent task record.",
+              "gap": "Direct controller-side tool calls and configuration changes should be recorded too.",
+              "evidence": [
+                {
+                  "file": "go/core/internal/service/tool/service.go",
+                  "lines": "262-277",
+                  "contains": "s.mcpClient.CallTool(ctx, ref, toolName, arguments)",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/service/tool/service.go#L262-L277"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Records are written by the controller, but the runtime identity is an unsigned header that a process in an actor could forge.",
+              "gap": "Records should be written by a component the agent cannot impersonate.",
+              "evidence": [
+                {
+                  "file": "go/core/internal/service/taskstore/authority.go",
+                  "lines": "15-23",
+                  "contains": "InsecureRuntimeIdentityHeader",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/service/taskstore/authority.go#L15-L23"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Task persistence failures are surfaced and stop the run.",
+              "gap": "Durable per-action records with replayable trajectories.",
+              "evidence": [
+                {
+                  "file": "go/adk/pkg/taskstore/executor.go",
+                  "lines": "124-128",
+                  "contains": "persistence_failure",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/taskstore/executor.go#L124-L128"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "The agent loop has no step, wall-clock or spend limit: no iteration cap exists in the Go ADK runtime and the controller's A2A client timeout defaults to none. Individual tools have timeouts (30-60 seconds for bash, 30 seconds for MCP servers) and tasks can be cancelled through A2A. Session idle expiry never applies to running tasks, so a runaway task is bounded only by the operator noticing and cancelling it.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.15,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only per-tool timeouts and A2A task cancellation exist; no iteration, wall-clock or cost cap.",
+          "gap": "An iteration cap plus a wall-clock or token/cost cap enforced in code.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'max_?llm_?calls|max_?iterations|maxturns|max_?steps'",
+              "scope": "go/adk/pkg go/core/internal/translator/adkconfig",
+              "hits": 0,
+              "note": "No loop limit in the runtime or the compiled agent config."
+            },
+            {
+              "file": "go/adk/pkg/tools/shell.go",
+              "lines": "265-271",
+              "contains": "timeout := 30 * time.Second",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/tools/shell.go#L265-L271"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Timeouts apply to individual bash and MCP calls only.",
+          "gap": "Limits should cover the top-level loop and sub-agents.",
+          "evidence": [
+            {
+              "file": "helm/kagent/templates/toolserver-kagent.yaml",
+              "lines": "21",
+              "contains": "timeout: 30s",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/templates/toolserver-kagent.yaml#L21"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The loop is unlimited by default and the A2A client timeout defaults to none.",
+          "gap": "Sensible default step/time/cost ceilings.",
+          "evidence": [
+            {
+              "file": "helm/kagent/values.yaml",
+              "lines": "245-253",
+              "contains": "a2aClientTimeout: \"\"",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L245-L253"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A runaway task can loop and spend indefinitely; idle expiry excludes running tasks.",
+          "gap": "Tight per-run time and cost ceilings.",
+          "evidence": [
+            {
+              "file": "helm/kagent/values.yaml",
+              "lines": "416-418",
+              "contains": "Running tasks and turns waiting for input do not expire",
+              "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L416-L418"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.15,
+          "raw": 0.15,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only per-tool timeouts and A2A task cancellation exist; no iteration, wall-clock or cost cap.",
+              "gap": "An iteration cap plus a wall-clock or token/cost cap enforced in code.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'max_?llm_?calls|max_?iterations|maxturns|max_?steps'",
+                  "scope": "go/adk/pkg go/core/internal/translator/adkconfig",
+                  "hits": 0,
+                  "note": "No loop limit in the runtime or the compiled agent config."
+                },
+                {
+                  "file": "go/adk/pkg/tools/shell.go",
+                  "lines": "265-271",
+                  "contains": "timeout := 30 * time.Second",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/tools/shell.go#L265-L271"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Timeouts apply to individual bash and MCP calls only.",
+              "gap": "Limits should cover the top-level loop and sub-agents.",
+              "evidence": [
+                {
+                  "file": "helm/kagent/templates/toolserver-kagent.yaml",
+                  "lines": "21",
+                  "contains": "timeout: 30s",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/templates/toolserver-kagent.yaml#L21"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The loop is unlimited by default and the A2A client timeout defaults to none.",
+              "gap": "Sensible default step/time/cost ceilings.",
+              "evidence": [
+                {
+                  "file": "helm/kagent/values.yaml",
+                  "lines": "245-253",
+                  "contains": "a2aClientTimeout: \"\"",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L245-L253"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A runaway task can loop and spend indefinitely; idle expiry excludes running tasks.",
+              "gap": "Tight per-run time and cost ceilings.",
+              "evidence": [
+                {
+                  "file": "helm/kagent/values.yaml",
+                  "lines": "416-418",
+                  "contains": "Running tasks and turns waiting for input do not expire",
+                  "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L416-L418"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "Default controller authentication accepts any caller-asserted user (default admin@kagent.dev) with a permit-all authorizer, and every agent actor is always allowed to reach that controller.",
+      "criterion": "C1",
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "evidence": [
+        {
+          "file": "helm/kagent/values.yaml",
+          "lines": "227-230",
+          "contains": "mode: insecure",
+          "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L227-L230"
+        },
+        {
+          "file": "go/core/internal/httpserver/auth/authn.go",
+          "lines": "24-31",
+          "contains": "userID = \"admin@kagent.dev\"",
+          "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/httpserver/auth/authn.go#L24-L31"
+        },
+        {
+          "file": "go/core/pkg/app/app.go",
+          "lines": "128-130",
+          "contains": "authorizer = &auth.NoopAuthorizer{}",
+          "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/pkg/app/app.go#L128-L130"
+        },
+        {
+          "file": "go/core/internal/translator/kagent/compiler.go",
+          "lines": "71",
+          "contains": "\":8083\"",
+          "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/translator/kagent/compiler.go#L71"
+        }
+      ]
+    },
+    {
+      "summary": "The controller ServiceAccount holds cluster-wide create/update/patch/delete on all core, apps and batch resources, reachable through the unauthenticated API.",
+      "criterion": "C1",
+      "owasp": [
+        "ASI03",
+        "T3"
+      ],
+      "evidence": [
+        {
+          "file": "helm/kagent/templates/rbac/writer-role.yaml",
+          "lines": "50-58",
+          "contains": "- \"*\"",
+          "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/templates/rbac/writer-role.yaml#L50-L58"
+        }
+      ]
+    },
+    {
+      "summary": "Under the default insecure authentication any caller can assert the session owner's identity and answer a pending tool-approval request, so approval can come from a non-principal.",
+      "criterion": "C2",
+      "owasp": [
+        "ASI09",
+        "T10",
+        "T9"
+      ],
+      "evidence": [
+        {
+          "file": "go/core/internal/httpserver/auth/authn.go",
+          "lines": "24-31",
+          "contains": "userID = \"admin@kagent.dev\"",
+          "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/httpserver/auth/authn.go#L24-L31"
+        },
+        {
+          "file": "go/adk/pkg/a2a/hitl.go",
+          "lines": "389",
+          "contains": "Args: tool.args",
+          "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/adk/pkg/a2a/hitl.go#L389"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "MCP tool results (Kubernetes logs, resources, Grafana data) and A2A messages from any caller enter model context unmarked (go/adk/pkg/mcp/registry.go:139; go/core/internal/httpserver/auth/authn.go:24-31)",
+    "sensitive_data": "Cluster state via kagent-tools and the controller API, other users' sessions and memory via the unauthenticated control plane (helm/kagent/templates/rbac/getter-role.yaml:60-66)",
+    "state_change_or_egress": "Bound MCP tools change cluster state without approval by default (go/api/v1alpha3/agenttemplate_types.go:65); controller API always reachable from actors (go/core/internal/translator/kagent/compiler.go:71)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Ship controller.auth.mode=trusted-proxy (or verified JWT) with a deny-by-default authorizer, and stop honoring X-User-Id from unauthenticated callers.",
+      "criterion": "C1",
+      "parameter": "D",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 4",
+      "estimated_gain": 0.1
+    },
+    {
+      "summary": "Expose only the TaskStore runtime methods on the address added to every actor's egress allowlist (separate listener/port), so agents cannot reach the admin API.",
+      "criterion": "C4",
+      "parameter": "B",
+      "from_level": 1,
+      "to_level": 3,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.1
+    },
+    {
+      "summary": "Default requireApproval to true for MCP bindings to write-capable tool servers and gate CallMCPAppTool, bash and harness-native shells through the same HITL path.",
+      "criterion": "C2",
+      "parameter": "D",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 5",
+      "estimated_gain": 0.1
+    },
+    {
+      "summary": "Add a per-task iteration cap and wall-clock deadline in the Go ADK executor with sensible defaults.",
+      "criterion": "C10",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 3 step 3",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Bind memory namespaces to the authenticated principal.",
+      "criterion": "C6",
+      "parameter": "D",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 2",
+      "estimated_gain": 0.05
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was executed, installed, or probed.",
+    "The bundled kagent-tools subchart (v0.3.0, kagent-dev/tools) and kmcp, Substrate, oauth2-proxy subcharts live in other repositories; their RBAC, tool implementations and sandbox enforcement were not examined. Ratings that depend on what kagent-tools can do in the cluster are marked inferred.",
+    "Substrate's gVisor/MicroVM enforcement, egress gateway and credential provider are external; this audit verifies that kagent selects and configures them, not how Substrate enforces them.",
+    "Scored the default kagent Go ADK harness; the Claude harness runs Claude Code with --dangerously-skip-permissions and the Codex harness with danger-full-access (both inside actors), and the Python ADK was not reviewed in depth.",
+    "Architecture docs were used as leads only; docs/architecture/human-in-the-loop.md says MCP bindings expose no approval policy, but the code does (requireApproval), and the code was scored.",
+    "No reviewer-injection attempts were found in repository text."
+  ]
+}

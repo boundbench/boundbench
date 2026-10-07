@@ -1,0 +1,2365 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "ida-pro-mcp",
+  "name": "IDA Pro MCP",
+  "repo_url": "https://github.com/mrexodia/ida-pro-mcp",
+  "subpath": null,
+  "description": "MCP server bridging IDA Pro with LLMs for reverse engineering (incl. debugger ops)",
+  "category": "cybersecurity",
+  "pinned_commit": "c133c3853faa111a9b00ee615c013b720d0c4acd",
+  "version": null,
+  "scored_date": "2026-10-03",
+  "scored_configuration": "Headless idalib-mcp supervisor over stdio exactly as the shipped Claude Code plugin launches it (no --unsafe, no --profile); the legacy IDA GUI plugin, which enables every tool by default, is footnoted.",
+  "score": 3.8,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 9,
+    "score": 2.8,
+    "max": 9.0,
+    "percent": 31
+  },
+  "capability_profile": {
+    "code_execution": "opt_in",
+    "filesystem_write": "yes",
+    "network_egress": "no",
+    "external_credentials": "no",
+    "persistent_memory": "yes",
+    "untrusted_input": "yes",
+    "third_party_extensions": "no",
+    "sub_agents": "no",
+    "external_communication": "no"
+  },
+  "headline": "As the Claude Code plugin launches it, IDA Pro MCP is a local stdio server with no authentication and no per-call gating: the code-execution and debugger tools are withheld, but the database-editing and file-saving tools are on, and nothing separates attacker-controlled binary strings from instructions. Enforcement of that tier does not cover every path, and workers keep running after the supervisor exits. A read-only profile exists but is opt-in; the legacy GUI plugin enables every tool, including in-process Python, by default.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "The server holds no credentials of its own and never authenticates a caller: the stdio supervisor and the loopback HTTP workers it spawns accept any request, and the workers keep running after the supervisor exits. Nothing narrows the operating-system user's authority; idb_open will open any path the user can read and idb_save will write a database copy to any path they can write. The only default narrowing is that the code-execution and debugger tools are withheld unless an operator passes a command-line flag. A hijacked agent therefore acts with the full file authority of the user, limited to what the exposed tools can do.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.15,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No authentication or authorization layer exists; the server runs with the launching user's ambient authority and idb_open/idb_save take arbitrary paths.",
+          "gap": "L1 needs a dedicated or scoped identity; there is no token, no per-request check and no path restriction.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/idalib_supervisor.py",
+              "lines": "1289",
+              "contains": "def idb_open(",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L1289"
+            },
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/api_core.py",
+              "lines": "861",
+              "contains": "def idb_save(",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_core.py#L861"
+            },
+            {
+              "search": "rg -n -i 'bearer|api_key|apikey|auth_token|Authorization' src/ida_pro_mcp --glob '!**/tests/**'",
+              "scope": "src/ida_pro_mcp",
+              "hits": 0,
+              "note": "no authentication primitive of any kind; the few hits (if any) are unrelated words"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Authorization is applied to no tool path; the supervisor forwards every tools/call to a worker without any caller check.",
+          "gap": "L1 needs at least the main tool path to be authorization-checked.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/idalib_supervisor.py",
+              "lines": "1383",
+              "contains": "arguments = copy.deepcopy",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L1383"
+            },
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/zeromcp/mcp.py",
+              "lines": "303",
+              "contains": "def _check_api_request",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/zeromcp/mcp.py#L303"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Narrower default than the full tool set: unsafe tools are removed from the headless worker unless --unsafe is passed, but that narrowing is not enforced on every path and the GUI plugin enables everything by default.",
+          "gap": "L2 needs the narrower default to be changeable only by an operator action.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/idalib_server.py",
+              "lines": "289",
+              "contains": "if not args.unsafe:",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_server.py#L289"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked caller can modify IDA databases and write database copies to arbitrary paths, and open any readable file for analysis, but the server holds no credentials for other systems.",
+          "gap": "L3 needs scoping to one project with non-destructive writes only; idb_save to any path and patch tools are destructive.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/api_core.py",
+              "lines": "881",
+              "contains": "save_database(save_path",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_core.py#L881"
+            },
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/api_memory.py",
+              "lines": "266",
+              "contains": "def patch(",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_memory.py#L266"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.15,
+          "raw": 0.15,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No authentication or authorization layer exists; the server runs with the launching user's ambient authority and idb_open/idb_save take arbitrary paths.",
+              "gap": "L1 needs a dedicated or scoped identity; there is no token, no per-request check and no path restriction.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/idalib_supervisor.py",
+                  "lines": "1289",
+                  "contains": "def idb_open(",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L1289"
+                },
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/api_core.py",
+                  "lines": "861",
+                  "contains": "def idb_save(",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_core.py#L861"
+                },
+                {
+                  "search": "rg -n -i 'bearer|api_key|apikey|auth_token|Authorization' src/ida_pro_mcp --glob '!**/tests/**'",
+                  "scope": "src/ida_pro_mcp",
+                  "hits": 0,
+                  "note": "no authentication primitive of any kind; the few hits (if any) are unrelated words"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Authorization is applied to no tool path; the supervisor forwards every tools/call to a worker without any caller check.",
+              "gap": "L1 needs at least the main tool path to be authorization-checked.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/idalib_supervisor.py",
+                  "lines": "1383",
+                  "contains": "arguments = copy.deepcopy",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L1383"
+                },
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/zeromcp/mcp.py",
+                  "lines": "303",
+                  "contains": "def _check_api_request",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/zeromcp/mcp.py#L303"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Narrower default than the full tool set: unsafe tools are removed from the headless worker unless --unsafe is passed, but that narrowing is not enforced on every path and the GUI plugin enables everything by default.",
+              "gap": "L2 needs the narrower default to be changeable only by an operator action.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/idalib_server.py",
+                  "lines": "289",
+                  "contains": "if not args.unsafe:",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_server.py#L289"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked caller can modify IDA databases and write database copies to arbitrary paths, and open any readable file for analysis, but the server holds no credentials for other systems.",
+              "gap": "L3 needs scoping to one project with non-destructive writes only; idb_save to any path and patch tools are destructive.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/api_core.py",
+                  "lines": "881",
+                  "contains": "save_database(save_path",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_core.py#L881"
+                },
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/api_memory.py",
+                  "lines": "266",
+                  "contains": "def patch(",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_memory.py#L266"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "As a tool server the project leaves approval to the host, so what matters is the risk signalling it gives the host. It publishes no readOnlyHint or destructiveHint annotations, so a host cannot tell the byte-patching, renaming and save tools from the read-only ones. The one server-enforced tier is the unsafe set (Python execution and the debugger), which is withheld by default in the headless server; however enforcement of that tier does not cover every path. Mutating tools such as patch, patch_asm, put_int and idb_save are not in the unsafe set, and only rename offers a dry run.",
+      "max": 1.0,
+      "notes": "The GUI plugin path (ida_mcp.py) autostarts and enables every tool including py_eval and the debugger by default; the README says it is no longer recommended.",
+      "status": "scored",
+      "score": 0.4,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A shipped allowlist exposes only analysis tools that never mutate the database and is enforced server-side by removing every other tool, but tools still carry no annotations.",
+          "gap": "L3 needs annotations on every tool plus dry-runs for destructive operations.",
+          "evidence": [
+            {
+              "file": "profiles/readonly.txt",
+              "lines": "1",
+              "contains": "Read-only profile",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/profiles/readonly.txt#L1"
+            },
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/profile.py",
+              "lines": "36",
+              "contains": "def apply_profile(",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/profile.py#L36"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every tool not listed is removed from the worker's tool table, but the profile is not enforced on every path.",
+          "gap": "L3 needs every path to respect the profile.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/profile.py",
+              "lines": "36",
+              "contains": "def apply_profile(",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/profile.py#L36"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Opt-in only: the flag must be passed and the shipped plugin does not pass it.",
+          "gap": "Needs to be on by default.",
+          "evidence": [
+            {
+              "file": ".claude-plugin/plugin.json",
+              "lines": "12",
+              "contains": "idalib-mcp",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/.claude-plugin/plugin.json#L12"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "With the profile only idb_open, idb_list and analysis reads remain; opening a path still loads an arbitrary file into IDA and writes database files.",
+          "gap": "L3 needs previews for the remaining state-changing management tools.",
+          "evidence": [
+            {
+              "file": "profiles/readonly.txt",
+              "lines": "1",
+              "contains": "Read-only profile",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/profiles/readonly.txt#L1"
+            },
+            {
+              "file": "src/ida_pro_mcp/idalib_server.py",
+              "lines": "61",
+              "contains": "IDB_MANAGEMENT_TOOLS",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_server.py#L61"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.3,
+          "raw": 0.3,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Read and write tools are separate and a server-enforced unsafe tier exists, but no tool carries risk annotations and only rename has a dry run.",
+              "gap": "L2 needs accurate readOnlyHint/destructiveHint annotations on every tool.",
+              "evidence": [
+                {
+                  "search": "rg -n 'readOnlyHint|destructiveHint|idempotentHint' src/ida_pro_mcp",
+                  "scope": "src/ida_pro_mcp",
+                  "hits": 0,
+                  "note": "no annotation is emitted anywhere in tools/list generation"
+                },
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/zeromcp/mcp.py",
+                  "lines": "1380",
+                  "contains": "\"inputSchema\": {",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/zeromcp/mcp.py#L1380"
+                },
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/api_modify.py",
+                  "lines": "412",
+                  "contains": "dry_run = bool(",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_modify.py#L412"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only the tools tagged @unsafe are withheld; other mutating tools (patch, put_int, patch_asm, idb_save) are neither flagged nor withheld.",
+              "gap": "L2 needs every mutating built-in tool to be flagged or gated.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/rpc.py",
+                  "lines": "201",
+                  "contains": "def unsafe(func):",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/rpc.py#L201"
+                },
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/api_memory.py",
+                  "lines": "266",
+                  "contains": "def patch(",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_memory.py#L266"
+                },
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/api_modify.py",
+                  "lines": "326",
+                  "contains": "def patch_asm(",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_modify.py#L326"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Unsafe tools are withheld by default in the headless server, but that enforcement does not cover every path.",
+              "gap": "L2 needs the tier to be changeable only by the operator launching the server.",
+              "evidence": [],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Wrongly approved edits change an IDA database (IDA keeps original bytes, and rename has dry_run) but there is no checkpoint or rollback, and idb_save can overwrite a file at an arbitrary path.",
+              "gap": "L3 needs rollback or previews for destructive operations.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/api_modify.py",
+                  "lines": "412",
+                  "contains": "dry_run",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_modify.py#L412"
+                },
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/api_core.py",
+                  "lines": "861",
+                  "contains": "def idb_save(",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_core.py#L861"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in read-only profile (profiles/readonly.txt via --profile)",
+          "score": 0.4,
+          "raw": 0.4,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A shipped allowlist exposes only analysis tools that never mutate the database and is enforced server-side by removing every other tool, but tools still carry no annotations.",
+              "gap": "L3 needs annotations on every tool plus dry-runs for destructive operations.",
+              "evidence": [
+                {
+                  "file": "profiles/readonly.txt",
+                  "lines": "1",
+                  "contains": "Read-only profile",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/profiles/readonly.txt#L1"
+                },
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/profile.py",
+                  "lines": "36",
+                  "contains": "def apply_profile(",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/profile.py#L36"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every tool not listed is removed from the worker's tool table, but the profile is not enforced on every path.",
+              "gap": "L3 needs every path to respect the profile.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/profile.py",
+                  "lines": "36",
+                  "contains": "def apply_profile(",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/profile.py#L36"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Opt-in only: the flag must be passed and the shipped plugin does not pass it.",
+              "gap": "Needs to be on by default.",
+              "evidence": [
+                {
+                  "file": ".claude-plugin/plugin.json",
+                  "lines": "12",
+                  "contains": "idalib-mcp",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/.claude-plugin/plugin.json#L12"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "With the profile only idb_open, idb_list and analysis reads remain; opening a path still loads an arbitrary file into IDA and writes database files.",
+              "gap": "L3 needs previews for the remaining state-changing management tools.",
+              "evidence": [
+                {
+                  "file": "profiles/readonly.txt",
+                  "lines": "1",
+                  "contains": "Read-only profile",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/profiles/readonly.txt#L1"
+                },
+                {
+                  "file": "src/ida_pro_mcp/idalib_server.py",
+                  "lines": "61",
+                  "contains": "IDB_MANAGEMENT_TOOLS",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_server.py#L61"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "Tools have typed schemas generated from Python type hints and addresses are parsed through a helper, but there is no allowlist validation of paths: idb_open accepts any path, idb_save writes to any path, and py_exec_file (unsafe, withheld by default) executes any file. In the default headless configuration the code-execution and debugger tools are removed, which leaves analysis and database-editing tools; the editing tools (patch, rename, set_type, patch_asm) are on by default. Everything is scoped to the open IDA databases, with full write access inside them.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.5,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Typed schemas from type hints plus address parsing, but paths are unvalidated strings.",
+          "gap": "L3 needs resolved-path containment for idb_open/idb_save and bounds on quantities.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/zeromcp/jsonrpc.py",
+              "lines": "254",
+              "contains": "Check no extra params",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/zeromcp/jsonrpc.py#L254"
+            },
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/utils.py",
+              "lines": "608",
+              "contains": "def parse_address(",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/utils.py#L608"
+            },
+            {
+              "file": "src/ida_pro_mcp/idalib_server.py",
+              "lines": "104",
+              "contains": "input_path: Annotated[str",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_server.py#L104"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Schema typing and address parsing apply to every worker tool; path-taking tools have no validation.",
+          "gap": "L3 needs a shared validation layer covering all built-in tools including path arguments.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/zeromcp/jsonrpc.py",
+              "lines": "254",
+              "contains": "Check no extra params",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/zeromcp/jsonrpc.py#L254"
+            },
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/api_core.py",
+              "lines": "862",
+              "contains": "path: Annotated[str",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_core.py#L862"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Default headless set removes exec and debugger tools but keeps write tools; groups can be narrowed with --profile.",
+          "gap": "L3 needs a read-only default with writes enabled only on request.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/idalib_server.py",
+              "lines": "289",
+              "contains": "if not args.unsafe:",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_server.py#L289"
+            },
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/api_memory.py",
+              "lines": "266",
+              "contains": "def patch(",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_memory.py#L266"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Scoped to open IDA databases with full write inside them; paths reach any file the user can read or write.",
+          "gap": "L3 needs quantity bounds and path scoping.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/api_core.py",
+              "lines": "881",
+              "contains": "save_database(save_path",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_core.py#L881"
+            },
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/api_python.py",
+              "lines": "225",
+              "contains": "def py_exec_file(",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_python.py#L225"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.5,
+          "raw": 0.5,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Typed schemas from type hints plus address parsing, but paths are unvalidated strings.",
+              "gap": "L3 needs resolved-path containment for idb_open/idb_save and bounds on quantities.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/zeromcp/jsonrpc.py",
+                  "lines": "254",
+                  "contains": "Check no extra params",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/zeromcp/jsonrpc.py#L254"
+                },
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/utils.py",
+                  "lines": "608",
+                  "contains": "def parse_address(",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/utils.py#L608"
+                },
+                {
+                  "file": "src/ida_pro_mcp/idalib_server.py",
+                  "lines": "104",
+                  "contains": "input_path: Annotated[str",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_server.py#L104"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Schema typing and address parsing apply to every worker tool; path-taking tools have no validation.",
+              "gap": "L3 needs a shared validation layer covering all built-in tools including path arguments.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/zeromcp/jsonrpc.py",
+                  "lines": "254",
+                  "contains": "Check no extra params",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/zeromcp/jsonrpc.py#L254"
+                },
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/api_core.py",
+                  "lines": "862",
+                  "contains": "path: Annotated[str",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_core.py#L862"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default headless set removes exec and debugger tools but keeps write tools; groups can be narrowed with --profile.",
+              "gap": "L3 needs a read-only default with writes enabled only on request.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/idalib_server.py",
+                  "lines": "289",
+                  "contains": "if not args.unsafe:",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_server.py#L289"
+                },
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/api_memory.py",
+                  "lines": "266",
+                  "contains": "def patch(",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_memory.py#L266"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Scoped to open IDA databases with full write inside them; paths reach any file the user can read or write.",
+              "gap": "L3 needs quantity bounds and path scoping.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/api_core.py",
+                  "lines": "881",
+                  "contains": "save_database(save_path",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_core.py#L881"
+                },
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/api_python.py",
+                  "lines": "225",
+                  "contains": "def py_exec_file(",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_python.py#L225"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "There is no containment for code execution. When the Python tools are enabled, model-supplied code runs with exec and eval inside the IDA process with the full builtins and the process's complete environment and file access; the debugger tools launch the analyzed binary under IDA. By default the headless server withholds those tools, which is a real reduction in exposure but not isolation, and that enforcement does not cover every path. The spawned worker processes inherit the whole parent environment, so any code that does run can read the user's secrets.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.05,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "py_eval and py_exec_file run model-supplied code via exec/eval in-process with unrestricted builtins; the debugger tools start the analyzed binary.",
+          "gap": "L1 would need at least filtering; none exists.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/api_python.py",
+              "lines": "189",
+              "contains": "exec(code, exec_globals, exec_locals)",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_python.py#L189"
+            },
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/api_python.py",
+              "lines": "254",
+              "contains": "exec(compile(code, file_path",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_python.py#L254"
+            },
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/api_debug.py",
+              "lines": "411",
+              "contains": "idaapi.start_process(",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_debug.py#L411"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every execution path (py_eval, py_exec_file, dbg_start) runs directly in the host process; none is sandboxed.",
+          "gap": "L1 needs the main exec path sandboxed.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/api_python.py",
+              "lines": "144",
+              "contains": "_make_exec_globals()",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_python.py#L144"
+            },
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/api_python.py",
+              "lines": "246",
+              "contains": "_make_exec_globals()",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_python.py#L246"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Exec tools are withheld by default in the headless server and need an operator flag, but there is no sandbox; that enforcement does not cover every path, and the GUI plugin exposes them by default.",
+          "gap": "L2 needs an actual boundary that is on by default.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/idalib_server.py",
+              "lines": "289",
+              "contains": "if not args.unsafe:",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_server.py#L289"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A worker is spawned without an env argument so it inherits the parent's full environment, and exec'd code runs in-process with that environment and the user's files and network.",
+          "gap": "L1 needs the process to hold no credentials in its environment.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/idalib_supervisor.py",
+              "lines": "279",
+              "contains": "subprocess.Popen(",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L279"
+            },
+            {
+              "search": "rg -n 'env=' src/ida_pro_mcp/idalib_supervisor.py",
+              "scope": "src/ida_pro_mcp/idalib_supervisor.py",
+              "hits": 0,
+              "note": "no env= argument is passed to the Popen call, so the full environment is inherited; hits would be unrelated"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.05,
+          "raw": 0.05,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "py_eval and py_exec_file run model-supplied code via exec/eval in-process with unrestricted builtins; the debugger tools start the analyzed binary.",
+              "gap": "L1 would need at least filtering; none exists.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/api_python.py",
+                  "lines": "189",
+                  "contains": "exec(code, exec_globals, exec_locals)",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_python.py#L189"
+                },
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/api_python.py",
+                  "lines": "254",
+                  "contains": "exec(compile(code, file_path",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_python.py#L254"
+                },
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/api_debug.py",
+                  "lines": "411",
+                  "contains": "idaapi.start_process(",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_debug.py#L411"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every execution path (py_eval, py_exec_file, dbg_start) runs directly in the host process; none is sandboxed.",
+              "gap": "L1 needs the main exec path sandboxed.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/api_python.py",
+                  "lines": "144",
+                  "contains": "_make_exec_globals()",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_python.py#L144"
+                },
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/api_python.py",
+                  "lines": "246",
+                  "contains": "_make_exec_globals()",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_python.py#L246"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Exec tools are withheld by default in the headless server and need an operator flag, but there is no sandbox; that enforcement does not cover every path, and the GUI plugin exposes them by default.",
+              "gap": "L2 needs an actual boundary that is on by default.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/idalib_server.py",
+                  "lines": "289",
+                  "contains": "if not args.unsafe:",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_server.py#L289"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A worker is spawned without an env argument so it inherits the parent's full environment, and exec'd code runs in-process with that environment and the user's files and network.",
+              "gap": "L1 needs the process to hold no credentials in its environment.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/idalib_supervisor.py",
+                  "lines": "279",
+                  "contains": "subprocess.Popen(",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L279"
+                },
+                {
+                  "search": "rg -n 'env=' src/ida_pro_mcp/idalib_supervisor.py",
+                  "scope": "src/ida_pro_mcp/idalib_supervisor.py",
+                  "hits": 0,
+                  "note": "no env= argument is passed to the Popen call, so the full environment is inherited; hits would be unrelated"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "Everything the server returns is derived from the binary under analysis, which is attacker-controlled in malware work: strings, symbol names, comments and decompiled text. Outputs are structured JSON with schemas, but nothing marks content as untrusted or records its source, and the server offers no mode that cuts off state changes after untrusted content has been read, other than an opt-in read-only profile. The server has no network tool and holds no credentials, so exfiltration depends on the host; irreversible effects are limited to overwriting a file via idb_save and editing the database.",
+      "max": 1.0,
+      "notes": "A DEFAULT_ANALYSIS_PROMPT system_reminder string and get_analysis_prompt exist in utils.py but have no callers at this commit; dbg tool docstrings and errors carry server-authored instructions to the model.",
+      "status": "scored",
+      "score": 0.2,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "The only control that drops a Rule-of-Two leg (the read-only profile) is opt-in and not used by the shipped plugin."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tool outputs are structured (structuredContent with output schemas) separating data from metadata, with no provenance or untrusted flag.",
+          "gap": "L3 needs source/untrusted provenance on returned content.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/zeromcp/mcp.py",
+              "lines": "1075",
+              "contains": "structuredContent",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/zeromcp/mcp.py#L1075"
+            },
+            {
+              "search": "rg -n -i 'untrusted|provenance|tainted' src/ida_pro_mcp --glob '!**/tests/**'",
+              "scope": "src/ida_pro_mcp",
+              "hits": 0,
+              "note": "no provenance or untrusted marking exists; the hits (if any) are unrelated"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Binary-derived strings, names and comments enter context with the same standing as any tool output; no source is distinguished.",
+          "gap": "L1 needs at least one source handled.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/zeromcp/mcp.py",
+              "lines": "1075",
+              "contains": "structuredContent",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/zeromcp/mcp.py#L1075"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The only mechanism that drops a Rule-of-Two leg (the read-only profile) is opt-in and not used by the shipped plugin.",
+          "gap": "Needs a protective mode on by default.",
+          "evidence": [
+            {
+              "file": ".claude-plugin/plugin.json",
+              "lines": "12",
+              "contains": "idalib-mcp",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/.claude-plugin/plugin.json#L12"
+            },
+            {
+              "file": "profiles/readonly.txt",
+              "lines": "1",
+              "contains": "Read-only profile",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/profiles/readonly.txt#L1"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "After a hijack the attacker can run the unflagged write tools and overwrite a file via idb_save with no server-side gate; the server has no egress channel and no secrets of its own, so leak-plus-irreversible depends on host tools.",
+          "gap": "L2 needs destructive actions to require server-side confirmation.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/api_core.py",
+              "lines": "881",
+              "contains": "save_database(save_path",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_core.py#L881"
+            },
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/api_memory.py",
+              "lines": "266",
+              "contains": "def patch(",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_memory.py#L266"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.2,
+          "raw": 0.2,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "The only control that drops a Rule-of-Two leg (the read-only profile) is opt-in and not used by the shipped plugin."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tool outputs are structured (structuredContent with output schemas) separating data from metadata, with no provenance or untrusted flag.",
+              "gap": "L3 needs source/untrusted provenance on returned content.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/zeromcp/mcp.py",
+                  "lines": "1075",
+                  "contains": "structuredContent",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/zeromcp/mcp.py#L1075"
+                },
+                {
+                  "search": "rg -n -i 'untrusted|provenance|tainted' src/ida_pro_mcp --glob '!**/tests/**'",
+                  "scope": "src/ida_pro_mcp",
+                  "hits": 0,
+                  "note": "no provenance or untrusted marking exists; the hits (if any) are unrelated"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Binary-derived strings, names and comments enter context with the same standing as any tool output; no source is distinguished.",
+              "gap": "L1 needs at least one source handled.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/zeromcp/mcp.py",
+                  "lines": "1075",
+                  "contains": "structuredContent",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/zeromcp/mcp.py#L1075"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The only mechanism that drops a Rule-of-Two leg (the read-only profile) is opt-in and not used by the shipped plugin.",
+              "gap": "Needs a protective mode on by default.",
+              "evidence": [
+                {
+                  "file": ".claude-plugin/plugin.json",
+                  "lines": "12",
+                  "contains": "idalib-mcp",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/.claude-plugin/plugin.json#L12"
+                },
+                {
+                  "file": "profiles/readonly.txt",
+                  "lines": "1",
+                  "contains": "Read-only profile",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/profiles/readonly.txt#L1"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "After a hijack the attacker can run the unflagged write tools and overwrite a file via idb_save with no server-side gate; the server has no egress channel and no secrets of its own, so leak-plus-irreversible depends on host tools.",
+              "gap": "L2 needs destructive actions to require server-side confirmation.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/api_core.py",
+                  "lines": "881",
+                  "contains": "save_database(save_path",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_core.py#L881"
+                },
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/api_memory.py",
+                  "lines": "266",
+                  "contains": "def patch(",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_memory.py#L266"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "Model edits persist: names, comments, types and patches are saved into the IDA database and re-appear in later sessions' tool output with no provenance, and every call is logged into the same database. The server also keeps some of its own configuration inside the IDA database, which is the untrusted artifact under analysis, and that configuration is not integrity-protected.",
+      "max": 1.0,
+      "notes": "The score is already below the cap; the cap is recorded because the trigger is verified in source.",
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C6-REPOCONFIG",
+        "max": 0.25,
+        "reason": "Security-relevant configuration is influenced by the opened IDA database."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Writes are logged by the always-on tracer but not validated, and re-surface in outputs without provenance; database-resident configuration is not integrity-protected.",
+          "gap": "L2 needs provenance on persisted content and controls on database-resident configuration.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/trace.py",
+              "lines": "296",
+              "contains": "def traced(",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/trace.py#L296"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only the call trace covers writes; persisted comments are not controlled and database-resident settings are not integrity-protected.",
+          "gap": "L2 needs the main store and the config store controlled.",
+          "evidence": [],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Isolation is per IDA database via the session routing, not per user; any tool call can open or write another path.",
+          "gap": "L2 needs namespaces enforced in queries.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/idalib_supervisor.py",
+              "lines": "1383",
+              "contains": "arguments = copy.deepcopy",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L1383"
+            },
+            {
+              "file": "src/ida_pro_mcp/idalib_supervisor.py",
+              "lines": "1289",
+              "contains": "def idb_open(",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L1289"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Poisoned comments or names persist in the saved database across sessions and are fed back to the model, which can then drive tools.",
+          "gap": "L2 needs persisted content to influence text only or gated actions.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/api_modify.py",
+              "lines": "164",
+              "contains": "def set_comments(",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_modify.py#L164"
+            },
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/api_core.py",
+              "lines": "861",
+              "contains": "def idb_save(",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_core.py#L861"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.25,
+          "cap": {
+            "id": "C6-REPOCONFIG",
+            "max": 0.25,
+            "reason": "Security-relevant configuration is influenced by the opened IDA database."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Writes are logged by the always-on tracer but not validated, and re-surface in outputs without provenance; database-resident configuration is not integrity-protected.",
+              "gap": "L2 needs provenance on persisted content and controls on database-resident configuration.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/trace.py",
+                  "lines": "296",
+                  "contains": "def traced(",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/trace.py#L296"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only the call trace covers writes; persisted comments are not controlled and database-resident settings are not integrity-protected.",
+              "gap": "L2 needs the main store and the config store controlled.",
+              "evidence": [],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Isolation is per IDA database via the session routing, not per user; any tool call can open or write another path.",
+              "gap": "L2 needs namespaces enforced in queries.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/idalib_supervisor.py",
+                  "lines": "1383",
+                  "contains": "arguments = copy.deepcopy",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L1383"
+                },
+                {
+                  "file": "src/ida_pro_mcp/idalib_supervisor.py",
+                  "lines": "1289",
+                  "contains": "def idb_open(",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L1289"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Poisoned comments or names persist in the saved database across sessions and are fed back to the model, which can then drive tools.",
+              "gap": "L2 needs persisted content to influence text only or gated actions.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/api_modify.py",
+                  "lines": "164",
+                  "contains": "def set_comments(",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_modify.py#L164"
+                },
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/api_core.py",
+                  "lines": "861",
+                  "contains": "def idb_save(",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_core.py#L861"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "The server loads no third-party plugins, models, packages or remote tools at runtime; the supervisor launches only its own worker module and, for GUI sessions, can adopt instances listed in files under the user's home directory (a local, same-user mechanism noted below). The absence is by design rather than a control, so the criterion is marked as structurally absent.",
+      "max": 1.0,
+      "notes": "The supervisor adopts GUI/worker instances listed in files under ~/.idapro/mcp/instances and forwards calls to the host and port recorded there (discovery.py, idalib_supervisor.py _make_gui_session) after only a PID and TCP probe; that is a user-scope local registry, not downloaded third-party code, but any same-user process can add an entry.",
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'entry_points|pkg_resources|pip install|trust_remote_code|pickle|torch\\.load|load_plugin|marshal' src/ida_pro_mcp --glob '!**/tests/**'",
+              "scope": "src/ida_pro_mcp",
+              "hits": 0,
+              "note": "no dynamic extension, deserialization or install path"
+            },
+            {
+              "search": "rg -n 'importlib' src/ida_pro_mcp --glob '!**/tests/**'",
+              "scope": "src/ida_pro_mcp",
+              "hits": 12,
+              "note": "hits load the project's own discovery module by path and its own test modules, not third-party code"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'entry_points|pkg_resources|pip install|trust_remote_code|pickle|torch\\.load|load_plugin|marshal' src/ida_pro_mcp --glob '!**/tests/**'",
+              "scope": "src/ida_pro_mcp",
+              "hits": 0,
+              "note": "no dynamic extension, deserialization or install path"
+            },
+            {
+              "search": "rg -n 'importlib' src/ida_pro_mcp --glob '!**/tests/**'",
+              "scope": "src/ida_pro_mcp",
+              "hits": 12,
+              "note": "hits load the project's own discovery module by path and its own test modules, not third-party code"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'entry_points|pkg_resources|pip install|trust_remote_code|pickle|torch\\.load|load_plugin|marshal' src/ida_pro_mcp --glob '!**/tests/**'",
+              "scope": "src/ida_pro_mcp",
+              "hits": 0,
+              "note": "no dynamic extension, deserialization or install path"
+            },
+            {
+              "search": "rg -n 'importlib' src/ida_pro_mcp --glob '!**/tests/**'",
+              "scope": "src/ida_pro_mcp",
+              "hits": 12,
+              "note": "hits load the project's own discovery module by path and its own test modules, not third-party code"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'entry_points|pkg_resources|pip install|trust_remote_code|pickle|torch\\.load|load_plugin|marshal' src/ida_pro_mcp --glob '!**/tests/**'",
+              "scope": "src/ida_pro_mcp",
+              "hits": 0,
+              "note": "no dynamic extension, deserialization or install path"
+            },
+            {
+              "search": "rg -n 'importlib' src/ida_pro_mcp --glob '!**/tests/**'",
+              "scope": "src/ida_pro_mcp",
+              "hits": 12,
+              "note": "hits load the project's own discovery module by path and its own test modules, not third-party code"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'entry_points|pkg_resources|pip install|trust_remote_code|pickle|torch\\.load|load_plugin|marshal' src/ida_pro_mcp --glob '!**/tests/**'",
+                  "scope": "src/ida_pro_mcp",
+                  "hits": 0,
+                  "note": "no dynamic extension, deserialization or install path"
+                },
+                {
+                  "search": "rg -n 'importlib' src/ida_pro_mcp --glob '!**/tests/**'",
+                  "scope": "src/ida_pro_mcp",
+                  "hits": 12,
+                  "note": "hits load the project's own discovery module by path and its own test modules, not third-party code"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'entry_points|pkg_resources|pip install|trust_remote_code|pickle|torch\\.load|load_plugin|marshal' src/ida_pro_mcp --glob '!**/tests/**'",
+                  "scope": "src/ida_pro_mcp",
+                  "hits": 0,
+                  "note": "no dynamic extension, deserialization or install path"
+                },
+                {
+                  "search": "rg -n 'importlib' src/ida_pro_mcp --glob '!**/tests/**'",
+                  "scope": "src/ida_pro_mcp",
+                  "hits": 12,
+                  "note": "hits load the project's own discovery module by path and its own test modules, not third-party code"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'entry_points|pkg_resources|pip install|trust_remote_code|pickle|torch\\.load|load_plugin|marshal' src/ida_pro_mcp --glob '!**/tests/**'",
+                  "scope": "src/ida_pro_mcp",
+                  "hits": 0,
+                  "note": "no dynamic extension, deserialization or install path"
+                },
+                {
+                  "search": "rg -n 'importlib' src/ida_pro_mcp --glob '!**/tests/**'",
+                  "scope": "src/ida_pro_mcp",
+                  "hits": 12,
+                  "note": "hits load the project's own discovery module by path and its own test modules, not third-party code"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'entry_points|pkg_resources|pip install|trust_remote_code|pickle|torch\\.load|load_plugin|marshal' src/ida_pro_mcp --glob '!**/tests/**'",
+                  "scope": "src/ida_pro_mcp",
+                  "hits": 0,
+                  "note": "no dynamic extension, deserialization or install path"
+                },
+                {
+                  "search": "rg -n 'importlib' src/ida_pro_mcp --glob '!**/tests/**'",
+                  "scope": "src/ida_pro_mcp",
+                  "hits": 12,
+                  "note": "hits load the project's own discovery module by path and its own test modules, not third-party code"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n -i 'entry_points|pkg_resources|pip install|trust_remote_code|pickle|torch\\.load|load_plugin|marshal' src/ida_pro_mcp --glob '!**/tests/**'",
+          "scope": "src/ida_pro_mcp",
+          "hits": 0,
+          "note": "no dynamic extension, deserialization or install path"
+        },
+        {
+          "search": "rg -n 'importlib' src/ida_pro_mcp --glob '!**/tests/**'",
+          "scope": "src/ida_pro_mcp",
+          "hits": 12,
+          "note": "hits load the project's own discovery module by path and its own test modules, not third-party code"
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "The server accepts no API keys or tokens and has no telemetry or crash reporting, so there is little secret material of its own to leak. It does not scrub anything either: spawned workers inherit the parent's whole environment, request parameters are logged truncated at debug level, and every tool call with its full arguments and result is stored in the IDA database. The model can also read any file the user can open by loading it with idb_open.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.4,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No credential handling exists and nothing is masked or scrubbed; the server relies on holding no keys.",
+          "gap": "L2 needs redaction or masking on the main paths.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'api_key|apikey|password|secret|credential' src/ida_pro_mcp --glob '!**/tests/**'",
+              "scope": "src/ida_pro_mcp",
+              "hits": 0,
+              "note": "no secret handling code; hits (if any) are unrelated words"
+            },
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/zeromcp/jsonrpc.py",
+              "lines": "141",
+              "contains": "params_str",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/zeromcp/jsonrpc.py#L141"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only one path has any limiting: debug request logs truncate parameters to 200 characters; trace records and subprocess environments are unfiltered.",
+          "gap": "L2 needs logs and transcripts handled.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/zeromcp/jsonrpc.py",
+              "lines": "142",
+              "contains": "> 200",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/zeromcp/jsonrpc.py#L142"
+            },
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/trace.py",
+              "lines": "313",
+              "contains": "structuredContent",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/trace.py#L313"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No telemetry or crash reporter exists; logging defaults are local and moderate, with no redaction to disable.",
+          "gap": "L3 needs redaction always on.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'sentry|posthog|telemetry|analytics' src/ida_pro_mcp --glob '!**/tests/**'",
+              "scope": "src/ida_pro_mcp",
+              "hits": 0,
+              "note": "no telemetry code"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The server holds no keys; the exposure is the inherited environment of workers and the user's readable files, reachable only through enabled tools.",
+          "gap": "L4 needs worker environments scrubbed so residual gaps are closed.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/idalib_supervisor.py",
+              "lines": "279",
+              "contains": "subprocess.Popen(",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L279"
+            },
+            {
+              "file": "src/ida_pro_mcp/idalib_supervisor.py",
+              "lines": "1289",
+              "contains": "def idb_open(",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L1289"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.4,
+          "raw": 0.4,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No credential handling exists and nothing is masked or scrubbed; the server relies on holding no keys.",
+              "gap": "L2 needs redaction or masking on the main paths.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'api_key|apikey|password|secret|credential' src/ida_pro_mcp --glob '!**/tests/**'",
+                  "scope": "src/ida_pro_mcp",
+                  "hits": 0,
+                  "note": "no secret handling code; hits (if any) are unrelated words"
+                },
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/zeromcp/jsonrpc.py",
+                  "lines": "141",
+                  "contains": "params_str",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/zeromcp/jsonrpc.py#L141"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only one path has any limiting: debug request logs truncate parameters to 200 characters; trace records and subprocess environments are unfiltered.",
+              "gap": "L2 needs logs and transcripts handled.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/zeromcp/jsonrpc.py",
+                  "lines": "142",
+                  "contains": "> 200",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/zeromcp/jsonrpc.py#L142"
+                },
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/trace.py",
+                  "lines": "313",
+                  "contains": "structuredContent",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/trace.py#L313"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No telemetry or crash reporter exists; logging defaults are local and moderate, with no redaction to disable.",
+              "gap": "L3 needs redaction always on.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'sentry|posthog|telemetry|analytics' src/ida_pro_mcp --glob '!**/tests/**'",
+                  "scope": "src/ida_pro_mcp",
+                  "hits": 0,
+                  "note": "no telemetry code"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The server holds no keys; the exposure is the inherited environment of workers and the user's readable files, reachable only through enabled tools.",
+              "gap": "L4 needs worker environments scrubbed so residual gaps are closed.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/idalib_supervisor.py",
+                  "lines": "279",
+                  "contains": "subprocess.Popen(",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L279"
+                },
+                {
+                  "file": "src/ida_pro_mcp/idalib_supervisor.py",
+                  "lines": "1289",
+                  "contains": "def idb_open(",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L1289"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "Every tools/call handled by a worker is recorded with tool name, arguments, structured result, duration and timestamp into an append-only gzipped log inside the IDA database, and this tracer is always on. It does not record who asked or who approved, the supervisor's own idb_open and idb_close calls are not recorded, and records are buffered in batches, with write errors swallowed silently, so a crash can lose recent entries. The log lives in the database file the same process edits.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.45,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Structured record per call with arguments, result, timestamp and duration; no actor, principal or approver fields.",
+          "gap": "L3 needs actor attribution.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/trace.py",
+              "lines": "296",
+              "contains": "def traced(",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/trace.py#L296"
+            },
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/trace.py",
+              "lines": "301",
+              "contains": "\"arguments\": arguments or {}",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/trace.py#L301"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All worker tools are traced; supervisor-level idb_open/idb_close are not, and approvals do not exist to record.",
+          "gap": "L3 needs every tool call and approvals/denials recorded.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/trace.py",
+              "lines": "325",
+              "contains": "MCP_SERVER.registry.methods[\"tools/call\"] = traced",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/trace.py#L325"
+            },
+            {
+              "search": "rg -n 'trace' src/ida_pro_mcp/idalib_supervisor.py",
+              "scope": "src/ida_pro_mcp/idalib_supervisor.py",
+              "hits": 0,
+              "note": "no tracer in the supervisor; no hits"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Always on with no off switch, stored in the database next to the binary and written by the same process that serves the model; not separated from the agent's process.",
+          "gap": "L3 needs a writer the model cannot influence.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/__init__.py",
+              "lines": "49",
+              "contains": "trace.configure_idb()",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/__init__.py#L49"
+            },
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/trace.py",
+              "lines": "26",
+              "contains": "IDB_NETNODE_NAME",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/trace.py#L26"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Writes are buffered (256 records or 64 KiB) and failures are swallowed so actions proceed unlogged; the log is lost if the database is never saved.",
+          "gap": "L2 needs errors surfaced and records flushed per action.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/trace.py",
+              "lines": "38",
+              "contains": "_DEFAULT_BATCH_RECORDS = 256",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/trace.py#L38"
+            },
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/trace.py",
+              "lines": "285",
+              "contains": "except Exception:",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/trace.py#L285"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.45,
+          "raw": 0.45,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Structured record per call with arguments, result, timestamp and duration; no actor, principal or approver fields.",
+              "gap": "L3 needs actor attribution.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/trace.py",
+                  "lines": "296",
+                  "contains": "def traced(",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/trace.py#L296"
+                },
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/trace.py",
+                  "lines": "301",
+                  "contains": "\"arguments\": arguments or {}",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/trace.py#L301"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All worker tools are traced; supervisor-level idb_open/idb_close are not, and approvals do not exist to record.",
+              "gap": "L3 needs every tool call and approvals/denials recorded.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/trace.py",
+                  "lines": "325",
+                  "contains": "MCP_SERVER.registry.methods[\"tools/call\"] = traced",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/trace.py#L325"
+                },
+                {
+                  "search": "rg -n 'trace' src/ida_pro_mcp/idalib_supervisor.py",
+                  "scope": "src/ida_pro_mcp/idalib_supervisor.py",
+                  "hits": 0,
+                  "note": "no tracer in the supervisor; no hits"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Always on with no off switch, stored in the database next to the binary and written by the same process that serves the model; not separated from the agent's process.",
+              "gap": "L3 needs a writer the model cannot influence.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/__init__.py",
+                  "lines": "49",
+                  "contains": "trace.configure_idb()",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/__init__.py#L49"
+                },
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/trace.py",
+                  "lines": "26",
+                  "contains": "IDB_NETNODE_NAME",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/trace.py#L26"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Writes are buffered (256 records or 64 KiB) and failures are swallowed so actions proceed unlogged; the log is lost if the database is never saved.",
+              "gap": "L2 needs errors surfaced and records flushed per action.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/trace.py",
+                  "lines": "38",
+                  "contains": "_DEFAULT_BATCH_RECORDS = 256",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/trace.py#L38"
+                },
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/trace.py",
+                  "lines": "285",
+                  "contains": "except Exception:",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/trace.py#L285"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "The server bounds its own work: tool calls on the worker have a 60 second default timeout with native cancellation, outputs over 50,000 characters are truncated into a cached download, request bodies are capped at 10 MB, and the supervisor limits simultaneous databases to four and gives each forwarded call 900 seconds. There are no rate limits, and workers are deliberately detached so they keep running with full tool authority after the supervisor stops, until an idle timeout the caller can lengthen.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.4,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Server-enforced timeout (default 60s, env-adjustable), output size cap, body cap and worker count cap, with in-flight cancellation, but no rate limits and no proof every operation is covered.",
+          "gap": "L3 needs caps on every operation plus rate limits.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/sync.py",
+              "lines": "43",
+              "contains": "_DEFAULT_TOOL_TIMEOUT_SEC = 60.0",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/sync.py#L43"
+            },
+            {
+              "file": "src/ida_pro_mcp/ida_mcp/rpc.py",
+              "lines": "20",
+              "contains": "OUTPUT_LIMIT_MAX_CHARS = 50000",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/rpc.py#L20"
+            },
+            {
+              "file": "src/ida_pro_mcp/idalib_supervisor.py",
+              "lines": "1492",
+              "contains": "IDA_MCP_MAX_WORKERS",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L1492"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The timeout applies to every worker tool call and the supervisor bounds forwarded calls; spawned workers are capped in number but outlive the supervisor.",
+          "gap": "L3 needs spawned processes to count against the same budget through shutdown.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/idalib_supervisor.py",
+              "lines": "85",
+              "contains": "WORKER_CALL_TIMEOUT_SEC",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L85"
+            },
+            {
+              "file": "src/ida_pro_mcp/idalib_supervisor.py",
+              "lines": "279",
+              "contains": "subprocess.Popen(",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L279"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Sensible defaults exist, but idb_open lets the caller set idle_ttl_sec, lengthening how long a worker with full tool authority stays alive.",
+          "gap": "L2 needs limits the model cannot raise.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/worker_lifecycle.py",
+              "lines": "74",
+              "contains": "def set_idle_ttl(",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/worker_lifecycle.py#L74"
+            },
+            {
+              "file": "src/ida_pro_mcp/idalib_supervisor.py",
+              "lines": "1301",
+              "contains": "idle_ttl_sec: Annotated[",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L1301"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Stopping the supervisor deliberately leaves detached workers running until idle timeout, each exposing unauthenticated tools on loopback.",
+          "gap": "L2 needs stop to end the loop and all spawned processes.",
+          "evidence": [
+            {
+              "file": "src/ida_pro_mcp/idalib_supervisor.py",
+              "lines": "376",
+              "contains": "def shutdown(self)",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L376"
+            },
+            {
+              "file": "src/ida_pro_mcp/idalib_supervisor.py",
+              "lines": "377",
+              "contains": "without killing persistent workers",
+              "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L377"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.4,
+          "raw": 0.4,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Server-enforced timeout (default 60s, env-adjustable), output size cap, body cap and worker count cap, with in-flight cancellation, but no rate limits and no proof every operation is covered.",
+              "gap": "L3 needs caps on every operation plus rate limits.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/sync.py",
+                  "lines": "43",
+                  "contains": "_DEFAULT_TOOL_TIMEOUT_SEC = 60.0",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/sync.py#L43"
+                },
+                {
+                  "file": "src/ida_pro_mcp/ida_mcp/rpc.py",
+                  "lines": "20",
+                  "contains": "OUTPUT_LIMIT_MAX_CHARS = 50000",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/rpc.py#L20"
+                },
+                {
+                  "file": "src/ida_pro_mcp/idalib_supervisor.py",
+                  "lines": "1492",
+                  "contains": "IDA_MCP_MAX_WORKERS",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L1492"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The timeout applies to every worker tool call and the supervisor bounds forwarded calls; spawned workers are capped in number but outlive the supervisor.",
+              "gap": "L3 needs spawned processes to count against the same budget through shutdown.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/idalib_supervisor.py",
+                  "lines": "85",
+                  "contains": "WORKER_CALL_TIMEOUT_SEC",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L85"
+                },
+                {
+                  "file": "src/ida_pro_mcp/idalib_supervisor.py",
+                  "lines": "279",
+                  "contains": "subprocess.Popen(",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L279"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Sensible defaults exist, but idb_open lets the caller set idle_ttl_sec, lengthening how long a worker with full tool authority stays alive.",
+              "gap": "L2 needs limits the model cannot raise.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/worker_lifecycle.py",
+                  "lines": "74",
+                  "contains": "def set_idle_ttl(",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/worker_lifecycle.py#L74"
+                },
+                {
+                  "file": "src/ida_pro_mcp/idalib_supervisor.py",
+                  "lines": "1301",
+                  "contains": "idle_ttl_sec: Annotated[",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L1301"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Stopping the supervisor deliberately leaves detached workers running until idle timeout, each exposing unauthenticated tools on loopback.",
+              "gap": "L2 needs stop to end the loop and all spawned processes.",
+              "evidence": [
+                {
+                  "file": "src/ida_pro_mcp/idalib_supervisor.py",
+                  "lines": "376",
+                  "contains": "def shutdown(self)",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L376"
+                },
+                {
+                  "file": "src/ida_pro_mcp/idalib_supervisor.py",
+                  "lines": "377",
+                  "contains": "without killing persistent workers",
+                  "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L377"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "Python execution tools run model code in-process with no isolation, and spawned workers inherit the full environment.",
+      "criterion": "C4",
+      "owasp": [
+        "ASI05"
+      ],
+      "evidence": [
+        {
+          "file": "src/ida_pro_mcp/ida_mcp/api_python.py",
+          "lines": "189",
+          "contains": "exec(code, exec_globals, exec_locals)",
+          "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_python.py#L189"
+        },
+        {
+          "file": "src/ida_pro_mcp/idalib_supervisor.py",
+          "lines": "279",
+          "contains": "subprocess.Popen(",
+          "url": "https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L279"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "binary strings, names, comments and decompiled text returned by tools (src/ida_pro_mcp/ida_mcp/api_analysis.py)",
+    "sensitive_data": "any file the user can open via idb_open (src/ida_pro_mcp/idalib_supervisor.py:1289); no credentials held",
+    "state_change_or_egress": "patch, put_int, patch_asm, rename and idb_save with no gate (src/ida_pro_mcp/ida_mcp/api_memory.py:266); no network egress tool",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Ensure withheld and profile-filtered tools can only be re-enabled by the operator launching the server.",
+      "criterion": "C2",
+      "parameter": "D",
+      "from_level": 1,
+      "to_level": 3,
+      "playbook": "Playbook 5, step 1",
+      "estimated_gain": 0.1
+    },
+    {
+      "summary": "Require a per-launch bearer token on the supervisor and worker HTTP endpoints and reject requests without it.",
+      "criterion": "C1",
+      "parameter": "S",
+      "from_level": 0,
+      "to_level": 2,
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Emit readOnlyHint/destructiveHint annotations for every tool and mark patch, put_int, patch_asm and idb_save as destructive.",
+      "criterion": "C2",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 5, step 1",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Spawn workers with an explicit minimal environment instead of inheriting the parent's.",
+      "criterion": "C4",
+      "parameter": "B",
+      "from_level": 0,
+      "to_level": 1,
+      "playbook": "Playbook 3, step 1",
+      "estimated_gain": 0.05
+    },
+    {
+      "summary": "Restrict idb_open and idb_save to an operator-configured set of directories after path resolution.",
+      "criterion": "C3",
+      "parameter": "S",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 3, step 2",
+      "estimated_gain": 0.075
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of commit c133c38 only; nothing was executed, installed, built or probed.",
+    "Scored the headless idalib-mcp stdio configuration that the Claude Code plugin ships; the legacy IDA GUI plugin (autostart, all tools enabled including py_eval and debugger) was reviewed but is footnoted, not scored. The README states the GUI plugin is no longer recommended and recommends the official Hex-Rays IDA MCP server instead.",
+    "Reachability by the model of the gaps in unsafe-tier enforcement is inferred; no G2 cap was applied.",
+    "IDA Pro itself (loaders, plugins, idalib) and what opening an untrusted binary or database does inside IDA were not examined.",
+    "Model behaviour is out of scope; only code-level controls were scored.",
+    "No reviewer-directed prompt injection found in the repo."
+  ]
+}

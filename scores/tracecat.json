@@ -1,0 +1,2361 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "tracecat",
+  "name": "Tracecat",
+  "repo_url": "https://github.com/TracecatHQ/tracecat",
+  "subpath": null,
+  "description": "Open-source agentic security automation (SOAR) platform for teams and AI agents; MCP client/server",
+  "category": "cybersecurity",
+  "pinned_commit": "77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe",
+  "version": null,
+  "scored_date": "2026-10-03",
+  "scored_configuration": "Self-hosted docker-compose.yml defaults: TRACECAT__EXECUTOR_BACKEND=direct (no nsjail), basic auth, RLS mode off, new agent presets with no tools and no per-tool approvals.",
+  "score": 4.0,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 10,
+    "score": 3.98,
+    "max": 10.0,
+    "percent": 40
+  },
+  "capability_profile": {
+    "code_execution": "yes",
+    "filesystem_write": "yes",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "yes",
+    "untrusted_input": "yes",
+    "third_party_extensions": "opt_in",
+    "sub_agents": "yes",
+    "external_communication": "yes"
+  },
+  "headline": "Tracecat is a workflow and agent platform that runs integrations against stored SOC and cloud credentials. Its control plane is solid (scope-based RBAC, per-preset tool allowlists, encrypted secrets, secret masking, a gateway that keeps model-provider keys out of the agent). The shipped default executes actions as plain subprocesses that inherit the worker environment, per-tool approval is opt-in and no built-in action asks for it, step limits are not enforced in the agent runtime, and nothing structurally limits a prompt-injected agent that holds both egress and response actions. Switching the executor to nsjail and flagging response actions for approval would change the picture most.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "Agents act through a per-workspace service identity whose JWT lists the exact actions the preset allows, and both the MCP proxy and the executor reject anything outside that list. The identity itself is broad: it carries every workspace operational scope (workflow delete, secret create/delete, any action) and is not narrowed per tool or per requesting user. Authority is workspace-bound but one credential covers read and write across every integration the preset selects. The builder assistant can also rewrite a preset's actions and approval flags.",
+      "max": 1.0,
+      "notes": "The builder assistant tool update_preset can change a preset's actions and tool_approvals without a human approval step (tracecat/agent/mcp/internal_tools.py:324); it edits the target preset rather than its own role, so no C1-SELFESC cap was applied, but it is a configuration-tamper path.",
+      "status": "scored",
+      "score": 0.45,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The agent's role is a static service principal holding all workspace operational scopes, narrowed only by a per-run action allowlist in the token.",
+          "gap": "Read and write tools do not use separate narrower credentials, and the service role is not reduced below the full workspace scope set.",
+          "evidence": [
+            {
+              "file": "tracecat/authz/scopes.py",
+              "lines": "437-440",
+              "contains": "SERVICE_PRINCIPAL_SCOPES",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/authz/scopes.py#L437-L440"
+            },
+            {
+              "file": "tracecat/authz/scopes.py",
+              "lines": "79",
+              "contains": "workflow:delete",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/authz/scopes.py#L79"
+            },
+            {
+              "file": "tracecat/agent/mcp/executor.py",
+              "lines": "75",
+              "contains": "SERVICE_PRINCIPAL_SCOPES[\"tracecat-mcp\"]",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/mcp/executor.py#L75"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Registry tool calls are checked against the token's allowed_actions in both the MCP server and the executor entry, but the identity is the same service role for all of them and the requesting user is only an attribution field.",
+          "gap": "Authorization is not evaluated against the requesting principal's own scopes, so a user cannot be distinguished from the agent's service authority.",
+          "evidence": [
+            {
+              "file": "tracecat/agent/mcp/trusted_server.py",
+              "lines": "666",
+              "contains": "not in claims.allowed_actions",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/mcp/trusted_server.py#L666"
+            },
+            {
+              "file": "tracecat/agent/mcp/executor.py",
+              "lines": "111",
+              "contains": "not in claims.allowed_actions",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/mcp/executor.py#L111"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "New presets default to no actions and the token is short-lived (sandbox timeout plus 60 s), but widening the action list is an ordinary preset edit with no elevation step.",
+          "gap": "Write capability is not behind explicit time-bounded operator elevation.",
+          "evidence": [
+            {
+              "file": "tracecat/agent/preset/schemas.py",
+              "lines": "296",
+              "contains": "actions: list[str] = Field(default_factory=list)",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/preset/schemas.py#L296"
+            },
+            {
+              "file": "tracecat/agent/tokens.py",
+              "lines": "175",
+              "contains": "TRACECAT__AGENT_SANDBOX_TIMEOUT + 60",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/tokens.py#L175"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "If the allowlist or approvals fail, the service role can write across the integrations and workspace objects its scopes cover (workflows, cases, tables, secrets), though it stays inside one workspace.",
+          "gap": "Writes are not limited to one system; independent layers (per-tool approval) are opt-in and off by default.",
+          "evidence": [
+            {
+              "file": "tracecat/authz/scopes.py",
+              "lines": "406-411",
+              "contains": "secret:read",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/authz/scopes.py#L406-L411"
+            },
+            {
+              "file": "tracecat/authz/scopes.py",
+              "lines": "73",
+              "contains": "action:*:execute",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/authz/scopes.py#L73"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.45,
+          "raw": 0.45,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The agent's role is a static service principal holding all workspace operational scopes, narrowed only by a per-run action allowlist in the token.",
+              "gap": "Read and write tools do not use separate narrower credentials, and the service role is not reduced below the full workspace scope set.",
+              "evidence": [
+                {
+                  "file": "tracecat/authz/scopes.py",
+                  "lines": "437-440",
+                  "contains": "SERVICE_PRINCIPAL_SCOPES",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/authz/scopes.py#L437-L440"
+                },
+                {
+                  "file": "tracecat/authz/scopes.py",
+                  "lines": "79",
+                  "contains": "workflow:delete",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/authz/scopes.py#L79"
+                },
+                {
+                  "file": "tracecat/agent/mcp/executor.py",
+                  "lines": "75",
+                  "contains": "SERVICE_PRINCIPAL_SCOPES[\"tracecat-mcp\"]",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/mcp/executor.py#L75"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Registry tool calls are checked against the token's allowed_actions in both the MCP server and the executor entry, but the identity is the same service role for all of them and the requesting user is only an attribution field.",
+              "gap": "Authorization is not evaluated against the requesting principal's own scopes, so a user cannot be distinguished from the agent's service authority.",
+              "evidence": [
+                {
+                  "file": "tracecat/agent/mcp/trusted_server.py",
+                  "lines": "666",
+                  "contains": "not in claims.allowed_actions",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/mcp/trusted_server.py#L666"
+                },
+                {
+                  "file": "tracecat/agent/mcp/executor.py",
+                  "lines": "111",
+                  "contains": "not in claims.allowed_actions",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/mcp/executor.py#L111"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "New presets default to no actions and the token is short-lived (sandbox timeout plus 60 s), but widening the action list is an ordinary preset edit with no elevation step.",
+              "gap": "Write capability is not behind explicit time-bounded operator elevation.",
+              "evidence": [
+                {
+                  "file": "tracecat/agent/preset/schemas.py",
+                  "lines": "296",
+                  "contains": "actions: list[str] = Field(default_factory=list)",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/preset/schemas.py#L296"
+                },
+                {
+                  "file": "tracecat/agent/tokens.py",
+                  "lines": "175",
+                  "contains": "TRACECAT__AGENT_SANDBOX_TIMEOUT + 60",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/tokens.py#L175"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "If the allowlist or approvals fail, the service role can write across the integrations and workspace objects its scopes cover (workflows, cases, tables, secrets), though it stays inside one workspace.",
+              "gap": "Writes are not limited to one system; independent layers (per-tool approval) are opt-in and off by default.",
+              "evidence": [
+                {
+                  "file": "tracecat/authz/scopes.py",
+                  "lines": "406-411",
+                  "contains": "secret:read",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/authz/scopes.py#L406-L411"
+                },
+                {
+                  "file": "tracecat/authz/scopes.py",
+                  "lines": "73",
+                  "contains": "action:*:execute",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/authz/scopes.py#L73"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "Tracecat has a real per-call approval mechanism: a flagged tool call is denied at the hook, the exact arguments are stored and shown to a user holding the agent update scope, and the human may approve, deny or override. But approval is opt-in per tool, no built-in registry action ships flagged, and unflagged tools (generic HTTP, response actions, the sandboxed shell) run unattended. Explicit sub-agents skip the gate entirely, and local MCP tools marked as needing approval are hard-denied rather than gated.",
+      "max": 1.0,
+      "notes": "Approvals are unsupported for local stdio MCP tools: a flagged call is denied (runtime.py:1284), which fails closed. The builder tool update_preset can switch tool_approvals for a preset without approval.",
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C2-POWERBYPASS",
+        "max": 0.25,
+        "reason": "The most powerful paths (generic HTTP action, response actions, sandboxed shell) are not gated in the default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A gated call is emitted with its exact tool name and arguments, persisted, and decided by an authenticated user (agent:update); there is no argument-level policy.",
+          "gap": "No allow/deny rules on parsed arguments and the approver can override arguments after the fact.",
+          "evidence": [
+            {
+              "file": "tracecat/agent/runtime/claude_code/runtime.py",
+              "lines": "1180",
+              "contains": "await self._emit_approval_request(",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L1180"
+            },
+            {
+              "file": "tracecat/agent/session/service.py",
+              "lines": "1569",
+              "contains": "input=approval.tool_call_args or {}",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/session/service.py#L1569"
+            },
+            {
+              "file": "packages/tracecat-ee/tracecat_ee/agent/approvals/router.py",
+              "lines": "75",
+              "contains": "@require_scope(\"agent:update\")",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/packages/tracecat-ee/tracecat_ee/agent/approvals/router.py#L75"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only tools flagged requires_approval are gated, none of the built-in actions are flagged, and explicit sub-agent tool calls return False from the approval check.",
+          "gap": "Unflagged mutating tools, built-in shell/file tools, and sub-agents bypass the gate.",
+          "evidence": [
+            {
+              "file": "tracecat/agent/runtime/claude_code/runtime.py",
+              "lines": "675-676",
+              "contains": "_explicit_subagent_alias_for_tool",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L675-L676"
+            },
+            {
+              "file": "tracecat/agent/runtime/claude_code/runtime.py",
+              "lines": "679",
+              "contains": "self.tool_approvals.get(normalize_mcp_tool_name(tool_name)) is True",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L679"
+            },
+            {
+              "search": "rg -n 'requires_approval=True'",
+              "scope": "tracecat packages/tracecat-registry",
+              "hits": 0,
+              "note": "no registry action or core code sets the flag by default"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The per-tool approval flag defaults to False and the hook allows every tool not flagged.",
+          "gap": "Approval is opt-in; nothing requires it by default.",
+          "evidence": [
+            {
+              "file": "tracecat/agent/tools.py",
+              "lines": "54",
+              "contains": "options.get(\"requires_approval\", False)",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/tools.py#L54"
+            },
+            {
+              "file": "tracecat/agent/runtime/claude_code/runtime.py",
+              "lines": "1321",
+              "contains": "\"permissionDecision\": \"allow\"",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L1321"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Response and integration actions are mostly irreversible, there is no undo, preview or rate limit on them, and a wrongly approved or ungated call executes directly.",
+          "gap": "No checkpoints, dry-runs, rate limits or quantity bounds on consequential actions.",
+          "evidence": [
+            {
+              "file": "tracecat/agent/mcp/executor.py",
+              "lines": "111",
+              "contains": "claims.allowed_actions",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/mcp/executor.py#L111"
+            },
+            {
+              "file": "tracecat/agent/runtime/claude_code/runtime.py",
+              "lines": "1321",
+              "contains": "\"permissionDecision\": \"allow\"",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L1321"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.3,
+          "cap": {
+            "id": "C2-POWERBYPASS",
+            "max": 0.25,
+            "reason": "The most powerful paths (generic HTTP action, response actions, sandboxed shell) are not gated in the default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A gated call is emitted with its exact tool name and arguments, persisted, and decided by an authenticated user (agent:update); there is no argument-level policy.",
+              "gap": "No allow/deny rules on parsed arguments and the approver can override arguments after the fact.",
+              "evidence": [
+                {
+                  "file": "tracecat/agent/runtime/claude_code/runtime.py",
+                  "lines": "1180",
+                  "contains": "await self._emit_approval_request(",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L1180"
+                },
+                {
+                  "file": "tracecat/agent/session/service.py",
+                  "lines": "1569",
+                  "contains": "input=approval.tool_call_args or {}",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/session/service.py#L1569"
+                },
+                {
+                  "file": "packages/tracecat-ee/tracecat_ee/agent/approvals/router.py",
+                  "lines": "75",
+                  "contains": "@require_scope(\"agent:update\")",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/packages/tracecat-ee/tracecat_ee/agent/approvals/router.py#L75"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only tools flagged requires_approval are gated, none of the built-in actions are flagged, and explicit sub-agent tool calls return False from the approval check.",
+              "gap": "Unflagged mutating tools, built-in shell/file tools, and sub-agents bypass the gate.",
+              "evidence": [
+                {
+                  "file": "tracecat/agent/runtime/claude_code/runtime.py",
+                  "lines": "675-676",
+                  "contains": "_explicit_subagent_alias_for_tool",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L675-L676"
+                },
+                {
+                  "file": "tracecat/agent/runtime/claude_code/runtime.py",
+                  "lines": "679",
+                  "contains": "self.tool_approvals.get(normalize_mcp_tool_name(tool_name)) is True",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L679"
+                },
+                {
+                  "search": "rg -n 'requires_approval=True'",
+                  "scope": "tracecat packages/tracecat-registry",
+                  "hits": 0,
+                  "note": "no registry action or core code sets the flag by default"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The per-tool approval flag defaults to False and the hook allows every tool not flagged.",
+              "gap": "Approval is opt-in; nothing requires it by default.",
+              "evidence": [
+                {
+                  "file": "tracecat/agent/tools.py",
+                  "lines": "54",
+                  "contains": "options.get(\"requires_approval\", False)",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/tools.py#L54"
+                },
+                {
+                  "file": "tracecat/agent/runtime/claude_code/runtime.py",
+                  "lines": "1321",
+                  "contains": "\"permissionDecision\": \"allow\"",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L1321"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Response and integration actions are mostly irreversible, there is no undo, preview or rate limit on them, and a wrongly approved or ungated call executes directly.",
+              "gap": "No checkpoints, dry-runs, rate limits or quantity bounds on consequential actions.",
+              "evidence": [
+                {
+                  "file": "tracecat/agent/mcp/executor.py",
+                  "lines": "111",
+                  "contains": "claims.allowed_actions",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/mcp/executor.py#L111"
+                },
+                {
+                  "file": "tracecat/agent/runtime/claude_code/runtime.py",
+                  "lines": "1321",
+                  "contains": "\"permissionDecision\": \"allow\"",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L1321"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "Registry actions take typed, schema-validated arguments and an agent only receives the actions its preset names; a new preset has none, the model cannot add tools, and the script-execution action is excluded from agents entirely. The weak spot is the generic tools an operator can select: the HTTP action accepts any URL with no host or private-address check in the action code, so egress control depends on the optional nsjail backend. There are no per-call quantity bounds beyond the tool-count and timeout limits.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.5,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Action arguments are typed through registry schemas, but the generic HTTP action takes an arbitrary URL with no allowlist or internal-address check.",
+          "gap": "No host allowlist or internal-address blocking on generic tools (the SSRF-safe outbound client exists only for backend traffic).",
+          "evidence": [
+            {
+              "file": "packages/tracecat-registry/tracecat_registry/core/http.py",
+              "lines": "591",
+              "contains": "async def http_request(",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/packages/tracecat-registry/tracecat_registry/core/http.py#L591"
+            },
+            {
+              "search": "rg -n 'is_disallowed_address|DisallowedUrlError|outbound'",
+              "scope": "packages/tracecat-registry/tracecat_registry/core",
+              "hits": 0,
+              "note": "the registry HTTP actions never use the SSRF-checked outbound client in tracecat/outbound.py"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Registry actions and MCP-proxied tools are all typed, but validation is per-action rather than a central policy layer that checks destinations or bounds.",
+          "gap": "No shared validation layer for extension and user MCP tools.",
+          "evidence": [
+            {
+              "file": "tracecat/agent/tools.py",
+              "lines": "184-188",
+              "contains": "included_actions = [",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/tools.py#L184-L188"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A preset starts with an empty action list, the agent receives only listed actions, the run_python action is excluded from agents, and the tool count is capped.",
+          "gap": "Builder sessions can edit a preset's tool list, and there is no per-task allowlist beyond the preset.",
+          "evidence": [
+            {
+              "file": "tracecat/agent/preset/schemas.py",
+              "lines": "296",
+              "contains": "actions: list[str] = Field(default_factory=list)",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/preset/schemas.py#L296"
+            },
+            {
+              "file": "tracecat/agent/tools.py",
+              "lines": "30",
+              "contains": "EXCLUDED_AGENT_ACTIONS: frozenset[str] = frozenset({PlatformAction.RUN_PYTHON})",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/tools.py#L30"
+            },
+            {
+              "file": "tracecat/agent/tools.py",
+              "lines": "258",
+              "contains": "AgentToolLimitExceededError",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/tools.py#L258"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A misused generic HTTP or response action can reach any host the executor can reach and any integration in the workspace, with no quantity bounds.",
+          "gap": "Not quantity-bounded or limited to allowlisted destinations.",
+          "evidence": [
+            {
+              "file": "packages/tracecat-registry/tracecat_registry/core/http.py",
+              "lines": "602",
+              "contains": "follow_redirects: FollowRedirects = False",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/packages/tracecat-registry/tracecat_registry/core/http.py#L602"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.5,
+          "raw": 0.5,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Action arguments are typed through registry schemas, but the generic HTTP action takes an arbitrary URL with no allowlist or internal-address check.",
+              "gap": "No host allowlist or internal-address blocking on generic tools (the SSRF-safe outbound client exists only for backend traffic).",
+              "evidence": [
+                {
+                  "file": "packages/tracecat-registry/tracecat_registry/core/http.py",
+                  "lines": "591",
+                  "contains": "async def http_request(",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/packages/tracecat-registry/tracecat_registry/core/http.py#L591"
+                },
+                {
+                  "search": "rg -n 'is_disallowed_address|DisallowedUrlError|outbound'",
+                  "scope": "packages/tracecat-registry/tracecat_registry/core",
+                  "hits": 0,
+                  "note": "the registry HTTP actions never use the SSRF-checked outbound client in tracecat/outbound.py"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Registry actions and MCP-proxied tools are all typed, but validation is per-action rather than a central policy layer that checks destinations or bounds.",
+              "gap": "No shared validation layer for extension and user MCP tools.",
+              "evidence": [
+                {
+                  "file": "tracecat/agent/tools.py",
+                  "lines": "184-188",
+                  "contains": "included_actions = [",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/tools.py#L184-L188"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A preset starts with an empty action list, the agent receives only listed actions, the run_python action is excluded from agents, and the tool count is capped.",
+              "gap": "Builder sessions can edit a preset's tool list, and there is no per-task allowlist beyond the preset.",
+              "evidence": [
+                {
+                  "file": "tracecat/agent/preset/schemas.py",
+                  "lines": "296",
+                  "contains": "actions: list[str] = Field(default_factory=list)",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/preset/schemas.py#L296"
+                },
+                {
+                  "file": "tracecat/agent/tools.py",
+                  "lines": "30",
+                  "contains": "EXCLUDED_AGENT_ACTIONS: frozenset[str] = frozenset({PlatformAction.RUN_PYTHON})",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/tools.py#L30"
+                },
+                {
+                  "file": "tracecat/agent/tools.py",
+                  "lines": "258",
+                  "contains": "AgentToolLimitExceededError",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/tools.py#L258"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A misused generic HTTP or response action can reach any host the executor can reach and any integration in the workspace, with no quantity bounds.",
+              "gap": "Not quantity-bounded or limited to allowlisted destinations.",
+              "evidence": [
+                {
+                  "file": "packages/tracecat-registry/tracecat_registry/core/http.py",
+                  "lines": "602",
+                  "contains": "follow_redirects: FollowRedirects = False",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/packages/tracecat-registry/tracecat_registry/core/http.py#L602"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "By default the platform runs actions and Python scripts without nsjail: actions are plain subprocesses that copy the executor's full environment (database URI, encryption key, service key, signing secret), scripts get only a new PID namespace (and run without it if unshare is unavailable), and network restrictions are not enforced. The agent's shell uses the Claude Code SDK sandbox in a weaker nested mode with unsandboxed commands denied. An opt-in nsjail backend is much stronger: non-root mapping, separate network namespace, seccomp denylist, read-only rootfs, with no host fallback, but it needs elevated container capabilities and is not on by default.",
+      "max": 1.0,
+      "notes": "The agent runtime direct spawn is labelled a development mode in its own log message (tracecat/agent/sandbox/nsjail.py:341) yet is the compose default.",
+      "status": "scored",
+      "score": 0.5,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "nsjail jails get a new network namespace, PID namespace, non-root uid mapping, a seccomp denylist, a read-only rootfs and tmpfs scratch space.",
+          "gap": "Seccomp is a denylist with default allow and no microVM or gVisor boundary.",
+          "evidence": [
+            {
+              "file": "tracecat/sandbox/executor.py",
+              "lines": "374",
+              "contains": "clone_newnet: true",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/sandbox/executor.py#L374"
+            },
+            {
+              "file": "tracecat/sandbox/executor.py",
+              "lines": "388",
+              "contains": "uidmap",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/sandbox/executor.py#L388"
+            },
+            {
+              "file": "tracecat/sandbox/seccomp.py",
+              "lines": "81",
+              "contains": "DEFAULT ALLOW",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/sandbox/seccomp.py#L81"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "With nsjail selected the backend is authoritative and never falls back to the host for scripts, actions, agents and registry sync.",
+          "gap": "No documented evidence checked that every spawned process (for example MCP stdio probes) is jailed in all failure paths.",
+          "evidence": [
+            {
+              "file": "tracecat/sandbox/service.py",
+              "lines": "462",
+              "contains": "never fall back from nsjail",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/sandbox/service.py#L462"
+            },
+            {
+              "file": "tracecat/config.py",
+              "lines": "864",
+              "contains": "'direct' (default)",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/config.py#L864"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The nsjail backend is not the default and needs elevated container capabilities.",
+          "gap": "Operator must select it and grant SYS_ADMIN-class capabilities.",
+          "evidence": [
+            {
+              "file": "tracecat/executor/enums.py",
+              "lines": "25",
+              "contains": "cls.DIRECT",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/executor/enums.py#L25"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Under nsjail the jail mounts only the job directory and read-only rootfs, uses a minimal environment, and filters egress.",
+          "gap": "Not ephemeral-with-no-egress by default; egress CIDR allowlists are operator configured.",
+          "evidence": [
+            {
+              "file": "tracecat/sandbox/executor.py",
+              "lines": "432",
+              "contains": "tmpfs",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/sandbox/executor.py#L432"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.275,
+          "raw": 0.275,
+          "cap": null,
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "The default agent shell relies on the Claude Code SDK sandbox in weaker nested mode (inferred OS-level separation) while script execution is a PID namespace and actions have no isolation.",
+              "gap": "No hardened container or OS sandbox profile on the default path.",
+              "evidence": [
+                {
+                  "file": "tracecat/agent/runtime/claude_code/runtime.py",
+                  "lines": "1585-1586",
+                  "contains": "enableWeakerNestedSandbox",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L1585-L1586"
+                },
+                {
+                  "file": "tracecat/sandbox/unsafe_pid_executor.py",
+                  "lines": "327",
+                  "contains": "unshare",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/sandbox/unsafe_pid_executor.py#L327"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only the agent shell is sandboxed by default; registry actions run in a direct subprocess with use_sandbox=False and scripts in the PID-namespace executor.",
+              "gap": "Actions, scripts and registry sync run on the host unless the operator selects nsjail.",
+              "evidence": [
+                {
+                  "file": "tracecat/executor/backends/direct.py",
+                  "lines": "77",
+                  "contains": "use_sandbox=False",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/executor/backends/direct.py#L77"
+                },
+                {
+                  "file": "tracecat/sandbox/service.py",
+                  "lines": "478",
+                  "contains": "Using the direct backend with the unsafe PID executor",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/sandbox/service.py#L478"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The shipped compose default is the direct backend and the isolation level is one environment variable; script network isolation is best-effort and not OS-enforced without nsjail.",
+              "gap": "Hardened isolation is not on by default and can be switched by an env var without warning.",
+              "evidence": [
+                {
+                  "file": "docker-compose.yml",
+                  "lines": "297",
+                  "contains": "TRACECAT__EXECUTOR_BACKEND: ${TRACECAT__EXECUTOR_BACKEND:-direct}",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/docker-compose.yml#L297"
+                },
+                {
+                  "file": "tracecat/sandbox/service.py",
+                  "lines": "438",
+                  "contains": "best-effort and not OS-enforced",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/sandbox/service.py#L438"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The direct action subprocess inherits the whole executor environment, and the executor container is given the database URI, encryption key, service key and signing secret.",
+              "gap": "Action subprocesses should receive only their own credentials, with no platform keys in the environment.",
+              "evidence": [
+                {
+                  "file": "tracecat/executor/action_runner.py",
+                  "lines": "435",
+                  "contains": "env = os.environ.copy()",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/executor/action_runner.py#L435"
+                },
+                {
+                  "file": "docker-compose.yml",
+                  "lines": "241",
+                  "contains": "TRACECAT__DB_ENCRYPTION_KEY",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/docker-compose.yml#L241"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in nsjail executor backend (TRACECAT__EXECUTOR_BACKEND=nsjail)",
+          "score": 0.5,
+          "raw": 0.6,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "nsjail jails get a new network namespace, PID namespace, non-root uid mapping, a seccomp denylist, a read-only rootfs and tmpfs scratch space.",
+              "gap": "Seccomp is a denylist with default allow and no microVM or gVisor boundary.",
+              "evidence": [
+                {
+                  "file": "tracecat/sandbox/executor.py",
+                  "lines": "374",
+                  "contains": "clone_newnet: true",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/sandbox/executor.py#L374"
+                },
+                {
+                  "file": "tracecat/sandbox/executor.py",
+                  "lines": "388",
+                  "contains": "uidmap",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/sandbox/executor.py#L388"
+                },
+                {
+                  "file": "tracecat/sandbox/seccomp.py",
+                  "lines": "81",
+                  "contains": "DEFAULT ALLOW",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/sandbox/seccomp.py#L81"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "With nsjail selected the backend is authoritative and never falls back to the host for scripts, actions, agents and registry sync.",
+              "gap": "No documented evidence checked that every spawned process (for example MCP stdio probes) is jailed in all failure paths.",
+              "evidence": [
+                {
+                  "file": "tracecat/sandbox/service.py",
+                  "lines": "462",
+                  "contains": "never fall back from nsjail",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/sandbox/service.py#L462"
+                },
+                {
+                  "file": "tracecat/config.py",
+                  "lines": "864",
+                  "contains": "'direct' (default)",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/config.py#L864"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The nsjail backend is not the default and needs elevated container capabilities.",
+              "gap": "Operator must select it and grant SYS_ADMIN-class capabilities.",
+              "evidence": [
+                {
+                  "file": "tracecat/executor/enums.py",
+                  "lines": "25",
+                  "contains": "cls.DIRECT",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/executor/enums.py#L25"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Under nsjail the jail mounts only the job directory and read-only rootfs, uses a minimal environment, and filters egress.",
+              "gap": "Not ephemeral-with-no-egress by default; egress CIDR allowlists are operator configured.",
+              "evidence": [
+                {
+                  "file": "tracecat/sandbox/executor.py",
+                  "lines": "432",
+                  "contains": "tmpfs",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/sandbox/executor.py#L432"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "Nothing in the code limits what a prompt-injected agent can do: alert, case, webhook and tool-result text enters the model with the same standing as operator instructions, with no taint tracking, quarantine or approval tied to provenance. The only handling found is a prompt line telling the model to treat Slack profile fields as data. What bounds a hijack is the per-preset tool allowlist, sandbox internet being off by default, and optional per-tool approval. A preset that holds both egress and response actions can act on injected instructions unattended.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.05,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only a prompt-level instruction (Slack profile fields are untrusted data) exists; there is no code that restricts tools after untrusted content is read.",
+          "gap": "No Rule-of-Two enforcement or provenance-driven approval in code.",
+          "evidence": [
+            {
+              "file": "tracecat/agent/channels/handlers/slack.py",
+              "lines": "345",
+              "contains": "untrusted data, not instructions",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/channels/handlers/slack.py#L345"
+            },
+            {
+              "search": "rg -n -i 'spotlight|quarantin|prompt.?injection'",
+              "scope": "tracecat/agent",
+              "hits": 0,
+              "note": "no classifier, quarantine or spotlighting code exists in the agent package"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tool results, MCP results and alert payloads are not distinguished from instructions by any runtime mechanism.",
+          "gap": "No source-aware handling of tool results, descriptions or peer-agent messages.",
+          "evidence": [
+            {
+              "file": "tracecat/agent/runtime/claude_code/runtime.py",
+              "lines": "1233",
+              "contains": "async def _pre_tool_use_hook",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L1233"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "There is no injection control to be on or off by default.",
+          "gap": "No default mechanism exists.",
+          "evidence": [
+            {
+              "file": "tracecat/agent/runtime/claude_code/runtime.py",
+              "lines": "1321",
+              "contains": "\"permissionDecision\": \"allow\"",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L1321"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked agent can use every action in its preset unattended (approval is opt-in), including HTTP egress and response actions when selected, but a new preset holds no tools and sandbox internet is off by default.",
+          "gap": "Egress and irreversible actions are not forced through human approval after untrusted content is read.",
+          "evidence": [
+            {
+              "file": "tracecat/agent/types.py",
+              "lines": "100",
+              "contains": "enable_internet_access: bool = False",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/types.py#L100"
+            },
+            {
+              "file": "tracecat/agent/tools.py",
+              "lines": "54",
+              "contains": "options.get(\"requires_approval\", False)",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/tools.py#L54"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.05,
+          "raw": 0.05,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only a prompt-level instruction (Slack profile fields are untrusted data) exists; there is no code that restricts tools after untrusted content is read.",
+              "gap": "No Rule-of-Two enforcement or provenance-driven approval in code.",
+              "evidence": [
+                {
+                  "file": "tracecat/agent/channels/handlers/slack.py",
+                  "lines": "345",
+                  "contains": "untrusted data, not instructions",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/channels/handlers/slack.py#L345"
+                },
+                {
+                  "search": "rg -n -i 'spotlight|quarantin|prompt.?injection'",
+                  "scope": "tracecat/agent",
+                  "hits": 0,
+                  "note": "no classifier, quarantine or spotlighting code exists in the agent package"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tool results, MCP results and alert payloads are not distinguished from instructions by any runtime mechanism.",
+              "gap": "No source-aware handling of tool results, descriptions or peer-agent messages.",
+              "evidence": [
+                {
+                  "file": "tracecat/agent/runtime/claude_code/runtime.py",
+                  "lines": "1233",
+                  "contains": "async def _pre_tool_use_hook",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L1233"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "There is no injection control to be on or off by default.",
+              "gap": "No default mechanism exists.",
+              "evidence": [
+                {
+                  "file": "tracecat/agent/runtime/claude_code/runtime.py",
+                  "lines": "1321",
+                  "contains": "\"permissionDecision\": \"allow\"",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L1321"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked agent can use every action in its preset unattended (approval is opt-in), including HTTP egress and response actions when selected, but a new preset holds no tools and sandbox internet is off by default.",
+              "gap": "Egress and irreversible actions are not forced through human approval after untrusted content is read.",
+              "evidence": [
+                {
+                  "file": "tracecat/agent/types.py",
+                  "lines": "100",
+                  "contains": "enable_internet_access: bool = False",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/types.py#L100"
+                },
+                {
+                  "file": "tracecat/agent/tools.py",
+                  "lines": "54",
+                  "contains": "options.get(\"requires_approval\", False)",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/tools.py#L54"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "There is no cross-session agent memory store. Persistent state is session history that is resumed within a session, user-authored skills and presets, and workspace data. The Claude CLI loads settings only from the user scope in a per-session home, so repository files cannot add hooks or MCP servers. Tenant isolation is enforced in application queries by workspace; the database row-level-security mode ships off. Poisoned content stored in a resumed session or workspace data can influence later turns of that session.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.5,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Agent settings come only from the user scope and the tool/MCP set comes from the preset, so workspace files cannot add security-relevant config; skills and resumed history still load without review.",
+          "gap": "Skill and history content is not provenance-tagged or approval-gated.",
+          "evidence": [
+            {
+              "file": "tracecat/agent/runtime/claude_code/runtime.py",
+              "lines": "1646",
+              "contains": "setting_sources=[\"user\"]",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L1646"
+            },
+            {
+              "search": "rg -n -i 'save_memory|long_term_memory|memory_store|remember'",
+              "scope": "tracecat/agent",
+              "hits": 0,
+              "note": "no model-writable long-term memory tool"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "The main persistent store (session history) is workspace-scoped and written by the orchestrator; skills and retrieved case data are not provenance-tagged.",
+          "gap": "Auto-loaded skills and retrieved data are not controlled or tagged end to end.",
+          "evidence": [
+            {
+              "file": "tracecat/agent/session/service.py",
+              "lines": "1569",
+              "contains": "approval.tool_call_args",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/session/service.py#L1569"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Isolation is by workspace in queries and the database RLS mode defaults to off.",
+          "gap": "RLS is not on by default and there are no retention limits.",
+          "evidence": [
+            {
+              "file": "tracecat/config.py",
+              "lines": "1388",
+              "contains": "RLSMode.OFF.value",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/config.py#L1388"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "Poisoned session or workspace content persists within the workspace and can drive later turns, whose tool use is gated only if flagged.",
+          "gap": "Persisted content is not reviewed before reuse and there is no rollback.",
+          "evidence": [
+            {
+              "file": "tracecat/agent/runtime/claude_code/runtime.py",
+              "lines": "1646",
+              "contains": "setting_sources=[\"user\"]",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L1646"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.5,
+          "raw": 0.5,
+          "cap": null,
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Agent settings come only from the user scope and the tool/MCP set comes from the preset, so workspace files cannot add security-relevant config; skills and resumed history still load without review.",
+              "gap": "Skill and history content is not provenance-tagged or approval-gated.",
+              "evidence": [
+                {
+                  "file": "tracecat/agent/runtime/claude_code/runtime.py",
+                  "lines": "1646",
+                  "contains": "setting_sources=[\"user\"]",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L1646"
+                },
+                {
+                  "search": "rg -n -i 'save_memory|long_term_memory|memory_store|remember'",
+                  "scope": "tracecat/agent",
+                  "hits": 0,
+                  "note": "no model-writable long-term memory tool"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "The main persistent store (session history) is workspace-scoped and written by the orchestrator; skills and retrieved case data are not provenance-tagged.",
+              "gap": "Auto-loaded skills and retrieved data are not controlled or tagged end to end.",
+              "evidence": [
+                {
+                  "file": "tracecat/agent/session/service.py",
+                  "lines": "1569",
+                  "contains": "approval.tool_call_args",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/session/service.py#L1569"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Isolation is by workspace in queries and the database RLS mode defaults to off.",
+              "gap": "RLS is not on by default and there are no retention limits.",
+              "evidence": [
+                {
+                  "file": "tracecat/config.py",
+                  "lines": "1388",
+                  "contains": "RLSMode.OFF.value",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/config.py#L1388"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "Poisoned session or workspace content persists within the workspace and can drive later turns, whose tool use is gated only if flagged.",
+              "gap": "Persisted content is not reviewed before reuse and there is no rollback.",
+              "evidence": [
+                {
+                  "file": "tracecat/agent/runtime/claude_code/runtime.py",
+                  "lines": "1646",
+                  "contains": "setting_sources=[\"user\"]",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L1646"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "Nothing third-party is enabled by default: MCP servers, skills and custom registries are added by workspace operators. Registry versions are pinned in a lock with manifest fingerprints, but user-configured MCP servers are neither pinned nor checked for changed tool definitions, and stdio MCP commands are whatever the operator typed. Custom-registry code runs through the same direct action path as built-ins, in a subprocess carrying the full executor environment, so a malicious extension inherits platform secrets unless nsjail is selected.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.325,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Registry versions are pinned in a lock carrying manifest fingerprints, while MCP servers are user-chosen and unpinned.",
+          "gap": "No signature check or re-approval when an MCP server's version or tool definitions change.",
+          "evidence": [
+            {
+              "file": "tracecat/registry/lock/types.py",
+              "lines": "23",
+              "contains": "origin_fingerprints",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/registry/lock/types.py#L23"
+            },
+            {
+              "file": "tracecat/agent/runtime/claude_code/runtime.py",
+              "lines": "592",
+              "contains": "\"command\": stdio_config[\"command\"]",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L592"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only registry artifacts are version-locked; MCP servers and skills are not verified.",
+          "gap": "MCP servers and skill code are outside the verification path.",
+          "evidence": [
+            {
+              "file": "tracecat/executor/backends/registry_helpers.py",
+              "lines": "60",
+              "contains": "_bundled_builtin_matches_lock",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/executor/backends/registry_helpers.py#L60"
+            },
+            {
+              "search": "rg -n 'trust_remote_code|pickle|torch.load|npx -y'",
+              "scope": "tracecat/agent tracecat/registry tracecat/executor",
+              "hits": 0,
+              "note": "no automatic remote-code loading patterns"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "Extensions are added only through workspace configuration and nothing third-party is on by default; whether the UI shows the exact command and permissions was not reviewed.",
+          "gap": "Not confirmed that adding an extension shows exactly what will run.",
+          "evidence": [
+            {
+              "file": "tracecat/agent/runtime/claude_code/runtime.py",
+              "lines": "590-592",
+              "contains": "server_config: dict[str, Any] = {",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L590-L592"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "Custom-registry code executes in the direct action subprocess that inherits the executor environment; stdio MCP servers get a scrubbed environment inside the agent sandbox.",
+          "gap": "Custom-registry code is not confined or given only its own credentials in the default backend.",
+          "evidence": [
+            {
+              "file": "tracecat/executor/action_runner.py",
+              "lines": "435",
+              "contains": "env = os.environ.copy()",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/executor/action_runner.py#L435"
+            },
+            {
+              "file": "tracecat/executor/backends/direct.py",
+              "lines": "77",
+              "contains": "use_sandbox=False",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/executor/backends/direct.py#L77"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.325,
+          "raw": 0.325,
+          "cap": null,
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Registry versions are pinned in a lock carrying manifest fingerprints, while MCP servers are user-chosen and unpinned.",
+              "gap": "No signature check or re-approval when an MCP server's version or tool definitions change.",
+              "evidence": [
+                {
+                  "file": "tracecat/registry/lock/types.py",
+                  "lines": "23",
+                  "contains": "origin_fingerprints",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/registry/lock/types.py#L23"
+                },
+                {
+                  "file": "tracecat/agent/runtime/claude_code/runtime.py",
+                  "lines": "592",
+                  "contains": "\"command\": stdio_config[\"command\"]",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L592"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only registry artifacts are version-locked; MCP servers and skills are not verified.",
+              "gap": "MCP servers and skill code are outside the verification path.",
+              "evidence": [
+                {
+                  "file": "tracecat/executor/backends/registry_helpers.py",
+                  "lines": "60",
+                  "contains": "_bundled_builtin_matches_lock",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/executor/backends/registry_helpers.py#L60"
+                },
+                {
+                  "search": "rg -n 'trust_remote_code|pickle|torch.load|npx -y'",
+                  "scope": "tracecat/agent tracecat/registry tracecat/executor",
+                  "hits": 0,
+                  "note": "no automatic remote-code loading patterns"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "Extensions are added only through workspace configuration and nothing third-party is on by default; whether the UI shows the exact command and permissions was not reviewed.",
+              "gap": "Not confirmed that adding an extension shows exactly what will run.",
+              "evidence": [
+                {
+                  "file": "tracecat/agent/runtime/claude_code/runtime.py",
+                  "lines": "590-592",
+                  "contains": "server_config: dict[str, Any] = {",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L590-L592"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "Custom-registry code executes in the direct action subprocess that inherits the executor environment; stdio MCP servers get a scrubbed environment inside the agent sandbox.",
+              "gap": "Custom-registry code is not confined or given only its own credentials in the default backend.",
+              "evidence": [
+                {
+                  "file": "tracecat/executor/action_runner.py",
+                  "lines": "435",
+                  "contains": "env = os.environ.copy()",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/executor/action_runner.py#L435"
+                },
+                {
+                  "file": "tracecat/executor/backends/direct.py",
+                  "lines": "77",
+                  "contains": "use_sandbox=False",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/executor/backends/direct.py#L77"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "Secrets are encrypted at rest (Fernet), masked in action output and errors before they reach logs or the model, and model-provider keys are injected by a gateway so the agent holds only a gateway token. Telemetry is off unless a Sentry DSN or PostHog key is set, and Sentry is configured without PII or local variables. The gap is process environment: the direct action subprocess inherits the executor's full environment, so platform keys that decrypt every stored secret sit one environment read away from any action code, and the encryption key is a long-lived value passed as an env var.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.475,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Stored secrets are Fernet-encrypted, secret values seen at runtime are collected and masked, and provider credentials are injected at the gateway instead of entering the agent environment.",
+          "gap": "No secret manager or KMS for the master key by default and no pattern-based output scanning for unknown secrets.",
+          "evidence": [
+            {
+              "file": "tracecat/secrets/encryption.py",
+              "lines": "12",
+              "contains": "Fernet(key)",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/secrets/encryption.py#L12"
+            },
+            {
+              "file": "tracecat/agent/gateway.py",
+              "lines": "588",
+              "contains": "_inject_provider_credentials(data, provider, creds)",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/gateway.py#L588"
+            },
+            {
+              "file": "tracecat/agent/runtime/claude_code/runtime.py",
+              "lines": "1592",
+              "contains": "ANTHROPIC_AUTH_TOKEN",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L1592"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Logs, errors, telemetry and model-bound action results are covered, but the direct subprocess environment copies everything except SENTRY_DSN.",
+          "gap": "Subprocess environments are not scrubbed of platform secrets in the default backend.",
+          "evidence": [
+            {
+              "file": "tracecat/executor/action_runner.py",
+              "lines": "435-437",
+              "contains": "env.pop(\"SENTRY_DSN\", None)",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/executor/action_runner.py#L435-L437"
+            },
+            {
+              "file": "tracecat/observability/sentry.py",
+              "lines": "657-658",
+              "contains": "send_default_pii=False",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/observability/sentry.py#L657-L658"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Telemetry keys default empty (opt-in) and masking is on by default, but an env flag can switch masking off.",
+          "gap": "Redaction can be disabled by configuration.",
+          "evidence": [
+            {
+              "file": "docker-compose.yml",
+              "lines": "56",
+              "contains": "SENTRY_DSN: ${SENTRY_DSN:-}",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/docker-compose.yml#L56"
+            },
+            {
+              "file": "tracecat/config.py",
+              "lines": "501",
+              "contains": "TRACECAT__UNSAFE_DISABLE_SM_MASKING",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/config.py#L501"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The encryption key, database URI, service key and signing secret are long-lived, high-privilege values present in the environment that every direct action subprocess copies.",
+          "gap": "Platform keys must not be reachable by action processes; credentials should be short-lived or per-task.",
+          "evidence": [
+            {
+              "file": "docker-compose.yml",
+              "lines": "241",
+              "contains": "TRACECAT__DB_ENCRYPTION_KEY",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/docker-compose.yml#L241"
+            },
+            {
+              "file": "tracecat/executor/action_runner.py",
+              "lines": "435",
+              "contains": "env = os.environ.copy()",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/executor/action_runner.py#L435"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.475,
+          "raw": 0.475,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Stored secrets are Fernet-encrypted, secret values seen at runtime are collected and masked, and provider credentials are injected at the gateway instead of entering the agent environment.",
+              "gap": "No secret manager or KMS for the master key by default and no pattern-based output scanning for unknown secrets.",
+              "evidence": [
+                {
+                  "file": "tracecat/secrets/encryption.py",
+                  "lines": "12",
+                  "contains": "Fernet(key)",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/secrets/encryption.py#L12"
+                },
+                {
+                  "file": "tracecat/agent/gateway.py",
+                  "lines": "588",
+                  "contains": "_inject_provider_credentials(data, provider, creds)",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/gateway.py#L588"
+                },
+                {
+                  "file": "tracecat/agent/runtime/claude_code/runtime.py",
+                  "lines": "1592",
+                  "contains": "ANTHROPIC_AUTH_TOKEN",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L1592"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Logs, errors, telemetry and model-bound action results are covered, but the direct subprocess environment copies everything except SENTRY_DSN.",
+              "gap": "Subprocess environments are not scrubbed of platform secrets in the default backend.",
+              "evidence": [
+                {
+                  "file": "tracecat/executor/action_runner.py",
+                  "lines": "435-437",
+                  "contains": "env.pop(\"SENTRY_DSN\", None)",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/executor/action_runner.py#L435-L437"
+                },
+                {
+                  "file": "tracecat/observability/sentry.py",
+                  "lines": "657-658",
+                  "contains": "send_default_pii=False",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/observability/sentry.py#L657-L658"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Telemetry keys default empty (opt-in) and masking is on by default, but an env flag can switch masking off.",
+              "gap": "Redaction can be disabled by configuration.",
+              "evidence": [
+                {
+                  "file": "docker-compose.yml",
+                  "lines": "56",
+                  "contains": "SENTRY_DSN: ${SENTRY_DSN:-}",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/docker-compose.yml#L56"
+                },
+                {
+                  "file": "tracecat/config.py",
+                  "lines": "501",
+                  "contains": "TRACECAT__UNSAFE_DISABLE_SM_MASKING",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/config.py#L501"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The encryption key, database URI, service key and signing secret are long-lived, high-privilege values present in the environment that every direct action subprocess copies.",
+              "gap": "Platform keys must not be reachable by action processes; credentials should be short-lived or per-task.",
+              "evidence": [
+                {
+                  "file": "docker-compose.yml",
+                  "lines": "241",
+                  "contains": "TRACECAT__DB_ENCRYPTION_KEY",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/docker-compose.yml#L241"
+                },
+                {
+                  "file": "tracecat/executor/action_runner.py",
+                  "lines": "435",
+                  "contains": "env = os.environ.copy()",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/executor/action_runner.py#L435"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "Every agent tool call runs as a durable workflow with the session and parent workflow IDs, session transcripts are persisted by the orchestrator, approvals record who decided, and control-plane changes go through an audit decorator. The audit stream, however, is a fire-and-forget webhook that only exists when an operator configures a sink, emission is explicitly best-effort, and records live in the application database and Temporal rather than in tamper-evident storage.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.5,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tool calls carry the agent session ID and are recorded as workflow executions; control-plane events pass through audit_log with attempt and outcome events.",
+          "gap": "No tamper-evident storage or standard export enabled by default; approver attribution exists only in the approval rows.",
+          "evidence": [
+            {
+              "file": "tracecat/agent/mcp/executor.py",
+              "lines": "130",
+              "contains": "agent_session_id=claims.session_id",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/mcp/executor.py#L130"
+            },
+            {
+              "file": "tracecat/audit/service.py",
+              "lines": "283",
+              "contains": "Stream user-driven events to an audit webhook if configured.",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/audit/service.py#L283"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All registry tool calls go through one executor workflow and approvals are persisted, but stdio MCP and built-in shell calls inside the agent sandbox are recorded only in the session transcript.",
+          "gap": "Config, credential use and extension calls are not uniformly recorded.",
+          "evidence": [
+            {
+              "file": "tracecat/agent/mcp/executor.py",
+              "lines": "134",
+              "contains": "build_agent_tool_workflow_id()",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/mcp/executor.py#L134"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Workflow and transcript records are on by default and written by the orchestrator, but the audit webhook sink is opt-in and records are deletable by users with delete scopes.",
+          "gap": "Audit export is not on by default and the records are not append-only.",
+          "evidence": [
+            {
+              "file": "tracecat/audit/service.py",
+              "lines": "283",
+              "contains": "if configured",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/audit/service.py#L283"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Audit event creation and metadata callbacks are best-effort and failures are logged without stopping the action.",
+          "gap": "High-risk actions do not wait for their audit record.",
+          "evidence": [
+            {
+              "file": "tracecat/audit/logger.py",
+              "lines": "105-106",
+              "contains": "best-effort",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/audit/logger.py#L105-L106"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.5,
+          "raw": 0.5,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tool calls carry the agent session ID and are recorded as workflow executions; control-plane events pass through audit_log with attempt and outcome events.",
+              "gap": "No tamper-evident storage or standard export enabled by default; approver attribution exists only in the approval rows.",
+              "evidence": [
+                {
+                  "file": "tracecat/agent/mcp/executor.py",
+                  "lines": "130",
+                  "contains": "agent_session_id=claims.session_id",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/mcp/executor.py#L130"
+                },
+                {
+                  "file": "tracecat/audit/service.py",
+                  "lines": "283",
+                  "contains": "Stream user-driven events to an audit webhook if configured.",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/audit/service.py#L283"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All registry tool calls go through one executor workflow and approvals are persisted, but stdio MCP and built-in shell calls inside the agent sandbox are recorded only in the session transcript.",
+              "gap": "Config, credential use and extension calls are not uniformly recorded.",
+              "evidence": [
+                {
+                  "file": "tracecat/agent/mcp/executor.py",
+                  "lines": "134",
+                  "contains": "build_agent_tool_workflow_id()",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/mcp/executor.py#L134"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Workflow and transcript records are on by default and written by the orchestrator, but the audit webhook sink is opt-in and records are deletable by users with delete scopes.",
+              "gap": "Audit export is not on by default and the records are not append-only.",
+              "evidence": [
+                {
+                  "file": "tracecat/audit/service.py",
+                  "lines": "283",
+                  "contains": "if configured",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/audit/service.py#L283"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Audit event creation and metadata callbacks are best-effort and failures are logged without stopping the action.",
+              "gap": "High-risk actions do not wait for their audit record.",
+              "evidence": [
+                {
+                  "file": "tracecat/audit/logger.py",
+                  "lines": "105-106",
+                  "contains": "best-effort",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/audit/logger.py#L105-L106"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "An agent turn is bounded by a wall-clock timeout (30 minutes by default, clamped to a one-hour ceiling) and each action has a 300-second executor timeout, with a Redis-signalled cancel that stops the turn. The step and tool-call caps (max_requests, max_tool_calls) are declared in schemas but nothing in the agent runtime, executor or MCP code enforces them, only sub-agents have an optional turn cap, and the API rate-limit middleware class is not installed. There is no spend or cost ceiling in the platform itself.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.425,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only a wall-clock timeout is enforced for the agent turn; the declared request and tool-call caps are not referenced in the runtime.",
+          "gap": "No enforced step or tool-call cap, no cost cap, no rate limits on side-effecting tools.",
+          "evidence": [
+            {
+              "file": "tracecat/agent/executor/activity.py",
+              "lines": "908",
+              "contains": "while elapsed < self.timeout_seconds",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/executor/activity.py#L908"
+            },
+            {
+              "search": "rg -n 'max_requests|max_tool_calls'",
+              "scope": "tracecat/agent/runtime tracecat/agent/executor tracecat/agent/mcp",
+              "hits": 0,
+              "note": "no enforcement of the declared step caps in the runtime"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The top-level turn and each executor action are time-bounded; sub-agent turn caps are optional and not shared with the parent.",
+          "gap": "Sub-agents and spawned tasks do not count against a shared budget.",
+          "evidence": [
+            {
+              "file": "tracecat/executor/action_runner.py",
+              "lines": "209",
+              "contains": "TRACECAT__EXECUTOR_CLIENT_TIMEOUT",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/executor/action_runner.py#L209"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Defaults are sensible (1800 s turn, 3600 s ceiling) and operator-configurable, with a clamp the caller cannot exceed.",
+          "gap": "The ceiling is an environment variable, not a hard limit, and there is no cost default.",
+          "evidence": [
+            {
+              "file": "tracecat/agent/types.py",
+              "lines": "34",
+              "contains": "min(max(timeout_seconds, floor), ceiling)",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/types.py#L34"
+            },
+            {
+              "file": "tracecat/agent/constants.py",
+              "lines": "3",
+              "contains": "AGENT_TIMEOUT_SECONDS_DEFAULT = 1800",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/constants.py#L3"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A runaway agent can run up to an hour per turn with model spend unbounded by the platform, and cancel stops the turn via a Redis signal.",
+          "gap": "No spend ceiling or tight per-run ceilings and in-flight actions can finish after cancel.",
+          "evidence": [
+            {
+              "file": "tracecat/agent/cancellation.py",
+              "lines": "33",
+              "contains": "async def signal_turn_cancel",
+              "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/cancellation.py#L33"
+            },
+            {
+              "search": "rg -n 'RateLimitMiddleware'",
+              "scope": "tracecat/api",
+              "hits": 0,
+              "note": "the rate-limit middleware class is not installed in the API app"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.425,
+          "raw": 0.425,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only a wall-clock timeout is enforced for the agent turn; the declared request and tool-call caps are not referenced in the runtime.",
+              "gap": "No enforced step or tool-call cap, no cost cap, no rate limits on side-effecting tools.",
+              "evidence": [
+                {
+                  "file": "tracecat/agent/executor/activity.py",
+                  "lines": "908",
+                  "contains": "while elapsed < self.timeout_seconds",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/executor/activity.py#L908"
+                },
+                {
+                  "search": "rg -n 'max_requests|max_tool_calls'",
+                  "scope": "tracecat/agent/runtime tracecat/agent/executor tracecat/agent/mcp",
+                  "hits": 0,
+                  "note": "no enforcement of the declared step caps in the runtime"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The top-level turn and each executor action are time-bounded; sub-agent turn caps are optional and not shared with the parent.",
+              "gap": "Sub-agents and spawned tasks do not count against a shared budget.",
+              "evidence": [
+                {
+                  "file": "tracecat/executor/action_runner.py",
+                  "lines": "209",
+                  "contains": "TRACECAT__EXECUTOR_CLIENT_TIMEOUT",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/executor/action_runner.py#L209"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Defaults are sensible (1800 s turn, 3600 s ceiling) and operator-configurable, with a clamp the caller cannot exceed.",
+              "gap": "The ceiling is an environment variable, not a hard limit, and there is no cost default.",
+              "evidence": [
+                {
+                  "file": "tracecat/agent/types.py",
+                  "lines": "34",
+                  "contains": "min(max(timeout_seconds, floor), ceiling)",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/types.py#L34"
+                },
+                {
+                  "file": "tracecat/agent/constants.py",
+                  "lines": "3",
+                  "contains": "AGENT_TIMEOUT_SECONDS_DEFAULT = 1800",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/constants.py#L3"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A runaway agent can run up to an hour per turn with model spend unbounded by the platform, and cancel stops the turn via a Redis signal.",
+              "gap": "No spend ceiling or tight per-run ceilings and in-flight actions can finish after cancel.",
+              "evidence": [
+                {
+                  "file": "tracecat/agent/cancellation.py",
+                  "lines": "33",
+                  "contains": "async def signal_turn_cancel",
+                  "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/cancellation.py#L33"
+                },
+                {
+                  "search": "rg -n 'RateLimitMiddleware'",
+                  "scope": "tracecat/api",
+                  "hits": 0,
+                  "note": "the rate-limit middleware class is not installed in the API app"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "The most powerful action paths (generic HTTP, response actions, sandboxed shell) are not gated by approval in the default configuration, and no built-in action ships flagged.",
+      "criterion": "C2",
+      "owasp": [
+        "ASI02",
+        "ASI09"
+      ],
+      "evidence": [
+        {
+          "file": "tracecat/agent/tools.py",
+          "lines": "54",
+          "contains": "options.get(\"requires_approval\", False)",
+          "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/tools.py#L54"
+        },
+        {
+          "file": "tracecat/agent/runtime/claude_code/runtime.py",
+          "lines": "1321",
+          "contains": "\"permissionDecision\": \"allow\"",
+          "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L1321"
+        }
+      ]
+    },
+    {
+      "summary": "The default direct executor runs actions in a subprocess that copies the executor environment, which holds the database URI, encryption key, service key and signing secret.",
+      "criterion": "C4",
+      "owasp": [
+        "ASI05"
+      ],
+      "evidence": [
+        {
+          "file": "tracecat/executor/action_runner.py",
+          "lines": "435",
+          "contains": "env = os.environ.copy()",
+          "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/executor/action_runner.py#L435"
+        },
+        {
+          "file": "tracecat/executor/backends/direct.py",
+          "lines": "77",
+          "contains": "use_sandbox=False",
+          "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/executor/backends/direct.py#L77"
+        }
+      ]
+    },
+    {
+      "summary": "Custom-registry extension code runs in the same direct action subprocess with the full executor environment (inferred from the shared artifact path).",
+      "criterion": "C7",
+      "owasp": [
+        "ASI04"
+      ],
+      "evidence": [
+        {
+          "file": "tracecat/executor/action_runner.py",
+          "lines": "435",
+          "contains": "env = os.environ.copy()",
+          "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/executor/action_runner.py#L435"
+        },
+        {
+          "file": "tracecat/executor/backends/direct.py",
+          "lines": "77",
+          "contains": "use_sandbox=False",
+          "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/executor/backends/direct.py#L77"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "alert, case, webhook and tool-result content enters agent context as plain text (tracecat/agent/runtime/claude_code/runtime.py:1233 hook allows by default)",
+    "sensitive_data": "workspace secrets and integration credentials injected into actions the preset allows (tracecat/executor/action_runner.py:429)",
+    "state_change_or_egress": "response and HTTP actions run unattended unless a per-tool flag is set (tracecat/agent/tools.py:54)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Scrub the action subprocess environment so it receives only the secrets that action declares.",
+      "criterion": "C4",
+      "parameter": "B",
+      "from_level": 0,
+      "to_level": 3,
+      "playbook": "Playbook 4",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Require approval by default for response and egress actions, and ship the flag on destructive built-ins.",
+      "criterion": "C2",
+      "parameter": "D",
+      "from_level": 0,
+      "to_level": 3,
+      "playbook": "Playbook 5",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Enforce max_requests and max_tool_calls in the agent runtime and add a cost ceiling.",
+      "criterion": "C10",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 3,
+      "playbook": "Playbook 3 step 3",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Add destination allowlists and private-address blocking to the generic HTTP action.",
+      "criterion": "C3",
+      "parameter": "S",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Make nsjail (or an equivalent hardened sandbox) the default executor backend.",
+      "criterion": "C4",
+      "parameter": "D",
+      "from_level": 1,
+      "to_level": 3,
+      "playbook": "Playbook 3 step 1",
+      "estimated_gain": 0.1
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was executed, installed, or probed.",
+    "Scope was the Python backend (tracecat/, packages/tracecat-registry, packages/tracecat-ee), docker-compose.yml and config defaults; the frontend, Fargate/Helm deployment manifests, and the integration-by-integration registry actions were not reviewed individually.",
+    "Rating of the Claude Code SDK sandbox used for the agent shell in direct mode is INFERRED from the settings Tracecat passes; the SDK internals were not reviewed.",
+    "Whether custom-registry code runs in the same direct subprocess as built-in actions is INFERRED from the shared artifact-mount path; deployment-specific hardening (Fargate task roles, network policy) was not examined.",
+    "Per-preset behaviour depends on which actions an operator selects; the audit scored the shipped defaults, where new presets hold no tools.",
+    "No attempt to steer reviewers was found in README, AGENTS.md, CLAUDE.md or other markdown files (search for auditor/score-steering phrases returned 0 hits)."
+  ]
+}

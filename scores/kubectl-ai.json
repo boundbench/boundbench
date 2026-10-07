@@ -1,0 +1,2511 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "kubectl-ai",
+  "name": "kubectl-ai",
+  "repo_url": "https://github.com/GoogleCloudPlatform/kubectl-ai",
+  "subpath": null,
+  "description": "AI-powered Kubernetes assistant that translates intent into kubectl operations; MCP server/client",
+  "category": "infrastructure_ops",
+  "pinned_commit": "2c8ff822bacba3009f215df204610a29f5632454",
+  "version": null,
+  "scored_date": "2026-10-03",
+  "scored_configuration": "Interactive terminal CLI with no flags: Gemini provider, the user's current kubeconfig, local (unsandboxed) executor, in-memory sessions, default trace file in /tmp.",
+  "score": 2.0,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 10,
+    "score": 2.0,
+    "max": 10.0,
+    "percent": 20
+  },
+  "capability_profile": {
+    "code_execution": "yes",
+    "filesystem_write": "yes",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "opt_in",
+    "untrusted_input": "yes",
+    "third_party_extensions": "opt_in",
+    "sub_agents": "no",
+    "external_communication": "no"
+  },
+  "headline": "kubectl-ai runs model-written bash and kubectl commands on your machine with your full kubeconfig and environment. Its main defence is a parser-based approval prompt for anything that is not a single read-only kubectl call. That allowlist is not a strict boundary, and the default-on trace does not protect sensitive data.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "kubectl-ai runs every command with whatever credentials your kubeconfig holds, plus your entire shell environment, and never narrows them. There is no authorization layer between the model's requests and the cluster: the only control is the approval prompt scored under approval gates. An opt-in Kubernetes sandbox runs commands in a pod under a dedicated read-only service account defined in the shipped RBAC manifests, which is a real narrowing, but it is off by default and MCP servers still run on the host with full authority.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.4,
+      "counted": "alt",
+      "confidence": "medium",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Sandbox pods run under the normal-user service account, which the shipped manifests bind to get/list/watch roles that exclude secrets.",
+          "gap": "Use per-tool or per-request credentials, separating read and write authority.",
+          "evidence": [
+            {
+              "file": "pkg/sandbox/kubernetes.go",
+              "lines": "327-334",
+              "contains": "ServiceAccountName: \"normal-user\"",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/sandbox/kubernetes.go#L327-L334"
+            },
+            {
+              "file": "k8s/sandbox/role.yaml",
+              "lines": "5",
+              "contains": "reader-all-but-secrets",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/k8s/sandbox/role.yaml#L5"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "bash, kubectl and custom tools execute inside the pod (the host KUBECONFIG path exported into the pod does not exist there, so kubectl is inferred to fall back to the pod's in-cluster service-account config); MCP servers and the agent process itself keep the host credentials.",
+          "gap": "Bring MCP/extension tool paths under the same scoped identity.",
+          "evidence": [
+            {
+              "file": "pkg/sandbox/kubernetes.go",
+              "lines": "61-63",
+              "contains": "fullCommand = fmt.Sprintf(\"export %s; %s\", envVar, fullCommand)",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/sandbox/kubernetes.go#L61-L63"
+            },
+            {
+              "file": "pkg/mcp/stdio_client.go",
+              "lines": "78",
+              "contains": "mcpclient.NewStdioMCPClient(expandedCmd, c.env, c.args...)",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/mcp/stdio_client.go#L78"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The sandbox and its RBAC are opt-in; the operator must apply k8s/sandbox manifests and pass --sandbox=k8s.",
+          "gap": "Make the scoped identity the default execution path.",
+          "evidence": [
+            {
+              "file": "cmd/main.go",
+              "lines": "208",
+              "contains": "o.Sandbox = \"\"",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L208"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "With the shipped roles the pod can read most cluster objects including configmaps and pod logs, but not secrets or writes.",
+          "gap": "Narrow reads to the namespaces the task needs, with short-lived tokens.",
+          "evidence": [
+            {
+              "file": "k8s/sandbox/cluster_role.yaml",
+              "lines": "9-11",
+              "contains": "configmaps",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/k8s/sandbox/cluster_role.yaml#L9-L11"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Commands run as the operator with the ambient kubeconfig and the full process environment; no scoped identity is created or requested.",
+              "gap": "Run model commands under a dedicated role-scoped identity (e.g. the sandbox service account) by default.",
+              "evidence": [
+                {
+                  "file": "pkg/tools/kubectl_tool.go",
+                  "lines": "121",
+                  "contains": "env := os.Environ()",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/kubectl_tool.go#L121"
+                },
+                {
+                  "file": "pkg/tools/bash_tool.go",
+                  "lines": "98",
+                  "contains": "env := os.Environ()",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/bash_tool.go#L98"
+                },
+                {
+                  "file": "cmd/main.go",
+                  "lines": "682-698",
+                  "contains": "os.Getenv(\"KUBECONFIG\")",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L682-L698"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No authorization check exists on any tool path; bash, kubectl, custom and MCP tools all inherit the same ambient credentials.",
+              "gap": "Route every tool through one authorization layer that checks the request against a policy before credentials are used.",
+              "evidence": [
+                {
+                  "file": "pkg/tools/kubectl_tool.go",
+                  "lines": "121",
+                  "contains": "env := os.Environ()",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/kubectl_tool.go#L121"
+                },
+                {
+                  "file": "pkg/tools/custom_tool.go",
+                  "lines": "141",
+                  "contains": "env := os.Environ()",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/custom_tool.go#L141"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The default install uses the user's current kubeconfig context, commonly cluster-admin, with the local executor and no sandbox.",
+              "gap": "Default to a read-only identity and require explicit elevation for writes.",
+              "evidence": [
+                {
+                  "file": "cmd/main.go",
+                  "lines": "208",
+                  "contains": "o.Sandbox = \"\"",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L208"
+                },
+                {
+                  "file": "pkg/agent/conversation.go",
+                  "lines": "271-273",
+                  "contains": "s.executor = sandbox.NewLocalExecutor()",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/agent/conversation.go#L271-L273"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked agent holds the operator's full cluster authority and every credential in the environment (cloud CLIs, LLM keys).",
+              "gap": "Limit the reachable authority to one namespace or read-only, with short-lived credentials.",
+              "evidence": [
+                {
+                  "file": "pkg/tools/bash_tool.go",
+                  "lines": "98",
+                  "contains": "env := os.Environ()",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/bash_tool.go#L98"
+                },
+                {
+                  "file": "cmd/main.go",
+                  "lines": "686-687",
+                  "contains": "opt.KubeConfigPath = os.Getenv(\"KUBECONFIG\")",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L686-L687"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in --sandbox=k8s pod with the normal-user service account",
+          "score": 0.4,
+          "raw": 0.4,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Sandbox pods run under the normal-user service account, which the shipped manifests bind to get/list/watch roles that exclude secrets.",
+              "gap": "Use per-tool or per-request credentials, separating read and write authority.",
+              "evidence": [
+                {
+                  "file": "pkg/sandbox/kubernetes.go",
+                  "lines": "327-334",
+                  "contains": "ServiceAccountName: \"normal-user\"",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/sandbox/kubernetes.go#L327-L334"
+                },
+                {
+                  "file": "k8s/sandbox/role.yaml",
+                  "lines": "5",
+                  "contains": "reader-all-but-secrets",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/k8s/sandbox/role.yaml#L5"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "bash, kubectl and custom tools execute inside the pod (the host KUBECONFIG path exported into the pod does not exist there, so kubectl is inferred to fall back to the pod's in-cluster service-account config); MCP servers and the agent process itself keep the host credentials.",
+              "gap": "Bring MCP/extension tool paths under the same scoped identity.",
+              "evidence": [
+                {
+                  "file": "pkg/sandbox/kubernetes.go",
+                  "lines": "61-63",
+                  "contains": "fullCommand = fmt.Sprintf(\"export %s; %s\", envVar, fullCommand)",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/sandbox/kubernetes.go#L61-L63"
+                },
+                {
+                  "file": "pkg/mcp/stdio_client.go",
+                  "lines": "78",
+                  "contains": "mcpclient.NewStdioMCPClient(expandedCmd, c.env, c.args...)",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/mcp/stdio_client.go#L78"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The sandbox and its RBAC are opt-in; the operator must apply k8s/sandbox manifests and pass --sandbox=k8s.",
+              "gap": "Make the scoped identity the default execution path.",
+              "evidence": [
+                {
+                  "file": "cmd/main.go",
+                  "lines": "208",
+                  "contains": "o.Sandbox = \"\"",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L208"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "With the shipped roles the pod can read most cluster objects including configmaps and pod logs, but not secrets or writes.",
+              "gap": "Narrow reads to the namespaces the task needs, with short-lived tokens.",
+              "evidence": [
+                {
+                  "file": "k8s/sandbox/cluster_role.yaml",
+                  "lines": "9-11",
+                  "contains": "configmaps",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/k8s/sandbox/cluster_role.yaml#L9-L11"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "A deterministic classifier decides which commands need your approval: anything it cannot prove to be a single read-only kubectl call is shown to you in full before it runs, including all bash, custom-tool and MCP calls, and compound shell commands are parsed rather than prefix-matched. The gap is the read-only allowlist itself, which is not a strict boundary. Every prompt also offers a session-wide 'don't ask me again'.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "G2",
+        "max": 0.25,
+        "reason": "Protection of the gate's approval setting is not tamper-resistant at runtime."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Approval is requested for the whole pending batch, showing each exact command string, and always offers a session-wide allow-all; the prompt display is not a strict boundary.",
+          "gap": "Harden how the call is displayed and drop or time-bound the session-wide allow-all option.",
+          "evidence": [
+            {
+              "file": "pkg/agent/conversation.go",
+              "lines": "757",
+              "contains": "if !c.SkipPermissions && modifiesResourceToolCallIndex >= 0",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/agent/conversation.go#L757"
+            },
+            {
+              "file": "pkg/tools/tools.go",
+              "lines": "145-148",
+              "contains": "return command.(string)",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/tools.go#L145-L148"
+            },
+            {
+              "file": "pkg/agent/conversation.go",
+              "lines": "785",
+              "contains": "yes_and_dont_ask_me_again",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/agent/conversation.go#L785"
+            },
+            {
+              "file": "pkg/agent/conversation.go",
+              "lines": "1194",
+              "contains": "c.SkipPermissions = true",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/agent/conversation.go#L1194"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All non-kubectl, custom and MCP calls are gated, but the auto-approve allowlist is not a strict boundary.",
+          "gap": "Make the auto-approved set a verified read-only allowlist.",
+          "evidence": [
+            {
+              "file": "pkg/agent/conversation.go",
+              "lines": "723-730",
+              "contains": "result.ModifiesResourceStr != \"no\"",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/agent/conversation.go#L723-L730"
+            },
+            {
+              "file": "pkg/tools/mcp_tool.go",
+              "lines": "103",
+              "contains": "return \"unknown\"",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/mcp_tool.go#L103"
+            },
+            {
+              "file": "pkg/tools/custom_tool.go",
+              "lines": "159",
+              "contains": "return \"unknown\"",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/custom_tool.go#L159"
+            },
+            {
+              "file": "pkg/tools/kubectl_filter.go",
+              "lines": "99-104",
+              "contains": "numCmds > 1",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/kubectl_filter.go#L99-L104"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Approval is on by default, but the skipPermissions key in the auto-loaded user config disables it silently, and protection of the approval setting is not tamper-resistant.",
+          "gap": "Protect the agent's own config, and require the explicit --skip-permissions flag to disable approval.",
+          "evidence": [
+            {
+              "file": "cmd/main.go",
+              "lines": "167",
+              "contains": "o.SkipPermissions = false",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L167"
+            },
+            {
+              "file": "cmd/main.go",
+              "lines": "87",
+              "contains": "json:\"skipPermissions,omitempty\"",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L87"
+            },
+            {
+              "file": "cmd/main.go",
+              "lines": "158-161",
+              "contains": "\"kubectl-ai\", \"config.yaml\"",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L158-L161"
+            },
+            {
+              "file": "cmd/main.go",
+              "lines": "212-216",
+              "contains": "yaml.Unmarshal(b, &o)",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L212-L216"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A bypassed or wrongly approved call can run arbitrary kubectl writes (delete, drain, apply) and shell commands against the cluster and host, with no checkpoint or undo.",
+          "gap": "Offer server-side dry-run previews and rollback points for cluster changes.",
+          "evidence": [
+            {
+              "file": "pkg/sandbox/local.go",
+              "lines": "48",
+              "contains": "lookupBashBin(), \"-c\", command",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/sandbox/local.go#L48"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.275,
+          "cap": {
+            "id": "G2",
+            "max": 0.25,
+            "reason": "Protection of the gate's approval setting is not tamper-resistant at runtime."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Approval is requested for the whole pending batch, showing each exact command string, and always offers a session-wide allow-all; the prompt display is not a strict boundary.",
+              "gap": "Harden how the call is displayed and drop or time-bound the session-wide allow-all option.",
+              "evidence": [
+                {
+                  "file": "pkg/agent/conversation.go",
+                  "lines": "757",
+                  "contains": "if !c.SkipPermissions && modifiesResourceToolCallIndex >= 0",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/agent/conversation.go#L757"
+                },
+                {
+                  "file": "pkg/tools/tools.go",
+                  "lines": "145-148",
+                  "contains": "return command.(string)",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/tools.go#L145-L148"
+                },
+                {
+                  "file": "pkg/agent/conversation.go",
+                  "lines": "785",
+                  "contains": "yes_and_dont_ask_me_again",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/agent/conversation.go#L785"
+                },
+                {
+                  "file": "pkg/agent/conversation.go",
+                  "lines": "1194",
+                  "contains": "c.SkipPermissions = true",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/agent/conversation.go#L1194"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All non-kubectl, custom and MCP calls are gated, but the auto-approve allowlist is not a strict boundary.",
+              "gap": "Make the auto-approved set a verified read-only allowlist.",
+              "evidence": [
+                {
+                  "file": "pkg/agent/conversation.go",
+                  "lines": "723-730",
+                  "contains": "result.ModifiesResourceStr != \"no\"",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/agent/conversation.go#L723-L730"
+                },
+                {
+                  "file": "pkg/tools/mcp_tool.go",
+                  "lines": "103",
+                  "contains": "return \"unknown\"",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/mcp_tool.go#L103"
+                },
+                {
+                  "file": "pkg/tools/custom_tool.go",
+                  "lines": "159",
+                  "contains": "return \"unknown\"",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/custom_tool.go#L159"
+                },
+                {
+                  "file": "pkg/tools/kubectl_filter.go",
+                  "lines": "99-104",
+                  "contains": "numCmds > 1",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/kubectl_filter.go#L99-L104"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Approval is on by default, but the skipPermissions key in the auto-loaded user config disables it silently, and protection of the approval setting is not tamper-resistant.",
+              "gap": "Protect the agent's own config, and require the explicit --skip-permissions flag to disable approval.",
+              "evidence": [
+                {
+                  "file": "cmd/main.go",
+                  "lines": "167",
+                  "contains": "o.SkipPermissions = false",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L167"
+                },
+                {
+                  "file": "cmd/main.go",
+                  "lines": "87",
+                  "contains": "json:\"skipPermissions,omitempty\"",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L87"
+                },
+                {
+                  "file": "cmd/main.go",
+                  "lines": "158-161",
+                  "contains": "\"kubectl-ai\", \"config.yaml\"",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L158-L161"
+                },
+                {
+                  "file": "cmd/main.go",
+                  "lines": "212-216",
+                  "contains": "yaml.Unmarshal(b, &o)",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L212-L216"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A bypassed or wrongly approved call can run arbitrary kubectl writes (delete, drain, apply) and shell commands against the cluster and host, with no checkpoint or undo.",
+              "gap": "Offer server-side dry-run previews and rollback points for cluster changes.",
+              "evidence": [
+                {
+                  "file": "pkg/sandbox/local.go",
+                  "lines": "48",
+                  "contains": "lookupBashBin(), \"-c\", command",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/sandbox/local.go#L48"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "Both built-in tools take a free-form string and run it with bash -c, so the 'kubectl' tool is in practice a second shell tool. The only input checks block 'kubectl edit' and 'kubectl port-forward' substrings, to avoid interactive hangs rather than as a safety boundary. Nothing bounds namespaces, resources, paths or hosts, and the bash and kubectl tools are always enabled.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Arguments are raw shell strings executed by bash -c; the only filter rejects interactive kubectl subcommands.",
+          "gap": "Replace raw strings with structured kubectl arguments validated against namespace/verb/resource allowlists.",
+          "evidence": [
+            {
+              "file": "pkg/tools/bash_tool.go",
+              "lines": "110-118",
+              "contains": "kubectl port-forward",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/bash_tool.go#L110-L118"
+            },
+            {
+              "file": "pkg/sandbox/local.go",
+              "lines": "48",
+              "contains": "lookupBashBin(), \"-c\", command",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/sandbox/local.go#L48"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No tool validates its inputs against any bounds; custom and MCP tools pass arguments through unchanged.",
+          "gap": "Add a shared validation layer that every tool, including extensions, goes through.",
+          "evidence": [
+            {
+              "file": "pkg/tools/bash_tool.go",
+              "lines": "110-118",
+              "contains": "kubectl port-forward",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/bash_tool.go#L110-L118"
+            },
+            {
+              "file": "pkg/tools/custom_tool.go",
+              "lines": "135-150",
+              "contains": "executor.Execute(ctx, command, env, workDir)",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/custom_tool.go#L135-L150"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "bash and kubectl (both exec-capable, write-capable and network-capable) are registered unconditionally for every session.",
+          "gap": "Ship a read-only default tool set and require enabling write/exec tools.",
+          "evidence": [
+            {
+              "file": "pkg/agent/conversation.go",
+              "lines": "286-287",
+              "contains": "tools.NewBashTool(s.executor)",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/agent/conversation.go#L286-L287"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A misused tool can run any command on the host and any kubectl operation against any namespace in the current context.",
+          "gap": "Scope tools to a namespace and bounded operations.",
+          "evidence": [
+            {
+              "file": "pkg/sandbox/local.go",
+              "lines": "48",
+              "contains": "lookupBashBin(), \"-c\", command",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/sandbox/local.go#L48"
+            },
+            {
+              "file": "pkg/tools/kubectl_tool.go",
+              "lines": "121",
+              "contains": "env := os.Environ()",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/kubectl_tool.go#L121"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Arguments are raw shell strings executed by bash -c; the only filter rejects interactive kubectl subcommands.",
+              "gap": "Replace raw strings with structured kubectl arguments validated against namespace/verb/resource allowlists.",
+              "evidence": [
+                {
+                  "file": "pkg/tools/bash_tool.go",
+                  "lines": "110-118",
+                  "contains": "kubectl port-forward",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/bash_tool.go#L110-L118"
+                },
+                {
+                  "file": "pkg/sandbox/local.go",
+                  "lines": "48",
+                  "contains": "lookupBashBin(), \"-c\", command",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/sandbox/local.go#L48"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No tool validates its inputs against any bounds; custom and MCP tools pass arguments through unchanged.",
+              "gap": "Add a shared validation layer that every tool, including extensions, goes through.",
+              "evidence": [
+                {
+                  "file": "pkg/tools/bash_tool.go",
+                  "lines": "110-118",
+                  "contains": "kubectl port-forward",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/bash_tool.go#L110-L118"
+                },
+                {
+                  "file": "pkg/tools/custom_tool.go",
+                  "lines": "135-150",
+                  "contains": "executor.Execute(ctx, command, env, workDir)",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/custom_tool.go#L135-L150"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "bash and kubectl (both exec-capable, write-capable and network-capable) are registered unconditionally for every session.",
+              "gap": "Ship a read-only default tool set and require enabling write/exec tools.",
+              "evidence": [
+                {
+                  "file": "pkg/agent/conversation.go",
+                  "lines": "286-287",
+                  "contains": "tools.NewBashTool(s.executor)",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/agent/conversation.go#L286-L287"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A misused tool can run any command on the host and any kubectl operation against any namespace in the current context.",
+              "gap": "Scope tools to a namespace and bounded operations.",
+              "evidence": [
+                {
+                  "file": "pkg/sandbox/local.go",
+                  "lines": "48",
+                  "contains": "lookupBashBin(), \"-c\", command",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/sandbox/local.go#L48"
+                },
+                {
+                  "file": "pkg/tools/kubectl_tool.go",
+                  "lines": "121",
+                  "contains": "env := os.Environ()",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/kubectl_tool.go#L121"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "By default every model command runs directly on your machine through bash, as your user, with your full environment and kubeconfig. The 'seatbelt' option on macOS is not a complete boundary. The opt-in Kubernetes sandbox runs commands in a stock pod (bitnami/kubectl:latest, no security context), which is basic container separation, but it exports the host's entire environment, including LLM API keys, into each command, and MCP servers still run on the host.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.3,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Commands run via exec in a stock pod with no securityContext, root/non-root left to the image and default capabilities.",
+          "gap": "Harden the pod: non-root, dropped capabilities, no-new-privileges, seccomp, read-only root filesystem.",
+          "evidence": [
+            {
+              "file": "pkg/sandbox/kubernetes.go",
+              "lines": "327-334",
+              "contains": "ServiceAccountName: \"normal-user\"",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/sandbox/kubernetes.go#L327-L334"
+            },
+            {
+              "search": "rg -n -i 'securityContext|RunAsNonRoot|Capabilities|ReadOnlyRootFilesystem'",
+              "scope": "pkg/sandbox",
+              "hits": 0,
+              "note": "no pod hardening fields are set"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "bash, kubectl and custom tools use the pod executor and sandbox creation failure aborts the session, but MCP stdio servers still launch on the host.",
+          "gap": "Run MCP stdio servers and every spawned process inside the sandbox.",
+          "evidence": [
+            {
+              "file": "pkg/agent/conversation.go",
+              "lines": "242-262",
+              "contains": "sandbox.NewKubernetesSandbox(sandboxName,",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/agent/conversation.go#L242-L262"
+            },
+            {
+              "file": "pkg/mcp/stdio_client.go",
+              "lines": "78",
+              "contains": "mcpclient.NewStdioMCPClient(expandedCmd, c.env, c.args...)",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/mcp/stdio_client.go#L78"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The sandbox is off unless --sandbox=k8s is passed.",
+          "gap": "Enable it by default with an explicit operator escape hatch.",
+          "evidence": [
+            {
+              "file": "cmd/main.go",
+              "lines": "208",
+              "contains": "o.Sandbox = \"\"",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L208"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every command is prefixed with exports of the host's full environment, so LLM API keys and any cloud credentials in env are present inside the pod, which also has unrestricted network.",
+          "gap": "Pass no host environment into the sandbox and restrict egress.",
+          "evidence": [
+            {
+              "file": "pkg/sandbox/kubernetes.go",
+              "lines": "61-63",
+              "contains": "fullCommand = fmt.Sprintf(\"export %s; %s\", envVar, fullCommand)",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/sandbox/kubernetes.go#L61-L63"
+            },
+            {
+              "file": "pkg/tools/bash_tool.go",
+              "lines": "98",
+              "contains": "env := os.Environ()",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/bash_tool.go#L98"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The default local executor runs bash -c on the host as the current user.",
+              "gap": "Execute model commands inside a hardened sandbox by default.",
+              "evidence": [
+                {
+                  "file": "pkg/sandbox/local.go",
+                  "lines": "48",
+                  "contains": "lookupBashBin(), \"-c\", command",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/sandbox/local.go#L48"
+                },
+                {
+                  "file": "pkg/agent/conversation.go",
+                  "lines": "271-273",
+                  "contains": "s.executor = sandbox.NewLocalExecutor()",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/agent/conversation.go#L271-L273"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No path is sandboxed in the default configuration.",
+              "gap": "Route every execution path (bash, kubectl, custom tools, MCP stdio servers) through the sandbox.",
+              "evidence": [
+                {
+                  "file": "pkg/agent/conversation.go",
+                  "lines": "271-273",
+                  "contains": "s.executor = sandbox.NewLocalExecutor()",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/agent/conversation.go#L271-L273"
+                },
+                {
+                  "file": "pkg/mcp/stdio_client.go",
+                  "lines": "78",
+                  "contains": "mcpclient.NewStdioMCPClient(expandedCmd, c.env, c.args...)",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/mcp/stdio_client.go#L78"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Sandboxing is off by default (sandbox defaults to the empty string, meaning the local executor).",
+              "gap": "Turn the sandbox on by default.",
+              "evidence": [
+                {
+                  "file": "cmd/main.go",
+                  "lines": "208",
+                  "contains": "o.Sandbox = \"\"",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L208"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Commands have host-equivalent reach: home directory, ~/.kube, cloud credentials and the full environment.",
+              "gap": "Mount only a workspace, strip secrets from the environment and restrict egress.",
+              "evidence": [
+                {
+                  "file": "pkg/tools/bash_tool.go",
+                  "lines": "98",
+                  "contains": "env := os.Environ()",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/bash_tool.go#L98"
+                },
+                {
+                  "file": "pkg/sandbox/local.go",
+                  "lines": "48",
+                  "contains": "lookupBashBin(), \"-c\", command",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/sandbox/local.go#L48"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in --sandbox=k8s pod executor",
+          "score": 0.3,
+          "raw": 0.3,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Commands run via exec in a stock pod with no securityContext, root/non-root left to the image and default capabilities.",
+              "gap": "Harden the pod: non-root, dropped capabilities, no-new-privileges, seccomp, read-only root filesystem.",
+              "evidence": [
+                {
+                  "file": "pkg/sandbox/kubernetes.go",
+                  "lines": "327-334",
+                  "contains": "ServiceAccountName: \"normal-user\"",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/sandbox/kubernetes.go#L327-L334"
+                },
+                {
+                  "search": "rg -n -i 'securityContext|RunAsNonRoot|Capabilities|ReadOnlyRootFilesystem'",
+                  "scope": "pkg/sandbox",
+                  "hits": 0,
+                  "note": "no pod hardening fields are set"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "bash, kubectl and custom tools use the pod executor and sandbox creation failure aborts the session, but MCP stdio servers still launch on the host.",
+              "gap": "Run MCP stdio servers and every spawned process inside the sandbox.",
+              "evidence": [
+                {
+                  "file": "pkg/agent/conversation.go",
+                  "lines": "242-262",
+                  "contains": "sandbox.NewKubernetesSandbox(sandboxName,",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/agent/conversation.go#L242-L262"
+                },
+                {
+                  "file": "pkg/mcp/stdio_client.go",
+                  "lines": "78",
+                  "contains": "mcpclient.NewStdioMCPClient(expandedCmd, c.env, c.args...)",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/mcp/stdio_client.go#L78"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The sandbox is off unless --sandbox=k8s is passed.",
+              "gap": "Enable it by default with an explicit operator escape hatch.",
+              "evidence": [
+                {
+                  "file": "cmd/main.go",
+                  "lines": "208",
+                  "contains": "o.Sandbox = \"\"",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L208"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every command is prefixed with exports of the host's full environment, so LLM API keys and any cloud credentials in env are present inside the pod, which also has unrestricted network.",
+              "gap": "Pass no host environment into the sandbox and restrict egress.",
+              "evidence": [
+                {
+                  "file": "pkg/sandbox/kubernetes.go",
+                  "lines": "61-63",
+                  "contains": "fullCommand = fmt.Sprintf(\"export %s; %s\", envVar, fullCommand)",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/sandbox/kubernetes.go#L61-L63"
+                },
+                {
+                  "file": "pkg/tools/bash_tool.go",
+                  "lines": "98",
+                  "contains": "env := os.Environ()",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/bash_tool.go#L98"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "kubectl-ai reads cluster content that any workload owner can control (pod logs, events, annotations, configmaps) and feeds it back to the model as ordinary tool results. Nothing tracks that content as untrusted. The approval gate does stop most shell egress and kubectl writes, and compound commands are deliberately sent for approval to block exfiltration. But a hijacked agent can still read secrets with an auto-approved 'kubectl get secret', and the gate does not cover every path, so it can exfiltrate data and delete resources without a prompt.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": {
+        "id": "C5-WORSTCASE",
+        "max": 0.25,
+        "reason": "In the default configuration a hijacked agent can both leak secrets and take irreversible cluster actions without approval."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Writes and non-kubectl egress always need approval (composite commands are deliberately forced to 'unknown' to resist exfiltration), but this is not tied to untrusted content and kubectl-read egress is not gated.",
+          "gap": "Once untrusted content has been read, force every egress-capable or state-changing call through approval.",
+          "evidence": [
+            {
+              "file": "pkg/tools/kubectl_filter.go",
+              "lines": "99-104",
+              "contains": "numCmds > 1",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/kubectl_filter.go#L99-L104"
+            },
+            {
+              "file": "pkg/agent/conversation.go",
+              "lines": "723-730",
+              "contains": "result.ModifiesResourceStr != \"no\"",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/agent/conversation.go#L723-L730"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tool results enter the conversation as plain function results with no provenance or untrusted marking, for kubectl, bash and MCP output alike.",
+          "gap": "Tag tool and MCP results as untrusted data and apply the limit to every source.",
+          "evidence": [
+            {
+              "file": "pkg/agent/conversation.go",
+              "lines": "1140-1144",
+              "contains": "gollm.FunctionCallResult{",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/agent/conversation.go#L1140-L1144"
+            },
+            {
+              "search": "rg -n -i 'untrusted|provenance|taint|injection'",
+              "scope": "pkg cmd",
+              "hits": 2,
+              "note": "both hits are unrelated: a test case for 'kubectl taint' and the 'taint' verb in the write-op list"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The gate is on by default and content cannot switch it off directly, but the operator can disable it silently via the user config file.",
+          "gap": "Require an explicit warned flag to disable it.",
+          "evidence": [
+            {
+              "file": "cmd/main.go",
+              "lines": "167",
+              "contains": "o.SkipPermissions = false",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L167"
+            },
+            {
+              "file": "cmd/main.go",
+              "lines": "87",
+              "contains": "json:\"skipPermissions,omitempty\"",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L87"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "A hijacked agent can read secrets ('kubectl get secret -o yaml' is classified read-only), and the gate does not cover every path, so it can exfiltrate them and delete resources unattended.",
+          "gap": "Ensure either exfiltration or irreversible actions always require human approval.",
+          "evidence": [],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.25,
+          "cap": {
+            "id": "C5-WORSTCASE",
+            "max": 0.25,
+            "reason": "In the default configuration a hijacked agent can both leak secrets and take irreversible cluster actions without approval."
+          },
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Writes and non-kubectl egress always need approval (composite commands are deliberately forced to 'unknown' to resist exfiltration), but this is not tied to untrusted content and kubectl-read egress is not gated.",
+              "gap": "Once untrusted content has been read, force every egress-capable or state-changing call through approval.",
+              "evidence": [
+                {
+                  "file": "pkg/tools/kubectl_filter.go",
+                  "lines": "99-104",
+                  "contains": "numCmds > 1",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/kubectl_filter.go#L99-L104"
+                },
+                {
+                  "file": "pkg/agent/conversation.go",
+                  "lines": "723-730",
+                  "contains": "result.ModifiesResourceStr != \"no\"",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/agent/conversation.go#L723-L730"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tool results enter the conversation as plain function results with no provenance or untrusted marking, for kubectl, bash and MCP output alike.",
+              "gap": "Tag tool and MCP results as untrusted data and apply the limit to every source.",
+              "evidence": [
+                {
+                  "file": "pkg/agent/conversation.go",
+                  "lines": "1140-1144",
+                  "contains": "gollm.FunctionCallResult{",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/agent/conversation.go#L1140-L1144"
+                },
+                {
+                  "search": "rg -n -i 'untrusted|provenance|taint|injection'",
+                  "scope": "pkg cmd",
+                  "hits": 2,
+                  "note": "both hits are unrelated: a test case for 'kubectl taint' and the 'taint' verb in the write-op list"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The gate is on by default and content cannot switch it off directly, but the operator can disable it silently via the user config file.",
+              "gap": "Require an explicit warned flag to disable it.",
+              "evidence": [
+                {
+                  "file": "cmd/main.go",
+                  "lines": "167",
+                  "contains": "o.SkipPermissions = false",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L167"
+                },
+                {
+                  "file": "cmd/main.go",
+                  "lines": "87",
+                  "contains": "json:\"skipPermissions,omitempty\"",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L87"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "A hijacked agent can read secrets ('kubectl get secret -o yaml' is classified read-only), and the gate does not cover every path, so it can exfiltrate them and delete resources unattended.",
+              "gap": "Ensure either exfiltration or irreversible actions always require human approval.",
+              "evidence": [],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "kubectl-ai loads no instruction files from the project you run it in, and by default conversations live only in memory. Its settings come from ~/.config/kubectl-ai (config.yaml, tools.yaml, mcp.yaml), which looks like safe user scope, but the approval gate does not cover every path, so the agent can write those files itself, and a written config can turn off approvals, register custom tools or enable MCP servers for every later session.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.1,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Auto-loaded user config (including skipPermissions, mcpClient and custom tool paths) is model-writable because the gate does not cover every path, and is applied on the next launch with no prompt.",
+          "gap": "Never let agent tool calls write the agent's own config directories, and require a trust decision for security-relevant settings.",
+          "evidence": [
+            {
+              "file": "cmd/main.go",
+              "lines": "158-161",
+              "contains": "\"kubectl-ai\", \"config.yaml\"",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L158-L161"
+            },
+            {
+              "file": "cmd/main.go",
+              "lines": "212-216",
+              "contains": "yaml.Unmarshal(b, &o)",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L212-L216"
+            },
+            {
+              "file": "cmd/main.go",
+              "lines": "87",
+              "contains": "json:\"skipPermissions,omitempty\"",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L87"
+            },
+            {
+              "file": "cmd/main.go",
+              "lines": "153-156",
+              "contains": "\"kubectl-ai\", \"tools.yaml\"",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L153-L156"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No config or memory path is protected: config.yaml, tools.yaml and mcp.yaml are all loaded unconditionally from user scope.",
+          "gap": "Protect every auto-loaded file.",
+          "evidence": [
+            {
+              "file": "cmd/main.go",
+              "lines": "158-161",
+              "contains": "\"kubectl-ai\", \"config.yaml\"",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L158-L161"
+            },
+            {
+              "file": "cmd/main.go",
+              "lines": "153-156",
+              "contains": "\"kubectl-ai\", \"tools.yaml\"",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L153-L156"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Sessions default to an in-memory store per process (filesystem persistence is opt-in under ~/.kubectl-ai/sessions); this is a single-user CLI, and the namespacing is not a security control the model is kept out of.",
+          "gap": "Enforce per-session namespaces the model cannot write outside of.",
+          "evidence": [
+            {
+              "file": "cmd/main.go",
+              "lines": "203",
+              "contains": "o.SessionBackend = \"memory\"",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L203"
+            },
+            {
+              "file": "pkg/sessions/store.go",
+              "lines": "64-70",
+              "contains": ".kubectl-ai",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/sessions/store.go#L64-L70"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A poisoned config persists across all of the user's future sessions and can trigger tool use (e.g. disabling approvals or launching MCP servers).",
+          "gap": "Make persisted changes visible and require review before they take effect.",
+          "evidence": [
+            {
+              "file": "cmd/main.go",
+              "lines": "87",
+              "contains": "json:\"skipPermissions,omitempty\"",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L87"
+            },
+            {
+              "file": "cmd/main.go",
+              "lines": "212-216",
+              "contains": "yaml.Unmarshal(b, &o)",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L212-L216"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.1,
+          "raw": 0.1,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Auto-loaded user config (including skipPermissions, mcpClient and custom tool paths) is model-writable because the gate does not cover every path, and is applied on the next launch with no prompt.",
+              "gap": "Never let agent tool calls write the agent's own config directories, and require a trust decision for security-relevant settings.",
+              "evidence": [
+                {
+                  "file": "cmd/main.go",
+                  "lines": "158-161",
+                  "contains": "\"kubectl-ai\", \"config.yaml\"",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L158-L161"
+                },
+                {
+                  "file": "cmd/main.go",
+                  "lines": "212-216",
+                  "contains": "yaml.Unmarshal(b, &o)",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L212-L216"
+                },
+                {
+                  "file": "cmd/main.go",
+                  "lines": "87",
+                  "contains": "json:\"skipPermissions,omitempty\"",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L87"
+                },
+                {
+                  "file": "cmd/main.go",
+                  "lines": "153-156",
+                  "contains": "\"kubectl-ai\", \"tools.yaml\"",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L153-L156"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No config or memory path is protected: config.yaml, tools.yaml and mcp.yaml are all loaded unconditionally from user scope.",
+              "gap": "Protect every auto-loaded file.",
+              "evidence": [
+                {
+                  "file": "cmd/main.go",
+                  "lines": "158-161",
+                  "contains": "\"kubectl-ai\", \"config.yaml\"",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L158-L161"
+                },
+                {
+                  "file": "cmd/main.go",
+                  "lines": "153-156",
+                  "contains": "\"kubectl-ai\", \"tools.yaml\"",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L153-L156"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Sessions default to an in-memory store per process (filesystem persistence is opt-in under ~/.kubectl-ai/sessions); this is a single-user CLI, and the namespacing is not a security control the model is kept out of.",
+              "gap": "Enforce per-session namespaces the model cannot write outside of.",
+              "evidence": [
+                {
+                  "file": "cmd/main.go",
+                  "lines": "203",
+                  "contains": "o.SessionBackend = \"memory\"",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L203"
+                },
+                {
+                  "file": "pkg/sessions/store.go",
+                  "lines": "64-70",
+                  "contains": ".kubectl-ai",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/sessions/store.go#L64-L70"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A poisoned config persists across all of the user's future sessions and can trigger tool use (e.g. disabling approvals or launching MCP servers).",
+              "gap": "Make persisted changes visible and require review before they take effect.",
+              "evidence": [
+                {
+                  "file": "cmd/main.go",
+                  "lines": "87",
+                  "contains": "json:\"skipPermissions,omitempty\"",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L87"
+                },
+                {
+                  "file": "cmd/main.go",
+                  "lines": "212-216",
+                  "contains": "yaml.Unmarshal(b, &o)",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L212-L216"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "No third-party extension runs in the default configuration, but the extension mechanism is weak when enabled. The '--mcp-client' flag auto-creates a config that launches an unpinned 'npx -y' MCP server, with no hashes or re-approval. The first-run configuration handling is not locked down. MCP servers launch as the same user via the mcp-go library, inferred to inherit the full environment.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The shipped default MCP server is launched with 'npx -y' and no version pin or integrity check.",
+          "gap": "Pin extension versions and verify hashes or signatures.",
+          "evidence": [
+            {
+              "file": "pkg/mcp/default_config.yaml",
+              "lines": "3-6",
+              "contains": "npx",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/mcp/default_config.yaml#L3-L6"
+            },
+            {
+              "search": "rg -n -i 'sha256|checksum|signature|digest'",
+              "scope": "pkg/mcp",
+              "hits": 0,
+              "note": "no integrity verification code"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Neither MCP servers nor custom tools are verified in any way.",
+          "gap": "Verify every extension type.",
+          "evidence": [
+            {
+              "file": "pkg/mcp/default_config.yaml",
+              "lines": "3-6",
+              "contains": "npx",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/mcp/default_config.yaml#L3-L6"
+            },
+            {
+              "file": "cmd/main.go",
+              "lines": "153-156",
+              "contains": "\"kubectl-ai\", \"tools.yaml\"",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L153-L156"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "When MCP is first enabled, the bundled default auto-installs a package via npx, and the first-run configuration handling is not locked down.",
+          "gap": "Show the exact command before first launch; only user scope may add servers.",
+          "evidence": [
+            {
+              "file": "pkg/mcp/config.go",
+              "lines": "124-146",
+              "contains": "defaultConfig.Save(path)",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/mcp/config.go#L124-L146"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "MCP stdio servers run as the same user; mcp-go's stdio transport is inferred to append the configured env to the full os.Environ(), giving them all of the agent's credentials.",
+          "gap": "Launch extensions with a scrubbed environment and their own scoped credentials.",
+          "evidence": [
+            {
+              "file": "pkg/mcp/stdio_client.go",
+              "lines": "78",
+              "contains": "mcpclient.NewStdioMCPClient(expandedCmd, c.env, c.args...)",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/mcp/stdio_client.go#L78"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The shipped default MCP server is launched with 'npx -y' and no version pin or integrity check.",
+              "gap": "Pin extension versions and verify hashes or signatures.",
+              "evidence": [
+                {
+                  "file": "pkg/mcp/default_config.yaml",
+                  "lines": "3-6",
+                  "contains": "npx",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/mcp/default_config.yaml#L3-L6"
+                },
+                {
+                  "search": "rg -n -i 'sha256|checksum|signature|digest'",
+                  "scope": "pkg/mcp",
+                  "hits": 0,
+                  "note": "no integrity verification code"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Neither MCP servers nor custom tools are verified in any way.",
+              "gap": "Verify every extension type.",
+              "evidence": [
+                {
+                  "file": "pkg/mcp/default_config.yaml",
+                  "lines": "3-6",
+                  "contains": "npx",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/mcp/default_config.yaml#L3-L6"
+                },
+                {
+                  "file": "cmd/main.go",
+                  "lines": "153-156",
+                  "contains": "\"kubectl-ai\", \"tools.yaml\"",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L153-L156"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "When MCP is first enabled, the bundled default auto-installs a package via npx, and the first-run configuration handling is not locked down.",
+              "gap": "Show the exact command before first launch; only user scope may add servers.",
+              "evidence": [
+                {
+                  "file": "pkg/mcp/config.go",
+                  "lines": "124-146",
+                  "contains": "defaultConfig.Save(path)",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/mcp/config.go#L124-L146"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "MCP stdio servers run as the same user; mcp-go's stdio transport is inferred to append the configured env to the full os.Environ(), giving them all of the agent's credentials.",
+              "gap": "Launch extensions with a scrubbed environment and their own scoped credentials.",
+              "evidence": [
+                {
+                  "file": "pkg/mcp/stdio_client.go",
+                  "lines": "78",
+                  "contains": "mcpclient.NewStdioMCPClient(expandedCmd, c.env, c.args...)",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/mcp/stdio_client.go#L78"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "API keys come from environment variables, and nothing in kubectl-ai redacts anything. Tracing is on by default and does not protect sensitive data. Every subprocess also receives the full environment.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Nothing is redacted before logs or traces are written.",
+          "gap": "Redact secrets before any log or trace write; store keys in an OS keychain.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'redact|mask|scrub|sanitiz'",
+              "scope": "pkg gollm cmd",
+              "hits": 5,
+              "note": "hits are MCP server-name sanitization and DOMPurify in the web UI; none redact secrets"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No path is protected: trace, klog file, model-bound tool results and subprocess environments all carry secrets unfiltered.",
+          "gap": "Protect logs, traces, model-bound messages and subprocess environments.",
+          "evidence": [
+            {
+              "file": "pkg/tools/tools.go",
+              "lines": "196-214",
+              "contains": "Action:    \"tool-request\"",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/tools.go#L196-L214"
+            },
+            {
+              "file": "pkg/tools/bash_tool.go",
+              "lines": "98",
+              "contains": "env := os.Environ()",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/bash_tool.go#L98"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Verbose payload tracing is on by default, and its storage is not locked down.",
+          "gap": "Make payload tracing opt-in and redacted, stored with restrictive access.",
+          "evidence": [
+            {
+              "file": "cmd/main.go",
+              "lines": "181",
+              "contains": "kubectl-ai-trace.txt",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L181"
+            },
+            {
+              "file": "pkg/agent/conversation.go",
+              "lines": "388-390",
+              "contains": "journal.ContextWithRecorder(ctx, c.Recorder)",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/agent/conversation.go#L388-L390"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Long-lived provider API keys and the kubeconfig are reachable by every subprocess and by the model's commands.",
+          "gap": "Avoid passing long-lived keys to subprocesses; use short-lived scoped credentials.",
+          "evidence": [
+            {
+              "file": "pkg/tools/bash_tool.go",
+              "lines": "98",
+              "contains": "env := os.Environ()",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/bash_tool.go#L98"
+            },
+            {
+              "file": "gollm/gemini.go",
+              "lines": "63",
+              "contains": "os.Getenv(\"GEMINI_API_KEY\")",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/gollm/gemini.go#L63"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Nothing is redacted before logs or traces are written.",
+              "gap": "Redact secrets before any log or trace write; store keys in an OS keychain.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'redact|mask|scrub|sanitiz'",
+                  "scope": "pkg gollm cmd",
+                  "hits": 5,
+                  "note": "hits are MCP server-name sanitization and DOMPurify in the web UI; none redact secrets"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No path is protected: trace, klog file, model-bound tool results and subprocess environments all carry secrets unfiltered.",
+              "gap": "Protect logs, traces, model-bound messages and subprocess environments.",
+              "evidence": [
+                {
+                  "file": "pkg/tools/tools.go",
+                  "lines": "196-214",
+                  "contains": "Action:    \"tool-request\"",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/tools.go#L196-L214"
+                },
+                {
+                  "file": "pkg/tools/bash_tool.go",
+                  "lines": "98",
+                  "contains": "env := os.Environ()",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/bash_tool.go#L98"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Verbose payload tracing is on by default, and its storage is not locked down.",
+              "gap": "Make payload tracing opt-in and redacted, stored with restrictive access.",
+              "evidence": [
+                {
+                  "file": "cmd/main.go",
+                  "lines": "181",
+                  "contains": "kubectl-ai-trace.txt",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L181"
+                },
+                {
+                  "file": "pkg/agent/conversation.go",
+                  "lines": "388-390",
+                  "contains": "journal.ContextWithRecorder(ctx, c.Recorder)",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/agent/conversation.go#L388-L390"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Long-lived provider API keys and the kubeconfig are reachable by every subprocess and by the model's commands.",
+              "gap": "Avoid passing long-lived keys to subprocesses; use short-lived scoped credentials.",
+              "evidence": [
+                {
+                  "file": "pkg/tools/bash_tool.go",
+                  "lines": "98",
+                  "contains": "env := os.Environ()",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/bash_tool.go#L98"
+                },
+                {
+                  "file": "gollm/gemini.go",
+                  "lines": "63",
+                  "contains": "os.Getenv(\"GEMINI_API_KEY\")",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/gollm/gemini.go#L63"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "Every tool call, including custom and MCP tools, is written to a structured YAML trace with its arguments, result and timestamp, and this is on by default. The record has gaps: it does not log approvals or denials, it does not say who asked or who approved, it is overwritten on every launch, and its storage location is not locked down. Write errors are ignored.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.4,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Each tool request and response is journaled as a structured event with name, arguments, result and timestamp.",
+          "gap": "Add actor attribution (requesting user, approver) and record approval decisions.",
+          "evidence": [
+            {
+              "file": "pkg/tools/tools.go",
+              "lines": "196-214",
+              "contains": "Action:    \"tool-request\"",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/tools.go#L196-L214"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All tools go through InvokeTool and are recorded, but approvals and denials are not journaled.",
+          "gap": "Record approval and denial events alongside tool calls.",
+          "evidence": [
+            {
+              "file": "pkg/tools/tools.go",
+              "lines": "196-214",
+              "contains": "Action:    \"tool-request\"",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/tools.go#L196-L214"
+            },
+            {
+              "search": "rg -n -i 'approv|declin'",
+              "scope": "pkg/journal pkg/tools/tools.go",
+              "hits": 0,
+              "note": "no approval events in the journal or tool invocation path"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "On by default, but the trace is a fixed path truncated on each launch and writable by the agent's own commands.",
+          "gap": "Store the record outside agent-writable locations, append-only.",
+          "evidence": [
+            {
+              "file": "cmd/main.go",
+              "lines": "181",
+              "contains": "kubectl-ai-trace.txt",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L181"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The return value of recorder.Write is ignored, so logging failures are silent, and each new run truncates the previous record.",
+          "gap": "Surface logging errors and keep records durable across runs.",
+          "evidence": [
+            {
+              "file": "pkg/tools/tools.go",
+              "lines": "198-206",
+              "contains": "recorder.Write(ctx, &journal.Event{",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/tools.go#L198-L206"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.4,
+          "raw": 0.4,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Each tool request and response is journaled as a structured event with name, arguments, result and timestamp.",
+              "gap": "Add actor attribution (requesting user, approver) and record approval decisions.",
+              "evidence": [
+                {
+                  "file": "pkg/tools/tools.go",
+                  "lines": "196-214",
+                  "contains": "Action:    \"tool-request\"",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/tools.go#L196-L214"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All tools go through InvokeTool and are recorded, but approvals and denials are not journaled.",
+              "gap": "Record approval and denial events alongside tool calls.",
+              "evidence": [
+                {
+                  "file": "pkg/tools/tools.go",
+                  "lines": "196-214",
+                  "contains": "Action:    \"tool-request\"",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/tools.go#L196-L214"
+                },
+                {
+                  "search": "rg -n -i 'approv|declin'",
+                  "scope": "pkg/journal pkg/tools/tools.go",
+                  "hits": 0,
+                  "note": "no approval events in the journal or tool invocation path"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "On by default, but the trace is a fixed path truncated on each launch and writable by the agent's own commands.",
+              "gap": "Store the record outside agent-writable locations, append-only.",
+              "evidence": [
+                {
+                  "file": "cmd/main.go",
+                  "lines": "181",
+                  "contains": "kubectl-ai-trace.txt",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L181"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The return value of recorder.Write is ignored, so logging failures are silent, and each new run truncates the previous record.",
+              "gap": "Surface logging errors and keep records durable across runs.",
+              "evidence": [
+                {
+                  "file": "pkg/tools/tools.go",
+                  "lines": "198-206",
+                  "contains": "recorder.Write(ctx, &journal.Event{",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/tools.go#L198-L206"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "The agent stops after 20 model iterations per request, but there is no wall-clock limit, token budget or cost cap, and individual commands have no timeout except a 7-second cap for watch, follow-logs and attach. Ctrl+C cancels the context, which kills the bash child process but not any process group or background jobs it started. Long-running commands can run indefinitely.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.3,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only an iteration cap is enforced; a timeout exists only for detected streaming commands.",
+          "gap": "Add a session wall-clock limit, a per-command timeout and a token/cost budget.",
+          "evidence": [
+            {
+              "file": "pkg/agent/conversation.go",
+              "lines": "593",
+              "contains": "c.currIteration >= c.MaxIterations",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/agent/conversation.go#L593"
+            },
+            {
+              "file": "pkg/tools/streaming.go",
+              "lines": "42",
+              "contains": "context.WithTimeout(ctx, 7*time.Second)",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/streaming.go#L42"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The cap applies to the top-level loop; tool executions have no general timeout.",
+          "gap": "Apply timeouts to every tool execution.",
+          "evidence": [
+            {
+              "file": "pkg/agent/conversation.go",
+              "lines": "593",
+              "contains": "c.currIteration >= c.MaxIterations",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/agent/conversation.go#L593"
+            },
+            {
+              "file": "pkg/tools/streaming.go",
+              "lines": "44-47",
+              "contains": "cmdCtx = ctx",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/streaming.go#L44-L47"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Default MaxIterations is 20, configurable by the operator; the model cannot raise it.",
+          "gap": "Enforce hard ceilings that config cannot exceed and make sure the model cannot reset limits.",
+          "evidence": [
+            {
+              "file": "cmd/main.go",
+              "lines": "177",
+              "contains": "o.MaxIterations = 20",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L177"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Stopping cancels the context and kills the direct bash child only; no process-group kill, so background processes survive, and no time ceiling exists.",
+          "gap": "Kill the whole process group on stop and add tight time ceilings.",
+          "evidence": [
+            {
+              "file": "cmd/main.go",
+              "lines": "258",
+              "contains": "signal.NotifyContext",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L258"
+            },
+            {
+              "file": "pkg/sandbox/local.go",
+              "lines": "48",
+              "contains": "lookupBashBin(), \"-c\", command",
+              "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/sandbox/local.go#L48"
+            },
+            {
+              "search": "rg -n 'Setpgid|Pgid|syscall.Kill'",
+              "scope": "pkg cmd",
+              "hits": 0,
+              "note": "no process-group handling"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.3,
+          "raw": 0.3,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only an iteration cap is enforced; a timeout exists only for detected streaming commands.",
+              "gap": "Add a session wall-clock limit, a per-command timeout and a token/cost budget.",
+              "evidence": [
+                {
+                  "file": "pkg/agent/conversation.go",
+                  "lines": "593",
+                  "contains": "c.currIteration >= c.MaxIterations",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/agent/conversation.go#L593"
+                },
+                {
+                  "file": "pkg/tools/streaming.go",
+                  "lines": "42",
+                  "contains": "context.WithTimeout(ctx, 7*time.Second)",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/streaming.go#L42"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The cap applies to the top-level loop; tool executions have no general timeout.",
+              "gap": "Apply timeouts to every tool execution.",
+              "evidence": [
+                {
+                  "file": "pkg/agent/conversation.go",
+                  "lines": "593",
+                  "contains": "c.currIteration >= c.MaxIterations",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/agent/conversation.go#L593"
+                },
+                {
+                  "file": "pkg/tools/streaming.go",
+                  "lines": "44-47",
+                  "contains": "cmdCtx = ctx",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/streaming.go#L44-L47"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default MaxIterations is 20, configurable by the operator; the model cannot raise it.",
+              "gap": "Enforce hard ceilings that config cannot exceed and make sure the model cannot reset limits.",
+              "evidence": [
+                {
+                  "file": "cmd/main.go",
+                  "lines": "177",
+                  "contains": "o.MaxIterations = 20",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L177"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Stopping cancels the context and kills the direct bash child only; no process-group kill, so background processes survive, and no time ceiling exists.",
+              "gap": "Kill the whole process group on stop and add tight time ceilings.",
+              "evidence": [
+                {
+                  "file": "cmd/main.go",
+                  "lines": "258",
+                  "contains": "signal.NotifyContext",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L258"
+                },
+                {
+                  "file": "pkg/sandbox/local.go",
+                  "lines": "48",
+                  "contains": "lookupBashBin(), \"-c\", command",
+                  "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/sandbox/local.go#L48"
+                },
+                {
+                  "search": "rg -n 'Setpgid|Pgid|syscall.Kill'",
+                  "scope": "pkg cmd",
+                  "hits": 0,
+                  "note": "no process-group handling"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "All commands run with the operator's full kubeconfig authority and entire environment; no scoped identity in the default configuration.",
+      "criterion": "C1",
+      "owasp": [
+        "ASI03",
+        "T3"
+      ],
+      "evidence": [
+        {
+          "file": "pkg/tools/kubectl_tool.go",
+          "lines": "121",
+          "contains": "env := os.Environ()",
+          "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/kubectl_tool.go#L121"
+        },
+        {
+          "file": "pkg/tools/bash_tool.go",
+          "lines": "98",
+          "contains": "env := os.Environ()",
+          "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/tools/bash_tool.go#L98"
+        }
+      ]
+    },
+    {
+      "summary": "Model commands run unsandboxed on the host by default; the opt-in k8s sandbox exports the host's full environment (API keys) into the pod.",
+      "criterion": "C4",
+      "owasp": [
+        "ASI05",
+        "T11"
+      ],
+      "evidence": [
+        {
+          "file": "pkg/sandbox/local.go",
+          "lines": "48",
+          "contains": "lookupBashBin(), \"-c\", command",
+          "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/sandbox/local.go#L48"
+        },
+        {
+          "file": "pkg/sandbox/kubernetes.go",
+          "lines": "61-63",
+          "contains": "fullCommand = fmt.Sprintf(\"export %s; %s\", envVar, fullCommand)",
+          "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/sandbox/kubernetes.go#L61-L63"
+        }
+      ]
+    },
+    {
+      "summary": "When MCP is enabled, the default server is an unpinned 'npx -y' package and servers run as the same user.",
+      "criterion": "C7",
+      "owasp": [
+        "ASI04",
+        "T17"
+      ],
+      "evidence": [
+        {
+          "file": "pkg/mcp/default_config.yaml",
+          "lines": "3-6",
+          "contains": "npx",
+          "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/mcp/default_config.yaml#L3-L6"
+        },
+        {
+          "file": "pkg/mcp/stdio_client.go",
+          "lines": "78",
+          "contains": "mcpclient.NewStdioMCPClient(expandedCmd, c.env, c.args...)",
+          "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/pkg/mcp/stdio_client.go#L78"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "Pod logs, events, annotations and configmaps returned by auto-approved kubectl reads enter context as plain tool results (pkg/agent/conversation.go:1140).",
+    "sensitive_data": "Operator kubeconfig with full authority; 'kubectl get secret' classified read-only (pkg/tools/kubectl_filter.go:26); full env with API keys (pkg/tools/bash_tool.go:98).",
+    "state_change_or_egress": "kubectl writes and egress through paths the approval gate does not cover; other shell commands gated (pkg/agent/conversation.go:757).",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Harden the approval classifier so the auto-approved set is a verified read-only allowlist.",
+      "criterion": "C2",
+      "parameter": "C",
+      "from_level": 1,
+      "to_level": 3,
+      "playbook": "Playbook 5",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Make payload tracing opt-in, redacted and access-restricted.",
+      "criterion": "C8",
+      "parameter": "D",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 4",
+      "estimated_gain": 0.1
+    },
+    {
+      "summary": "Run commands with a scrubbed environment (only KUBECONFIG and PATH) instead of os.Environ().",
+      "criterion": "C8",
+      "parameter": "B",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 4",
+      "estimated_gain": 0.1
+    },
+    {
+      "summary": "Block agent tool writes to ~/.config/kubectl-ai and require the --skip-permissions flag (not a config key) to disable approval.",
+      "criterion": "C6",
+      "parameter": "S",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 2",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Add a per-command timeout, session wall-clock limit and process-group kill on stop.",
+      "criterion": "C10",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 3,
+      "playbook": "Playbook 3 step 3",
+      "estimated_gain": 0.15
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was executed, installed, or probed.",
+    "Scored the interactive terminal CLI; web UI (--ui-type web), MCP server mode (--mcp-server, gating left to the host), quiet mode (approval-requiring calls abort unless --skip-permissions) and the in-cluster k8s/ manifests were reviewed only where they bear on defaults.",
+    "Effects relying on third-party behaviour are inferred, including some behind other findings, and mcp-go passing os.Environ() to stdio servers.",
+    "No reviewer-steering text aimed at AI auditors was found in the repository.",
+    "gollm provider internals beyond credential loading and journaling, and the kubectl-utils and modelserving directories, were not examined in depth."
+  ]
+}

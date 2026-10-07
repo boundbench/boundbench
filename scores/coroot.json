@@ -1,0 +1,2210 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "coroot",
+  "name": "Coroot (MCP server and AI RCA)",
+  "repo_url": "https://github.com/coroot/coroot",
+  "subpath": null,
+  "description": "Open-source observability platform; scored here for its built-in MCP server for AI agents and its AI root-cause analysis feature.",
+  "category": "infrastructure_ops",
+  "pinned_commit": "cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855",
+  "version": null,
+  "scored_date": "2026-10-05",
+  "scored_configuration": "Community Edition from the shipped docker-compose with the /mcp endpoint served by default (OAuth or API-key bearer auth) and AI root-cause analysis off until a Coroot Cloud API key is configured.",
+  "score": 6.7,
+  "max_score": 10.0,
+  "band": {
+    "id": "moderate",
+    "label": "Moderate",
+    "color": "amber"
+  },
+  "applicable": {
+    "count": 7,
+    "score": 3.65,
+    "max": 7.0,
+    "percent": 52
+  },
+  "capability_profile": {
+    "code_execution": "no",
+    "filesystem_write": "no",
+    "network_egress": "opt_in",
+    "external_credentials": "yes",
+    "persistent_memory": "opt_in",
+    "untrusted_input": "yes",
+    "third_party_extensions": "no",
+    "sub_agents": "no",
+    "external_communication": "yes"
+  },
+  "headline": "Coroot's MCP server gives AI agents read access to production logs, traces and metrics, checked on every call against the connecting user's Coroot role, plus one write: resolving alerts. The tools are narrow, carry accurate risk hints, cap their output size and run no code. The main weaknesses are what the data contains and what isn't recorded: logs and traces reach the agent's model unredacted and unmarked as untrusted, and apart from alert resolutions nothing records what an agent read. AI root-cause analysis is off by default; once enabled it sends telemetry to Coroot Cloud and posts model-written analyses to notification channels without review.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "Every MCP tool call runs as the Coroot user or service account that authenticated, and each tool checks that user's role in code before Coroot queries Prometheus or ClickHouse with its own server-held credentials. That is a real per-request authorization gate, and it fails closed if roles can't be loaded. The weak points are reach and defaults: the first account is an Admin and an MCP grant carries the user's whole role, refresh grants last 30 days, and authorization is not applied the same way on every AI feature request path. If the gate fails, the server's credentials can read telemetry for every project.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.65,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Each tool resolves the authenticated user and checks project and per-object RBAC permissions in code before the server attaches its own backend credentials.",
+          "gap": "The grant itself is not narrowed: an MCP token carries the user's full role for 30 days rather than a short-lived, task-scoped credential.",
+          "evidence": [
+            {
+              "file": "api/mcp.go",
+              "lines": "442-458",
+              "contains": "func (h *MCPHandler) RequireUserAndProject",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L442-L458"
+            },
+            {
+              "file": "api/mcp.go",
+              "lines": "1685",
+              "contains": "Application(app.Category, app.Id.Namespace, app.Id.Kind, app.Id.Name).View()",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1685"
+            },
+            {
+              "file": "api/mcp.go",
+              "lines": "1212",
+              "contains": "prom.NewClient(project.PrometheusConfig",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1212"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All MCP tools pass through the same user-scoped RBAC check, which fails closed when role resolution errors.",
+          "gap": "Authorization against the requesting user is not applied uniformly on every request path.",
+          "evidence": [
+            {
+              "file": "api/auth.go",
+              "lines": "291-296",
+              "contains": "return false",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/auth.go#L291-L296"
+            },
+            {
+              "file": "api/mcp.go",
+              "lines": "1100",
+              "contains": "Alerts().Edit()",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1100"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The default first account is an Admin, so an MCP client authorized by it gets the Admin role's tools; read-only use requires the operator to connect a Viewer user or service account.",
+          "gap": "No read-only default for MCP grants; write tools are available whenever the connecting user's role allows them, with no separate elevation.",
+          "evidence": [
+            {
+              "file": "db/user.go",
+              "lines": "86",
+              "contains": "rbac.RoleAdmin",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/db/user.go#L86"
+            },
+            {
+              "file": "api/mcp_oauth.go",
+              "lines": "24-25",
+              "contains": "mcpOAuthRefreshTokenTTL  = 30 * 24 * time.Hour",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp_oauth.go#L24-L25"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "If authorization fails, the server-held Prometheus and ClickHouse credentials read logs, traces and metrics for every project, while writes through MCP are limited to alert state.",
+          "gap": "Backend credentials are not scoped per project or per user, so a failure exposes all projects' telemetry rather than one tenant.",
+          "evidence": [
+            {
+              "file": "api/mcp.go",
+              "lines": "1212",
+              "contains": "project.ClickHouseConfig(h.Api.globalClickHouse)",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1212"
+            },
+            {
+              "file": "rbac/role.go",
+              "lines": "30",
+              "contains": "NewPermission(ScopeAll, ActionView, nil)",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/rbac/role.go#L30"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.65,
+          "raw": 0.65,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Each tool resolves the authenticated user and checks project and per-object RBAC permissions in code before the server attaches its own backend credentials.",
+              "gap": "The grant itself is not narrowed: an MCP token carries the user's full role for 30 days rather than a short-lived, task-scoped credential.",
+              "evidence": [
+                {
+                  "file": "api/mcp.go",
+                  "lines": "442-458",
+                  "contains": "func (h *MCPHandler) RequireUserAndProject",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L442-L458"
+                },
+                {
+                  "file": "api/mcp.go",
+                  "lines": "1685",
+                  "contains": "Application(app.Category, app.Id.Namespace, app.Id.Kind, app.Id.Name).View()",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1685"
+                },
+                {
+                  "file": "api/mcp.go",
+                  "lines": "1212",
+                  "contains": "prom.NewClient(project.PrometheusConfig",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1212"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All MCP tools pass through the same user-scoped RBAC check, which fails closed when role resolution errors.",
+              "gap": "Authorization against the requesting user is not applied uniformly on every request path.",
+              "evidence": [
+                {
+                  "file": "api/auth.go",
+                  "lines": "291-296",
+                  "contains": "return false",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/auth.go#L291-L296"
+                },
+                {
+                  "file": "api/mcp.go",
+                  "lines": "1100",
+                  "contains": "Alerts().Edit()",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1100"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The default first account is an Admin, so an MCP client authorized by it gets the Admin role's tools; read-only use requires the operator to connect a Viewer user or service account.",
+              "gap": "No read-only default for MCP grants; write tools are available whenever the connecting user's role allows them, with no separate elevation.",
+              "evidence": [
+                {
+                  "file": "db/user.go",
+                  "lines": "86",
+                  "contains": "rbac.RoleAdmin",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/db/user.go#L86"
+                },
+                {
+                  "file": "api/mcp_oauth.go",
+                  "lines": "24-25",
+                  "contains": "mcpOAuthRefreshTokenTTL  = 30 * 24 * time.Hour",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp_oauth.go#L24-L25"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "If authorization fails, the server-held Prometheus and ClickHouse credentials read logs, traces and metrics for every project, while writes through MCP are limited to alert state.",
+              "gap": "Backend credentials are not scoped per project or per user, so a failure exposes all projects' telemetry rather than one tenant.",
+              "evidence": [
+                {
+                  "file": "api/mcp.go",
+                  "lines": "1212",
+                  "contains": "project.ClickHouseConfig(h.Api.globalClickHouse)",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1212"
+                },
+                {
+                  "file": "rbac/role.go",
+                  "lines": "30",
+                  "contains": "NewPermission(ScopeAll, ActionView, nil)",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/rbac/role.go#L30"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "As a tool server, Coroot leaves approval to the connecting agent, so what matters is what it tells that agent. All 17 MCP tools carry read-only and destructive hints, reads and writes are separate tools, and the only state-changing tool, resolving alerts, is checked against the user's edit permission on the server. There is no preview or dry-run for resolving alerts, and no operator switch that makes the server read-only apart from connecting a Viewer account. A wrongly approved call can silence alerts and send resolution notices to Slack or PagerDuty; alerts whose conditions persist fire again.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.575,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every tool declares readOnly/destructive/openWorld hints and reads and writes are separate tools; resolve_alerts is marked non-read-only and open-world.",
+          "gap": "No preview or dry-run for the state-changing tool and no server-enforced confirmation step.",
+          "evidence": [
+            {
+              "file": "api/mcp.go",
+              "lines": "210-223",
+              "contains": "mcp.NewTool(\"resolve_alerts\"",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L210-L223"
+            },
+            {
+              "search": "rg -n -S 'dry.?run|preview|confirm'",
+              "scope": "api/mcp.go",
+              "hits": 1,
+              "note": "the single hit is the resolve_alerts description text asking the model to confirm the issue is fixed; no preview or confirmation mechanism exists"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All 17 registered tools carry annotations and the one write tool is additionally checked server side against the alerts edit permission.",
+          "gap": "No server-side policy that rejects or holds write calls independent of the user's role.",
+          "evidence": [
+            {
+              "search": "rg -n 'WithReadOnlyHintAnnotation'",
+              "scope": "api/mcp.go",
+              "hits": 17,
+              "note": "one per registered tool; there are 17 mcp.NewTool registrations"
+            },
+            {
+              "file": "api/mcp.go",
+              "lines": "1100",
+              "contains": "rbac.Actions.Project(string(project.Id)).Alerts().Edit()",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1100"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Annotations are always present, but whether the write tool is usable depends only on the connecting user's role, and the default first account is an Admin.",
+          "gap": "No operator setting to run the MCP server in read-only mode regardless of role.",
+          "evidence": [
+            {
+              "file": "api/mcp.go",
+              "lines": "218",
+              "contains": "mcp.WithReadOnlyHintAnnotation(false)",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L218"
+            },
+            {
+              "file": "db/user.go",
+              "lines": "86",
+              "contains": "rbac.RoleAdmin",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/db/user.go#L86"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A wrongly approved call resolves alerts (reversible, and alerts whose condition holds re-fire) but also sends resolution notifications to configured channels, which cannot be recalled.",
+          "gap": "No bound on how many alerts one call can resolve and no rate limit on the write tool.",
+          "evidence": [
+            {
+              "file": "api/api.go",
+              "lines": "1440-1470",
+              "contains": "notifications.EnqueueResolvedAlerts",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/api.go#L1440-L1470"
+            },
+            {
+              "file": "api/mcp.go",
+              "lines": "1103-1109",
+              "contains": "ids must be a non-empty array",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1103-L1109"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.575,
+          "raw": 0.575,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every tool declares readOnly/destructive/openWorld hints and reads and writes are separate tools; resolve_alerts is marked non-read-only and open-world.",
+              "gap": "No preview or dry-run for the state-changing tool and no server-enforced confirmation step.",
+              "evidence": [
+                {
+                  "file": "api/mcp.go",
+                  "lines": "210-223",
+                  "contains": "mcp.NewTool(\"resolve_alerts\"",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L210-L223"
+                },
+                {
+                  "search": "rg -n -S 'dry.?run|preview|confirm'",
+                  "scope": "api/mcp.go",
+                  "hits": 1,
+                  "note": "the single hit is the resolve_alerts description text asking the model to confirm the issue is fixed; no preview or confirmation mechanism exists"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All 17 registered tools carry annotations and the one write tool is additionally checked server side against the alerts edit permission.",
+              "gap": "No server-side policy that rejects or holds write calls independent of the user's role.",
+              "evidence": [
+                {
+                  "search": "rg -n 'WithReadOnlyHintAnnotation'",
+                  "scope": "api/mcp.go",
+                  "hits": 17,
+                  "note": "one per registered tool; there are 17 mcp.NewTool registrations"
+                },
+                {
+                  "file": "api/mcp.go",
+                  "lines": "1100",
+                  "contains": "rbac.Actions.Project(string(project.Id)).Alerts().Edit()",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1100"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Annotations are always present, but whether the write tool is usable depends only on the connecting user's role, and the default first account is an Admin.",
+              "gap": "No operator setting to run the MCP server in read-only mode regardless of role.",
+              "evidence": [
+                {
+                  "file": "api/mcp.go",
+                  "lines": "218",
+                  "contains": "mcp.WithReadOnlyHintAnnotation(false)",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L218"
+                },
+                {
+                  "file": "db/user.go",
+                  "lines": "86",
+                  "contains": "rbac.RoleAdmin",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/db/user.go#L86"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A wrongly approved call resolves alerts (reversible, and alerts whose condition holds re-fire) but also sends resolution notifications to configured channels, which cannot be recalled.",
+              "gap": "No bound on how many alerts one call can resolve and no rate limit on the write tool.",
+              "evidence": [
+                {
+                  "file": "api/api.go",
+                  "lines": "1440-1470",
+                  "contains": "notifications.EnqueueResolvedAlerts",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/api.go#L1440-L1470"
+                },
+                {
+                  "file": "api/mcp.go",
+                  "lines": "1103-1109",
+                  "contains": "ids must be a non-empty array",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1103-L1109"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "Most MCP tools are narrow, purpose-built reads (list alerts, get a trace, node details) with typed arguments, clamped limits, and log searches passed to ClickHouse as bound parameters. The exception is query_metrics, which forwards an arbitrary PromQL expression to the project's metrics backend, bounded only by a 24-hour range and a series limit. The default tool set includes alert resolution for any Editor or Admin and there is no way to switch tool groups off. Misuse stays within read-only telemetry queries and alert state for the selected project.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.575,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Typed arguments with clamped numeric bounds and parameterized log filters, but query_metrics passes a raw PromQL expression straight to the metrics backend.",
+          "gap": "The general query tool is not replaced or constrained by an allowlist of metrics or label matchers.",
+          "evidence": [
+            {
+              "file": "api/mcp.go",
+              "lines": "1207-1210",
+              "contains": "limit > mcpMetricsMaxLimit",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1207-L1210"
+            },
+            {
+              "file": "api/mcp.go",
+              "lines": "1235",
+              "contains": "client.QueryRange(ctx, query, prom.FilterLabelsKeepAll",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1235"
+            },
+            {
+              "file": "clickhouse/logs.go",
+              "lines": "457-458",
+              "contains": "hasToken(Body, @%s)",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/clickhouse/logs.go#L457-L458"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every built-in tool validates and clamps its own arguments; the server loads no extension tools.",
+          "gap": "Validation is per tool rather than one central policy layer that new tools inherit.",
+          "evidence": [
+            {
+              "file": "api/mcp.go",
+              "lines": "1577-1584",
+              "contains": "limit > mcpLogsMaxLimit",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1577-L1584"
+            },
+            {
+              "file": "api/mcp.go",
+              "lines": "1219-1222",
+              "contains": "range too large",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1219-L1222"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All 17 tools are always registered; the only write tool is usable by any Editor or Admin, including the default first account.",
+          "gap": "No operator setting to expose only the read-only tool set.",
+          "evidence": [
+            {
+              "file": "api/mcp.go",
+              "lines": "145-155",
+              "contains": "func (h *MCPHandler) registerTools()",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L145-L155"
+            },
+            {
+              "file": "rbac/role.go",
+              "lines": "27",
+              "contains": "NewPermission(ScopeProjectAlerts, ActionEdit, nil)",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/rbac/role.go#L27"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A misused tool reaches all telemetry of the selected project, with per-call row and size bounds on reads, and can resolve an unbounded list of alerts.",
+          "gap": "The write tool has no quantity bound, so scoped-and-bounded is not met for every tool.",
+          "evidence": [
+            {
+              "file": "api/mcp.go",
+              "lines": "1159-1165",
+              "contains": "mcpMetricsMaxRange      = 24 * timeseries.Hour",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1159-L1165"
+            },
+            {
+              "file": "api/mcp.go",
+              "lines": "1103-1109",
+              "contains": "RequireStringSlice(\"ids\")",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1103-L1109"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.575,
+          "raw": 0.575,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Typed arguments with clamped numeric bounds and parameterized log filters, but query_metrics passes a raw PromQL expression straight to the metrics backend.",
+              "gap": "The general query tool is not replaced or constrained by an allowlist of metrics or label matchers.",
+              "evidence": [
+                {
+                  "file": "api/mcp.go",
+                  "lines": "1207-1210",
+                  "contains": "limit > mcpMetricsMaxLimit",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1207-L1210"
+                },
+                {
+                  "file": "api/mcp.go",
+                  "lines": "1235",
+                  "contains": "client.QueryRange(ctx, query, prom.FilterLabelsKeepAll",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1235"
+                },
+                {
+                  "file": "clickhouse/logs.go",
+                  "lines": "457-458",
+                  "contains": "hasToken(Body, @%s)",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/clickhouse/logs.go#L457-L458"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every built-in tool validates and clamps its own arguments; the server loads no extension tools.",
+              "gap": "Validation is per tool rather than one central policy layer that new tools inherit.",
+              "evidence": [
+                {
+                  "file": "api/mcp.go",
+                  "lines": "1577-1584",
+                  "contains": "limit > mcpLogsMaxLimit",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1577-L1584"
+                },
+                {
+                  "file": "api/mcp.go",
+                  "lines": "1219-1222",
+                  "contains": "range too large",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1219-L1222"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All 17 tools are always registered; the only write tool is usable by any Editor or Admin, including the default first account.",
+              "gap": "No operator setting to expose only the read-only tool set.",
+              "evidence": [
+                {
+                  "file": "api/mcp.go",
+                  "lines": "145-155",
+                  "contains": "func (h *MCPHandler) registerTools()",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L145-L155"
+                },
+                {
+                  "file": "rbac/role.go",
+                  "lines": "27",
+                  "contains": "NewPermission(ScopeProjectAlerts, ActionEdit, nil)",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/rbac/role.go#L27"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A misused tool reaches all telemetry of the selected project, with per-call row and size bounds on reads, and can resolve an unbounded list of alerts.",
+              "gap": "The write tool has no quantity bound, so scoped-and-bounded is not met for every tool.",
+              "evidence": [
+                {
+                  "file": "api/mcp.go",
+                  "lines": "1159-1165",
+                  "contains": "mcpMetricsMaxRange      = 24 * timeseries.Hour",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1159-L1165"
+                },
+                {
+                  "file": "api/mcp.go",
+                  "lines": "1103-1109",
+                  "contains": "RequireStringSlice(\"ids\")",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1103-L1109"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "Nothing in Coroot's AI surface runs model-supplied text as code: the MCP tools and the AI root-cause path contain no shell, interpreter, template or plugin execution. The closest thing is query_metrics, which sends a PromQL expression to the metrics backend as a read-only query; that is scored as tool scoping in C3.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -S 'os/exec|exec\\.Command|syscall\\.Exec|text/template|html/template|goja|otto|plugin\\.Open'",
+              "scope": "api/mcp.go api/mcp_oauth.go api/rca.go cloud",
+              "hits": 0,
+              "note": "MCP server, MCP OAuth, AI RCA client and Coroot Cloud client"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -S 'os/exec|exec\\.Command|syscall\\.Exec|text/template|html/template|goja|otto|plugin\\.Open'",
+              "scope": "api/mcp.go api/mcp_oauth.go api/rca.go cloud",
+              "hits": 0,
+              "note": "MCP server, MCP OAuth, AI RCA client and Coroot Cloud client"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -S 'os/exec|exec\\.Command|syscall\\.Exec|text/template|html/template|goja|otto|plugin\\.Open'",
+              "scope": "api/mcp.go api/mcp_oauth.go api/rca.go cloud",
+              "hits": 0,
+              "note": "MCP server, MCP OAuth, AI RCA client and Coroot Cloud client"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -S 'os/exec|exec\\.Command|syscall\\.Exec|text/template|html/template|goja|otto|plugin\\.Open'",
+              "scope": "api/mcp.go api/mcp_oauth.go api/rca.go cloud",
+              "hits": 0,
+              "note": "MCP server, MCP OAuth, AI RCA client and Coroot Cloud client"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -S 'os/exec|exec\\.Command|syscall\\.Exec|text/template|html/template|goja|otto|plugin\\.Open'",
+                  "scope": "api/mcp.go api/mcp_oauth.go api/rca.go cloud",
+                  "hits": 0,
+                  "note": "MCP server, MCP OAuth, AI RCA client and Coroot Cloud client"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -S 'os/exec|exec\\.Command|syscall\\.Exec|text/template|html/template|goja|otto|plugin\\.Open'",
+                  "scope": "api/mcp.go api/mcp_oauth.go api/rca.go cloud",
+                  "hits": 0,
+                  "note": "MCP server, MCP OAuth, AI RCA client and Coroot Cloud client"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -S 'os/exec|exec\\.Command|syscall\\.Exec|text/template|html/template|goja|otto|plugin\\.Open'",
+                  "scope": "api/mcp.go api/mcp_oauth.go api/rca.go cloud",
+                  "hits": 0,
+                  "note": "MCP server, MCP OAuth, AI RCA client and Coroot Cloud client"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -S 'os/exec|exec\\.Command|syscall\\.Exec|text/template|html/template|goja|otto|plugin\\.Open'",
+                  "scope": "api/mcp.go api/mcp_oauth.go api/rca.go cloud",
+                  "hits": 0,
+                  "note": "MCP server, MCP OAuth, AI RCA client and Coroot Cloud client"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n -S 'os/exec|exec\\.Command|syscall\\.Exec|text/template|html/template|goja|otto|plugin\\.Open'",
+          "scope": "api/mcp.go api/mcp_oauth.go api/rca.go cloud",
+          "hits": 0,
+          "note": "MCP server, MCP OAuth, AI RCA client and Coroot Cloud client"
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "Coroot's tools return application logs, trace attributes and Kubernetes events, all of which can contain text written by outsiders, to the connecting agent. Results are structured JSON with the originating service or trace attached, and the server instructions contain only tool-selection guidance, but nothing marks returned content as untrusted and there is no mode that drops the alert-resolution write. A hijacked agent can read every project's telemetry its user can see and resolve alerts without the server asking anyone. When AI root-cause analysis is enabled, the same telemetry is also sent to Coroot Cloud's model and its output is posted to notification channels without review.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.625,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tool results are structured JSON that separate log bodies and span data from metadata such as service, severity and trace id.",
+          "gap": "No untrusted flag on returned content the host could act on, and no server mode that drops the write or egress leg.",
+          "evidence": [
+            {
+              "file": "api/mcp.go",
+              "lines": "1651",
+              "contains": "e.Body = mcpTruncate(e.Body, maxBodyLength)",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1651"
+            },
+            {
+              "file": "api/mcp.go",
+              "lines": "1770-1780",
+              "contains": "mcp.NewToolResultText(string(data))",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1770-L1780"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every tool returns structured JSON through the same encoder, and the server instructions are a fixed constant with no directives drawn from data.",
+          "gap": "Third-party text inside telemetry is never distinguished from Coroot's own fields.",
+          "evidence": [
+            {
+              "file": "api/mcp.go",
+              "lines": "28",
+              "contains": "const MCPInstructions",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L28"
+            },
+            {
+              "file": "api/mcp.go",
+              "lines": "1653",
+              "contains": "mcpFitToBudget(entries",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1653"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The structured output format is fixed in code and nothing in a request or in telemetry can change it.",
+          "gap": "Capped one level above strength; a stronger mechanism (provenance flags, read-only mode) would be needed first.",
+          "evidence": [
+            {
+              "file": "api/mcp.go",
+              "lines": "1770-1780",
+              "contains": "func MCPJSON(v any)",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1770-L1780"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked agent can read all telemetry its user may view, which often holds personal data or secrets, and resolve alerts unattended; the server itself offers no outbound channel, and alert resolution is reversible though it sends notices.",
+          "gap": "Sensitive telemetry and an unattended state change are both available in the same session; no server mode separates them.",
+          "evidence": [
+            {
+              "file": "api/mcp.go",
+              "lines": "1115",
+              "contains": "h.Api.resolveAlerts(project, ids, resolvedBy)",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1115"
+            },
+            {
+              "file": "api/rca.go",
+              "lines": "149",
+              "contains": "GetTracesViolatingSLOs",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/rca.go#L149"
+            },
+            {
+              "file": "notifications/notifications.go",
+              "lines": "100",
+              "contains": "details.RCASummary = rca.ShortSummary",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/notifications/notifications.go#L100"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.625,
+          "raw": 0.625,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tool results are structured JSON that separate log bodies and span data from metadata such as service, severity and trace id.",
+              "gap": "No untrusted flag on returned content the host could act on, and no server mode that drops the write or egress leg.",
+              "evidence": [
+                {
+                  "file": "api/mcp.go",
+                  "lines": "1651",
+                  "contains": "e.Body = mcpTruncate(e.Body, maxBodyLength)",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1651"
+                },
+                {
+                  "file": "api/mcp.go",
+                  "lines": "1770-1780",
+                  "contains": "mcp.NewToolResultText(string(data))",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1770-L1780"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every tool returns structured JSON through the same encoder, and the server instructions are a fixed constant with no directives drawn from data.",
+              "gap": "Third-party text inside telemetry is never distinguished from Coroot's own fields.",
+              "evidence": [
+                {
+                  "file": "api/mcp.go",
+                  "lines": "28",
+                  "contains": "const MCPInstructions",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L28"
+                },
+                {
+                  "file": "api/mcp.go",
+                  "lines": "1653",
+                  "contains": "mcpFitToBudget(entries",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1653"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The structured output format is fixed in code and nothing in a request or in telemetry can change it.",
+              "gap": "Capped one level above strength; a stronger mechanism (provenance flags, read-only mode) would be needed first.",
+              "evidence": [
+                {
+                  "file": "api/mcp.go",
+                  "lines": "1770-1780",
+                  "contains": "func MCPJSON(v any)",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1770-L1780"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked agent can read all telemetry its user may view, which often holds personal data or secrets, and resolve alerts unattended; the server itself offers no outbound channel, and alert resolution is reversible though it sends notices.",
+              "gap": "Sensitive telemetry and an unattended state change are both available in the same session; no server mode separates them.",
+              "evidence": [
+                {
+                  "file": "api/mcp.go",
+                  "lines": "1115",
+                  "contains": "h.Api.resolveAlerts(project, ids, resolvedBy)",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1115"
+                },
+                {
+                  "file": "api/rca.go",
+                  "lines": "149",
+                  "contains": "GetTracesViolatingSLOs",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/rca.go#L149"
+                },
+                {
+                  "file": "notifications/notifications.go",
+                  "lines": "100",
+                  "contains": "details.RCASummary = rca.ShortSummary",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/notifications/notifications.go#L100"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "In the scored default, nothing an MCP client or model produces persists into later behaviour: the server's instructions are a compiled-in constant, session state is only the selected project held in memory, and the only write records a fixed 'via MCP' attribution on resolved alerts. No workspace files or .env are auto-loaded. Enabling AI root-cause analysis changes this: model-written analyses are then stored on each incident and returned to every later MCP client and notification channel for that project, with no review or purge step.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -S 'db\\.(Update|Set|Save|Add|Insert|Create|Delete)|resolveAlerts\\('",
+              "scope": "api/mcp.go",
+              "hits": 1,
+              "note": "the only write from MCP tools is alert resolution with a fixed resolvedBy attribution; no model-written text is stored"
+            },
+            {
+              "search": "rg -n -S 'AGENTS\\.md|CLAUDE\\.md|godotenv|load_dotenv|\\.mcp\\.json'",
+              "scope": ".",
+              "hits": 0
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -S 'db\\.(Update|Set|Save|Add|Insert|Create|Delete)|resolveAlerts\\('",
+              "scope": "api/mcp.go",
+              "hits": 1,
+              "note": "the only write from MCP tools is alert resolution with a fixed resolvedBy attribution; no model-written text is stored"
+            },
+            {
+              "search": "rg -n -S 'AGENTS\\.md|CLAUDE\\.md|godotenv|load_dotenv|\\.mcp\\.json'",
+              "scope": ".",
+              "hits": 0
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -S 'db\\.(Update|Set|Save|Add|Insert|Create|Delete)|resolveAlerts\\('",
+              "scope": "api/mcp.go",
+              "hits": 1,
+              "note": "the only write from MCP tools is alert resolution with a fixed resolvedBy attribution; no model-written text is stored"
+            },
+            {
+              "search": "rg -n -S 'AGENTS\\.md|CLAUDE\\.md|godotenv|load_dotenv|\\.mcp\\.json'",
+              "scope": ".",
+              "hits": 0
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -S 'db\\.(Update|Set|Save|Add|Insert|Create|Delete)|resolveAlerts\\('",
+              "scope": "api/mcp.go",
+              "hits": 1,
+              "note": "the only write from MCP tools is alert resolution with a fixed resolvedBy attribution; no model-written text is stored"
+            },
+            {
+              "search": "rg -n -S 'AGENTS\\.md|CLAUDE\\.md|godotenv|load_dotenv|\\.mcp\\.json'",
+              "scope": ".",
+              "hits": 0
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -S 'db\\.(Update|Set|Save|Add|Insert|Create|Delete)|resolveAlerts\\('",
+                  "scope": "api/mcp.go",
+                  "hits": 1,
+                  "note": "the only write from MCP tools is alert resolution with a fixed resolvedBy attribution; no model-written text is stored"
+                },
+                {
+                  "search": "rg -n -S 'AGENTS\\.md|CLAUDE\\.md|godotenv|load_dotenv|\\.mcp\\.json'",
+                  "scope": ".",
+                  "hits": 0
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -S 'db\\.(Update|Set|Save|Add|Insert|Create|Delete)|resolveAlerts\\('",
+                  "scope": "api/mcp.go",
+                  "hits": 1,
+                  "note": "the only write from MCP tools is alert resolution with a fixed resolvedBy attribution; no model-written text is stored"
+                },
+                {
+                  "search": "rg -n -S 'AGENTS\\.md|CLAUDE\\.md|godotenv|load_dotenv|\\.mcp\\.json'",
+                  "scope": ".",
+                  "hits": 0
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -S 'db\\.(Update|Set|Save|Add|Insert|Create|Delete)|resolveAlerts\\('",
+                  "scope": "api/mcp.go",
+                  "hits": 1,
+                  "note": "the only write from MCP tools is alert resolution with a fixed resolvedBy attribution; no model-written text is stored"
+                },
+                {
+                  "search": "rg -n -S 'AGENTS\\.md|CLAUDE\\.md|godotenv|load_dotenv|\\.mcp\\.json'",
+                  "scope": ".",
+                  "hits": 0
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -S 'db\\.(Update|Set|Save|Add|Insert|Create|Delete)|resolveAlerts\\('",
+                  "scope": "api/mcp.go",
+                  "hits": 1,
+                  "note": "the only write from MCP tools is alert resolution with a fixed resolvedBy attribution; no model-written text is stored"
+                },
+                {
+                  "search": "rg -n -S 'AGENTS\\.md|CLAUDE\\.md|godotenv|load_dotenv|\\.mcp\\.json'",
+                  "scope": ".",
+                  "hits": 0
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n -S 'db\\.(Update|Set|Save|Add|Insert|Create|Delete)|resolveAlerts\\('",
+          "scope": "api/mcp.go",
+          "hits": 1,
+          "note": "the only write from MCP tools is alert resolution with a fixed resolvedBy attribution; no model-written text is stored"
+        },
+        {
+          "search": "rg -n -S 'AGENTS\\.md|CLAUDE\\.md|godotenv|load_dotenv|\\.mcp\\.json'",
+          "scope": ".",
+          "hits": 0
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "The AI surface loads no third-party code: the MCP server is compiled into Coroot, launches no MCP servers or plugins of its own, and the AI root-cause feature calls only Coroot's own cloud service over HTTPS.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -S 'plugin\\.Open|exec\\.Command|go-plugin|npx|stdio|NewStdioMCPClient'",
+              "scope": "api/mcp.go api/mcp_oauth.go api/rca.go cloud",
+              "hits": 0
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -S 'plugin\\.Open|exec\\.Command|go-plugin|npx|stdio|NewStdioMCPClient'",
+              "scope": "api/mcp.go api/mcp_oauth.go api/rca.go cloud",
+              "hits": 0
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -S 'plugin\\.Open|exec\\.Command|go-plugin|npx|stdio|NewStdioMCPClient'",
+              "scope": "api/mcp.go api/mcp_oauth.go api/rca.go cloud",
+              "hits": 0
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -S 'plugin\\.Open|exec\\.Command|go-plugin|npx|stdio|NewStdioMCPClient'",
+              "scope": "api/mcp.go api/mcp_oauth.go api/rca.go cloud",
+              "hits": 0
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -S 'plugin\\.Open|exec\\.Command|go-plugin|npx|stdio|NewStdioMCPClient'",
+                  "scope": "api/mcp.go api/mcp_oauth.go api/rca.go cloud",
+                  "hits": 0
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -S 'plugin\\.Open|exec\\.Command|go-plugin|npx|stdio|NewStdioMCPClient'",
+                  "scope": "api/mcp.go api/mcp_oauth.go api/rca.go cloud",
+                  "hits": 0
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -S 'plugin\\.Open|exec\\.Command|go-plugin|npx|stdio|NewStdioMCPClient'",
+                  "scope": "api/mcp.go api/mcp_oauth.go api/rca.go cloud",
+                  "hits": 0
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -S 'plugin\\.Open|exec\\.Command|go-plugin|npx|stdio|NewStdioMCPClient'",
+                  "scope": "api/mcp.go api/mcp_oauth.go api/rca.go cloud",
+                  "hits": 0
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n -S 'plugin\\.Open|exec\\.Command|go-plugin|npx|stdio|NewStdioMCPClient'",
+          "scope": "api/mcp.go api/mcp_oauth.go api/rca.go cloud",
+          "hits": 0
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "Coroot stores service-account API keys only as SHA-256 hashes and keeps its Prometheus and ClickHouse credentials on the server, never in tool results. But nothing redacts what the tools return: log bodies, trace attributes and events go to the agent's model as collected, apart from length truncation, and with AI root-cause analysis enabled, traces and Kubernetes events are sent to Coroot Cloud the same way. The Coroot Cloud API key is stored in plain text in the database. Anonymous usage statistics, including per-tool MCP call counts, are sent to coroot.com by default unless disabled.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.3,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "API keys are hashed at rest, but no redaction is applied to telemetry returned to MCP clients or sent for AI analysis.",
+          "gap": "No redaction before model-bound tool results or the RCA payload, and the cloud API key is stored unencrypted.",
+          "evidence": [
+            {
+              "file": "db/user.go",
+              "lines": "271-274",
+              "contains": "sha256.Sum256([]byte(key))",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/db/user.go#L271-L274"
+            },
+            {
+              "search": "rg -n -S 'redact|mask|scrub|sanitiz|obfuscat'",
+              "scope": "api/mcp.go api/rca.go cloud",
+              "hits": 0,
+              "note": "no redaction anywhere in the MCP or RCA paths"
+            },
+            {
+              "file": "cloud/api.go",
+              "lines": "70-72",
+              "contains": "api.db.SetSetting(settingName, settings)",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/cloud/api.go#L70-L72"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only credential storage is protected; model-bound tool results, the RCA payload and notification text are not.",
+          "gap": "Model-bound messages and outbound RCA payloads carry no protection.",
+          "evidence": [
+            {
+              "file": "api/mcp.go",
+              "lines": "1651",
+              "contains": "mcpTruncate(e.Body, maxBodyLength)",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1651"
+            },
+            {
+              "file": "api/rca.go",
+              "lines": "134",
+              "contains": "GetKubernetesEvents",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/rca.go#L134"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Usage statistics, including MCP tool call counts but not content, are sent to coroot.com unless the operator disables them.",
+          "gap": "Telemetry is on by default rather than opt-in.",
+          "evidence": [
+            {
+              "file": "stats/stats.go",
+              "lines": "30",
+              "contains": "https://coroot.com/ce/usage-statistics",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/stats/stats.go#L30"
+            },
+            {
+              "file": "config/flags.go",
+              "lines": "30",
+              "contains": "disable-usage-statistics",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/config/flags.go#L30"
+            },
+            {
+              "file": "api/mcp.go",
+              "lines": "140",
+              "contains": "RegisterMCPCall(name)",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L140"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "An exposed MCP grant is role-scoped with a 1-hour access token and a 30-day refresh token; service-account keys are long-lived until an operator deletes them.",
+          "gap": "Refresh grants and API keys are long-lived rather than short-lived and automatically rotated.",
+          "evidence": [
+            {
+              "file": "api/mcp_oauth.go",
+              "lines": "24-25",
+              "contains": "mcpOAuthAccessTokenTTL   = time.Hour",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp_oauth.go#L24-L25"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.3,
+          "raw": 0.3,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "API keys are hashed at rest, but no redaction is applied to telemetry returned to MCP clients or sent for AI analysis.",
+              "gap": "No redaction before model-bound tool results or the RCA payload, and the cloud API key is stored unencrypted.",
+              "evidence": [
+                {
+                  "file": "db/user.go",
+                  "lines": "271-274",
+                  "contains": "sha256.Sum256([]byte(key))",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/db/user.go#L271-L274"
+                },
+                {
+                  "search": "rg -n -S 'redact|mask|scrub|sanitiz|obfuscat'",
+                  "scope": "api/mcp.go api/rca.go cloud",
+                  "hits": 0,
+                  "note": "no redaction anywhere in the MCP or RCA paths"
+                },
+                {
+                  "file": "cloud/api.go",
+                  "lines": "70-72",
+                  "contains": "api.db.SetSetting(settingName, settings)",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/cloud/api.go#L70-L72"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only credential storage is protected; model-bound tool results, the RCA payload and notification text are not.",
+              "gap": "Model-bound messages and outbound RCA payloads carry no protection.",
+              "evidence": [
+                {
+                  "file": "api/mcp.go",
+                  "lines": "1651",
+                  "contains": "mcpTruncate(e.Body, maxBodyLength)",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1651"
+                },
+                {
+                  "file": "api/rca.go",
+                  "lines": "134",
+                  "contains": "GetKubernetesEvents",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/rca.go#L134"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Usage statistics, including MCP tool call counts but not content, are sent to coroot.com unless the operator disables them.",
+              "gap": "Telemetry is on by default rather than opt-in.",
+              "evidence": [
+                {
+                  "file": "stats/stats.go",
+                  "lines": "30",
+                  "contains": "https://coroot.com/ce/usage-statistics",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/stats/stats.go#L30"
+                },
+                {
+                  "file": "config/flags.go",
+                  "lines": "30",
+                  "contains": "disable-usage-statistics",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/config/flags.go#L30"
+                },
+                {
+                  "file": "api/mcp.go",
+                  "lines": "140",
+                  "contains": "RegisterMCPCall(name)",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L140"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "An exposed MCP grant is role-scoped with a 1-hour access token and a 30-day refresh token; service-account keys are long-lived until an operator deletes them.",
+              "gap": "Refresh grants and API keys are long-lived rather than short-lived and automatically rotated.",
+              "evidence": [
+                {
+                  "file": "api/mcp_oauth.go",
+                  "lines": "24-25",
+                  "contains": "mcpOAuthAccessTokenTTL   = time.Hour",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp_oauth.go#L24-L25"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "Coroot keeps no record of what an agent did through MCP beyond one case: resolving alerts stores the user's name with a 'via MCP' tag on the alert. Read tools that pull logs, traces and metrics leave no trace except an anonymous per-tool counter in usage statistics, and the server logs only errors. After an incident you could see which alerts an agent resolved and on whose account, but not what data it read or which OAuth client acted.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.3,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only alert resolution leaves an attributed record (user name plus 'via MCP'); other tool calls are not recorded.",
+          "gap": "No structured record of every tool call with arguments, result status and timestamps.",
+          "evidence": [
+            {
+              "file": "api/mcp.go",
+              "lines": "1110-1115",
+              "contains": "resolvedBy += \" (via MCP)\"",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1110-L1115"
+            },
+            {
+              "file": "api/mcp.go",
+              "lines": "137-143",
+              "contains": "h.Api.stats.RegisterMCPCall(name)",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L137-L143"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The write path is recorded; read tools, grant issuance and AI analysis requests are not.",
+          "gap": "Read tool calls and OAuth grants are not recorded at all.",
+          "evidence": [
+            {
+              "search": "rg -n 'klog\\.(Info|Infof|Infoln|V\\()'",
+              "scope": "api/mcp.go api/mcp_oauth.go",
+              "hits": 0,
+              "note": "MCP code logs only errors via klog.Errorln"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The alert attribution is written to Coroot's database by server code that the agent cannot edit.",
+          "gap": "Capped one level above strength; a fuller record would be needed first.",
+          "evidence": [
+            {
+              "file": "api/api.go",
+              "lines": "1451",
+              "contains": "api.db.ResolveAlerts(project.Id, ids, resolvedBy)",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/api.go#L1451"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The attribution is written together with the alert change, but nothing else is durable and a trajectory cannot be replayed.",
+          "gap": "No per-action durable record for most tools.",
+          "evidence": [
+            {
+              "file": "api/api.go",
+              "lines": "1451",
+              "contains": "ResolveAlerts(project.Id, ids, resolvedBy)",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/api.go#L1451"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.3,
+          "raw": 0.3,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only alert resolution leaves an attributed record (user name plus 'via MCP'); other tool calls are not recorded.",
+              "gap": "No structured record of every tool call with arguments, result status and timestamps.",
+              "evidence": [
+                {
+                  "file": "api/mcp.go",
+                  "lines": "1110-1115",
+                  "contains": "resolvedBy += \" (via MCP)\"",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1110-L1115"
+                },
+                {
+                  "file": "api/mcp.go",
+                  "lines": "137-143",
+                  "contains": "h.Api.stats.RegisterMCPCall(name)",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L137-L143"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The write path is recorded; read tools, grant issuance and AI analysis requests are not.",
+              "gap": "Read tool calls and OAuth grants are not recorded at all.",
+              "evidence": [
+                {
+                  "search": "rg -n 'klog\\.(Info|Infof|Infoln|V\\()'",
+                  "scope": "api/mcp.go api/mcp_oauth.go",
+                  "hits": 0,
+                  "note": "MCP code logs only errors via klog.Errorln"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The alert attribution is written to Coroot's database by server code that the agent cannot edit.",
+              "gap": "Capped one level above strength; a fuller record would be needed first.",
+              "evidence": [
+                {
+                  "file": "api/api.go",
+                  "lines": "1451",
+                  "contains": "api.db.ResolveAlerts(project.Id, ids, resolvedBy)",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/api.go#L1451"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The attribution is written together with the alert change, but nothing else is durable and a trajectory cannot be replayed.",
+              "gap": "No per-action durable record for most tools.",
+              "evidence": [
+                {
+                  "file": "api/api.go",
+                  "lines": "1451",
+                  "contains": "ResolveAlerts(project.Id, ids, resolvedBy)",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/api.go#L1451"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "Coroot bounds the work of each MCP call: list results are cut at about 50 KB and any response at 80 KB, row limits are clamped to fixed maximums, metric queries are limited to 24 hours, and backend queries follow the request's context so they stop when the client goes away. There are no rate or concurrency limits, so a runaway agent can keep issuing expensive queries against Prometheus and ClickHouse. AI root-cause analysis stops when Coroot Cloud credits run out, a ceiling enforced by the provider, but background incident investigations run without a timeout of their own.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.625,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Server-enforced caps on output size, row counts and metric time range, compiled in as constants.",
+          "gap": "No rate or concurrency limits on tool calls, and log and trace queries have no time-range cap.",
+          "evidence": [
+            {
+              "file": "api/mcp.go",
+              "lines": "1765-1768",
+              "contains": "mcpMaxResponseBytes = 80000",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1765-L1768"
+            },
+            {
+              "file": "api/mcp.go",
+              "lines": "1165",
+              "contains": "mcpMetricsMaxRange",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1165"
+            },
+            {
+              "search": "rg -n -i 'ratelimit|rate\\.Limit|throttle|semaphore'",
+              "scope": "api/mcp.go api/mcp_oauth.go",
+              "hits": 0
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every tool's output goes through the same size budget and every list tool clamps its row limit.",
+          "gap": "Background AI investigations are not bounded by a timeout like interactive requests.",
+          "evidence": [
+            {
+              "file": "api/mcp.go",
+              "lines": "1791-1808",
+              "contains": "func mcpFitToBudget",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1791-L1808"
+            },
+            {
+              "file": "watchers/incidents.go",
+              "lines": "122",
+              "contains": "w.rca(context.TODO(), project, world, incident)",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/watchers/incidents.go#L122"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Limits are constants a caller cannot raise; out-of-range requests fall back to defaults.",
+          "gap": "Capped one level above strength.",
+          "evidence": [
+            {
+              "file": "api/mcp.go",
+              "lines": "1207-1210",
+              "contains": "limit = mcpMetricsDefaultLimit",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1207-L1210"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Each call is bounded, AI analyses stop at the provider-side credit limit, but a client can loop indefinitely and the cloud call has no client timeout.",
+          "gap": "No session-level ceiling on MCP calls and no timeout on background RCA requests.",
+          "evidence": [
+            {
+              "file": "cloud/rca.go",
+              "lines": "69",
+              "contains": "info.RCA.CreditsSpent >= info.RCA.CreditsTotal",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/cloud/rca.go#L69"
+            },
+            {
+              "file": "cloud/api.go",
+              "lines": "96",
+              "contains": "http.DefaultClient.Do(req)",
+              "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/cloud/api.go#L96"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.625,
+          "raw": 0.625,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Server-enforced caps on output size, row counts and metric time range, compiled in as constants.",
+              "gap": "No rate or concurrency limits on tool calls, and log and trace queries have no time-range cap.",
+              "evidence": [
+                {
+                  "file": "api/mcp.go",
+                  "lines": "1765-1768",
+                  "contains": "mcpMaxResponseBytes = 80000",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1765-L1768"
+                },
+                {
+                  "file": "api/mcp.go",
+                  "lines": "1165",
+                  "contains": "mcpMetricsMaxRange",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1165"
+                },
+                {
+                  "search": "rg -n -i 'ratelimit|rate\\.Limit|throttle|semaphore'",
+                  "scope": "api/mcp.go api/mcp_oauth.go",
+                  "hits": 0
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every tool's output goes through the same size budget and every list tool clamps its row limit.",
+              "gap": "Background AI investigations are not bounded by a timeout like interactive requests.",
+              "evidence": [
+                {
+                  "file": "api/mcp.go",
+                  "lines": "1791-1808",
+                  "contains": "func mcpFitToBudget",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1791-L1808"
+                },
+                {
+                  "file": "watchers/incidents.go",
+                  "lines": "122",
+                  "contains": "w.rca(context.TODO(), project, world, incident)",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/watchers/incidents.go#L122"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Limits are constants a caller cannot raise; out-of-range requests fall back to defaults.",
+              "gap": "Capped one level above strength.",
+              "evidence": [
+                {
+                  "file": "api/mcp.go",
+                  "lines": "1207-1210",
+                  "contains": "limit = mcpMetricsDefaultLimit",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1207-L1210"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Each call is bounded, AI analyses stop at the provider-side credit limit, but a client can loop indefinitely and the cloud call has no client timeout.",
+              "gap": "No session-level ceiling on MCP calls and no timeout on background RCA requests.",
+              "evidence": [
+                {
+                  "file": "cloud/rca.go",
+                  "lines": "69",
+                  "contains": "info.RCA.CreditsSpent >= info.RCA.CreditsTotal",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/cloud/rca.go#L69"
+                },
+                {
+                  "file": "cloud/api.go",
+                  "lines": "96",
+                  "contains": "http.DefaultClient.Do(req)",
+                  "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/cloud/api.go#L96"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "Apart from alert resolutions, MCP tool calls leave no record: what an agent read, with which arguments and through which client, cannot be reconstructed.",
+      "criterion": "C9",
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "evidence": [
+        {
+          "file": "api/mcp.go",
+          "lines": "137-143",
+          "contains": "h.Api.stats.RegisterMCPCall(name)",
+          "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L137-L143"
+        }
+      ]
+    },
+    {
+      "summary": "Log bodies and trace data are returned to the agent's model with no redaction of secrets or personal data.",
+      "criterion": "C8",
+      "owasp": [
+        "LLM02",
+        "ASI03"
+      ],
+      "evidence": [
+        {
+          "file": "api/mcp.go",
+          "lines": "1651",
+          "contains": "e.Body = mcpTruncate(e.Body, maxBodyLength)",
+          "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1651"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "Application log bodies, span attributes and Kubernetes events returned by query_logs / get_trace (api/mcp.go:1651)",
+    "sensitive_data": "Production telemetry of every project the user can view, read with server-held backend credentials (api/mcp.go:1212)",
+    "state_change_or_egress": "resolve_alerts changes alert state and sends notifications (api/mcp.go:1115); RCA payload to Coroot Cloud when enabled (api/rca.go:157)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Write an audit record for every MCP tool call (user, OAuth client, tool, arguments, result status, timestamp) and for each grant issued.",
+      "criterion": "C9",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 1 step 3",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Redact common secret and personal-data patterns from log bodies, span attributes and events before returning them to MCP clients or sending them for AI analysis.",
+      "criterion": "C8",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 4",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Add an operator setting (or a read-only OAuth scope) that exposes only the read-only tool set over MCP regardless of the user's role.",
+      "criterion": "C3",
+      "parameter": "D",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.05
+    },
+    {
+      "summary": "Add per-user rate and concurrency limits on MCP tool calls and a time-range cap on log and trace queries.",
+      "criterion": "C10",
+      "parameter": "S",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 3 step 3",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Mark third-party text in tool results (log bodies, span attributes, events) with an untrusted flag the host can act on.",
+      "criterion": "C5",
+      "parameter": "S",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 1",
+      "estimated_gain": 0.075
+    }
+  ],
+  "reaudit_log": [
+    {
+      "criterion": "C2",
+      "parameter": "S",
+      "from_level": 3,
+      "to_level": 2,
+      "reason": "First rated L3 because no tool is destructive, but resolve_alerts changes state and sends notifications with no preview or dry-run, so the L3 element is not met."
+    },
+    {
+      "criterion": "C3",
+      "parameter": "B",
+      "from_level": 3,
+      "to_level": 2,
+      "reason": "Reads are row- and size-bounded, but resolve_alerts accepts an unbounded id list, so 'scoped and quantity-bounded' does not hold for every tool."
+    }
+  ],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was executed, installed, or probed.",
+    "Scope is Coroot's AI-agent surface only: the built-in MCP server and its OAuth/API-key authentication (api/mcp.go, api/mcp_oauth.go) and the AI root-cause analysis client (api/rca.go, cloud/, its incident auto-investigation and notification text). The rest of the observability platform (UI authentication and first-run setup, collectors, node and cluster agents, alerting engine, dashboards) was not scored.",
+    "The AI root-cause model runs in Coroot Cloud, outside this repository; how it handles the telemetry it receives and what it returns was not examined. The front end was read only where it displays AI analyses.",
+    "Enterprise Edition features (custom roles, EE-only MCP tools) are not in this repository and were not reviewed; with the Community Edition's built-in roles every user can view every project.",
+    "The scored default has AI root-cause analysis off; C6 is structurally absent only in that configuration, and enabling it adds a persistent, project-wide store of model-written analyses.",
+    "Behaviour of the mark3labs/mcp-go library (session handling, transport) was assumed from its use here, not audited.",
+    "No release tag points at the pinned commit."
+  ]
+}

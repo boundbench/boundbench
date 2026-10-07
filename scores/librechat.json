@@ -1,0 +1,2286 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "librechat",
+  "name": "LibreChat",
+  "repo_url": "https://github.com/LibreChat-AI/LibreChat",
+  "subpath": null,
+  "description": "Self-hosted multi-model chat platform with agents, MCP, code interpreter and actions",
+  "category": "ai_assistants",
+  "pinned_commit": "f10b1d91f1eee3a2c82d5247bf620351486b7c1b",
+  "version": null,
+  "scored_date": "2026-10-05",
+  "scored_configuration": "Shipped docker-compose.yml with .env.example values and no librechat.yaml overrides: default agent capabilities, tool approval and memory unset, no MCP servers, first registered account is admin, chats used from the web UI.",
+  "score": 4.0,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 10,
+    "score": 3.95,
+    "max": 10.0,
+    "percent": 40
+  },
+  "capability_profile": {
+    "code_execution": "opt_in",
+    "filesystem_write": "no",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "opt_in",
+    "untrusted_input": "yes",
+    "third_party_extensions": "opt_in",
+    "sub_agents": "yes",
+    "external_communication": "opt_in"
+  },
+  "headline": "LibreChat is a well-structured multi-user service: requests are tied to accounts and roles, outbound actions get SSRF protection, model-written code runs in a separate remote service rather than on the server, and stdio MCP servers can only be added by admins. The dominant risk is that its human-approval gate for tool calls is off by default, so content an agent reads (files, search results, tool outputs) can drive any tool it holds, including outbound HTTP actions and MCP write tools, with nobody approving. Token spending limits are also off by default, and the server process holds every user's stored credentials.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "LibreChat is a multi-user service: every request is tied to a logged-in account, role permissions are checked on each feature, and model provider keys default to 'user provided', so each user supplies and pays for their own. Per-user OAuth tokens are kept for actions and MCP servers, and stdio MCP servers get a stripped environment. But the server process itself still holds every stored credential (encrypted user keys, action secrets, the database connection), and an action's stored API key is used for whoever runs the agent. The first account to register becomes administrator.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.45,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Requests run under the requesting LibreChat user with role-based permission checks, and provider keys default to per-user keys, but the server process holds every stored credential for the whole run.",
+          "gap": "No per-tool or per-capability credential narrowing; on-behalf-of token exchange exists only as an opt-in for MCP servers.",
+          "evidence": [
+            {
+              "file": "packages/api/src/middleware/access.ts",
+              "lines": "137-160",
+              "contains": "const role = await getRoleForAccess",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/middleware/access.ts#L137-L160"
+            },
+            {
+              "file": ".env.example",
+              "lines": "597",
+              "contains": "OPENAI_API_KEY=user_provided",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/.env.example#L597"
+            },
+            {
+              "file": "api/server/services/ActionService.js",
+              "lines": "214",
+              "contains": "const identifier = `${userId}:${action.action_id}`;",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/services/ActionService.js#L214"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Built-in tools, actions and MCP connections resolve credentials per user, and stdio MCP servers get only a default environment, but an action's stored API key is applied to every user who runs the agent rather than being re-authorized per requester.",
+          "gap": "No common authorization layer checks each tool call against the requesting principal; shared-agent actions reuse the author's stored credential.",
+          "evidence": [
+            {
+              "file": "api/server/services/ActionService.js",
+              "lines": "455",
+              "contains": "encryptedMetadata.api_key = await encryptSensitiveValue(metadata.api_key);",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/services/ActionService.js#L455"
+            },
+            {
+              "file": "packages/api/src/mcp/connection.ts",
+              "lines": "1502",
+              "contains": "env: { ...getDefaultEnvironment(), ...(options.env ?? {}) },",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/mcp/connection.ts#L1502"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Ordinary users cannot create MCP servers or share agents by default, but the first registered account is an administrator with every permission.",
+          "gap": "Default chatting principal in a single-user install is admin, and widening user permissions is an unlogged admin change.",
+          "evidence": [
+            {
+              "file": "api/server/services/AuthService.js",
+              "lines": "426",
+              "contains": "role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/services/AuthService.js#L426"
+            },
+            {
+              "file": "packages/data-provider/src/roles.ts",
+              "lines": "256-262",
+              "contains": "[Permissions.CREATE]: false",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/roles.ts#L256-L262"
+            },
+            {
+              "file": "packages/data-provider/src/roles.ts",
+              "lines": "236-241",
+              "contains": "[Permissions.SHARE]: false,",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/roles.ts#L236-L241"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "If authorization fails inside the server process, everything it holds is reachable: all users' encrypted keys and the decryption key, connected OAuth tokens and action secrets, and an unauthenticated MongoDB on the internal network.",
+          "gap": "Credentials are long-lived and span multiple external systems per user; nothing confines a compromise to one tenant.",
+          "evidence": [
+            {
+              "file": "docker-compose.yml",
+              "lines": "63",
+              "contains": "command: mongod --noauth",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/docker-compose.yml#L63"
+            },
+            {
+              "file": "packages/data-schemas/src/crypto/index.ts",
+              "lines": "115-128",
+              "contains": "const algorithm_v3 = 'aes-256-ctr';",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/crypto/index.ts#L115-L128"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.45,
+          "raw": 0.45,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Requests run under the requesting LibreChat user with role-based permission checks, and provider keys default to per-user keys, but the server process holds every stored credential for the whole run.",
+              "gap": "No per-tool or per-capability credential narrowing; on-behalf-of token exchange exists only as an opt-in for MCP servers.",
+              "evidence": [
+                {
+                  "file": "packages/api/src/middleware/access.ts",
+                  "lines": "137-160",
+                  "contains": "const role = await getRoleForAccess",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/middleware/access.ts#L137-L160"
+                },
+                {
+                  "file": ".env.example",
+                  "lines": "597",
+                  "contains": "OPENAI_API_KEY=user_provided",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/.env.example#L597"
+                },
+                {
+                  "file": "api/server/services/ActionService.js",
+                  "lines": "214",
+                  "contains": "const identifier = `${userId}:${action.action_id}`;",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/services/ActionService.js#L214"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Built-in tools, actions and MCP connections resolve credentials per user, and stdio MCP servers get only a default environment, but an action's stored API key is applied to every user who runs the agent rather than being re-authorized per requester.",
+              "gap": "No common authorization layer checks each tool call against the requesting principal; shared-agent actions reuse the author's stored credential.",
+              "evidence": [
+                {
+                  "file": "api/server/services/ActionService.js",
+                  "lines": "455",
+                  "contains": "encryptedMetadata.api_key = await encryptSensitiveValue(metadata.api_key);",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/services/ActionService.js#L455"
+                },
+                {
+                  "file": "packages/api/src/mcp/connection.ts",
+                  "lines": "1502",
+                  "contains": "env: { ...getDefaultEnvironment(), ...(options.env ?? {}) },",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/mcp/connection.ts#L1502"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Ordinary users cannot create MCP servers or share agents by default, but the first registered account is an administrator with every permission.",
+              "gap": "Default chatting principal in a single-user install is admin, and widening user permissions is an unlogged admin change.",
+              "evidence": [
+                {
+                  "file": "api/server/services/AuthService.js",
+                  "lines": "426",
+                  "contains": "role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/services/AuthService.js#L426"
+                },
+                {
+                  "file": "packages/data-provider/src/roles.ts",
+                  "lines": "256-262",
+                  "contains": "[Permissions.CREATE]: false",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/roles.ts#L256-L262"
+                },
+                {
+                  "file": "packages/data-provider/src/roles.ts",
+                  "lines": "236-241",
+                  "contains": "[Permissions.SHARE]: false,",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/roles.ts#L236-L241"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "If authorization fails inside the server process, everything it holds is reachable: all users' encrypted keys and the decryption key, connected OAuth tokens and action secrets, and an unauthenticated MongoDB on the internal network.",
+              "gap": "Credentials are long-lived and span multiple external systems per user; nothing confines a compromise to one tenant.",
+              "evidence": [
+                {
+                  "file": "docker-compose.yml",
+                  "lines": "63",
+                  "contains": "command: mongod --noauth",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/docker-compose.yml#L63"
+                },
+                {
+                  "file": "packages/data-schemas/src/crypto/index.ts",
+                  "lines": "115-128",
+                  "contains": "const algorithm_v3 = 'aes-256-ctr';",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/crypto/index.ts#L115-L128"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "LibreChat ships a real human-approval gate for agent tool calls: when enabled, a paused call shows the tool name and its exact arguments, and the user can approve, reject, or edit the arguments; administrators can write allow, deny and ask rules by tool-name pattern. But the gate is off unless an administrator adds a toolApproval block to librechat.yaml, and the shipped example has it commented out. In the default deployment every tool an agent has, including actions that call external APIs and MCP tools, runs with no human in the loop.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.425,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "The tool-approval gate is opt-in through librechat.yaml and off in the shipped configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "When enabled, each paused call presents the exact tool name and arguments with approve, reject and edit decisions, and policy rules decide by tool-name pattern which calls need a human.",
+          "gap": "No built-in argument-level policy; per-argument decisions require writing a custom hook module.",
+          "evidence": [
+            {
+              "file": "packages/api/src/agents/hitl/policy.ts",
+              "lines": "298-316",
+              "contains": "arguments: tc.arguments,",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/hitl/policy.ts#L298-L316"
+            },
+            {
+              "file": "packages/api/src/agents/hitl/policy.ts",
+              "lines": "14",
+              "contains": "const DEFAULT_REVIEW_DECISIONS: Agents.ToolApprovalDecisionType[] = ['approve', 'reject', 'edit'];",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/hitl/policy.ts#L14"
+            },
+            {
+              "file": "client/src/components/Chat/Messages/Content/ToolApproval.tsx",
+              "lines": "51-66",
+              "contains": "function seedArgs",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/client/src/components/Chat/Messages/Content/ToolApproval.tsx#L51-L66"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "The policy is applied by tool name to every tool in the run, including MCP and action tools, but the interception itself happens inside the external agents SDK package, so coverage of every path could not be confirmed from this repository.",
+          "gap": "Coverage of sub-agent and background tool paths is enforced in an external package and is not verifiable here.",
+          "evidence": [
+            {
+              "file": "packages/api/src/agents/hitl/policy.ts",
+              "lines": "65-79",
+              "contains": "mode: 'bypass',",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/hitl/policy.ts#L65-L79"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Approval only runs when endpoints.agents.toolApproval.enabled is true; the example config ships it commented out.",
+          "gap": "Approval is opt-in.",
+          "evidence": [
+            {
+              "file": "packages/api/src/agents/hitl/policy.ts",
+              "lines": "97-101",
+              "contains": "return policy?.enabled === true;",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/hitl/policy.ts#L97-L101"
+            },
+            {
+              "file": "librechat.example.yaml",
+              "lines": "773-778",
+              "contains": "#   toolApproval:",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/librechat.example.yaml#L773-L778"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Default agents can call user-defined HTTP actions against any public host and any connected MCP tool, with no undo for external effects.",
+          "gap": "No previews, dry-runs or rate limits on consequential actions.",
+          "evidence": [
+            {
+              "file": "packages/data-provider/src/config.ts",
+              "lines": "830-847",
+              "contains": "AgentCapabilities.actions,",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/config.ts#L830-L847"
+            },
+            {
+              "file": "api/server/services/ToolService.js",
+              "lines": "667",
+              "contains": "useSSRFProtection: !Array.isArray(_allowedDomains) || _allowedDomains.length === 0,",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/services/ToolService.js#L667"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.425,
+          "raw": 0.425,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "The tool-approval gate is opt-in through librechat.yaml and off in the shipped configuration."
+          },
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "When enabled, each paused call presents the exact tool name and arguments with approve, reject and edit decisions, and policy rules decide by tool-name pattern which calls need a human.",
+              "gap": "No built-in argument-level policy; per-argument decisions require writing a custom hook module.",
+              "evidence": [
+                {
+                  "file": "packages/api/src/agents/hitl/policy.ts",
+                  "lines": "298-316",
+                  "contains": "arguments: tc.arguments,",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/hitl/policy.ts#L298-L316"
+                },
+                {
+                  "file": "packages/api/src/agents/hitl/policy.ts",
+                  "lines": "14",
+                  "contains": "const DEFAULT_REVIEW_DECISIONS: Agents.ToolApprovalDecisionType[] = ['approve', 'reject', 'edit'];",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/hitl/policy.ts#L14"
+                },
+                {
+                  "file": "client/src/components/Chat/Messages/Content/ToolApproval.tsx",
+                  "lines": "51-66",
+                  "contains": "function seedArgs",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/client/src/components/Chat/Messages/Content/ToolApproval.tsx#L51-L66"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "The policy is applied by tool name to every tool in the run, including MCP and action tools, but the interception itself happens inside the external agents SDK package, so coverage of every path could not be confirmed from this repository.",
+              "gap": "Coverage of sub-agent and background tool paths is enforced in an external package and is not verifiable here.",
+              "evidence": [
+                {
+                  "file": "packages/api/src/agents/hitl/policy.ts",
+                  "lines": "65-79",
+                  "contains": "mode: 'bypass',",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/hitl/policy.ts#L65-L79"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Approval only runs when endpoints.agents.toolApproval.enabled is true; the example config ships it commented out.",
+              "gap": "Approval is opt-in.",
+              "evidence": [
+                {
+                  "file": "packages/api/src/agents/hitl/policy.ts",
+                  "lines": "97-101",
+                  "contains": "return policy?.enabled === true;",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/hitl/policy.ts#L97-L101"
+                },
+                {
+                  "file": "librechat.example.yaml",
+                  "lines": "773-778",
+                  "contains": "#   toolApproval:",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/librechat.example.yaml#L773-L778"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default agents can call user-defined HTTP actions against any public host and any connected MCP tool, with no undo for external effects.",
+              "gap": "No previews, dry-runs or rate limits on consequential actions.",
+              "evidence": [
+                {
+                  "file": "packages/data-provider/src/config.ts",
+                  "lines": "830-847",
+                  "contains": "AgentCapabilities.actions,",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/config.ts#L830-L847"
+                },
+                {
+                  "file": "api/server/services/ToolService.js",
+                  "lines": "667",
+                  "contains": "useSSRFProtection: !Array.isArray(_allowedDomains) || _allowedDomains.length === 0,",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/services/ToolService.js#L667"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "Outbound HTTP from actions and user-added MCP servers goes through a domain check, and when no admin allowlist is set, actions use connection-time SSRF protection that blocks private and metadata addresses. Users cannot add command-launching (stdio) MCP servers; only admins can, in librechat.yaml. Tools have typed schemas. But actions are deliberately general: an agent author can point one at any public API with any operations, and the default capability list turns on actions, code execution, web search, sub-agents and the rest of the tool families at once.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.525,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Action and MCP URLs are checked against admin allowlists or, without one, against private/loopback/metadata ranges, with SSRF-safe agents that re-check resolved addresses at connect time.",
+          "gap": "General-purpose HTTP actions are not replaced by narrow tools; arguments are schema-typed, not allowlisted.",
+          "evidence": [
+            {
+              "file": "packages/api/src/auth/domain.ts",
+              "lines": "312-324",
+              "contains": "if (isSSRFTarget(inputSpec.hostname, allowedAddresses, effectivePort)) {",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/auth/domain.ts#L312-L324"
+            },
+            {
+              "file": "api/server/services/ActionService.js",
+              "lines": "199",
+              "contains": "const ssrfAgents = useSSRFProtection ? createSSRFSafeAgents(allowedAddresses) : undefined;",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/services/ActionService.js#L199"
+            },
+            {
+              "file": "api/server/services/ToolService.js",
+              "lines": "667",
+              "contains": "useSSRFProtection: !Array.isArray(_allowedDomains) || _allowedDomains.length === 0,",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/services/ToolService.js#L667"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Actions, user-added MCP servers, provider endpoints and media fetches share the SSRF and domain helpers, but arguments passed to MCP tools are forwarded unvalidated to the server.",
+          "gap": "No shared validation layer wraps extension (MCP) tool arguments.",
+          "evidence": [
+            {
+              "file": "packages/data-provider/src/mcp.ts",
+              "lines": "534-557",
+              "contains": "Stdio transport is intentionally excluded from user input.",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/mcp.ts#L534-L557"
+            },
+            {
+              "file": "api/server/services/ToolService.js",
+              "lines": "667",
+              "contains": "useSSRFProtection: !Array.isArray(_allowedDomains) || _allowedDomains.length === 0,",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/services/ToolService.js#L667"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Admins can trim agent capabilities and authors choose tools per agent, but the default capability list enables actions, code execution, web search, sub-agents and tools together.",
+          "gap": "Default capability set is not read-only; write and egress tool families are on unless removed.",
+          "evidence": [
+            {
+              "file": "packages/data-provider/src/config.ts",
+              "lines": "830-847",
+              "contains": "AgentCapabilities.actions,",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/config.ts#L830-L847"
+            },
+            {
+              "file": "packages/data-provider/src/config.ts",
+              "lines": "830-847",
+              "contains": "AgentCapabilities.execute_code,",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/config.ts#L830-L847"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A misused action can call any public host and any operation in the author's OpenAPI spec with the stored credentials.",
+          "gap": "Actions have no quantity or operation bounds beyond the spec.",
+          "evidence": [
+            {
+              "file": "api/server/services/ActionService.js",
+              "lines": "455",
+              "contains": "encryptedMetadata.api_key = await encryptSensitiveValue(metadata.api_key);",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/services/ActionService.js#L455"
+            },
+            {
+              "file": "packages/api/src/auth/domain.ts",
+              "lines": "312-324",
+              "contains": "if (isSSRFTarget(inputSpec.hostname, allowedAddresses, effectivePort)) {",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/auth/domain.ts#L312-L324"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.525,
+          "raw": 0.525,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Action and MCP URLs are checked against admin allowlists or, without one, against private/loopback/metadata ranges, with SSRF-safe agents that re-check resolved addresses at connect time.",
+              "gap": "General-purpose HTTP actions are not replaced by narrow tools; arguments are schema-typed, not allowlisted.",
+              "evidence": [
+                {
+                  "file": "packages/api/src/auth/domain.ts",
+                  "lines": "312-324",
+                  "contains": "if (isSSRFTarget(inputSpec.hostname, allowedAddresses, effectivePort)) {",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/auth/domain.ts#L312-L324"
+                },
+                {
+                  "file": "api/server/services/ActionService.js",
+                  "lines": "199",
+                  "contains": "const ssrfAgents = useSSRFProtection ? createSSRFSafeAgents(allowedAddresses) : undefined;",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/services/ActionService.js#L199"
+                },
+                {
+                  "file": "api/server/services/ToolService.js",
+                  "lines": "667",
+                  "contains": "useSSRFProtection: !Array.isArray(_allowedDomains) || _allowedDomains.length === 0,",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/services/ToolService.js#L667"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Actions, user-added MCP servers, provider endpoints and media fetches share the SSRF and domain helpers, but arguments passed to MCP tools are forwarded unvalidated to the server.",
+              "gap": "No shared validation layer wraps extension (MCP) tool arguments.",
+              "evidence": [
+                {
+                  "file": "packages/data-provider/src/mcp.ts",
+                  "lines": "534-557",
+                  "contains": "Stdio transport is intentionally excluded from user input.",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/mcp.ts#L534-L557"
+                },
+                {
+                  "file": "api/server/services/ToolService.js",
+                  "lines": "667",
+                  "contains": "useSSRFProtection: !Array.isArray(_allowedDomains) || _allowedDomains.length === 0,",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/services/ToolService.js#L667"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Admins can trim agent capabilities and authors choose tools per agent, but the default capability list enables actions, code execution, web search, sub-agents and tools together.",
+              "gap": "Default capability set is not read-only; write and egress tool families are on unless removed.",
+              "evidence": [
+                {
+                  "file": "packages/data-provider/src/config.ts",
+                  "lines": "830-847",
+                  "contains": "AgentCapabilities.actions,",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/config.ts#L830-L847"
+                },
+                {
+                  "file": "packages/data-provider/src/config.ts",
+                  "lines": "830-847",
+                  "contains": "AgentCapabilities.execute_code,",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/config.ts#L830-L847"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A misused action can call any public host and any operation in the author's OpenAPI spec with the stored credentials.",
+              "gap": "Actions have no quantity or operation bounds beyond the spec.",
+              "evidence": [
+                {
+                  "file": "api/server/services/ActionService.js",
+                  "lines": "455",
+                  "contains": "encryptedMetadata.api_key = await encryptSensitiveValue(metadata.api_key);",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/services/ActionService.js#L455"
+                },
+                {
+                  "file": "packages/api/src/auth/domain.ts",
+                  "lines": "312-324",
+                  "contains": "if (isSSRFTarget(inputSpec.hostname, allowedAddresses, effectivePort)) {",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/auth/domain.ts#L312-L324"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "LibreChat does not run model-written code on its own server. The code-execution and bash tools send code over HTTP to a separate Code Interpreter API service (configured by base URL and an API key), and a separate opt-in mode routes commands to workers the user enrolls on their own machine. The only local process launches in the server are operator plugin hooks and document conversion, both with a stripped environment. The isolation of the remote service lives outside this repository and could not be examined, so its strength and blast radius are inferred.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.625,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "Model code runs in a remote code-execution service reached over HTTP rather than on the LibreChat host; that service's isolation is not in this repository.",
+          "gap": "The sandbox implementation is outside the scored repository, so kernel-level isolation cannot be verified.",
+          "evidence": [
+            {
+              "file": "packages/api/src/agents/execution.ts",
+              "lines": "260-278",
+              "contains": "return getCodeBaseURL().replace(/\\/+$/, '');",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/execution.ts#L260-L278"
+            },
+            {
+              "file": "packages/api/src/files/provision/service.ts",
+              "lines": "207",
+              "contains": "const CODE_API_KEY_FIELD = 'LIBRECHAT_CODE_API_KEY';",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/files/provision/service.ts#L207"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every model-reachable execution tool (execute_code, bash_tool, file authoring) is built against the remote code API or an enrolled worker; no host execution path exists for model code.",
+          "gap": "No fail-closed guarantee is verifiable for processes the remote service spawns.",
+          "evidence": [
+            {
+              "file": "api/server/services/ToolService.js",
+              "lines": "2305-2331",
+              "contains": "createBashExecutionTool({",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/services/ToolService.js#L2305-L2331"
+            },
+            {
+              "search": "rg -n child_process -g '!*.spec.*' -g '!*.test.*' -g '!**/__tests__/**'",
+              "scope": "packages/api/src api/server api/app",
+              "hits": 5,
+              "note": "Hits are build-time git (app/build.ts), the operator plugin-hook runner and its reaper (agents/hooks, stripped env), and LibreOffice document conversion (stripped env); none executes model-written code on the host."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The execution endpoint and key come from operator environment variables; there is no local fallback and the model cannot select host execution.",
+          "gap": "Sandbox policy lives in an external service whose configuration is not visible here.",
+          "evidence": [
+            {
+              "file": "packages/api/src/agents/execution.ts",
+              "lines": "260-278",
+              "contains": "return getCodeBaseURL().replace(/\\/+$/, '');",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/execution.ts#L260-L278"
+            },
+            {
+              "file": "packages/api/src/agents/hooks/executor.ts",
+              "lines": "29",
+              "contains": "const PASSTHROUGH_ENV_VARS = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ'] as const;",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/hooks/executor.ts#L29"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "The remote sandbox receives the user's uploaded files and session files but not server credentials; its network egress and persistence settings are not visible here.",
+          "gap": "Egress, resource limits and session lifetime of the remote sandbox are not verifiable from this repository.",
+          "evidence": [
+            {
+              "file": "api/server/services/ToolService.js",
+              "lines": "2305-2331",
+              "contains": "createBashExecutionTool({",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/services/ToolService.js#L2305-L2331"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.625,
+          "raw": 0.625,
+          "cap": null,
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "Model code runs in a remote code-execution service reached over HTTP rather than on the LibreChat host; that service's isolation is not in this repository.",
+              "gap": "The sandbox implementation is outside the scored repository, so kernel-level isolation cannot be verified.",
+              "evidence": [
+                {
+                  "file": "packages/api/src/agents/execution.ts",
+                  "lines": "260-278",
+                  "contains": "return getCodeBaseURL().replace(/\\/+$/, '');",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/execution.ts#L260-L278"
+                },
+                {
+                  "file": "packages/api/src/files/provision/service.ts",
+                  "lines": "207",
+                  "contains": "const CODE_API_KEY_FIELD = 'LIBRECHAT_CODE_API_KEY';",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/files/provision/service.ts#L207"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every model-reachable execution tool (execute_code, bash_tool, file authoring) is built against the remote code API or an enrolled worker; no host execution path exists for model code.",
+              "gap": "No fail-closed guarantee is verifiable for processes the remote service spawns.",
+              "evidence": [
+                {
+                  "file": "api/server/services/ToolService.js",
+                  "lines": "2305-2331",
+                  "contains": "createBashExecutionTool({",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/services/ToolService.js#L2305-L2331"
+                },
+                {
+                  "search": "rg -n child_process -g '!*.spec.*' -g '!*.test.*' -g '!**/__tests__/**'",
+                  "scope": "packages/api/src api/server api/app",
+                  "hits": 5,
+                  "note": "Hits are build-time git (app/build.ts), the operator plugin-hook runner and its reaper (agents/hooks, stripped env), and LibreOffice document conversion (stripped env); none executes model-written code on the host."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The execution endpoint and key come from operator environment variables; there is no local fallback and the model cannot select host execution.",
+              "gap": "Sandbox policy lives in an external service whose configuration is not visible here.",
+              "evidence": [
+                {
+                  "file": "packages/api/src/agents/execution.ts",
+                  "lines": "260-278",
+                  "contains": "return getCodeBaseURL().replace(/\\/+$/, '');",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/execution.ts#L260-L278"
+                },
+                {
+                  "file": "packages/api/src/agents/hooks/executor.ts",
+                  "lines": "29",
+                  "contains": "const PASSTHROUGH_ENV_VARS = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ'] as const;",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/hooks/executor.ts#L29"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "The remote sandbox receives the user's uploaded files and session files but not server credentials; its network egress and persistence settings are not visible here.",
+              "gap": "Egress, resource limits and session lifetime of the remote sandbox are not verifiable from this repository.",
+              "evidence": [
+                {
+                  "file": "api/server/services/ToolService.js",
+                  "lines": "2305-2331",
+                  "contains": "createBashExecutionTool({",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/services/ToolService.js#L2305-L2331"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "Agents read content their user did not write: uploaded files, web search results, action and MCP tool outputs, and instructions of agents shared by other users. Nothing in the code tracks where content came from or restricts what a turn can do after reading it, and with the approval gate off by default an injected instruction can drive every tool the agent holds. Those tools can include outbound HTTP actions to any public host and connected MCP tools with write access, so data leakage and external side effects can both happen unattended.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C5-WORSTCASE",
+        "max": 0.25,
+        "reason": "In the default configuration a hijacked agent can leak data and take irreversible external actions unattended."
+      },
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No provenance tagging, quarantine or taint-based gating of tool results or retrieved content was found; approval (when enabled) is by tool name, not by what the turn has read.",
+          "gap": "No control that disables or gates egress and write tools once untrusted content enters a turn.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'prompt.injection|untrusted' -g '!*.spec.*' -g '!*.test.*'",
+              "scope": "packages/api/src/agents packages/api/src/mcp packages/api/src/tools",
+              "hits": 6,
+              "note": "Hits concern client-input sanitising, OAuth metadata hints and activity-label generation; none tags or restricts untrusted content entering the model context."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tool and MCP results enter the conversation with the same standing as other context.",
+          "gap": "Untrusted sources are not distinguished.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'prompt.injection|untrusted' -g '!*.spec.*' -g '!*.test.*'",
+              "scope": "packages/api/src/agents packages/api/src/mcp packages/api/src/tools",
+              "hits": 6,
+              "note": "Hits concern client-input sanitising, OAuth metadata hints and activity-label generation; none tags or restricts untrusted content entering the model context."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No such control exists, and the related approval gate is off by default.",
+          "gap": "No default-on containment for untrusted content.",
+          "evidence": [
+            {
+              "file": "packages/api/src/agents/hitl/policy.ts",
+              "lines": "97-101",
+              "contains": "return policy?.enabled === true;",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/hitl/policy.ts#L97-L101"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked default agent can send data out through actions or MCP tools and take external write actions with no human involved.",
+          "gap": "Exfiltration and irreversible actions are not gated in the default configuration.",
+          "evidence": [
+            {
+              "file": "packages/data-provider/src/config.ts",
+              "lines": "830-847",
+              "contains": "AgentCapabilities.actions,",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/config.ts#L830-L847"
+            },
+            {
+              "file": "api/server/services/ToolService.js",
+              "lines": "667",
+              "contains": "useSSRFProtection: !Array.isArray(_allowedDomains) || _allowedDomains.length === 0,",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/services/ToolService.js#L667"
+            },
+            {
+              "file": "packages/api/src/agents/hitl/policy.ts",
+              "lines": "97-101",
+              "contains": "return policy?.enabled === true;",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/hitl/policy.ts#L97-L101"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": {
+            "id": "C5-WORSTCASE",
+            "max": 0.25,
+            "reason": "In the default configuration a hijacked agent can leak data and take irreversible external actions unattended."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No provenance tagging, quarantine or taint-based gating of tool results or retrieved content was found; approval (when enabled) is by tool name, not by what the turn has read.",
+              "gap": "No control that disables or gates egress and write tools once untrusted content enters a turn.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'prompt.injection|untrusted' -g '!*.spec.*' -g '!*.test.*'",
+                  "scope": "packages/api/src/agents packages/api/src/mcp packages/api/src/tools",
+                  "hits": 6,
+                  "note": "Hits concern client-input sanitising, OAuth metadata hints and activity-label generation; none tags or restricts untrusted content entering the model context."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tool and MCP results enter the conversation with the same standing as other context.",
+              "gap": "Untrusted sources are not distinguished.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'prompt.injection|untrusted' -g '!*.spec.*' -g '!*.test.*'",
+                  "scope": "packages/api/src/agents packages/api/src/mcp packages/api/src/tools",
+                  "hits": 6,
+                  "note": "Hits concern client-input sanitising, OAuth metadata hints and activity-label generation; none tags or restricts untrusted content entering the model context."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No such control exists, and the related approval gate is off by default.",
+              "gap": "No default-on containment for untrusted content.",
+              "evidence": [
+                {
+                  "file": "packages/api/src/agents/hitl/policy.ts",
+                  "lines": "97-101",
+                  "contains": "return policy?.enabled === true;",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/hitl/policy.ts#L97-L101"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked default agent can send data out through actions or MCP tools and take external write actions with no human involved.",
+              "gap": "Exfiltration and irreversible actions are not gated in the default configuration.",
+              "evidence": [
+                {
+                  "file": "packages/data-provider/src/config.ts",
+                  "lines": "830-847",
+                  "contains": "AgentCapabilities.actions,",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/config.ts#L830-L847"
+                },
+                {
+                  "file": "api/server/services/ToolService.js",
+                  "lines": "667",
+                  "contains": "useSSRFProtection: !Array.isArray(_allowedDomains) || _allowedDomains.length === 0,",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/services/ToolService.js#L667"
+                },
+                {
+                  "file": "packages/api/src/agents/hitl/policy.ts",
+                  "lines": "97-101",
+                  "contains": "return policy?.enabled === true;",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/hitl/policy.ts#L97-L101"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "Long-term memory is off unless an administrator adds a memory block to librechat.yaml. When on, the model can save and delete memory entries with a tool, entries are stored per user and per agent, and they are fed back into later conversations as context; users can view, edit and opt out of memories. Entries are size-limited but not validated or marked by source. Agents, prompts and skills are user-authored and only shared with others when a role grants sharing, which ordinary users lack by default. There is no workspace or repository auto-loading in this server product.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.35,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "When memory is enabled, the model writes entries with no validation beyond a character limit and they are re-injected as context.",
+          "gap": "Memory entries carry no provenance and writes are not gated or expired.",
+          "evidence": [
+            {
+              "file": "packages/api/src/agents/memory.ts",
+              "lines": "257",
+              "contains": "const result = await setMemory({ userId, key, value, tokenCount, agentId });",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/memory.ts#L257"
+            },
+            {
+              "file": "packages/data-schemas/src/app/memory.ts",
+              "lines": "12-35",
+              "contains": "!config || config.disabled === true;",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/app/memory.ts#L12-L35"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Memory is per-user and inspectable, but summaries and shared agent instructions are not controlled as persistence paths.",
+          "gap": "No control covers summaries or shared agent/skill content.",
+          "evidence": [
+            {
+              "file": "packages/data-schemas/src/schema/memory.ts",
+              "lines": "48",
+              "contains": "MemoryEntrySchema.index({ userId: 1, agentId: 1, key: 1 });",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/schema/memory.ts#L48"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Memory is off by default and, when on, queries are scoped by user and agent.",
+          "gap": "No per-tenant storage separation or default retention limit.",
+          "evidence": [
+            {
+              "file": "packages/data-schemas/src/app/memory.ts",
+              "lines": "12-35",
+              "contains": "!config || config.disabled === true;",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/app/memory.ts#L12-L35"
+            },
+            {
+              "file": "packages/data-schemas/src/schema/memory.ts",
+              "lines": "48",
+              "contains": "MemoryEntrySchema.index({ userId: 1, agentId: 1, key: 1 });",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/schema/memory.ts#L48"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Poisoned memory, when enabled, persists across one user's conversations and can steer later tool use, but users can see and delete entries and other users are not affected.",
+          "gap": "No rollback or review step before persisted content influences tools.",
+          "evidence": [
+            {
+              "file": "packages/data-provider/src/roles.ts",
+              "lines": "58-64",
+              "contains": "[Permissions.OPT_OUT]: z.boolean().default(true),",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/roles.ts#L58-L64"
+            },
+            {
+              "file": "packages/data-schemas/src/schema/memory.ts",
+              "lines": "48",
+              "contains": "MemoryEntrySchema.index({ userId: 1, agentId: 1, key: 1 });",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/schema/memory.ts#L48"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.35,
+          "raw": 0.35,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "When memory is enabled, the model writes entries with no validation beyond a character limit and they are re-injected as context.",
+              "gap": "Memory entries carry no provenance and writes are not gated or expired.",
+              "evidence": [
+                {
+                  "file": "packages/api/src/agents/memory.ts",
+                  "lines": "257",
+                  "contains": "const result = await setMemory({ userId, key, value, tokenCount, agentId });",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/memory.ts#L257"
+                },
+                {
+                  "file": "packages/data-schemas/src/app/memory.ts",
+                  "lines": "12-35",
+                  "contains": "!config || config.disabled === true;",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/app/memory.ts#L12-L35"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Memory is per-user and inspectable, but summaries and shared agent instructions are not controlled as persistence paths.",
+              "gap": "No control covers summaries or shared agent/skill content.",
+              "evidence": [
+                {
+                  "file": "packages/data-schemas/src/schema/memory.ts",
+                  "lines": "48",
+                  "contains": "MemoryEntrySchema.index({ userId: 1, agentId: 1, key: 1 });",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/schema/memory.ts#L48"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Memory is off by default and, when on, queries are scoped by user and agent.",
+              "gap": "No per-tenant storage separation or default retention limit.",
+              "evidence": [
+                {
+                  "file": "packages/data-schemas/src/app/memory.ts",
+                  "lines": "12-35",
+                  "contains": "!config || config.disabled === true;",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/app/memory.ts#L12-L35"
+                },
+                {
+                  "file": "packages/data-schemas/src/schema/memory.ts",
+                  "lines": "48",
+                  "contains": "MemoryEntrySchema.index({ userId: 1, agentId: 1, key: 1 });",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/schema/memory.ts#L48"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Poisoned memory, when enabled, persists across one user's conversations and can steer later tool use, but users can see and delete entries and other users are not affected.",
+              "gap": "No rollback or review step before persisted content influences tools.",
+              "evidence": [
+                {
+                  "file": "packages/data-provider/src/roles.ts",
+                  "lines": "58-64",
+                  "contains": "[Permissions.OPT_OUT]: z.boolean().default(true),",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/roles.ts#L58-L64"
+                },
+                {
+                  "file": "packages/data-schemas/src/schema/memory.ts",
+                  "lines": "48",
+                  "contains": "MemoryEntrySchema.index({ userId: 1, agentId: 1, key: 1 });",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/schema/memory.ts#L48"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "Third-party code enters LibreChat through MCP servers and operator plugins. Only administrators can add command-launching MCP servers (in librechat.yaml), and ordinary users cannot add remote MCP servers by default. Nothing pins or verifies the packages those commands launch, and changed tool lists from a server are refreshed without re-approval. Stdio MCP servers run as separate processes with a minimal default environment, under the same container user as LibreChat.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.275,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "MCP servers and plugins are operator-chosen, but launch commands and remote endpoints are taken as configured with no version pinning or integrity check.",
+          "gap": "No pinning or hash/signature verification of MCP packages or plugins.",
+          "evidence": [
+            {
+              "file": "packages/data-provider/src/mcp.ts",
+              "lines": "343-344",
+              "contains": "type: z.literal('stdio').default('stdio'),",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/mcp.ts#L343-L344"
+            },
+            {
+              "file": "packages/api/src/plugins/deployment.ts",
+              "lines": "58-62",
+              "contains": "Holds the plugins installed by the operator.",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/plugins/deployment.ts#L58-L62"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No extension type is verified; tool-list changes trigger a refresh rather than re-approval.",
+          "gap": "No verification for any extension type.",
+          "evidence": [
+            {
+              "file": "packages/api/src/mcp/toolsChanged.ts",
+              "lines": "33-40",
+              "contains": "export function getMCPAppToolsPublicationGeneration",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/mcp/toolsChanged.ts#L33-L40"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No MCP server or plugin is enabled by default, stdio servers can only come from admin config, and ordinary users cannot create MCP servers by default.",
+          "gap": "Adding an extension does not show users what will run, and admins can grant MCP creation to users.",
+          "evidence": [
+            {
+              "file": "packages/data-provider/src/mcp.ts",
+              "lines": "534-557",
+              "contains": "Stdio transport is intentionally excluded from user input.",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/mcp.ts#L534-L557"
+            },
+            {
+              "file": "packages/data-provider/src/roles.ts",
+              "lines": "256-262",
+              "contains": "[Permissions.CREATE]: false",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/roles.ts#L256-L262"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Stdio MCP servers run as separate processes with only the MCP SDK's default environment plus their own configured variables.",
+          "gap": "No per-extension sandbox or scoped credentials; servers share the container user and network.",
+          "evidence": [
+            {
+              "file": "packages/api/src/mcp/connection.ts",
+              "lines": "1502",
+              "contains": "env: { ...getDefaultEnvironment(), ...(options.env ?? {}) },",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/mcp/connection.ts#L1502"
+            },
+            {
+              "file": "docker-compose.yml",
+              "lines": "14",
+              "contains": "user: \"${UID}:${GID}\"",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/docker-compose.yml#L14"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.275,
+          "raw": 0.275,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "MCP servers and plugins are operator-chosen, but launch commands and remote endpoints are taken as configured with no version pinning or integrity check.",
+              "gap": "No pinning or hash/signature verification of MCP packages or plugins.",
+              "evidence": [
+                {
+                  "file": "packages/data-provider/src/mcp.ts",
+                  "lines": "343-344",
+                  "contains": "type: z.literal('stdio').default('stdio'),",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/mcp.ts#L343-L344"
+                },
+                {
+                  "file": "packages/api/src/plugins/deployment.ts",
+                  "lines": "58-62",
+                  "contains": "Holds the plugins installed by the operator.",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/plugins/deployment.ts#L58-L62"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No extension type is verified; tool-list changes trigger a refresh rather than re-approval.",
+              "gap": "No verification for any extension type.",
+              "evidence": [
+                {
+                  "file": "packages/api/src/mcp/toolsChanged.ts",
+                  "lines": "33-40",
+                  "contains": "export function getMCPAppToolsPublicationGeneration",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/mcp/toolsChanged.ts#L33-L40"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No MCP server or plugin is enabled by default, stdio servers can only come from admin config, and ordinary users cannot create MCP servers by default.",
+              "gap": "Adding an extension does not show users what will run, and admins can grant MCP creation to users.",
+              "evidence": [
+                {
+                  "file": "packages/data-provider/src/mcp.ts",
+                  "lines": "534-557",
+                  "contains": "Stdio transport is intentionally excluded from user input.",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/mcp.ts#L534-L557"
+                },
+                {
+                  "file": "packages/data-provider/src/roles.ts",
+                  "lines": "256-262",
+                  "contains": "[Permissions.CREATE]: false",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/roles.ts#L256-L262"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Stdio MCP servers run as separate processes with only the MCP SDK's default environment plus their own configured variables.",
+              "gap": "No per-extension sandbox or scoped credentials; servers share the container user and network.",
+              "evidence": [
+                {
+                  "file": "packages/api/src/mcp/connection.ts",
+                  "lines": "1502",
+                  "contains": "env: { ...getDefaultEnvironment(), ...(options.env ?? {}) },",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/mcp/connection.ts#L1502"
+                },
+                {
+                  "file": "docker-compose.yml",
+                  "lines": "14",
+                  "contains": "user: \"${UID}:${GID}\"",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/docker-compose.yml#L14"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "Stored user API keys, action secrets and OAuth tokens are encrypted at rest with a server key, which the server generates when none is configured. Logs pass through a redaction filter for API-key, bearer-token and secret patterns on both console and file output, and tracing to Langfuse or OpenTelemetry is opt-in. The example environment turns debug file logging on. Message content, files and tool results are sent to the model provider and stored in the database without redaction unless an administrator configures PII filters.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.45,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "User credentials are AES-encrypted at rest and log output is redacted by key and pattern, but model-bound content is not redacted by default.",
+          "gap": "Redaction does not cover model-bound messages by default, and no secret manager is used.",
+          "evidence": [
+            {
+              "file": "packages/data-schemas/src/crypto/index.ts",
+              "lines": "115-128",
+              "contains": "const algorithm_v3 = 'aes-256-ctr';",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/crypto/index.ts#L115-L128"
+            },
+            {
+              "file": "packages/data-schemas/src/config/parsers.ts",
+              "lines": "41-52",
+              "contains": "/\\b(Bearer )[^\\s\"']+/g, // Header: Bearer token pattern",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/config/parsers.ts#L41-L52"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Console and file logs are redacted and stdio subprocesses get stripped environments, but saved transcripts and model-bound messages are unfiltered by default.",
+          "gap": "Model-bound messages and transcripts are not covered.",
+          "evidence": [
+            {
+              "file": "packages/data-schemas/src/config/winston.ts",
+              "lines": "36-40",
+              "contains": "redactFormat(),",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/config/winston.ts#L36-L40"
+            },
+            {
+              "file": "packages/api/src/mcp/connection.ts",
+              "lines": "1502",
+              "contains": "env: { ...getDefaultEnvironment(), ...(options.env ?? {}) },",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/mcp/connection.ts#L1502"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Telemetry export is opt-in through environment keys; the example environment enables debug file logging, which is redacted.",
+          "gap": "Debug logging is on in the shipped example environment and stored transcripts are not minimised.",
+          "evidence": [
+            {
+              "file": ".env.example",
+              "lines": "195",
+              "contains": "DEBUG_LOGGING=true",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/.env.example#L195"
+            },
+            {
+              "file": "packages/api/src/langfuse/config.ts",
+              "lines": "81-82",
+              "contains": "process.env.LANGFUSE_PUBLIC_KEY",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/langfuse/config.ts#L81-L82"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A leak from the server exposes long-lived provider keys and OAuth tokens of every user, moderately scoped by each user's own provider.",
+          "gap": "Keys are long-lived; no short-lived or per-task credentials.",
+          "evidence": [
+            {
+              "file": "api/server/services/ActionService.js",
+              "lines": "455",
+              "contains": "encryptedMetadata.api_key = await encryptSensitiveValue(metadata.api_key);",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/services/ActionService.js#L455"
+            },
+            {
+              "file": ".env.example",
+              "lines": "597",
+              "contains": "OPENAI_API_KEY=user_provided",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/.env.example#L597"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.45,
+          "raw": 0.45,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "User credentials are AES-encrypted at rest and log output is redacted by key and pattern, but model-bound content is not redacted by default.",
+              "gap": "Redaction does not cover model-bound messages by default, and no secret manager is used.",
+              "evidence": [
+                {
+                  "file": "packages/data-schemas/src/crypto/index.ts",
+                  "lines": "115-128",
+                  "contains": "const algorithm_v3 = 'aes-256-ctr';",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/crypto/index.ts#L115-L128"
+                },
+                {
+                  "file": "packages/data-schemas/src/config/parsers.ts",
+                  "lines": "41-52",
+                  "contains": "/\\b(Bearer )[^\\s\"']+/g, // Header: Bearer token pattern",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/config/parsers.ts#L41-L52"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Console and file logs are redacted and stdio subprocesses get stripped environments, but saved transcripts and model-bound messages are unfiltered by default.",
+              "gap": "Model-bound messages and transcripts are not covered.",
+              "evidence": [
+                {
+                  "file": "packages/data-schemas/src/config/winston.ts",
+                  "lines": "36-40",
+                  "contains": "redactFormat(),",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/config/winston.ts#L36-L40"
+                },
+                {
+                  "file": "packages/api/src/mcp/connection.ts",
+                  "lines": "1502",
+                  "contains": "env: { ...getDefaultEnvironment(), ...(options.env ?? {}) },",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/mcp/connection.ts#L1502"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Telemetry export is opt-in through environment keys; the example environment enables debug file logging, which is redacted.",
+              "gap": "Debug logging is on in the shipped example environment and stored transcripts are not minimised.",
+              "evidence": [
+                {
+                  "file": ".env.example",
+                  "lines": "195",
+                  "contains": "DEBUG_LOGGING=true",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/.env.example#L195"
+                },
+                {
+                  "file": "packages/api/src/langfuse/config.ts",
+                  "lines": "81-82",
+                  "contains": "process.env.LANGFUSE_PUBLIC_KEY",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/langfuse/config.ts#L81-L82"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A leak from the server exposes long-lived provider keys and OAuth tokens of every user, moderately scoped by each user's own provider.",
+              "gap": "Keys are long-lived; no short-lived or per-task credentials.",
+              "evidence": [
+                {
+                  "file": "api/server/services/ActionService.js",
+                  "lines": "455",
+                  "contains": "encryptedMetadata.api_key = await encryptSensitiveValue(metadata.api_key);",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/services/ActionService.js#L455"
+                },
+                {
+                  "file": ".env.example",
+                  "lines": "597",
+                  "contains": "OPENAI_API_KEY=user_provided",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/.env.example#L597"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "Every message and its tool calls, with arguments and outputs, are stored in MongoDB per user and conversation, so a session can be reconstructed. LibreChat also has an append-only, hash-chained audit log, but today it only records role grants and permission changes, not agent runs, tool calls or approvals. Records live in the same database the server process writes to.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.45,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tool calls are recorded as structured message content and tool-call documents tied to user and conversation.",
+          "gap": "Approver identity and correlation across sub-agents are not recorded in a tamper-evident store; the hash-chained audit log covers only admin grants.",
+          "evidence": [
+            {
+              "file": "packages/data-schemas/src/schema/toolCall.ts",
+              "lines": "21-40",
+              "contains": "toolId: {",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/schema/toolCall.ts#L21-L40"
+            },
+            {
+              "file": "packages/data-schemas/src/schema/message.ts",
+              "lines": "139",
+              "contains": "content: {",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/schema/message.ts#L139"
+            },
+            {
+              "file": "packages/data-schemas/src/models/auditLog.ts",
+              "lines": "6",
+              "contains": "AuditLog is an append-only, hash-chained compliance record.",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/models/auditLog.ts#L6"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Built-in, action and MCP tool calls are persisted with the message; the audit log's action list covers grant and permission events only.",
+          "gap": "Approvals, denials, configuration changes and memory writes are not in the audit record.",
+          "evidence": [
+            {
+              "file": "packages/data-schemas/src/types/admin.ts",
+              "lines": "68-73",
+              "contains": "'grant.assigned',",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/types/admin.ts#L68-L73"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Message persistence is always on and stored in MongoDB outside any tool's reach, but the server process can alter it.",
+          "gap": "Records are written by the same process that runs the agent.",
+          "evidence": [
+            {
+              "file": "packages/data-schemas/src/schema/message.ts",
+              "lines": "139",
+              "contains": "content: {",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/schema/message.ts#L139"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "Conversation records are written as part of message saving; there is no fail-closed path tying actions to a written record.",
+          "gap": "No per-action durable write before execution.",
+          "evidence": [
+            {
+              "file": "packages/data-schemas/src/schema/toolCall.ts",
+              "lines": "21-40",
+              "contains": "toolId: {",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/schema/toolCall.ts#L21-L40"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.45,
+          "raw": 0.45,
+          "cap": null,
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tool calls are recorded as structured message content and tool-call documents tied to user and conversation.",
+              "gap": "Approver identity and correlation across sub-agents are not recorded in a tamper-evident store; the hash-chained audit log covers only admin grants.",
+              "evidence": [
+                {
+                  "file": "packages/data-schemas/src/schema/toolCall.ts",
+                  "lines": "21-40",
+                  "contains": "toolId: {",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/schema/toolCall.ts#L21-L40"
+                },
+                {
+                  "file": "packages/data-schemas/src/schema/message.ts",
+                  "lines": "139",
+                  "contains": "content: {",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/schema/message.ts#L139"
+                },
+                {
+                  "file": "packages/data-schemas/src/models/auditLog.ts",
+                  "lines": "6",
+                  "contains": "AuditLog is an append-only, hash-chained compliance record.",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/models/auditLog.ts#L6"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Built-in, action and MCP tool calls are persisted with the message; the audit log's action list covers grant and permission events only.",
+              "gap": "Approvals, denials, configuration changes and memory writes are not in the audit record.",
+              "evidence": [
+                {
+                  "file": "packages/data-schemas/src/types/admin.ts",
+                  "lines": "68-73",
+                  "contains": "'grant.assigned',",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/types/admin.ts#L68-L73"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Message persistence is always on and stored in MongoDB outside any tool's reach, but the server process can alter it.",
+              "gap": "Records are written by the same process that runs the agent.",
+              "evidence": [
+                {
+                  "file": "packages/data-schemas/src/schema/message.ts",
+                  "lines": "139",
+                  "contains": "content: {",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/schema/message.ts#L139"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "Conversation records are written as part of message saving; there is no fail-closed path tying actions to a written record.",
+              "gap": "No per-action durable write before execution.",
+              "evidence": [
+                {
+                  "file": "packages/data-schemas/src/schema/toolCall.ts",
+                  "lines": "21-40",
+                  "contains": "toolId: {",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-schemas/src/schema/toolCall.ts#L21-L40"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "Each agent turn is capped at 50 graph steps by default, sub-agents derive their turn budget from the same limit, model calls have response timeouts, and per-user message concurrency and rate limits are on in the example environment. Users can stop a generation, which aborts the running job. But token spending limits (balance) are off by default, there is no default maximum, so any agent author can set a much higher step limit on their own agent, and scheduled agent runs fire without the user present.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.4,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A step cap plus model response timeouts and argument-size guards are enforced in code; token budgets exist only through the opt-in balance system.",
+          "gap": "No default token or cost cap.",
+          "evidence": [
+            {
+              "file": "packages/api/src/agents/config.ts",
+              "lines": "8",
+              "contains": "const DEFAULT_RECURSION_LIMIT = 50;",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/config.ts#L8"
+            },
+            {
+              "file": "packages/data-provider/src/config.ts",
+              "lines": "1335-1336",
+              "contains": "900_000",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/config.ts#L1335-L1336"
+            },
+            {
+              "file": "packages/api/src/stream/GenerationJobManager.ts",
+              "lines": "963",
+              "contains": "runtime.abortController.abort();",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/stream/GenerationJobManager.ts#L963"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The step limit applies to the top-level run and is reused to size sub-agent turns, but each sub-agent gets its own budget rather than sharing the parent's.",
+          "gap": "Sub-agents and scheduled runs do not draw from one shared budget.",
+          "evidence": [
+            {
+              "file": "packages/api/src/agents/config.ts",
+              "lines": "77-83",
+              "contains": "return Math.floor(limit / SUBAGENT_RECURSION_MULTIPLIER);",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/config.ts#L77-L83"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The default limit of 50 can be raised without bound by any agent author through the per-agent recursion_limit unless an admin sets maxRecursionLimit.",
+          "gap": "No default ceiling on per-agent limits; balance is off by default.",
+          "evidence": [
+            {
+              "file": "packages/api/src/agents/config.ts",
+              "lines": "41-58",
+              "contains": "limit = agent.recursion_limit;",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/config.ts#L41-L58"
+            },
+            {
+              "file": "packages/api/src/agents/validation.ts",
+              "lines": "592",
+              "contains": "recursion_limit: z.number().optional(),",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/validation.ts#L592"
+            },
+            {
+              "file": "packages/data-provider/src/config.ts",
+              "lines": "2822-2823",
+              "contains": "enabled: z.boolean().optional().default(false),",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/config.ts#L2822-L2823"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Abort stops the running job, but spend is unbounded by default and scheduled runs continue on their own.",
+          "gap": "No default spend ceiling, and schedules keep firing after a stop.",
+          "evidence": [
+            {
+              "file": "api/server/routes/agents/index.js",
+              "lines": "570",
+              "contains": "router.post('/chat/abort', configMiddleware, async (req, res, next) => {",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/routes/agents/index.js#L570"
+            },
+            {
+              "file": "packages/data-provider/src/roles.ts",
+              "lines": "280-283",
+              "contains": "[PermissionTypes.SCHEDULES]: {",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/roles.ts#L280-L283"
+            },
+            {
+              "file": ".env.example",
+              "lines": "864-868",
+              "contains": "LIMIT_CONCURRENT_MESSAGES=true",
+              "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/.env.example#L864-L868"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.4,
+          "raw": 0.4,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A step cap plus model response timeouts and argument-size guards are enforced in code; token budgets exist only through the opt-in balance system.",
+              "gap": "No default token or cost cap.",
+              "evidence": [
+                {
+                  "file": "packages/api/src/agents/config.ts",
+                  "lines": "8",
+                  "contains": "const DEFAULT_RECURSION_LIMIT = 50;",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/config.ts#L8"
+                },
+                {
+                  "file": "packages/data-provider/src/config.ts",
+                  "lines": "1335-1336",
+                  "contains": "900_000",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/config.ts#L1335-L1336"
+                },
+                {
+                  "file": "packages/api/src/stream/GenerationJobManager.ts",
+                  "lines": "963",
+                  "contains": "runtime.abortController.abort();",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/stream/GenerationJobManager.ts#L963"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The step limit applies to the top-level run and is reused to size sub-agent turns, but each sub-agent gets its own budget rather than sharing the parent's.",
+              "gap": "Sub-agents and scheduled runs do not draw from one shared budget.",
+              "evidence": [
+                {
+                  "file": "packages/api/src/agents/config.ts",
+                  "lines": "77-83",
+                  "contains": "return Math.floor(limit / SUBAGENT_RECURSION_MULTIPLIER);",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/config.ts#L77-L83"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The default limit of 50 can be raised without bound by any agent author through the per-agent recursion_limit unless an admin sets maxRecursionLimit.",
+              "gap": "No default ceiling on per-agent limits; balance is off by default.",
+              "evidence": [
+                {
+                  "file": "packages/api/src/agents/config.ts",
+                  "lines": "41-58",
+                  "contains": "limit = agent.recursion_limit;",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/config.ts#L41-L58"
+                },
+                {
+                  "file": "packages/api/src/agents/validation.ts",
+                  "lines": "592",
+                  "contains": "recursion_limit: z.number().optional(),",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/validation.ts#L592"
+                },
+                {
+                  "file": "packages/data-provider/src/config.ts",
+                  "lines": "2822-2823",
+                  "contains": "enabled: z.boolean().optional().default(false),",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/config.ts#L2822-L2823"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Abort stops the running job, but spend is unbounded by default and scheduled runs continue on their own.",
+              "gap": "No default spend ceiling, and schedules keep firing after a stop.",
+              "evidence": [
+                {
+                  "file": "api/server/routes/agents/index.js",
+                  "lines": "570",
+                  "contains": "router.post('/chat/abort', configMiddleware, async (req, res, next) => {",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/api/server/routes/agents/index.js#L570"
+                },
+                {
+                  "file": "packages/data-provider/src/roles.ts",
+                  "lines": "280-283",
+                  "contains": "[PermissionTypes.SCHEDULES]: {",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/roles.ts#L280-L283"
+                },
+                {
+                  "file": ".env.example",
+                  "lines": "864-868",
+                  "contains": "LIMIT_CONCURRENT_MESSAGES=true",
+                  "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/.env.example#L864-L868"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "With tool approval off by default and no provenance controls, injected content can make an agent send data out and take external write actions through actions or MCP tools with no human involved (C5-WORSTCASE).",
+      "criterion": "C5",
+      "owasp": [
+        "ASI01",
+        "T6",
+        "LLM01"
+      ],
+      "evidence": [
+        {
+          "file": "packages/api/src/agents/hitl/policy.ts",
+          "lines": "97-101",
+          "contains": "return policy?.enabled === true;",
+          "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/hitl/policy.ts#L97-L101"
+        },
+        {
+          "file": "packages/data-provider/src/config.ts",
+          "lines": "830-847",
+          "contains": "AgentCapabilities.actions,",
+          "url": "https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/config.ts#L830-L847"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "Uploaded files, web search results, action and MCP tool outputs enter the agent context (packages/data-provider/src/config.ts:830)",
+    "sensitive_data": "User files, memories and per-user connected credentials (api/server/services/ActionService.js:455)",
+    "state_change_or_egress": "User-defined HTTP actions to any public host and MCP tools (api/server/services/ToolService.js:667)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Turn tool approval on by default (ask for actions, MCP and code tools) so administrators opt out rather than in.",
+      "criterion": "C2",
+      "parameter": "D",
+      "from_level": 0,
+      "to_level": 3,
+      "playbook": "Playbook 5",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Once a turn has read files, search results or tool outputs, force egress and write tools through approval.",
+      "criterion": "C5",
+      "parameter": "S",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 1",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Ship a default maxRecursionLimit and enable balance with a conservative per-user token budget.",
+      "criterion": "C10",
+      "parameter": "D",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 3 step 3",
+      "estimated_gain": 0.05
+    },
+    {
+      "summary": "Pin MCP server packages and plugins by version and digest, and require admin re-approval when a server's tool list changes.",
+      "criterion": "C7",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 3,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Extend the hash-chained audit log to agent runs, tool calls and approval decisions.",
+      "criterion": "C9",
+      "parameter": "C",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 1 step 3",
+      "estimated_gain": 0.075
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was executed, installed, or probed.",
+    "The agent loop, tool-approval interception and the code-execution sandbox live in external packages and services (@librechat/agents, the Code Interpreter API) that are not in this repository; C2 coverage and C4 strength and blast radius are inferred.",
+    "Opt-in subsystems (attached personal code workers, schedules and triggers, remote agents API, plugins, OBO token exchange, PII filters) were reviewed only for their defaults.",
+    "The separate admin panel and RAG API container images were not reviewed.",
+    "No text attempting to steer AI reviewers was found in the repository."
+  ]
+}

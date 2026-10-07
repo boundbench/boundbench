@@ -1,0 +1,2368 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "nemoclaw",
+  "name": "NemoClaw",
+  "repo_url": "https://github.com/NVIDIA/NemoClaw",
+  "subpath": null,
+  "description": "NVIDIA reference stack for running always-on AI agents (OpenClaw by default) inside OpenShell sandboxes with managed inference, network policy and lifecycle tooling.",
+  "category": "ai_assistants",
+  "pinned_commit": "e68bcacd808a916b6b7e07334d1256ce51f9c6ef",
+  "version": "v0.0.130-12-ge68bcacd",
+  "scored_date": "2026-10-04",
+  "scored_configuration": "Default `nemoclaw onboard` / express install: OpenClaw agent in an OpenShell sandbox, Balanced policy tier, NVIDIA Endpoints inference, no messaging channels or extra presets.",
+  "score": 4.7,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 10,
+    "score": 4.65,
+    "max": 10.0,
+    "percent": 47
+  },
+  "capability_profile": {
+    "code_execution": "yes",
+    "filesystem_write": "yes",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "yes",
+    "untrusted_input": "yes",
+    "third_party_extensions": "yes",
+    "sub_agents": "opt_in",
+    "external_communication": "opt_in"
+  },
+  "headline": "NemoClaw puts a strong box around the agent: every command runs in a hardened, non-root OpenShell sandbox, egress is deny-by-default with operator approval for new hosts, and API keys never enter the sandbox. Inside the box it adds little: no approval for commands, no integrity protection for the agent's self-writable config, hooks, memory and cron jobs, and no cost cap. The dominant risk is that the default Balanced tier still leaves unattended outbound channels (POST to clawhub.ai/openclaw.ai, uninspected npm traffic) and lets the agent install arbitrary packages, so a prompt-injected agent can exfiltrate sandbox data and persist itself.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "The agent runs inside the sandbox as an unprivileged 'sandbox' user and never receives the raw provider API keys: NemoClaw registers keys with the OpenShell gateway and writes only placeholder references into the agent config, which the egress proxy swaps for the real key only on the matching allowed endpoint. Inference goes through a virtual inference.local route that the host owns. On the host side, the NemoClaw CLI passes child processes an allowlisted environment rather than its full environment. Credentials are long-lived API keys rather than per-task tokens, and the agent can still spend inference budget freely through the managed route.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.75,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Each credential is bound to one provider endpoint and substituted by the egress proxy from a placeholder; the sandbox identity is a non-root user with no raw keys.",
+          "gap": "Credentials are long-lived provider keys, not short-lived task-scoped tokens issued per request.",
+          "evidence": [
+            {
+              "file": "scripts/generate-openclaw-config.mts",
+              "lines": "1112",
+              "contains": "webSearch: { apiKey: `openshell:resolve:env:${credentialEnv}` }",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L1112"
+            },
+            {
+              "file": "src/lib/adapters/openshell/provider-adapter-cli.ts",
+              "lines": "535",
+              "contains": "\"provider\", \"create\"",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/adapters/openshell/provider-adapter-cli.ts#L535"
+            },
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "62",
+              "contains": "run_as_user: sandbox",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L62"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every sandbox network path goes through the OpenShell proxy that performs credential substitution, and host-side subprocesses get an allowlisted environment.",
+          "gap": "Authorization is not evaluated against a requesting principal (no per-user authorization for messaging senders in NemoClaw's own code).",
+          "evidence": [
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "91",
+              "contains": "host: inference.local",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L91"
+            },
+            {
+              "file": "src/lib/subprocess-env.ts",
+              "lines": "97-112",
+              "contains": "if (isSubprocessEnvNameAllowed(key))",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/subprocess-env.ts#L97-L112"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Default onboarding attaches only the inference credential (plus an optional search key); GitHub, messaging, Jira and mail credentials require explicit presets.",
+          "gap": "Nothing makes elevation time-bounded; approved policy and credential bindings persist until the sandbox is recreated.",
+          "evidence": [
+            {
+              "file": "nemoclaw-blueprint/policies/tiers.yaml",
+              "lines": "23-31",
+              "contains": "name: balanced",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/tiers.yaml#L23-L31"
+            },
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "105-108",
+              "contains": "github.com / api.github.com",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L105-L108"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked agent can use the managed inference route and the sandbox's own files but cannot read the provider keys or reach other systems' credentials.",
+          "gap": "Keys are not short-lived or automatically revoked after use.",
+          "evidence": [
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "91",
+              "contains": "host: inference.local",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L91"
+            },
+            {
+              "file": "scripts/generate-openclaw-config.mts",
+              "lines": "1112",
+              "contains": "webSearch: { apiKey: `openshell:resolve:env:${credentialEnv}` }",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L1112"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.75,
+          "raw": 0.75,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Each credential is bound to one provider endpoint and substituted by the egress proxy from a placeholder; the sandbox identity is a non-root user with no raw keys.",
+              "gap": "Credentials are long-lived provider keys, not short-lived task-scoped tokens issued per request.",
+              "evidence": [
+                {
+                  "file": "scripts/generate-openclaw-config.mts",
+                  "lines": "1112",
+                  "contains": "webSearch: { apiKey: `openshell:resolve:env:${credentialEnv}` }",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L1112"
+                },
+                {
+                  "file": "src/lib/adapters/openshell/provider-adapter-cli.ts",
+                  "lines": "535",
+                  "contains": "\"provider\", \"create\"",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/adapters/openshell/provider-adapter-cli.ts#L535"
+                },
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "62",
+                  "contains": "run_as_user: sandbox",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L62"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every sandbox network path goes through the OpenShell proxy that performs credential substitution, and host-side subprocesses get an allowlisted environment.",
+              "gap": "Authorization is not evaluated against a requesting principal (no per-user authorization for messaging senders in NemoClaw's own code).",
+              "evidence": [
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "91",
+                  "contains": "host: inference.local",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L91"
+                },
+                {
+                  "file": "src/lib/subprocess-env.ts",
+                  "lines": "97-112",
+                  "contains": "if (isSubprocessEnvNameAllowed(key))",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/subprocess-env.ts#L97-L112"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default onboarding attaches only the inference credential (plus an optional search key); GitHub, messaging, Jira and mail credentials require explicit presets.",
+              "gap": "Nothing makes elevation time-bounded; approved policy and credential bindings persist until the sandbox is recreated.",
+              "evidence": [
+                {
+                  "file": "nemoclaw-blueprint/policies/tiers.yaml",
+                  "lines": "23-31",
+                  "contains": "name: balanced",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/tiers.yaml#L23-L31"
+                },
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "105-108",
+                  "contains": "github.com / api.github.com",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L105-L108"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked agent can use the managed inference route and the sandbox's own files but cannot read the provider keys or reach other systems' credentials.",
+              "gap": "Keys are not short-lived or automatically revoked after use.",
+              "evidence": [
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "91",
+                  "contains": "host: inference.local",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L91"
+                },
+                {
+                  "file": "scripts/generate-openclaw-config.mts",
+                  "lines": "1112",
+                  "contains": "webSearch: { apiKey: `openshell:resolve:env:${credentialEnv}` }",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L1112"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "The only human approval NemoClaw sets up is at the network layer: when the agent tries to reach a host that is not in its policy, OpenShell blocks the request and asks the operator to approve or deny it. Commands, file writes and calls to already-allowed endpoints (including POST to clawhub.ai and openclaw.ai) run without any approval that NemoClaw configures; tool approval is delegated to OpenClaw, and NemoClaw writes no exec-approval policy into the agent config. A startup watcher automatically approves OpenClaw device scope-upgrade requests from allowlisted client IDs that the code itself calls spoofable. Approved endpoints are stored as durable policy revisions until the sandbox is rebuilt.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.425,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Egress to an unlisted host waits for per-request operator approval in the OpenShell TUI, but nothing in NemoClaw gates commands or file changes inside the sandbox.",
+          "gap": "No per-call approval showing the exact command or diff for consequential in-sandbox actions.",
+          "evidence": [
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "1-14",
+              "contains": "deny by default",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L1-L14"
+            },
+            {
+              "search": "rg -n \"exec-approvals|askFallback|tools\\.exec|maxTurns|maxIterations|maxSteps\"",
+              "scope": "scripts/generate-openclaw-config.mts",
+              "hits": 0,
+              "note": "NemoClaw emits no OpenClaw exec-approval policy, step cap, or iteration cap into the generated agent config."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only unlisted egress crosses a gate; shell commands, file writes and POSTs to baseline-allowed hosts do not, and device scope upgrades are auto-approved.",
+          "gap": "Consequential tool paths (exec, writes, allowed-endpoint POSTs) do not traverse a gate NemoClaw owns.",
+          "evidence": [
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "121-132",
+              "contains": "host: clawhub.ai",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L121-L132"
+            },
+            {
+              "file": "scripts/nemoclaw-start.sh",
+              "lines": "2092-2095",
+              "contains": "not a trust boundary",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/nemoclaw-start.sh#L2092-L2095"
+            },
+            {
+              "file": "src/lib/actions/sandbox/auto-pair-approval.ts",
+              "lines": "19-23",
+              "contains": "operator.pairing/read/write scopes",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/actions/sandbox/auto-pair-approval.ts#L19-L23"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The egress gate is on by default, but approved endpoints accumulate as durable policy revisions and operators can widen policy with a plain policy command.",
+          "gap": "Persisted approvals are not time-bounded and widening is not loudly flagged.",
+          "evidence": [
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "5-14",
+              "contains": "openshell policy set",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L5-L14"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Most in-sandbox damage is recoverable by recreating the sandbox from the blueprint, but outbound POSTs to allowed hosts are irreversible and unbounded.",
+          "gap": "No checkpoints/rollback of sandbox state and no previews or quantity limits on external actions.",
+          "evidence": [
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "121-132",
+              "contains": "host: clawhub.ai",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L121-L132"
+            },
+            {
+              "file": "nemoclaw-blueprint/blueprint.yaml",
+              "lines": "35",
+              "contains": "openclaw@sha256:",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/blueprint.yaml#L35"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.425,
+          "raw": 0.425,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Egress to an unlisted host waits for per-request operator approval in the OpenShell TUI, but nothing in NemoClaw gates commands or file changes inside the sandbox.",
+              "gap": "No per-call approval showing the exact command or diff for consequential in-sandbox actions.",
+              "evidence": [
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "1-14",
+                  "contains": "deny by default",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L1-L14"
+                },
+                {
+                  "search": "rg -n \"exec-approvals|askFallback|tools\\.exec|maxTurns|maxIterations|maxSteps\"",
+                  "scope": "scripts/generate-openclaw-config.mts",
+                  "hits": 0,
+                  "note": "NemoClaw emits no OpenClaw exec-approval policy, step cap, or iteration cap into the generated agent config."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only unlisted egress crosses a gate; shell commands, file writes and POSTs to baseline-allowed hosts do not, and device scope upgrades are auto-approved.",
+              "gap": "Consequential tool paths (exec, writes, allowed-endpoint POSTs) do not traverse a gate NemoClaw owns.",
+              "evidence": [
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "121-132",
+                  "contains": "host: clawhub.ai",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L121-L132"
+                },
+                {
+                  "file": "scripts/nemoclaw-start.sh",
+                  "lines": "2092-2095",
+                  "contains": "not a trust boundary",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/nemoclaw-start.sh#L2092-L2095"
+                },
+                {
+                  "file": "src/lib/actions/sandbox/auto-pair-approval.ts",
+                  "lines": "19-23",
+                  "contains": "operator.pairing/read/write scopes",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/actions/sandbox/auto-pair-approval.ts#L19-L23"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The egress gate is on by default, but approved endpoints accumulate as durable policy revisions and operators can widen policy with a plain policy command.",
+              "gap": "Persisted approvals are not time-bounded and widening is not loudly flagged.",
+              "evidence": [
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "5-14",
+                  "contains": "openshell policy set",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L5-L14"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Most in-sandbox damage is recoverable by recreating the sandbox from the blueprint, but outbound POSTs to allowed hosts are irreversible and unbounded.",
+              "gap": "No checkpoints/rollback of sandbox state and no previews or quantity limits on external actions.",
+              "evidence": [
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "121-132",
+                  "contains": "host: clawhub.ai",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L121-L132"
+                },
+                {
+                  "file": "nemoclaw-blueprint/blueprint.yaml",
+                  "lines": "35",
+                  "contains": "openclaw@sha256:",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/blueprint.yaml#L35"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "NemoClaw does not narrow the agent's tools themselves (the agent keeps a general shell), but it scopes what those tools can reach with a deny-by-default egress policy that pins host, port, HTTP method, path and even the calling binary. The baseline is tight for inference (only specific NVIDIA API paths), but it allows GET and POST to any path on clawhub.ai and openclaw.ai, and the default Balanced tier adds npm registry access with no request inspection at all. Every tool's network traffic goes through this one policy layer. Inside the sandbox, the agent has full write access to its home and config tree.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.575,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Host/method/path/binary allowlists are enforced at the proxy, but the agent's tools are general (shell) and several default entries are wide (POST /** on clawhub.ai, L4 pass-through npm).",
+          "gap": "Default allowlist entries are not narrowed to specific paths for every host, and general tools are not replaced by narrow ones.",
+          "evidence": [
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "70-78",
+              "contains": "allow: { method: POST, path: \"/v1/chat/completions\" }",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L70-L78"
+            },
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "121-132",
+              "contains": "host: clawhub.ai",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L121-L132"
+            },
+            {
+              "file": "nemoclaw-blueprint/policies/presets/npm.yaml",
+              "lines": "16-19",
+              "contains": "access: full",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/presets/npm.yaml#L16-L19"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every process in the sandbox, whatever tool spawned it, is subject to the same egress policy layer.",
+          "gap": "Validation is network-only; filesystem and command arguments are not checked by a central policy layer.",
+          "evidence": [
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "91",
+              "contains": "host: inference.local",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L91"
+            },
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "105-108",
+              "contains": "github.com / api.github.com",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L105-L108"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Policy tiers are selectable, but the default Balanced tier enables package registries and search on top of shell and write tools.",
+          "gap": "Default is not a read-only tool set.",
+          "evidence": [
+            {
+              "file": "src/lib/onboard/policy-selection-prompts.ts",
+              "lines": "131",
+              "contains": "tier.name === \"balanced\"",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/onboard/policy-selection-prompts.ts#L131"
+            },
+            {
+              "file": "nemoclaw-blueprint/policies/tiers.yaml",
+              "lines": "23-31",
+              "contains": "name: balanced",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/tiers.yaml#L23-L31"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A misused tool is confined to the sandbox with full write inside it plus the allowed endpoints.",
+          "gap": "No quantity bounds on writes or outbound requests.",
+          "evidence": [
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "45",
+              "contains": "/sandbox/.openclaw",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L45"
+            },
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "121-132",
+              "contains": "host: clawhub.ai",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L121-L132"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.575,
+          "raw": 0.575,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Host/method/path/binary allowlists are enforced at the proxy, but the agent's tools are general (shell) and several default entries are wide (POST /** on clawhub.ai, L4 pass-through npm).",
+              "gap": "Default allowlist entries are not narrowed to specific paths for every host, and general tools are not replaced by narrow ones.",
+              "evidence": [
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "70-78",
+                  "contains": "allow: { method: POST, path: \"/v1/chat/completions\" }",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L70-L78"
+                },
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "121-132",
+                  "contains": "host: clawhub.ai",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L121-L132"
+                },
+                {
+                  "file": "nemoclaw-blueprint/policies/presets/npm.yaml",
+                  "lines": "16-19",
+                  "contains": "access: full",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/presets/npm.yaml#L16-L19"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every process in the sandbox, whatever tool spawned it, is subject to the same egress policy layer.",
+              "gap": "Validation is network-only; filesystem and command arguments are not checked by a central policy layer.",
+              "evidence": [
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "91",
+                  "contains": "host: inference.local",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L91"
+                },
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "105-108",
+                  "contains": "github.com / api.github.com",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L105-L108"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Policy tiers are selectable, but the default Balanced tier enables package registries and search on top of shell and write tools.",
+              "gap": "Default is not a read-only tool set.",
+              "evidence": [
+                {
+                  "file": "src/lib/onboard/policy-selection-prompts.ts",
+                  "lines": "131",
+                  "contains": "tier.name === \"balanced\"",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/onboard/policy-selection-prompts.ts#L131"
+                },
+                {
+                  "file": "nemoclaw-blueprint/policies/tiers.yaml",
+                  "lines": "23-31",
+                  "contains": "name: balanced",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/tiers.yaml#L23-L31"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A misused tool is confined to the sandbox with full write inside it plus the allowed endpoints.",
+              "gap": "No quantity bounds on writes or outbound requests.",
+              "evidence": [
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "45",
+                  "contains": "/sandbox/.openclaw",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L45"
+                },
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "121-132",
+                  "contains": "host: clawhub.ai",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L121-L132"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "The whole agent, including every command it runs, lives inside an OpenShell container sandbox: non-root sandbox user, read-only system directories, Landlock filesystem rules, seccomp and no-new-privileges applied by OpenShell, and a separate network namespace whose only exit is the policy proxy. The OpenShell version is pinned exactly and the sandbox image by digest. The sandbox policy is defined on the host, outside anything the agent can write. Weak spots: Landlock runs in 'best_effort' mode so it can silently not apply on unsupported kernels, process limits are applied best-effort, and memory/CPU caps are optional.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.7,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Hardened container: non-root user, read-only system paths, Landlock plus seccomp/no-new-privs via the pinned OpenShell runtime, network namespace with proxy-only egress.",
+          "gap": "Not kernel-separated (no microVM/gVisor).",
+          "evidence": [
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "62",
+              "contains": "run_as_user: sandbox",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L62"
+            },
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "28",
+              "contains": "- /etc",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L28"
+            },
+            {
+              "file": "Dockerfile",
+              "lines": "1614",
+              "contains": "ARG NEMOCLAW_MANAGED_IMAGE_RUNTIME_USER=sandbox",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/Dockerfile#L1614"
+            },
+            {
+              "file": "nemoclaw-blueprint/blueprint.yaml",
+              "lines": "6-7",
+              "contains": "max_openshell_version: \"0.0.116\"",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/blueprint.yaml#L6-L7"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every agent process runs inside the sandbox; there is no host execution path for model-driven commands.",
+          "gap": "Landlock is best_effort, so one layer can fail open rather than failing closed.",
+          "evidence": [
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "62",
+              "contains": "run_as_user: sandbox",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L62"
+            },
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "59",
+              "contains": "compatibility: best_effort",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L59"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Sandboxing is always on and the policy lives on the host; the agent cannot request unsandboxed execution.",
+          "gap": "Landlock degrades silently instead of requiring an explicit operator choice.",
+          "evidence": [
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "59",
+              "contains": "compatibility: best_effort",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L59"
+            },
+            {
+              "file": "nemoclaw-blueprint/blueprint.yaml",
+              "lines": "6-7",
+              "contains": "max_openshell_version: \"0.0.116\"",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/blueprint.yaml#L6-L7"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No secrets in the sandbox and allowlisted egress, but the default allowlist includes uninspected npm pass-through and POST /** hosts, and memory/CPU caps are not set by default.",
+          "gap": "Default egress includes broad channels and memory/CPU limits are optional.",
+          "evidence": [
+            {
+              "file": "nemoclaw-blueprint/policies/presets/npm.yaml",
+              "lines": "16-19",
+              "contains": "access: full",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/presets/npm.yaml#L16-L19"
+            },
+            {
+              "file": "scripts/lib/sandbox-rlimits.sh",
+              "lines": "8-9",
+              "contains": "NEMOCLAW_SANDBOX_NPROC_LIMIT=512",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/lib/sandbox-rlimits.sh#L8-L9"
+            },
+            {
+              "file": "scripts/generate-openclaw-config.mts",
+              "lines": "1112",
+              "contains": "webSearch: { apiKey: `openshell:resolve:env:${credentialEnv}` }",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L1112"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.7,
+          "raw": 0.7,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Hardened container: non-root user, read-only system paths, Landlock plus seccomp/no-new-privs via the pinned OpenShell runtime, network namespace with proxy-only egress.",
+              "gap": "Not kernel-separated (no microVM/gVisor).",
+              "evidence": [
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "62",
+                  "contains": "run_as_user: sandbox",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L62"
+                },
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "28",
+                  "contains": "- /etc",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L28"
+                },
+                {
+                  "file": "Dockerfile",
+                  "lines": "1614",
+                  "contains": "ARG NEMOCLAW_MANAGED_IMAGE_RUNTIME_USER=sandbox",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/Dockerfile#L1614"
+                },
+                {
+                  "file": "nemoclaw-blueprint/blueprint.yaml",
+                  "lines": "6-7",
+                  "contains": "max_openshell_version: \"0.0.116\"",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/blueprint.yaml#L6-L7"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every agent process runs inside the sandbox; there is no host execution path for model-driven commands.",
+              "gap": "Landlock is best_effort, so one layer can fail open rather than failing closed.",
+              "evidence": [
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "62",
+                  "contains": "run_as_user: sandbox",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L62"
+                },
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "59",
+                  "contains": "compatibility: best_effort",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L59"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Sandboxing is always on and the policy lives on the host; the agent cannot request unsandboxed execution.",
+              "gap": "Landlock degrades silently instead of requiring an explicit operator choice.",
+              "evidence": [
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "59",
+                  "contains": "compatibility: best_effort",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L59"
+                },
+                {
+                  "file": "nemoclaw-blueprint/blueprint.yaml",
+                  "lines": "6-7",
+                  "contains": "max_openshell_version: \"0.0.116\"",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/blueprint.yaml#L6-L7"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No secrets in the sandbox and allowlisted egress, but the default allowlist includes uninspected npm pass-through and POST /** hosts, and memory/CPU caps are not set by default.",
+              "gap": "Default egress includes broad channels and memory/CPU limits are optional.",
+              "evidence": [
+                {
+                  "file": "nemoclaw-blueprint/policies/presets/npm.yaml",
+                  "lines": "16-19",
+                  "contains": "access: full",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/presets/npm.yaml#L16-L19"
+                },
+                {
+                  "file": "scripts/lib/sandbox-rlimits.sh",
+                  "lines": "8-9",
+                  "contains": "NEMOCLAW_SANDBOX_NPROC_LIMIT=512",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/lib/sandbox-rlimits.sh#L8-L9"
+                },
+                {
+                  "file": "scripts/generate-openclaw-config.mts",
+                  "lines": "1112",
+                  "contains": "webSearch: { apiKey: `openshell:resolve:env:${credentialEnv}` }",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L1112"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "NemoClaw does not try to detect prompt injection; it relies on structural limits. Because egress is deny-by-default and unlisted hosts need operator approval, injected instructions cannot reach arbitrary servers, and the sandbox holds no raw credentials. But the default configuration still lets a hijacked agent read web content (web fetch is enabled) and send data out unattended through allowed endpoints such as POST to clawhub.ai or openclaw.ai, or the uninspected npm registry tunnel. Irreversible external actions are limited because messaging, email and GitHub integrations are off by default.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.5,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Egress to new destinations needs operator approval, but egress to baseline/tier-allowed hosts is unattended regardless of what the agent has read.",
+          "gap": "No taint tracking: reading untrusted content does not disable or gate the remaining egress tools.",
+          "evidence": [
+            {
+              "file": "scripts/generate-openclaw-config.mts",
+              "lines": "1098",
+              "contains": "tools.web.fetch = { enabled: true, useTrustedEnvProxy: true }",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L1098"
+            },
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "121-132",
+              "contains": "host: clawhub.ai",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L121-L132"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The egress limit applies to every source equally since it is enforced at the network layer.",
+          "gap": "Untrusted sources are not distinguished at all by NemoClaw; limits are not provenance-aware.",
+          "evidence": [
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "91",
+              "contains": "host: inference.local",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L91"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The network policy is on by default and lives outside the sandbox, so content the agent reads cannot change it.",
+          "gap": "Operator widening via policy commands is not warned in all paths.",
+          "evidence": [
+            {
+              "file": "nemoclaw-blueprint/blueprint.yaml",
+              "lines": "6-7",
+              "contains": "max_openshell_version: \"0.0.116\"",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/blueprint.yaml#L6-L7"
+            },
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "5-14",
+              "contains": "openshell policy set",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L5-L14"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked agent can exfiltrate sandbox data unattended through allowed POST endpoints or the npm tunnel, though it cannot take irreversible external actions by default.",
+          "gap": "Sessions that read untrusted content still have an unattended outbound channel.",
+          "evidence": [
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "121-132",
+              "contains": "host: clawhub.ai",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L121-L132"
+            },
+            {
+              "file": "nemoclaw-blueprint/policies/presets/npm.yaml",
+              "lines": "16-19",
+              "contains": "access: full",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/presets/npm.yaml#L16-L19"
+            },
+            {
+              "file": "scripts/generate-openclaw-config.mts",
+              "lines": "1098",
+              "contains": "tools.web.fetch = { enabled: true, useTrustedEnvProxy: true }",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L1098"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.5,
+          "raw": 0.5,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Egress to new destinations needs operator approval, but egress to baseline/tier-allowed hosts is unattended regardless of what the agent has read.",
+              "gap": "No taint tracking: reading untrusted content does not disable or gate the remaining egress tools.",
+              "evidence": [
+                {
+                  "file": "scripts/generate-openclaw-config.mts",
+                  "lines": "1098",
+                  "contains": "tools.web.fetch = { enabled: true, useTrustedEnvProxy: true }",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L1098"
+                },
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "121-132",
+                  "contains": "host: clawhub.ai",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L121-L132"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The egress limit applies to every source equally since it is enforced at the network layer.",
+              "gap": "Untrusted sources are not distinguished at all by NemoClaw; limits are not provenance-aware.",
+              "evidence": [
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "91",
+                  "contains": "host: inference.local",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L91"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The network policy is on by default and lives outside the sandbox, so content the agent reads cannot change it.",
+              "gap": "Operator widening via policy commands is not warned in all paths.",
+              "evidence": [
+                {
+                  "file": "nemoclaw-blueprint/blueprint.yaml",
+                  "lines": "6-7",
+                  "contains": "max_openshell_version: \"0.0.116\"",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/blueprint.yaml#L6-L7"
+                },
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "5-14",
+                  "contains": "openshell policy set",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L5-L14"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked agent can exfiltrate sandbox data unattended through allowed POST endpoints or the npm tunnel, though it cannot take irreversible external actions by default.",
+              "gap": "Sessions that read untrusted content still have an unattended outbound channel.",
+              "evidence": [
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "121-132",
+                  "contains": "host: clawhub.ai",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L121-L132"
+                },
+                {
+                  "file": "nemoclaw-blueprint/policies/presets/npm.yaml",
+                  "lines": "16-19",
+                  "contains": "access: full",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/presets/npm.yaml#L16-L19"
+                },
+                {
+                  "file": "scripts/generate-openclaw-config.mts",
+                  "lines": "1098",
+                  "contains": "tools.web.fetch = { enabled: true, useTrustedEnvProxy: true }",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L1098"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "Everything that shapes the agent's future behaviour lives in a directory the agent can write: its config file, hooks, memory, cron jobs, extensions and skills under /sandbox/.openclaw. NemoClaw's own docs state it keeps no hash, seal or last-good copy of that config. So a single successful injection can persist itself as a hook, skill, cron job or config change that fires in later sessions. The saving grace is scope: the state belongs to one sandbox, and network policy and credentials are held outside it, so poisoned config cannot widen egress or steal keys.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.1,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The agent can rewrite its own config, hooks, memory, skills and cron jobs with no validation or gate.",
+          "gap": "Writes to memory and security-relevant config are not gated or validated.",
+          "evidence": [
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "45",
+              "contains": "/sandbox/.openclaw",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L45"
+            },
+            {
+              "file": "Dockerfile",
+              "lines": "2166-2185",
+              "contains": "\"$config_dir/hooks\"",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/Dockerfile#L2166-L2185"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No memory or config path inside the sandbox is controlled by NemoClaw.",
+          "gap": "No store is controlled.",
+          "evidence": [
+            {
+              "file": "Dockerfile",
+              "lines": "2166-2185",
+              "contains": "\"$config_dir/hooks\"",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/Dockerfile#L2166-L2185"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "State is per-sandbox and file-permission isolated (0600 config, sandbox user), not shared across tenants; capped at one level above S because no write control exists.",
+          "gap": "No write control on memory or config, and nothing stops the agent changing its own isolation-relevant config.",
+          "evidence": [
+            {
+              "file": "Dockerfile",
+              "lines": "2259",
+              "contains": "chmod 600 /sandbox/.openclaw/openclaw.json",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/Dockerfile#L2259"
+            },
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "45",
+              "contains": "/sandbox/.openclaw",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L45"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Poisoned hooks, skills or cron jobs persist across the user's sessions and can trigger tool use.",
+          "gap": "Persistent state is not reviewed or rollbackable short of recreating the sandbox.",
+          "evidence": [
+            {
+              "file": "Dockerfile",
+              "lines": "2166-2185",
+              "contains": "\"$config_dir/hooks\"",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/Dockerfile#L2166-L2185"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.1,
+          "raw": 0.1,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The agent can rewrite its own config, hooks, memory, skills and cron jobs with no validation or gate.",
+              "gap": "Writes to memory and security-relevant config are not gated or validated.",
+              "evidence": [
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "45",
+                  "contains": "/sandbox/.openclaw",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L45"
+                },
+                {
+                  "file": "Dockerfile",
+                  "lines": "2166-2185",
+                  "contains": "\"$config_dir/hooks\"",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/Dockerfile#L2166-L2185"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No memory or config path inside the sandbox is controlled by NemoClaw.",
+              "gap": "No store is controlled.",
+              "evidence": [
+                {
+                  "file": "Dockerfile",
+                  "lines": "2166-2185",
+                  "contains": "\"$config_dir/hooks\"",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/Dockerfile#L2166-L2185"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "State is per-sandbox and file-permission isolated (0600 config, sandbox user), not shared across tenants; capped at one level above S because no write control exists.",
+              "gap": "No write control on memory or config, and nothing stops the agent changing its own isolation-relevant config.",
+              "evidence": [
+                {
+                  "file": "Dockerfile",
+                  "lines": "2259",
+                  "contains": "chmod 600 /sandbox/.openclaw/openclaw.json",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/Dockerfile#L2259"
+                },
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "45",
+                  "contains": "/sandbox/.openclaw",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L45"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Poisoned hooks, skills or cron jobs persist across the user's sessions and can trigger tool use.",
+              "gap": "Persistent state is not reviewed or rollbackable short of recreating the sandbox.",
+              "evidence": [
+                {
+                  "file": "Dockerfile",
+                  "lines": "2166-2185",
+                  "contains": "\"$config_dir/hooks\"",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/Dockerfile#L2166-L2185"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "What NemoClaw ships is well pinned: the sandbox image is pinned by digest, the OpenShell version exactly, and the OpenClaw runtime through a lockfile with integrity hashes. But the default Balanced tier opens npm, PyPI and Homebrew, and the baseline opens ClawHub, so the agent can install and run arbitrary packages, skills or plugins at runtime, chosen by the model, with no consent step that NemoClaw provides. Those extensions run as the same sandbox user with the agent's full state, though without raw provider credentials.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.175,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C7-RCELOAD",
+        "max": 0.25,
+        "reason": "In the default Balanced tier the agent can npm/pip/brew install and run arbitrary remote packages at the model's choice with no consent step."
+      },
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Model-chosen package and skill installs from npm, PyPI, Homebrew and ClawHub are reachable by default with no pinning or verification.",
+          "gap": "Runtime-installed extensions are not pinned or integrity-checked.",
+          "evidence": [
+            {
+              "file": "nemoclaw-blueprint/policies/presets/npm.yaml",
+              "lines": "16-19",
+              "contains": "access: full",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/presets/npm.yaml#L16-L19"
+            },
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "121-132",
+              "contains": "host: clawhub.ai",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L121-L132"
+            },
+            {
+              "file": "agents/openclaw/manifest.yaml",
+              "lines": "52",
+              "contains": "add_command: [skills, install",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/agents/openclaw/manifest.yaml#L52"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only the NemoClaw-shipped image and runtime are pinned; runtime installs, skills and MCP bundles are not.",
+          "gap": "Most extension types are not verified.",
+          "evidence": [
+            {
+              "file": "nemoclaw-blueprint/blueprint.yaml",
+              "lines": "35",
+              "contains": "openclaw@sha256:",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/blueprint.yaml#L35"
+            },
+            {
+              "file": "agents/openclaw/openclaw-runtime/package-lock.json",
+              "lines": "21",
+              "contains": "integrity",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/agents/openclaw/openclaw-runtime/package-lock.json#L21"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Nothing third-party is enabled at start beyond pinned plugins, but registries are reachable so the agent can add extensions without a consent prompt from NemoClaw.",
+          "gap": "Adding an extension does not show the exact package and require human consent.",
+          "evidence": [
+            {
+              "file": "nemoclaw-blueprint/policies/tiers.yaml",
+              "lines": "23-31",
+              "contains": "name: balanced",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/tiers.yaml#L23-L31"
+            },
+            {
+              "file": "scripts/generate-openclaw-config.mts",
+              "lines": "863",
+              "contains": "alsoAllow: [\"bundle-mcp\"]",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L863"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "An installed extension runs as the sandbox user with access to all agent state, but the sandbox holds no raw provider keys and egress stays policy-limited.",
+          "gap": "Extensions are not sandboxed per extension with scoped credentials.",
+          "evidence": [
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "62",
+              "contains": "run_as_user: sandbox",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L62"
+            },
+            {
+              "file": "scripts/generate-openclaw-config.mts",
+              "lines": "1112",
+              "contains": "webSearch: { apiKey: `openshell:resolve:env:${credentialEnv}` }",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L1112"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.175,
+          "raw": 0.175,
+          "cap": {
+            "id": "C7-RCELOAD",
+            "max": 0.25,
+            "reason": "In the default Balanced tier the agent can npm/pip/brew install and run arbitrary remote packages at the model's choice with no consent step."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Model-chosen package and skill installs from npm, PyPI, Homebrew and ClawHub are reachable by default with no pinning or verification.",
+              "gap": "Runtime-installed extensions are not pinned or integrity-checked.",
+              "evidence": [
+                {
+                  "file": "nemoclaw-blueprint/policies/presets/npm.yaml",
+                  "lines": "16-19",
+                  "contains": "access: full",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/presets/npm.yaml#L16-L19"
+                },
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "121-132",
+                  "contains": "host: clawhub.ai",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L121-L132"
+                },
+                {
+                  "file": "agents/openclaw/manifest.yaml",
+                  "lines": "52",
+                  "contains": "add_command: [skills, install",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/agents/openclaw/manifest.yaml#L52"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only the NemoClaw-shipped image and runtime are pinned; runtime installs, skills and MCP bundles are not.",
+              "gap": "Most extension types are not verified.",
+              "evidence": [
+                {
+                  "file": "nemoclaw-blueprint/blueprint.yaml",
+                  "lines": "35",
+                  "contains": "openclaw@sha256:",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/blueprint.yaml#L35"
+                },
+                {
+                  "file": "agents/openclaw/openclaw-runtime/package-lock.json",
+                  "lines": "21",
+                  "contains": "integrity",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/agents/openclaw/openclaw-runtime/package-lock.json#L21"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Nothing third-party is enabled at start beyond pinned plugins, but registries are reachable so the agent can add extensions without a consent prompt from NemoClaw.",
+              "gap": "Adding an extension does not show the exact package and require human consent.",
+              "evidence": [
+                {
+                  "file": "nemoclaw-blueprint/policies/tiers.yaml",
+                  "lines": "23-31",
+                  "contains": "name: balanced",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/tiers.yaml#L23-L31"
+                },
+                {
+                  "file": "scripts/generate-openclaw-config.mts",
+                  "lines": "863",
+                  "contains": "alsoAllow: [\"bundle-mcp\"]",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L863"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "An installed extension runs as the sandbox user with access to all agent state, but the sandbox holds no raw provider keys and egress stays policy-limited.",
+              "gap": "Extensions are not sandboxed per extension with scoped credentials.",
+              "evidence": [
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "62",
+                  "contains": "run_as_user: sandbox",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L62"
+                },
+                {
+                  "file": "scripts/generate-openclaw-config.mts",
+                  "lines": "1112",
+                  "contains": "webSearch: { apiKey: `openshell:resolve:env:${credentialEnv}` }",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L1112"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "This is NemoClaw's strongest area. Provider and search keys are stored in the OpenShell gateway, never written into the sandbox; the agent config holds placeholder references that the egress proxy replaces only on the matching allowed endpoint, so secrets never reach the model or the agent's processes. The host CLI strips its environment before spawning children and redacts known secret patterns in logs and audit entries, and there is no crash or usage telemetry. Gaps: keys are long-lived, and the OpenClaw gateway token is readable by anything in the sandbox.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.7,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Secrets live in the gateway store, never enter the sandbox or model context (opaque placeholders), and host logs are redacted.",
+          "gap": "Keys are not short-lived and there is no output scanning of agent responses.",
+          "evidence": [
+            {
+              "file": "scripts/generate-openclaw-config.mts",
+              "lines": "1112",
+              "contains": "webSearch: { apiKey: `openshell:resolve:env:${credentialEnv}` }",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L1112"
+            },
+            {
+              "file": "src/lib/security/redact.ts",
+              "lines": "190",
+              "contains": "export function redactFull",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/security/redact.ts#L190"
+            },
+            {
+              "file": "src/lib/adapters/openshell/provider-adapter-cli.ts",
+              "lines": "535",
+              "contains": "\"provider\", \"create\"",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/adapters/openshell/provider-adapter-cli.ts#L535"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Model-bound context, sandbox processes, host subprocess env, logs and audit entries are covered.",
+          "gap": "The in-sandbox OpenClaw gateway token is exposed to every sandbox process via a shell env file.",
+          "evidence": [
+            {
+              "file": "src/lib/subprocess-env.ts",
+              "lines": "97-112",
+              "contains": "if (isSubprocessEnvNameAllowed(key))",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/subprocess-env.ts#L97-L112"
+            },
+            {
+              "file": "src/lib/security/redact.ts",
+              "lines": "190",
+              "contains": "export function redactFull",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/security/redact.ts#L190"
+            },
+            {
+              "file": "src/lib/state/audit/operational.ts",
+              "lines": "37",
+              "contains": "redactFull(entry.reason)",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/state/audit/operational.ts#L37"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No telemetry SDK ships; credential placeholdering and redaction are always on.",
+          "gap": "Stored session transcripts are not encrypted or minimised by default.",
+          "evidence": [
+            {
+              "search": "rg -n -i -w \"sentry|posthog|telemetry\" --glob '!*.test.ts'",
+              "scope": "src/lib",
+              "hits": 8,
+              "note": "No crash-reporting/telemetry SDK; hits are a local OTLP test fixture, a README note on opt-in local OTLP, config verification, and GPU 'memory telemetry' messages."
+            },
+            {
+              "file": "scripts/generate-openclaw-config.mts",
+              "lines": "1112",
+              "contains": "webSearch: { apiKey: `openshell:resolve:env:${credentialEnv}` }",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L1112"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A host-side leak would expose long-lived provider API keys; the sandbox cannot leak them.",
+          "gap": "Keys are not short-lived or per-task.",
+          "evidence": [
+            {
+              "file": "nemoclaw-blueprint/blueprint.yaml",
+              "lines": "57",
+              "contains": "nvidia-inference",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/blueprint.yaml#L57"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.7,
+          "raw": 0.7,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Secrets live in the gateway store, never enter the sandbox or model context (opaque placeholders), and host logs are redacted.",
+              "gap": "Keys are not short-lived and there is no output scanning of agent responses.",
+              "evidence": [
+                {
+                  "file": "scripts/generate-openclaw-config.mts",
+                  "lines": "1112",
+                  "contains": "webSearch: { apiKey: `openshell:resolve:env:${credentialEnv}` }",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L1112"
+                },
+                {
+                  "file": "src/lib/security/redact.ts",
+                  "lines": "190",
+                  "contains": "export function redactFull",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/security/redact.ts#L190"
+                },
+                {
+                  "file": "src/lib/adapters/openshell/provider-adapter-cli.ts",
+                  "lines": "535",
+                  "contains": "\"provider\", \"create\"",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/adapters/openshell/provider-adapter-cli.ts#L535"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Model-bound context, sandbox processes, host subprocess env, logs and audit entries are covered.",
+              "gap": "The in-sandbox OpenClaw gateway token is exposed to every sandbox process via a shell env file.",
+              "evidence": [
+                {
+                  "file": "src/lib/subprocess-env.ts",
+                  "lines": "97-112",
+                  "contains": "if (isSubprocessEnvNameAllowed(key))",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/subprocess-env.ts#L97-L112"
+                },
+                {
+                  "file": "src/lib/security/redact.ts",
+                  "lines": "190",
+                  "contains": "export function redactFull",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/security/redact.ts#L190"
+                },
+                {
+                  "file": "src/lib/state/audit/operational.ts",
+                  "lines": "37",
+                  "contains": "redactFull(entry.reason)",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/state/audit/operational.ts#L37"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No telemetry SDK ships; credential placeholdering and redaction are always on.",
+              "gap": "Stored session transcripts are not encrypted or minimised by default.",
+              "evidence": [
+                {
+                  "search": "rg -n -i -w \"sentry|posthog|telemetry\" --glob '!*.test.ts'",
+                  "scope": "src/lib",
+                  "hits": 8,
+                  "note": "No crash-reporting/telemetry SDK; hits are a local OTLP test fixture, a README note on opt-in local OTLP, config verification, and GPU 'memory telemetry' messages."
+                },
+                {
+                  "file": "scripts/generate-openclaw-config.mts",
+                  "lines": "1112",
+                  "contains": "webSearch: { apiKey: `openshell:resolve:env:${credentialEnv}` }",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L1112"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A host-side leak would expose long-lived provider API keys; the sandbox cannot leak them.",
+              "gap": "Keys are not short-lived or per-task.",
+              "evidence": [
+                {
+                  "file": "nemoclaw-blueprint/blueprint.yaml",
+                  "lines": "57",
+                  "contains": "nvidia-inference",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/blueprint.yaml#L57"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "The detailed record of what the agent did is OpenClaw's own session transcript, stored inside the sandbox in a directory the agent can write and delete; NemoClaw only provides a command to export it. NemoClaw keeps a separate append-only host log, but it records only three operator actions (inference changes, config changes and token rotation), not agent tool calls. Network allow/deny decisions are visible in OpenShell's TUI and logs, which live outside the sandbox but belong to OpenShell, not this repository.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.4,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "Structured per-session JSONL transcripts (from OpenClaw) are exported by NemoClaw; NemoClaw's own audit log is structured but covers operator actions only.",
+          "gap": "No actor attribution or tamper-evident storage for agent actions.",
+          "evidence": [
+            {
+              "file": "src/lib/actions/sandbox/sessions/export.ts",
+              "lines": "15-17",
+              "contains": "/sandbox/.openclaw/agents/<id>/sessions/",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/actions/sandbox/sessions/export.ts#L15-L17"
+            },
+            {
+              "file": "src/lib/state/audit/operational.ts",
+              "lines": "23-28",
+              "contains": "readonly action: \"inference_set\" | \"config_set\" | \"rotate_token\"",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/state/audit/operational.ts#L23-L28"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "Agent tool calls are covered by the OpenClaw transcript; NemoClaw adds operator config changes.",
+          "gap": "Approvals/denials and extension activity are not recorded in a NemoClaw-owned record.",
+          "evidence": [
+            {
+              "file": "src/lib/actions/sandbox/sessions/export.ts",
+              "lines": "15-17",
+              "contains": "/sandbox/.openclaw/agents/<id>/sessions/",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/actions/sandbox/sessions/export.ts#L15-L17"
+            },
+            {
+              "file": "src/lib/state/audit/operational.ts",
+              "lines": "23-28",
+              "contains": "readonly action: \"inference_set\" | \"config_set\" | \"rotate_token\"",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/state/audit/operational.ts#L23-L28"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The agent-action record lives inside the sandbox directory the agent can modify.",
+          "gap": "Records are not written by a component the model cannot control.",
+          "evidence": [
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "45",
+              "contains": "/sandbox/.openclaw",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L45"
+            },
+            {
+              "file": "src/lib/actions/sandbox/sessions/export.ts",
+              "lines": "15-17",
+              "contains": "/sandbox/.openclaw/agents/<id>/sessions/",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/actions/sandbox/sessions/export.ts#L15-L17"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Logging is best-effort and actions do not depend on records being written.",
+          "gap": "Records are not durable per action outside the agent's reach.",
+          "evidence": [
+            {
+              "file": "src/lib/state/audit/operational.ts",
+              "lines": "19",
+              "contains": "operational-audit.jsonl",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/state/audit/operational.ts#L19"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.4,
+          "raw": 0.4,
+          "cap": null,
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "Structured per-session JSONL transcripts (from OpenClaw) are exported by NemoClaw; NemoClaw's own audit log is structured but covers operator actions only.",
+              "gap": "No actor attribution or tamper-evident storage for agent actions.",
+              "evidence": [
+                {
+                  "file": "src/lib/actions/sandbox/sessions/export.ts",
+                  "lines": "15-17",
+                  "contains": "/sandbox/.openclaw/agents/<id>/sessions/",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/actions/sandbox/sessions/export.ts#L15-L17"
+                },
+                {
+                  "file": "src/lib/state/audit/operational.ts",
+                  "lines": "23-28",
+                  "contains": "readonly action: \"inference_set\" | \"config_set\" | \"rotate_token\"",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/state/audit/operational.ts#L23-L28"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "Agent tool calls are covered by the OpenClaw transcript; NemoClaw adds operator config changes.",
+              "gap": "Approvals/denials and extension activity are not recorded in a NemoClaw-owned record.",
+              "evidence": [
+                {
+                  "file": "src/lib/actions/sandbox/sessions/export.ts",
+                  "lines": "15-17",
+                  "contains": "/sandbox/.openclaw/agents/<id>/sessions/",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/actions/sandbox/sessions/export.ts#L15-L17"
+                },
+                {
+                  "file": "src/lib/state/audit/operational.ts",
+                  "lines": "23-28",
+                  "contains": "readonly action: \"inference_set\" | \"config_set\" | \"rotate_token\"",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/state/audit/operational.ts#L23-L28"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The agent-action record lives inside the sandbox directory the agent can modify.",
+              "gap": "Records are not written by a component the model cannot control.",
+              "evidence": [
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "45",
+                  "contains": "/sandbox/.openclaw",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L45"
+                },
+                {
+                  "file": "src/lib/actions/sandbox/sessions/export.ts",
+                  "lines": "15-17",
+                  "contains": "/sandbox/.openclaw/agents/<id>/sessions/",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/actions/sandbox/sessions/export.ts#L15-L17"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Logging is best-effort and actions do not depend on records being written.",
+              "gap": "Records are not durable per action outside the agent's reach.",
+              "evidence": [
+                {
+                  "file": "src/lib/state/audit/operational.ts",
+                  "lines": "19",
+                  "contains": "operational-audit.jsonl",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/state/audit/operational.ts#L19"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "NemoClaw sets a per-run agent timeout (600 seconds by default) and best-effort limits of 512 processes and 65,536 open files, and stopping or destroying the sandbox ends every process in it. There is no step cap or token/cost budget, and the timeout lives in the agent-writable config file, so the agent could raise it. OpenClaw cron jobs and heartbeats can keep the always-on agent working without a human, and inference spend is bounded only by the provider account.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.325,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A wall-clock timeout per agent run plus process-count limits; no step or token/cost cap.",
+          "gap": "No iteration cap or token/cost budget enforced in code.",
+          "evidence": [
+            {
+              "file": "scripts/generate-openclaw-config.mts",
+              "lines": "802",
+              "contains": "env.NEMOCLAW_AGENT_TIMEOUT || \"600\"",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L802"
+            },
+            {
+              "file": "scripts/generate-openclaw-config.mts",
+              "lines": "1015",
+              "contains": "timeoutSeconds: agentTimeout",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L1015"
+            },
+            {
+              "search": "rg -n \"exec-approvals|askFallback|tools\\.exec|maxTurns|maxIterations|maxSteps\"",
+              "scope": "scripts/generate-openclaw-config.mts",
+              "hits": 0,
+              "note": "NemoClaw emits no OpenClaw exec-approval policy, step cap, or iteration cap into the generated agent config."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The timeout applies to agent runs and the process limit to all sandbox processes.",
+          "gap": "Scheduled cron/heartbeat work and sub-agents are not counted against a shared budget.",
+          "evidence": [
+            {
+              "file": "scripts/lib/sandbox-rlimits.sh",
+              "lines": "8-9",
+              "contains": "NEMOCLAW_SANDBOX_NPROC_LIMIT=512",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/lib/sandbox-rlimits.sh#L8-L9"
+            },
+            {
+              "file": "Dockerfile",
+              "lines": "2166-2185",
+              "contains": "\"$config_dir/hooks\"",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/Dockerfile#L2166-L2185"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Defaults are sensible but stored in openclaw.json, which the agent can rewrite.",
+          "gap": "The model can raise its own timeout by editing its config.",
+          "evidence": [
+            {
+              "file": "scripts/generate-openclaw-config.mts",
+              "lines": "1015",
+              "contains": "timeoutSeconds: agentTimeout",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L1015"
+            },
+            {
+              "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+              "lines": "45",
+              "contains": "/sandbox/.openclaw",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L45"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Destroying the sandbox stops everything, but until then an always-on agent can loop and spend without a ceiling.",
+          "gap": "No spend ceiling or tight per-run cost limit.",
+          "evidence": [
+            {
+              "file": "Dockerfile",
+              "lines": "2166-2185",
+              "contains": "\"$config_dir/hooks\"",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/Dockerfile#L2166-L2185"
+            },
+            {
+              "file": "scripts/generate-openclaw-config.mts",
+              "lines": "802",
+              "contains": "env.NEMOCLAW_AGENT_TIMEOUT || \"600\"",
+              "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L802"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.325,
+          "raw": 0.325,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A wall-clock timeout per agent run plus process-count limits; no step or token/cost cap.",
+              "gap": "No iteration cap or token/cost budget enforced in code.",
+              "evidence": [
+                {
+                  "file": "scripts/generate-openclaw-config.mts",
+                  "lines": "802",
+                  "contains": "env.NEMOCLAW_AGENT_TIMEOUT || \"600\"",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L802"
+                },
+                {
+                  "file": "scripts/generate-openclaw-config.mts",
+                  "lines": "1015",
+                  "contains": "timeoutSeconds: agentTimeout",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L1015"
+                },
+                {
+                  "search": "rg -n \"exec-approvals|askFallback|tools\\.exec|maxTurns|maxIterations|maxSteps\"",
+                  "scope": "scripts/generate-openclaw-config.mts",
+                  "hits": 0,
+                  "note": "NemoClaw emits no OpenClaw exec-approval policy, step cap, or iteration cap into the generated agent config."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The timeout applies to agent runs and the process limit to all sandbox processes.",
+              "gap": "Scheduled cron/heartbeat work and sub-agents are not counted against a shared budget.",
+              "evidence": [
+                {
+                  "file": "scripts/lib/sandbox-rlimits.sh",
+                  "lines": "8-9",
+                  "contains": "NEMOCLAW_SANDBOX_NPROC_LIMIT=512",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/lib/sandbox-rlimits.sh#L8-L9"
+                },
+                {
+                  "file": "Dockerfile",
+                  "lines": "2166-2185",
+                  "contains": "\"$config_dir/hooks\"",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/Dockerfile#L2166-L2185"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Defaults are sensible but stored in openclaw.json, which the agent can rewrite.",
+              "gap": "The model can raise its own timeout by editing its config.",
+              "evidence": [
+                {
+                  "file": "scripts/generate-openclaw-config.mts",
+                  "lines": "1015",
+                  "contains": "timeoutSeconds: agentTimeout",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L1015"
+                },
+                {
+                  "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+                  "lines": "45",
+                  "contains": "/sandbox/.openclaw",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L45"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Destroying the sandbox stops everything, but until then an always-on agent can loop and spend without a ceiling.",
+              "gap": "No spend ceiling or tight per-run cost limit.",
+              "evidence": [
+                {
+                  "file": "Dockerfile",
+                  "lines": "2166-2185",
+                  "contains": "\"$config_dir/hooks\"",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/Dockerfile#L2166-L2185"
+                },
+                {
+                  "file": "scripts/generate-openclaw-config.mts",
+                  "lines": "802",
+                  "contains": "env.NEMOCLAW_AGENT_TIMEOUT || \"600\"",
+                  "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/scripts/generate-openclaw-config.mts#L802"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "In the default Balanced tier the agent can install and run arbitrary npm/PyPI/Homebrew packages and ClawHub skills at the model's choice with no consent step.",
+      "criterion": "C7",
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "evidence": [
+        {
+          "file": "nemoclaw-blueprint/policies/presets/npm.yaml",
+          "lines": "16-19",
+          "contains": "access: full",
+          "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/presets/npm.yaml#L16-L19"
+        },
+        {
+          "file": "nemoclaw-blueprint/policies/tiers.yaml",
+          "lines": "23-31",
+          "contains": "name: balanced",
+          "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/tiers.yaml#L23-L31"
+        },
+        {
+          "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+          "lines": "121-132",
+          "contains": "host: clawhub.ai",
+          "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L121-L132"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "Web fetch enabled by default and package/skill registries reachable (scripts/generate-openclaw-config.mts:1098, nemoclaw-blueprint/policies/tiers.yaml:23-31)",
+    "sensitive_data": "User conversations, workspace files and agent memory in /sandbox/.openclaw (nemoclaw-blueprint/policies/openclaw-sandbox.yaml:45)",
+    "state_change_or_egress": "Shell and file writes in the sandbox plus unattended POST /** to clawhub.ai/openclaw.ai and L4 npm tunnel (nemoclaw-blueprint/policies/openclaw-sandbox.yaml:121-132, presets/npm.yaml:16-19)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Narrow the baseline clawhub.ai/openclaw.ai POST /** rules and default npm L4 pass-through so the default tier has no unattended exfiltration channel.",
+      "criterion": "C5",
+      "parameter": "B",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 1",
+      "estimated_gain": 0.05
+    },
+    {
+      "summary": "Gate runtime package/skill installs behind operator consent (or default to the Restricted tier) and pin what is installed.",
+      "criterion": "C7",
+      "parameter": "S",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Make security-relevant OpenClaw config (hooks, plugins, timeouts) root-owned or hash-verified at startup, leaving only memory/workspace writable.",
+      "criterion": "C6",
+      "parameter": "S",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 2",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Ship an OpenClaw exec-approval policy in the generated config so shell commands and writes need per-call approval by default.",
+      "criterion": "C2",
+      "parameter": "C",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 5",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Stream agent tool-call records to a host-side log outside the sandbox.",
+      "criterion": "C9",
+      "parameter": "D",
+      "from_level": 1,
+      "to_level": 3,
+      "playbook": "Playbook 1 step 3",
+      "estimated_gain": 0.1
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was executed, installed, or probed.",
+    "Enforcement mechanisms (egress proxy, Landlock, seccomp, network namespace, operator approval TUI) are implemented in NVIDIA OpenShell, not this repository; they were credited based on the policy and pinned version NemoClaw ships and its own documentation, not by reading OpenShell source.",
+    "Application-layer controls (tool approval, prompt-injection handling, session transcripts) belong to the upstream OpenClaw package, which was not reviewed; NemoClaw's own docs state it adds no protection there.",
+    "Only the default OpenClaw agent was scored; Hermes and LangChain Deep Agents Code paths (which have their own approval/auto-approval controls) were not.",
+    "The repository ships AGENTS.md/CLAUDE.md and agent skills addressed to coding agents; they are contributor workflow instructions, and no text attempting to steer safety reviewers was found."
+  ]
+}

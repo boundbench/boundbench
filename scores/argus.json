@@ -1,0 +1,2176 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "argus",
+  "name": "Argus",
+  "repo_url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform",
+  "subpath": null,
+  "description": "Open-source AI-native agentic SOC platform (alerts, ticketing, CMDB, workflow automation, AI assistant)",
+  "category": "cybersecurity",
+  "pinned_commit": "dd803f061b24fa010ba0f2901b1902c42537ba8d",
+  "version": "v0.8-1-gdd803f0",
+  "scored_date": "2026-10-03",
+  "scored_configuration": "Docker Compose / Kubernetes deployment as shipped (backend Django API, default settings, auto-approved read-only self-registration), scoring the AI assistant chat and ticket-assistant paths together with the SOAR workflow action engine.",
+  "score": 4.0,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 9,
+    "score": 3.03,
+    "max": 9.0,
+    "percent": 34
+  },
+  "capability_profile": {
+    "code_execution": "no",
+    "filesystem_write": "yes",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "yes",
+    "untrusted_input": "yes",
+    "third_party_extensions": "opt_in",
+    "sub_agents": "no",
+    "external_communication": "yes"
+  },
+  "headline": "The AI assistant itself is tightly bounded: its default tool set is four read-only knowledge/skill tools plus four read-only built-in ticket and asset lookups, so a manipulated model cannot change state or reach the network by design. The larger risks sit around it. The SOAR workflow engine runs containment, email and generic HTTP actions with no per-run approval step, shared skill instructions that steer the assistant can be edited by any non-readonly user, and one assistant endpoint forwards the caller's platform token to caller-chosen MCP endpoints. Access control is flat (any authenticated user), and self-registration is auto-approved with read access by default.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "Everything runs under the platform's own user model: per-user API tokens, a built-in read-only role that the middleware uses to block writes, and a separately restricted credential for the workflow worker that can only reach three named routes. Authorization is otherwise flat: the default permission class is 'any authenticated user', so any non-readonly account can edit and run workflows, change skills and register MCP servers, and any account can read all tickets. By default self-registration is auto-approved with read access. One ticket-assistant endpoint forwards the caller's platform token to MCP endpoints the caller names, which is a token-passthrough pattern.",
+      "max": 1.0,
+      "notes": "The cap rests on the mention endpoint, where the endpoint list comes from the request body and the token defaults to the caller's header. The main chat endpoint forces the internal MCP URL (built from the request host) and also forwards the caller's header there.",
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C1-PASSTHRU",
+        "max": 0.25,
+        "reason": "The ticket mention endpoint attaches the caller's own Authorization header to MCP requests sent to caller-supplied endpoints."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Role-scoped identities exist (read-only role, route-limited worker credential) but the default permission class only checks that the user is authenticated.",
+          "gap": "No per-capability credentials or per-request scoped tokens; read and write share one user token.",
+          "evidence": [
+            {
+              "file": "backend/siem_project/settings.py",
+              "lines": "239-241",
+              "contains": "IsAuthenticated",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/siem_project/settings.py#L239-L241"
+            },
+            {
+              "file": "backend/workflows/worker_auth.py",
+              "lines": "18-22",
+              "contains": "_ALLOWED_ROUTES",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/worker_auth.py#L18-L22"
+            },
+            {
+              "file": "backend/accounts/services.py",
+              "lines": "684-693",
+              "contains": "def should_deny_write_for_readonly_user",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/accounts/services.py#L684-L693"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The assistant's built-in tools run on endpoints that require the caller's token, but the check is authentication only, and ticket and asset reads are not scoped to the requesting user.",
+          "gap": "No per-principal authorization on tickets or assets, and the ticket assistant passes the caller's token onward to caller-named endpoints.",
+          "evidence": [
+            {
+              "file": "backend/ai_assistant/mcp_protocol_views.py",
+              "lines": "95-99",
+              "contains": "EventTicket.objects.filter(ticket_number=ticket_number",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/mcp_protocol_views.py#L95-L99"
+            },
+            {
+              "file": "backend/ai_assistant/views.py",
+              "lines": "224-226",
+              "contains": "mcp_overrides[\"token\"] = auth_header.strip()",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/views.py#L224-L226"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Self-registration is auto-approved and yields a read-only account, so the default role is write-denied but readable across all SOC data; widening is an operator action in the admin API.",
+          "gap": "Auto-approval is on by default and read access to all tickets is granted to any registrant; a near-minimal default would require explicit admin approval.",
+          "evidence": [
+            {
+              "file": "backend/accounts/models.py",
+              "lines": "161",
+              "contains": "auto_approve_enabled = models.BooleanField(default=True)",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/accounts/models.py#L161"
+            },
+            {
+              "file": "backend/accounts/services.py",
+              "lines": "443",
+              "contains": "profile.is_readonly = True",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/accounts/services.py#L443"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "If the authorization layer fails, a non-readonly token can write across workflows, tickets, skills and MCP server records and start containment or notification actions against external systems.",
+          "gap": "Writes span several systems; L2 would confine a failure to one system or to read access. Surviving independent layers are the encrypted, bound workflow secrets and the admin-controlled HTTP allowlist.",
+          "evidence": [
+            {
+              "file": "backend/workflows/views.py",
+              "lines": "174-176",
+              "contains": "class WorkflowViewSet",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/views.py#L174-L176"
+            },
+            {
+              "file": "backend/workflows/views.py",
+              "lines": "207",
+              "contains": "def execute(self, request, pk=None):",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/views.py#L207"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.45,
+          "cap": {
+            "id": "C1-PASSTHRU",
+            "max": 0.25,
+            "reason": "The ticket mention endpoint attaches the caller's own Authorization header to MCP requests sent to caller-supplied endpoints."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Role-scoped identities exist (read-only role, route-limited worker credential) but the default permission class only checks that the user is authenticated.",
+              "gap": "No per-capability credentials or per-request scoped tokens; read and write share one user token.",
+              "evidence": [
+                {
+                  "file": "backend/siem_project/settings.py",
+                  "lines": "239-241",
+                  "contains": "IsAuthenticated",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/siem_project/settings.py#L239-L241"
+                },
+                {
+                  "file": "backend/workflows/worker_auth.py",
+                  "lines": "18-22",
+                  "contains": "_ALLOWED_ROUTES",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/worker_auth.py#L18-L22"
+                },
+                {
+                  "file": "backend/accounts/services.py",
+                  "lines": "684-693",
+                  "contains": "def should_deny_write_for_readonly_user",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/accounts/services.py#L684-L693"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The assistant's built-in tools run on endpoints that require the caller's token, but the check is authentication only, and ticket and asset reads are not scoped to the requesting user.",
+              "gap": "No per-principal authorization on tickets or assets, and the ticket assistant passes the caller's token onward to caller-named endpoints.",
+              "evidence": [
+                {
+                  "file": "backend/ai_assistant/mcp_protocol_views.py",
+                  "lines": "95-99",
+                  "contains": "EventTicket.objects.filter(ticket_number=ticket_number",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/mcp_protocol_views.py#L95-L99"
+                },
+                {
+                  "file": "backend/ai_assistant/views.py",
+                  "lines": "224-226",
+                  "contains": "mcp_overrides[\"token\"] = auth_header.strip()",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/views.py#L224-L226"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Self-registration is auto-approved and yields a read-only account, so the default role is write-denied but readable across all SOC data; widening is an operator action in the admin API.",
+              "gap": "Auto-approval is on by default and read access to all tickets is granted to any registrant; a near-minimal default would require explicit admin approval.",
+              "evidence": [
+                {
+                  "file": "backend/accounts/models.py",
+                  "lines": "161",
+                  "contains": "auto_approve_enabled = models.BooleanField(default=True)",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/accounts/models.py#L161"
+                },
+                {
+                  "file": "backend/accounts/services.py",
+                  "lines": "443",
+                  "contains": "profile.is_readonly = True",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/accounts/services.py#L443"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "If the authorization layer fails, a non-readonly token can write across workflows, tickets, skills and MCP server records and start containment or notification actions against external systems.",
+              "gap": "Writes span several systems; L2 would confine a failure to one system or to read access. Surviving independent layers are the encrypted, bound workflow secrets and the admin-controlled HTTP allowlist.",
+              "evidence": [
+                {
+                  "file": "backend/workflows/views.py",
+                  "lines": "174-176",
+                  "contains": "class WorkflowViewSet",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/views.py#L174-L176"
+                },
+                {
+                  "file": "backend/workflows/views.py",
+                  "lines": "207",
+                  "contains": "def execute(self, request, pk=None):",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/views.py#L207"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "The assistant has no consequential tools, so it needs no approval step. The platform's consequential actions live in the workflow engine, and there is no approval node, confirmation step or per-run human gate anywhere in it. A human publishes a workflow once, after which runs triggered by tickets, webhooks, schedules or the API execute every step, including containment, email and generic HTTP calls, unattended. The generic HTTP action is also ungated.",
+      "max": 1.0,
+      "notes": "The model cannot start a workflow: none of its registered tools reaches the workflow engine. The score reflects the platform's consequential-action surface, not the assistant.",
+      "status": "scored",
+      "score": 0.125,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C2-POWERBYPASS",
+        "max": 0.25,
+        "reason": "The generic HTTP action and the containment actions run with no approval gate in the default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The only human gate is publishing a workflow manifest once; that single decision authorises every later run of its steps.",
+          "gap": "No per-call approval showing the exact action and target before a containment, email or HTTP step runs.",
+          "evidence": [
+            {
+              "file": "backend/workflows/engine.py",
+              "lines": "27-30",
+              "contains": "Workflow must be published before execution.",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/engine.py#L27-L30"
+            },
+            {
+              "search": "rg -n -i 'approv' -g '!**/migrations/**' -g '!**/tests/**'",
+              "scope": "backend/workflows backend/workflow_interfaces",
+              "hits": 1,
+              "note": "the single hit is a migration-import note in workflows/README.md, not a run-time gate"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every action type, including generic HTTP and containment actions, runs without a gate once a workflow runs.",
+          "gap": "No tool, including the generic HTTP call, passes through an approval gate.",
+          "evidence": [
+            {
+              "file": "backend/workflows/prefect/actions/registry.py",
+              "lines": "27-33",
+              "contains": "\"api_call\": ApiCallAction",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/actions/registry.py#L27-L33"
+            },
+            {
+              "file": "backend/workflows/prefect/flow.py",
+              "lines": "197",
+              "contains": "configured(action_type, step.get(\"action_config\") or {}, context)",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/flow.py#L197"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No per-run approval exists to be on or off; ticket-event bindings start published workflows automatically.",
+          "gap": "Approval would need to exist and be on by default.",
+          "evidence": [
+            {
+              "file": "backend/workflows/ticket_invocation.py",
+              "lines": "36-70",
+              "contains": "def dispatch_ticket_event",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/ticket_invocation.py#L36-L70"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Unattended runs can email, post to webhooks, call HTTP endpoints with any listed method including DELETE, and block IPs or disable accounts; containment has release and enable counterparts but nothing forces them, and there are no per-run action quotas.",
+          "gap": "Irreversible external actions have no rate limits, recipient limits or previews.",
+          "evidence": [
+            {
+              "file": "backend/workflows/prefect/actions/api_call.py",
+              "lines": "17",
+              "contains": "HTTP_METHODS = {\"GET\", \"POST\", \"PUT\", \"PATCH\", \"DELETE\"}",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/actions/api_call.py#L17"
+            },
+            {
+              "file": "backend/workflows/prefect/actions/disable_user.py",
+              "lines": "35-41",
+              "contains": "requests.post(",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/actions/disable_user.py#L35-L41"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.125,
+          "raw": 0.125,
+          "cap": {
+            "id": "C2-POWERBYPASS",
+            "max": 0.25,
+            "reason": "The generic HTTP action and the containment actions run with no approval gate in the default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The only human gate is publishing a workflow manifest once; that single decision authorises every later run of its steps.",
+              "gap": "No per-call approval showing the exact action and target before a containment, email or HTTP step runs.",
+              "evidence": [
+                {
+                  "file": "backend/workflows/engine.py",
+                  "lines": "27-30",
+                  "contains": "Workflow must be published before execution.",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/engine.py#L27-L30"
+                },
+                {
+                  "search": "rg -n -i 'approv' -g '!**/migrations/**' -g '!**/tests/**'",
+                  "scope": "backend/workflows backend/workflow_interfaces",
+                  "hits": 1,
+                  "note": "the single hit is a migration-import note in workflows/README.md, not a run-time gate"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every action type, including generic HTTP and containment actions, runs without a gate once a workflow runs.",
+              "gap": "No tool, including the generic HTTP call, passes through an approval gate.",
+              "evidence": [
+                {
+                  "file": "backend/workflows/prefect/actions/registry.py",
+                  "lines": "27-33",
+                  "contains": "\"api_call\": ApiCallAction",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/actions/registry.py#L27-L33"
+                },
+                {
+                  "file": "backend/workflows/prefect/flow.py",
+                  "lines": "197",
+                  "contains": "configured(action_type, step.get(\"action_config\") or {}, context)",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/flow.py#L197"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No per-run approval exists to be on or off; ticket-event bindings start published workflows automatically.",
+              "gap": "Approval would need to exist and be on by default.",
+              "evidence": [
+                {
+                  "file": "backend/workflows/ticket_invocation.py",
+                  "lines": "36-70",
+                  "contains": "def dispatch_ticket_event",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/ticket_invocation.py#L36-L70"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Unattended runs can email, post to webhooks, call HTTP endpoints with any listed method including DELETE, and block IPs or disable accounts; containment has release and enable counterparts but nothing forces them, and there are no per-run action quotas.",
+              "gap": "Irreversible external actions have no rate limits, recipient limits or previews.",
+              "evidence": [
+                {
+                  "file": "backend/workflows/prefect/actions/api_call.py",
+                  "lines": "17",
+                  "contains": "HTTP_METHODS = {\"GET\", \"POST\", \"PUT\", \"PATCH\", \"DELETE\"}",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/actions/api_call.py#L17"
+                },
+                {
+                  "file": "backend/workflows/prefect/actions/disable_user.py",
+                  "lines": "35-41",
+                  "contains": "requests.post(",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/actions/disable_user.py#L35-L41"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "The assistant's tools are narrow and read-only, with typed schemas and clamped result limits, and database access goes through the ORM. Validation is uneven elsewhere. The generic HTTP workflow action has a strong target policy (fixed host, admin allowlist, resolved-address checks, no redirects, capped response), but the containment, lookup and webhook actions accept any URL, the skill-reading tool's argument handling is not strict, and a registry-proxy endpoint fetches caller-supplied URLs. All workflow actions are registered by default, including write and network ones.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.375,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Typed tool schemas and bounded limits exist, and the HTTP action is carefully validated, but several actions are unvalidated, and the skill-reading tool's argument handling is not strict.",
+          "gap": "Not every tool does allowlist validation with resolved-path or host containment; DNS is not pinned in the HTTP action.",
+          "evidence": [
+            {
+              "file": "backend/workflows/prefect/actions/api_call.py",
+              "lines": "127-195",
+              "contains": "def _validated_target",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/actions/api_call.py#L127-L195"
+            },
+            {
+              "file": "backend/workflows/prefect/actions/api_call.py",
+              "lines": "251",
+              "contains": "DNS is intentionally not pinned",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/actions/api_call.py#L251"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only the HTTP action, the firewall alias action and the built-in lookup tools validate meaningfully; block-IP (generic), disable/enable user, release IP, lookups and webhooks do not confine their targets.",
+          "gap": "Most tools do not validate; a shared policy layer does not exist.",
+          "evidence": [
+            {
+              "file": "backend/workflows/prefect/actions/disable_user.py",
+              "lines": "33",
+              "contains": "url = self.resolve_variables(config.get(\"api_url\", \"\"), context)",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/actions/disable_user.py#L33"
+            },
+            {
+              "file": "backend/workflows/prefect/actions/send_notification.py",
+              "lines": "116-124",
+              "contains": "def _validated_webhook_url",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/actions/send_notification.py#L116-L124"
+            },
+            {
+              "file": "backend/ai_assistant/views.py",
+              "lines": "144",
+              "contains": "requests.get(url, headers=headers, params=params, timeout=12)",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/views.py#L144"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The assistant's default tools are read-only, but the registry of workflow actions enables write and network actions together with no per-task tool allowlist.",
+          "gap": "A read-only default across the whole platform would need write and network actions to be enabled explicitly.",
+          "evidence": [
+            {
+              "file": "backend/workflows/prefect/actions/registry.py",
+              "lines": "26-40",
+              "contains": "\"block_ip\": BlockIPAction",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/actions/registry.py#L26-L40"
+            },
+            {
+              "file": "backend/ai_assistant/chat_agent.py",
+              "lines": "164",
+              "contains": "def _internal_tools",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/chat_agent.py#L164"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A misused action can post credentialed requests to any URL for several action types, change firewall or account state on configured devices, and send email; only the HTTP action is limited by an admin allowlist.",
+          "gap": "Broad reach with only partial limits; L2 would scope actions to a project or workspace.",
+          "evidence": [
+            {
+              "file": "backend/workflows/prefect/actions/block_ip.py",
+              "lines": "63-73",
+              "contains": "response = requests.post(",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/actions/block_ip.py#L63-L73"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.375,
+          "raw": 0.375,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Typed tool schemas and bounded limits exist, and the HTTP action is carefully validated, but several actions are unvalidated, and the skill-reading tool's argument handling is not strict.",
+              "gap": "Not every tool does allowlist validation with resolved-path or host containment; DNS is not pinned in the HTTP action.",
+              "evidence": [
+                {
+                  "file": "backend/workflows/prefect/actions/api_call.py",
+                  "lines": "127-195",
+                  "contains": "def _validated_target",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/actions/api_call.py#L127-L195"
+                },
+                {
+                  "file": "backend/workflows/prefect/actions/api_call.py",
+                  "lines": "251",
+                  "contains": "DNS is intentionally not pinned",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/actions/api_call.py#L251"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only the HTTP action, the firewall alias action and the built-in lookup tools validate meaningfully; block-IP (generic), disable/enable user, release IP, lookups and webhooks do not confine their targets.",
+              "gap": "Most tools do not validate; a shared policy layer does not exist.",
+              "evidence": [
+                {
+                  "file": "backend/workflows/prefect/actions/disable_user.py",
+                  "lines": "33",
+                  "contains": "url = self.resolve_variables(config.get(\"api_url\", \"\"), context)",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/actions/disable_user.py#L33"
+                },
+                {
+                  "file": "backend/workflows/prefect/actions/send_notification.py",
+                  "lines": "116-124",
+                  "contains": "def _validated_webhook_url",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/actions/send_notification.py#L116-L124"
+                },
+                {
+                  "file": "backend/ai_assistant/views.py",
+                  "lines": "144",
+                  "contains": "requests.get(url, headers=headers, params=params, timeout=12)",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/views.py#L144"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The assistant's default tools are read-only, but the registry of workflow actions enables write and network actions together with no per-task tool allowlist.",
+              "gap": "A read-only default across the whole platform would need write and network actions to be enabled explicitly.",
+              "evidence": [
+                {
+                  "file": "backend/workflows/prefect/actions/registry.py",
+                  "lines": "26-40",
+                  "contains": "\"block_ip\": BlockIPAction",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/actions/registry.py#L26-L40"
+                },
+                {
+                  "file": "backend/ai_assistant/chat_agent.py",
+                  "lines": "164",
+                  "contains": "def _internal_tools",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/chat_agent.py#L164"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A misused action can post credentialed requests to any URL for several action types, change firewall or account state on configured devices, and send email; only the HTTP action is limited by an admin allowlist.",
+              "gap": "Broad reach with only partial limits; L2 would scope actions to a project or workspace.",
+              "evidence": [
+                {
+                  "file": "backend/workflows/prefect/actions/block_ip.py",
+                  "lines": "63-73",
+                  "contains": "response = requests.post(",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/actions/block_ip.py#L63-L73"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "No model-reachable path interprets text as code. The workflow engine substitutes variables with a regular expression, conditions use a custom evaluator, database access uses the ORM, and the model has no shell, script or package-install tool. The only process-spawning and exec hits are a manual sample script and a docstring.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -S 'subprocess|os\\.system|\\beval\\(|\\bexec\\(|pickle|shell=True|__import__|importlib' -g '!**/migrations/**' -g '!**/tests/**'",
+              "scope": "backend",
+              "hits": 3,
+              "note": "all three hits are in backend/workflows/sample_workflows (a manual deploy helper and a docstring), not reachable from the API, the assistant or the workflow runtime"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -S 'subprocess|os\\.system|\\beval\\(|\\bexec\\(|pickle|shell=True|__import__|importlib' -g '!**/migrations/**' -g '!**/tests/**'",
+              "scope": "backend",
+              "hits": 3,
+              "note": "all three hits are in backend/workflows/sample_workflows (a manual deploy helper and a docstring), not reachable from the API, the assistant or the workflow runtime"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -S 'subprocess|os\\.system|\\beval\\(|\\bexec\\(|pickle|shell=True|__import__|importlib' -g '!**/migrations/**' -g '!**/tests/**'",
+              "scope": "backend",
+              "hits": 3,
+              "note": "all three hits are in backend/workflows/sample_workflows (a manual deploy helper and a docstring), not reachable from the API, the assistant or the workflow runtime"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -S 'subprocess|os\\.system|\\beval\\(|\\bexec\\(|pickle|shell=True|__import__|importlib' -g '!**/migrations/**' -g '!**/tests/**'",
+              "scope": "backend",
+              "hits": 3,
+              "note": "all three hits are in backend/workflows/sample_workflows (a manual deploy helper and a docstring), not reachable from the API, the assistant or the workflow runtime"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -S 'subprocess|os\\.system|\\beval\\(|\\bexec\\(|pickle|shell=True|__import__|importlib' -g '!**/migrations/**' -g '!**/tests/**'",
+                  "scope": "backend",
+                  "hits": 3,
+                  "note": "all three hits are in backend/workflows/sample_workflows (a manual deploy helper and a docstring), not reachable from the API, the assistant or the workflow runtime"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -S 'subprocess|os\\.system|\\beval\\(|\\bexec\\(|pickle|shell=True|__import__|importlib' -g '!**/migrations/**' -g '!**/tests/**'",
+                  "scope": "backend",
+                  "hits": 3,
+                  "note": "all three hits are in backend/workflows/sample_workflows (a manual deploy helper and a docstring), not reachable from the API, the assistant or the workflow runtime"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -S 'subprocess|os\\.system|\\beval\\(|\\bexec\\(|pickle|shell=True|__import__|importlib' -g '!**/migrations/**' -g '!**/tests/**'",
+                  "scope": "backend",
+                  "hits": 3,
+                  "note": "all three hits are in backend/workflows/sample_workflows (a manual deploy helper and a docstring), not reachable from the API, the assistant or the workflow runtime"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -S 'subprocess|os\\.system|\\beval\\(|\\bexec\\(|pickle|shell=True|__import__|importlib' -g '!**/migrations/**' -g '!**/tests/**'",
+                  "scope": "backend",
+                  "hits": 3,
+                  "note": "all three hits are in backend/workflows/sample_workflows (a manual deploy helper and a docstring), not reachable from the API, the assistant or the workflow runtime"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n -S 'subprocess|os\\.system|\\beval\\(|\\bexec\\(|pickle|shell=True|__import__|importlib' -g '!**/migrations/**' -g '!**/tests/**'",
+          "scope": "backend",
+          "hits": 3,
+          "note": "all three hits are in backend/workflows/sample_workflows (a manual deploy helper and a docstring), not reachable from the API, the assistant or the workflow runtime"
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "Untrusted content reaches the model in several places: ticket alert JSON, tool results, knowledge-base documents and skill text. Nothing distinguishes it from instructions, but the default assistant paths have only read-only tools, so a manipulated model can read tickets and assets and shape its answer, not change state or call out. One ticket endpoint lets the caller list MCP endpoints whose tools the model may select without approval. Separately, alert fields flow into workflow variables that choose containment targets, which is not model-mediated.",
+      "max": 1.0,
+      "notes": "Workflow runs triggered by alerts substitute alert fields into containment targets; that path is not model-mediated and is covered in C2 and C3.",
+      "status": "scored",
+      "score": 0.5,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The default chat and ticket-assistant paths register only read-only tools and force the internal MCP endpoint, which structurally limits a hijacked model, but there is no taint tracking and one endpoint does not force the internal endpoint.",
+          "gap": "The restriction is a property of the default tool list, not an enforced rule once untrusted content is read; the mention endpoint can select caller-listed MCP endpoints.",
+          "evidence": [
+            {
+              "file": "backend/ai_assistant/chat_agent.py",
+              "lines": "164-170",
+              "contains": "def _internal_tools",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/chat_agent.py#L164-L170"
+            },
+            {
+              "file": "backend/ai_assistant/views.py",
+              "lines": "222",
+              "contains": "mcp_overrides[\"force_internal\"] = True",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/views.py#L222"
+            },
+            {
+              "file": "backend/tickets/views.py",
+              "lines": "843",
+              "contains": "\"base_url\": data.get(\"mcp_base_url\")",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/tickets/views.py#L843"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The read-only restriction applies to every content source in the default paths, but sources are not labelled and the mention endpoint is outside the restriction.",
+          "gap": "No provenance tagging of ticket text, tool results or skill text, and not every assistant endpoint is covered.",
+          "evidence": [
+            {
+              "file": "backend/ai_assistant/views.py",
+              "lines": "258",
+              "contains": "chat_input += ",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/views.py#L258"
+            },
+            {
+              "file": "backend/ai_assistant/chat_agent.py",
+              "lines": "500-504",
+              "contains": "\"role\": \"tool\"",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/chat_agent.py#L500-L504"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The read-only tool set is code, but the caller can change MCP overrides on the mention endpoint and silently supply endpoints.",
+          "gap": "The caller can widen the endpoint set without any warning or approval.",
+          "evidence": [
+            {
+              "file": "backend/tickets/views.py",
+              "lines": "828-860",
+              "contains": "def ai_mention",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/tickets/views.py#L828-L860"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "In the default configuration a hijacked assistant can read any ticket or asset and mislead an analyst, but has no write tool, no outbound tool and no way to start a workflow, so only reversible, in-app effects such as saved chat history occur.",
+          "gap": "Sensitive SOC records are reachable by the model; L3 needs only low-sensitivity data or fully gated egress.",
+          "evidence": [
+            {
+              "file": "backend/ai_assistant/mcp_protocol_views.py",
+              "lines": "275-284",
+              "contains": "raise ValueError(f\"unknown tool: {name}\")",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/mcp_protocol_views.py#L275-L284"
+            },
+            {
+              "file": "backend/ai_assistant/chat_agent.py",
+              "lines": "484-488",
+              "contains": "internal_handlers[tool_name](args)",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/chat_agent.py#L484-L488"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.5,
+          "raw": 0.5,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The default chat and ticket-assistant paths register only read-only tools and force the internal MCP endpoint, which structurally limits a hijacked model, but there is no taint tracking and one endpoint does not force the internal endpoint.",
+              "gap": "The restriction is a property of the default tool list, not an enforced rule once untrusted content is read; the mention endpoint can select caller-listed MCP endpoints.",
+              "evidence": [
+                {
+                  "file": "backend/ai_assistant/chat_agent.py",
+                  "lines": "164-170",
+                  "contains": "def _internal_tools",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/chat_agent.py#L164-L170"
+                },
+                {
+                  "file": "backend/ai_assistant/views.py",
+                  "lines": "222",
+                  "contains": "mcp_overrides[\"force_internal\"] = True",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/views.py#L222"
+                },
+                {
+                  "file": "backend/tickets/views.py",
+                  "lines": "843",
+                  "contains": "\"base_url\": data.get(\"mcp_base_url\")",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/tickets/views.py#L843"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The read-only restriction applies to every content source in the default paths, but sources are not labelled and the mention endpoint is outside the restriction.",
+              "gap": "No provenance tagging of ticket text, tool results or skill text, and not every assistant endpoint is covered.",
+              "evidence": [
+                {
+                  "file": "backend/ai_assistant/views.py",
+                  "lines": "258",
+                  "contains": "chat_input += ",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/views.py#L258"
+                },
+                {
+                  "file": "backend/ai_assistant/chat_agent.py",
+                  "lines": "500-504",
+                  "contains": "\"role\": \"tool\"",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/chat_agent.py#L500-L504"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The read-only tool set is code, but the caller can change MCP overrides on the mention endpoint and silently supply endpoints.",
+              "gap": "The caller can widen the endpoint set without any warning or approval.",
+              "evidence": [
+                {
+                  "file": "backend/tickets/views.py",
+                  "lines": "828-860",
+                  "contains": "def ai_mention",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/tickets/views.py#L828-L860"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "In the default configuration a hijacked assistant can read any ticket or asset and mislead an analyst, but has no write tool, no outbound tool and no way to start a workflow, so only reversible, in-app effects such as saved chat history occur.",
+              "gap": "Sensitive SOC records are reachable by the model; L3 needs only low-sensitivity data or fully gated egress.",
+              "evidence": [
+                {
+                  "file": "backend/ai_assistant/mcp_protocol_views.py",
+                  "lines": "275-284",
+                  "contains": "raise ValueError(f\"unknown tool: {name}\")",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/mcp_protocol_views.py#L275-L284"
+                },
+                {
+                  "file": "backend/ai_assistant/chat_agent.py",
+                  "lines": "484-488",
+                  "contains": "internal_handlers[tool_name](args)",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/chat_agent.py#L484-L488"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "Persistent instruction text steers the assistant. Skill documents on disk are loaded silently into the system prompt for every user, and any non-readonly authenticated user can create or overwrite them through the API, with no validation, approval, versioning or audit record. Skill-name handling is not strict. Saved chat history is per ticket and is only replayed to the model if the client sends it back. Configuration files come from the deployment, not from a workspace the assistant operates on.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.125,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Skill content is written without validation or approval and loaded silently into the system prompt.",
+          "gap": "Writes are neither logged nor gated, and skills carry no provenance or integrity protection.",
+          "evidence": [
+            {
+              "file": "backend/ai_assistant/views.py",
+              "lines": "402-417",
+              "contains": "write_skill_content(safe_name",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/views.py#L402-L417"
+            },
+            {
+              "file": "backend/ai_assistant/chat_agent.py",
+              "lines": "410",
+              "contains": "Selected skill instructions",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/chat_agent.py#L410"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No store is controlled beyond a character filter on the skill name; skills, the knowledge base and saved traces have no write gating.",
+          "gap": "At least the main instruction store would need controlled writes.",
+          "evidence": [
+            {
+              "file": "backend/ai_assistant/views.py",
+              "lines": "396-397",
+              "contains": "re.sub(r\"[^a-zA-Z0-9_.-]\"",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/views.py#L396-L397"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Skills are one global directory shared by every user and every session.",
+          "gap": "No per-user or per-tenant namespace for skills.",
+          "evidence": [
+            {
+              "file": "backend/ai_assistant/skill_library.py",
+              "lines": "17-18",
+              "contains": "def _skill_dir",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/skill_library.py#L17-L18"
+            },
+            {
+              "file": "backend/ai_assistant/skill_library.py",
+              "lines": "114-115",
+              "contains": "skill_path = os.path.join(base, skill_name)",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/skill_library.py#L114-L115"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A poisoned skill persists across all users' sessions and can steer the model's read-only tool calls and its answers, but the model has no write tool to act on it.",
+          "gap": "Persistence is global and silent; it is not easily inspected or purged by reviewers.",
+          "evidence": [
+            {
+              "file": "backend/ai_assistant/chat_agent.py",
+              "lines": "372",
+              "contains": "instructions.append(f\"SKILL",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/chat_agent.py#L372"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.125,
+          "raw": 0.125,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Skill content is written without validation or approval and loaded silently into the system prompt.",
+              "gap": "Writes are neither logged nor gated, and skills carry no provenance or integrity protection.",
+              "evidence": [
+                {
+                  "file": "backend/ai_assistant/views.py",
+                  "lines": "402-417",
+                  "contains": "write_skill_content(safe_name",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/views.py#L402-L417"
+                },
+                {
+                  "file": "backend/ai_assistant/chat_agent.py",
+                  "lines": "410",
+                  "contains": "Selected skill instructions",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/chat_agent.py#L410"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No store is controlled beyond a character filter on the skill name; skills, the knowledge base and saved traces have no write gating.",
+              "gap": "At least the main instruction store would need controlled writes.",
+              "evidence": [
+                {
+                  "file": "backend/ai_assistant/views.py",
+                  "lines": "396-397",
+                  "contains": "re.sub(r\"[^a-zA-Z0-9_.-]\"",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/views.py#L396-L397"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Skills are one global directory shared by every user and every session.",
+              "gap": "No per-user or per-tenant namespace for skills.",
+              "evidence": [
+                {
+                  "file": "backend/ai_assistant/skill_library.py",
+                  "lines": "17-18",
+                  "contains": "def _skill_dir",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/skill_library.py#L17-L18"
+                },
+                {
+                  "file": "backend/ai_assistant/skill_library.py",
+                  "lines": "114-115",
+                  "contains": "skill_path = os.path.join(base, skill_name)",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/skill_library.py#L114-L115"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A poisoned skill persists across all users' sessions and can steer the model's read-only tool calls and its answers, but the model has no write tool to act on it.",
+              "gap": "Persistence is global and silent; it is not easily inspected or purged by reviewers.",
+              "evidence": [
+                {
+                  "file": "backend/ai_assistant/chat_agent.py",
+                  "lines": "372",
+                  "contains": "instructions.append(f\"SKILL",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/chat_agent.py#L372"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "The platform loads no third-party code into its own process. MCP is used as a client to remote JSON-RPC endpoints that a user lists or registers; the endpoints, their tool lists and their tokens are not pinned or verified, tool lists are cached for three minutes, and there is no re-approval when definitions change. In the default chat paths the internal endpoint is forced, so registered servers are ignored, but the mention endpoint accepts caller-supplied endpoints and sends the caller's platform token to them.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.3,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Endpoints are user-chosen and unpinned, with no digest, version or definition check.",
+          "gap": "No pinning or integrity check of endpoints or their tool definitions.",
+          "evidence": [
+            {
+              "file": "backend/ai_assistant/mcp_gateway.py",
+              "lines": "23",
+              "contains": "_TOOLS_CACHE_TTL_SECONDS = 180",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/mcp_gateway.py#L23"
+            },
+            {
+              "file": "backend/ai_assistant/models.py",
+              "lines": "6-10",
+              "contains": "class ExternalMCPServer",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/models.py#L6-L10"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only one extension type exists (remote MCP endpoints) and none of it is verified.",
+          "gap": "Verification applies to no extension type.",
+          "evidence": [
+            {
+              "file": "backend/ai_assistant/mcp_gateway.py",
+              "lines": "429-460",
+              "contains": "def _get_endpoint_tools",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/mcp_gateway.py#L429-L460"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Servers are added by an explicit API call but the person registering sees only a name and URL, any non-readonly user can add one, and nothing is enabled by default.",
+          "gap": "No display of the tool definitions or permissions, and registration is not limited to admin scope.",
+          "evidence": [
+            {
+              "file": "backend/ai_assistant/views.py",
+              "lines": "302-312",
+              "contains": "def external_mcp_servers",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/views.py#L302-L312"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A remote MCP endpoint listed on the mention endpoint receives the caller's platform token and ticket text, so a malicious endpoint holds the caller's full API authority; it runs outside the process.",
+          "gap": "The endpoint receives the caller's whole token rather than a scrubbed or per-extension credential.",
+          "evidence": [
+            {
+              "file": "backend/tickets/views.py",
+              "lines": "859-862",
+              "contains": "mcp_overrides[\"token\"] = auth_header.strip()",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/tickets/views.py#L859-L862"
+            },
+            {
+              "file": "backend/ai_assistant/mcp_gateway.py",
+              "lines": "231-240",
+              "contains": "def _headers",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/mcp_gateway.py#L231-L240"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.3,
+          "raw": 0.3,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Endpoints are user-chosen and unpinned, with no digest, version or definition check.",
+              "gap": "No pinning or integrity check of endpoints or their tool definitions.",
+              "evidence": [
+                {
+                  "file": "backend/ai_assistant/mcp_gateway.py",
+                  "lines": "23",
+                  "contains": "_TOOLS_CACHE_TTL_SECONDS = 180",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/mcp_gateway.py#L23"
+                },
+                {
+                  "file": "backend/ai_assistant/models.py",
+                  "lines": "6-10",
+                  "contains": "class ExternalMCPServer",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/models.py#L6-L10"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only one extension type exists (remote MCP endpoints) and none of it is verified.",
+              "gap": "Verification applies to no extension type.",
+              "evidence": [
+                {
+                  "file": "backend/ai_assistant/mcp_gateway.py",
+                  "lines": "429-460",
+                  "contains": "def _get_endpoint_tools",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/mcp_gateway.py#L429-L460"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Servers are added by an explicit API call but the person registering sees only a name and URL, any non-readonly user can add one, and nothing is enabled by default.",
+              "gap": "No display of the tool definitions or permissions, and registration is not limited to admin scope.",
+              "evidence": [
+                {
+                  "file": "backend/ai_assistant/views.py",
+                  "lines": "302-312",
+                  "contains": "def external_mcp_servers",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/views.py#L302-L312"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A remote MCP endpoint listed on the mention endpoint receives the caller's platform token and ticket text, so a malicious endpoint holds the caller's full API authority; it runs outside the process.",
+              "gap": "The endpoint receives the caller's whole token rather than a scrubbed or per-extension credential.",
+              "evidence": [
+                {
+                  "file": "backend/tickets/views.py",
+                  "lines": "859-862",
+                  "contains": "mcp_overrides[\"token\"] = auth_header.strip()",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/tickets/views.py#L859-L862"
+                },
+                {
+                  "file": "backend/ai_assistant/mcp_gateway.py",
+                  "lines": "231-240",
+                  "contains": "def _headers",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/mcp_gateway.py#L231-L240"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "Workflow credentials are handled well: sensitive fields are write-only, encrypted at rest with a rotatable key ring, bound to their target, decrypted only in the worker, and redacted from results and errors. Startup refuses a placeholder secret key or a missing workflow key outside debug mode. Gaps remain: MCP server tokens are stored in plaintext, request bodies can carry a model API key, and the handling of some stored and deployment credentials is not locked down. No telemetry SDK is present.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.45,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Workflow secrets are Fernet-encrypted with redaction, but MCP tokens are stored in a plaintext column.",
+          "gap": "All stored credentials would need encryption at rest and a secret manager.",
+          "evidence": [
+            {
+              "file": "backend/workflows/prefect/secrets.py",
+              "lines": "18",
+              "contains": "ENCRYPTED_PREFIX = \"enc:v1:\"",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/secrets.py#L18"
+            },
+            {
+              "file": "backend/ai_assistant/models.py",
+              "lines": "10",
+              "contains": "token = models.TextField(blank=True)",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/models.py#L10"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Action results and errors are redacted and audit-body logging masks token keys, but MCP token handling is not locked down and workflow outputs are not scanned for secret patterns.",
+          "gap": "Stored MCP tokens and model-bound content are not covered by the redaction layer.",
+          "evidence": [
+            {
+              "file": "backend/workflows/prefect/executor.py",
+              "lines": "28",
+              "contains": "return redact_values(result.to_dict(), secrets)",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/executor.py#L28"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No telemetry is shipped and redaction cannot be disabled, but the shipped deployment defaults do not lock down credentials.",
+          "gap": "Deployment credential defaults are not checked at startup, unlike the secret key.",
+          "evidence": [],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Stored firewall, directory and MCP credentials are long-lived and moderately scoped; the model can read none of them, and workflow credentials are decrypted only inside the worker.",
+          "gap": "Credentials are long-lived and not per-task; rotation requires the operator.",
+          "evidence": [
+            {
+              "file": "backend/workflows/prefect/executor.py",
+              "lines": "10",
+              "contains": "decrypt_config_for_execution",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/executor.py#L10"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.45,
+          "raw": 0.45,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Workflow secrets are Fernet-encrypted with redaction, but MCP tokens are stored in a plaintext column.",
+              "gap": "All stored credentials would need encryption at rest and a secret manager.",
+              "evidence": [
+                {
+                  "file": "backend/workflows/prefect/secrets.py",
+                  "lines": "18",
+                  "contains": "ENCRYPTED_PREFIX = \"enc:v1:\"",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/secrets.py#L18"
+                },
+                {
+                  "file": "backend/ai_assistant/models.py",
+                  "lines": "10",
+                  "contains": "token = models.TextField(blank=True)",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/models.py#L10"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Action results and errors are redacted and audit-body logging masks token keys, but MCP token handling is not locked down and workflow outputs are not scanned for secret patterns.",
+              "gap": "Stored MCP tokens and model-bound content are not covered by the redaction layer.",
+              "evidence": [
+                {
+                  "file": "backend/workflows/prefect/executor.py",
+                  "lines": "28",
+                  "contains": "return redact_values(result.to_dict(), secrets)",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/executor.py#L28"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No telemetry is shipped and redaction cannot be disabled, but the shipped deployment defaults do not lock down credentials.",
+              "gap": "Deployment credential defaults are not checked at startup, unlike the secret key.",
+              "evidence": [],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Stored firewall, directory and MCP credentials are long-lived and moderately scoped; the model can read none of them, and workflow credentials are decrypted only inside the worker.",
+              "gap": "Credentials are long-lived and not per-task; rotation requires the operator.",
+              "evidence": [
+                {
+                  "file": "backend/workflows/prefect/executor.py",
+                  "lines": "10",
+                  "contains": "decrypt_config_for_execution",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/executor.py#L10"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "Assistant tool calls are recorded in a database table with tool name, arguments, status, endpoint and timing, and the ticket chat stores the trace. Workflow runs record step inputs, outputs and the user who started them. The record lacks the requesting user on tool calls, the general audit table only logs authentication events and read-only users' activity, and changes to skills, MCP servers and workflows are not audited. Some audit writes are wrapped so failures are swallowed.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.45,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tool calls are stored with arguments, status and timestamps, but the row has no acting user.",
+          "gap": "No actor attribution on tool calls and no tamper-evident or exported storage.",
+          "evidence": [
+            {
+              "file": "backend/ai_assistant/models.py",
+              "lines": "84-90",
+              "contains": "class MCPToolExecution",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/models.py#L84-L90"
+            },
+            {
+              "file": "backend/ai_assistant/monitoring.py",
+              "lines": "11-23",
+              "contains": "def start_mcp_execution",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/monitoring.py#L11-L23"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Chat tool calls and gateway calls are recorded, and workflow runs keep step records, but writes to skills, MCP servers and workflow definitions are not audited.",
+          "gap": "Configuration changes and credential use are not recorded.",
+          "evidence": [
+            {
+              "file": "backend/ai_assistant/chat_agent.py",
+              "lines": "481",
+              "contains": "exec_id = start_mcp_execution(actual_tool_name",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/chat_agent.py#L481"
+            },
+            {
+              "file": "backend/accounts/middleware.py",
+              "lines": "73",
+              "contains": "should_log = not self._should_skip(path) and _is_guest(user)",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/accounts/middleware.py#L73"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Records are written by application code to the platform database; they sit outside any workspace but the same service can alter or purge them, and a retention job removes old rows.",
+          "gap": "No append-only or off-host storage.",
+          "evidence": [
+            {
+              "file": "backend/siem_project/settings.py",
+              "lines": "294",
+              "contains": "AUDIT_LOG_RETENTION_DAYS",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/siem_project/settings.py#L294"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Audit and monitor writes are best-effort: several are wrapped in broad exception handlers that continue silently.",
+          "gap": "Failures are not surfaced and actions proceed without a record.",
+          "evidence": [
+            {
+              "file": "backend/ai_assistant/mcp_gateway.py",
+              "lines": "83",
+              "contains": "except Exception:",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/mcp_gateway.py#L83"
+            },
+            {
+              "file": "backend/accounts/middleware.py",
+              "lines": "88",
+              "contains": "except Exception:",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/accounts/middleware.py#L88"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.45,
+          "raw": 0.45,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tool calls are stored with arguments, status and timestamps, but the row has no acting user.",
+              "gap": "No actor attribution on tool calls and no tamper-evident or exported storage.",
+              "evidence": [
+                {
+                  "file": "backend/ai_assistant/models.py",
+                  "lines": "84-90",
+                  "contains": "class MCPToolExecution",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/models.py#L84-L90"
+                },
+                {
+                  "file": "backend/ai_assistant/monitoring.py",
+                  "lines": "11-23",
+                  "contains": "def start_mcp_execution",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/monitoring.py#L11-L23"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Chat tool calls and gateway calls are recorded, and workflow runs keep step records, but writes to skills, MCP servers and workflow definitions are not audited.",
+              "gap": "Configuration changes and credential use are not recorded.",
+              "evidence": [
+                {
+                  "file": "backend/ai_assistant/chat_agent.py",
+                  "lines": "481",
+                  "contains": "exec_id = start_mcp_execution(actual_tool_name",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/chat_agent.py#L481"
+                },
+                {
+                  "file": "backend/accounts/middleware.py",
+                  "lines": "73",
+                  "contains": "should_log = not self._should_skip(path) and _is_guest(user)",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/accounts/middleware.py#L73"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Records are written by application code to the platform database; they sit outside any workspace but the same service can alter or purge them, and a retention job removes old rows.",
+              "gap": "No append-only or off-host storage.",
+              "evidence": [
+                {
+                  "file": "backend/siem_project/settings.py",
+                  "lines": "294",
+                  "contains": "AUDIT_LOG_RETENTION_DAYS",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/siem_project/settings.py#L294"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Audit and monitor writes are best-effort: several are wrapped in broad exception handlers that continue silently.",
+              "gap": "Failures are not surfaced and actions proceed without a record.",
+              "evidence": [
+                {
+                  "file": "backend/ai_assistant/mcp_gateway.py",
+                  "lines": "83",
+                  "contains": "except Exception:",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/mcp_gateway.py#L83"
+                },
+                {
+                  "file": "backend/accounts/middleware.py",
+                  "lines": "88",
+                  "contains": "except Exception:",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/accounts/middleware.py#L88"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "The chat loop is capped at six iterations by default and each model call and MCP call has a timeout, but any authenticated caller can raise the iteration count and timeouts per request with no ceiling, and there are no token, cost or total wall-clock limits. The MCP streaming endpoint holds a worker thread open indefinitely. Workflows have a graph-loop guard, a bounded HTTP timeout and response size, and optional per-step timeouts, with cancel forwarded to the workflow engine but errors swallowed; there are no concurrency or rate limits beyond the generic request throttle.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.45,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "An iteration cap and per-call timeouts are enforced in code; there is no token, cost or total time cap.",
+          "gap": "No token or wall-clock cap, and no rate limit on side-effecting actions.",
+          "evidence": [
+            {
+              "file": "backend/ai_assistant/chat_agent.py",
+              "lines": "442",
+              "contains": "for _ in range(max_iterations):",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/chat_agent.py#L442"
+            },
+            {
+              "file": "backend/ai_assistant/chat_agent.py",
+              "lines": "147",
+              "contains": "timeout=timeout",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/chat_agent.py#L147"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Limits cover the top-level loop and tool-call timeouts; workflow steps only have optional timeouts and a loop guard.",
+          "gap": "Spawned workflow runs and background work do not share one budget.",
+          "evidence": [
+            {
+              "file": "backend/workflows/prefect/flow.py",
+              "lines": "149",
+              "contains": "limit, iterations = max(len(ordered) * 5, 1), 0",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/flow.py#L149"
+            },
+            {
+              "file": "backend/workflows/prefect/flow.py",
+              "lines": "192",
+              "contains": "timeout_seconds=int(step.get(\"timeout_seconds\") or 0) or None",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/flow.py#L192"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Defaults exist (six iterations, 45 s) but the requester can raise them per call without a ceiling.",
+          "gap": "No hard ceilings that configuration or callers cannot exceed.",
+          "evidence": [
+            {
+              "file": "backend/ai_assistant/chat_agent.py",
+              "lines": "432-436",
+              "contains": "max_iter_value = overrides.get(\"max_iterations\")",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/chat_agent.py#L432-L436"
+            },
+            {
+              "file": "backend/ai_assistant/chat_agent.py",
+              "lines": "41",
+              "contains": "timeout_value = overrides.get(\"timeout_seconds\")",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/chat_agent.py#L41"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Moderate ceilings apply per request, but a chat request cannot be cancelled, and cancelling a workflow marks it cancelled even if the engine call fails.",
+          "gap": "No tight cost ceiling, no stop for in-flight chat, and cancel errors are swallowed.",
+          "evidence": [
+            {
+              "file": "backend/workflows/views.py",
+              "lines": "571",
+              "contains": "except Exception:  # pragma: no cover - defensive",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/views.py#L571"
+            },
+            {
+              "file": "backend/ai_assistant/mcp_protocol_views.py",
+              "lines": "308-315",
+              "contains": "def _sse_stream",
+              "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/mcp_protocol_views.py#L308-L315"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.45,
+          "raw": 0.45,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "An iteration cap and per-call timeouts are enforced in code; there is no token, cost or total time cap.",
+              "gap": "No token or wall-clock cap, and no rate limit on side-effecting actions.",
+              "evidence": [
+                {
+                  "file": "backend/ai_assistant/chat_agent.py",
+                  "lines": "442",
+                  "contains": "for _ in range(max_iterations):",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/chat_agent.py#L442"
+                },
+                {
+                  "file": "backend/ai_assistant/chat_agent.py",
+                  "lines": "147",
+                  "contains": "timeout=timeout",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/chat_agent.py#L147"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Limits cover the top-level loop and tool-call timeouts; workflow steps only have optional timeouts and a loop guard.",
+              "gap": "Spawned workflow runs and background work do not share one budget.",
+              "evidence": [
+                {
+                  "file": "backend/workflows/prefect/flow.py",
+                  "lines": "149",
+                  "contains": "limit, iterations = max(len(ordered) * 5, 1), 0",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/flow.py#L149"
+                },
+                {
+                  "file": "backend/workflows/prefect/flow.py",
+                  "lines": "192",
+                  "contains": "timeout_seconds=int(step.get(\"timeout_seconds\") or 0) or None",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/flow.py#L192"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Defaults exist (six iterations, 45 s) but the requester can raise them per call without a ceiling.",
+              "gap": "No hard ceilings that configuration or callers cannot exceed.",
+              "evidence": [
+                {
+                  "file": "backend/ai_assistant/chat_agent.py",
+                  "lines": "432-436",
+                  "contains": "max_iter_value = overrides.get(\"max_iterations\")",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/chat_agent.py#L432-L436"
+                },
+                {
+                  "file": "backend/ai_assistant/chat_agent.py",
+                  "lines": "41",
+                  "contains": "timeout_value = overrides.get(\"timeout_seconds\")",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/chat_agent.py#L41"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Moderate ceilings apply per request, but a chat request cannot be cancelled, and cancelling a workflow marks it cancelled even if the engine call fails.",
+              "gap": "No tight cost ceiling, no stop for in-flight chat, and cancel errors are swallowed.",
+              "evidence": [
+                {
+                  "file": "backend/workflows/views.py",
+                  "lines": "571",
+                  "contains": "except Exception:  # pragma: no cover - defensive",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/views.py#L571"
+                },
+                {
+                  "file": "backend/ai_assistant/mcp_protocol_views.py",
+                  "lines": "308-315",
+                  "contains": "def _sse_stream",
+                  "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/mcp_protocol_views.py#L308-L315"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "The ticket mention endpoint attaches the caller's platform token to requests sent to MCP endpoints named by the caller.",
+      "criterion": "C1",
+      "owasp": [
+        "ASI03",
+        "T9"
+      ],
+      "evidence": [
+        {
+          "file": "backend/tickets/views.py",
+          "lines": "859-862",
+          "contains": "mcp_overrides[\"token\"] = auth_header.strip()",
+          "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/tickets/views.py#L859-L862"
+        },
+        {
+          "file": "backend/ai_assistant/mcp_gateway.py",
+          "lines": "231-240",
+          "contains": "def _headers",
+          "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/mcp_gateway.py#L231-L240"
+        }
+      ]
+    },
+    {
+      "summary": "The generic HTTP and containment workflow actions run without any approval gate in the default configuration.",
+      "criterion": "C2",
+      "owasp": [
+        "ASI02",
+        "ASI09"
+      ],
+      "evidence": [
+        {
+          "file": "backend/workflows/prefect/actions/registry.py",
+          "lines": "27-33",
+          "contains": "\"api_call\": ApiCallAction",
+          "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/actions/registry.py#L27-L33"
+        },
+        {
+          "file": "backend/workflows/prefect/flow.py",
+          "lines": "197",
+          "contains": "configured(action_type, step.get(\"action_config\") or {}, context)",
+          "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/flow.py#L197"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "Alert JSON appended to the chat prompt (backend/ai_assistant/views.py:258)",
+    "sensitive_data": "Ticket, CMDB and alert records readable through built-in MCP tools (backend/ai_assistant/mcp_protocol_views.py:95)",
+    "state_change_or_egress": "None in the default assistant tool set (backend/ai_assistant/chat_agent.py:164); workflow actions are not reachable from the model",
+    "same_session": false
+  },
+  "fixes": [
+    {
+      "summary": "Add a per-run approval step for containment, email and generic HTTP actions that shows the exact target and payload.",
+      "criterion": "C2",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 3,
+      "playbook": "Playbook 5",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Stop forwarding the caller's platform token to caller-supplied MCP endpoints and use the internal endpoint only.",
+      "criterion": "C1",
+      "parameter": "C",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 4",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Restrict skill writes to an admin role, harden skill-name handling, and record every change.",
+      "criterion": "C6",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 3,
+      "playbook": "Playbook 2",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Add a shared URL policy to every workflow action that sends credentials, and harden skill-name handling.",
+      "criterion": "C3",
+      "parameter": "C",
+      "from_level": 1,
+      "to_level": 3,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.15
+    },
+    {
+      "summary": "Cap iterations, timeouts and total run time server-side and add token limits to the assistant.",
+      "criterion": "C10",
+      "parameter": "D",
+      "from_level": 1,
+      "to_level": 3,
+      "playbook": "Playbook 3 step 3",
+      "estimated_gain": 0.1
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was executed, installed, built or probed.",
+    "Frontend (React) code, the Prefect worker deployment, the Elasticsearch/Kibana integrations, alerts ingestion and detection-rule modules were not reviewed in depth; the review focused on ai_assistant, workflows, accounts, tickets endpoints that call the assistant, settings and deployment manifests.",
+    "The assistant and the SOAR engine are separate paths: the model has no tool that starts a workflow. The workflow engine is scored because it holds the platform's consequential actions; a reader who only cares about the assistant should weigh C2, C3 and C10 accordingly.",
+    "Per-record authorization on tickets and CMDB assets, and the exact permission set of the built-in read-only role, were checked only at the middleware and permission-class level.",
+    "No attempt to steer reviewers was found in README.md, AGENTS.md, docs or the skills directory; AGENTS.md is addressed to coding assistants working on the repo and was treated as data."
+  ]
+}

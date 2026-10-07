@@ -1,0 +1,2233 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "cloudflare-mcp-servers",
+  "name": "Cloudflare MCP Servers",
+  "repo_url": "https://github.com/cloudflare/mcp-server-cloudflare",
+  "subpath": null,
+  "description": "Source for Cloudflare's MCP servers (Workers, DNS analytics, observability, etc.)",
+  "category": "infrastructure_ops",
+  "pinned_commit": "ab883e51663df955316ec3191afb5b718bf4b54c",
+  "version": null,
+  "scored_date": "2026-10-03",
+  "scored_configuration": "The hosted remote MCP servers as configured for the production environment in each apps/*/wrangler.jsonc, with OAuth by default and direct Cloudflare API-token auth also accepted.",
+  "score": 3.9,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 9,
+    "score": 2.88,
+    "max": 9.0,
+    "percent": 32
+  },
+  "capability_profile": {
+    "code_execution": "yes",
+    "filesystem_write": "yes",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "no",
+    "untrusted_input": "yes",
+    "third_party_extensions": "yes",
+    "sub_agents": "no",
+    "external_communication": "no"
+  },
+  "headline": "These servers act on your Cloudflare account with your own OAuth grant or API token, and each server asks only for the scopes its domain needs. The main risk is that the server gives your MCP client little help in deciding what needs approval: the bindings server can irreversibly delete databases and buckets, the D1 SQL tool is labelled non-destructive, and the container and remote-capture tools carry no risk labels. Every server also accepts and forwards raw API tokens, and the container server runs model-chosen shell commands and packages as root with open internet and no timeout.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "Each server asks Cloudflare's OAuth for its own scope list (the observability server only asks for read scopes; the bindings server asks for Workers and D1 write), and every account-scoped tool checks that the chosen account is one the user's credential can actually access. Read and write tools on the same server share one credential, and the scopes always include offline_access, so the server stores a 30-day refresh token. Every server also accepts a raw Cloudflare API token from the client and forwards it unchanged to the Cloudflare API (token passthrough), so the server's authority is whatever token the client hands it. That passthrough caps this criterion.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C1-PASSTHRU",
+        "max": 0.25,
+        "reason": "resolveExternalToken accepts a client-supplied Cloudflare API token and the tools forward it unchanged to api.cloudflare.com."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Per-server OAuth scope lists are role-scoped, but read and write tools on a server share one token, and API-token mode forwards whatever scope the client token carries.",
+          "gap": "Read and write tools on the same server do not use separate, narrower credentials, and passthrough tokens are not narrowed at all.",
+          "evidence": [
+            {
+              "file": "apps/workers-bindings/src/bindings.app.ts",
+              "lines": "14-20",
+              "contains": "'workers:write':",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/bindings.app.ts#L14-L20"
+            },
+            {
+              "file": "packages/mcp-common/src/cloudflare-oauth-handler.ts",
+              "lines": "494",
+              "contains": "oauthReqInfo.scope = Object.keys(scopes)",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/cloudflare-oauth-handler.ts#L494"
+            },
+            {
+              "file": "packages/mcp-common/src/oauth-router.ts",
+              "lines": "108-111",
+              "contains": "resolveExternalToken,",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/oauth-router.ts#L108-L111"
+            },
+            {
+              "file": "packages/mcp-common/src/api-token-mode.ts",
+              "lines": "99-104",
+              "contains": "accessToken: token",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/api-token-mode.ts#L99-L104"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All tools reach Cloudflare through the per-request user token, and account-scoped tools validate the header/argument account against the token's own account list, failing closed when props are missing.",
+          "gap": "Authorization is Cloudflare's own check on whatever token arrives; there is no server-side policy intersecting the requesting user with a least-privilege policy per tool.",
+          "evidence": [
+            {
+              "file": "packages/mcp-common/src/account-manager.ts",
+              "lines": "99-108",
+              "contains": "this.accounts.some((a) => a.id === providedAccountId)",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/account-manager.ts#L99-L108"
+            },
+            {
+              "file": "packages/mcp-common/src/server.ts",
+              "lines": "188-195",
+              "contains": "Authenticated request props are required",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/server.ts#L188-L195"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "OAuth is the default and requests a per-server scope set, but the bindings server requests write scopes by default and any client can widen authority by sending a broader API token.",
+          "gap": "Default should be read-only scopes with write requiring an explicit elevation, and client-supplied tokens should not widen authority.",
+          "evidence": [
+            {
+              "file": "apps/workers-bindings/src/bindings.app.ts",
+              "lines": "17-19",
+              "contains": "'d1:write'",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/bindings.app.ts#L17-L19"
+            },
+            {
+              "file": "server.json",
+              "lines": "19-26",
+              "contains": "Optional Cloudflare API key for authentication if not using OAuth",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/server.json#L19-L26"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked bindings-server session can create and delete D1 databases, R2 buckets, KV namespaces and Hyperdrive configs across every account the user belongs to; a passthrough account token can be broader still.",
+          "gap": "Writes are not limited to one account or to non-destructive operations, and refresh tokens live 30 days.",
+          "evidence": [
+            {
+              "file": "apps/workers-bindings/src/tools/d1.tools.ts",
+              "lines": "128",
+              "contains": "client.d1.database.delete",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/tools/d1.tools.ts#L128"
+            },
+            {
+              "file": "packages/mcp-common/src/oauth-router.ts",
+              "lines": "101-102",
+              "contains": "refreshTokenTTL: 2_592_000",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/oauth-router.ts#L101-L102"
+            },
+            {
+              "file": "packages/mcp-common/src/scopes.ts",
+              "lines": "4",
+              "contains": "offline_access",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/scopes.ts#L4"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.525,
+          "cap": {
+            "id": "C1-PASSTHRU",
+            "max": 0.25,
+            "reason": "resolveExternalToken accepts a client-supplied Cloudflare API token and the tools forward it unchanged to api.cloudflare.com."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Per-server OAuth scope lists are role-scoped, but read and write tools on a server share one token, and API-token mode forwards whatever scope the client token carries.",
+              "gap": "Read and write tools on the same server do not use separate, narrower credentials, and passthrough tokens are not narrowed at all.",
+              "evidence": [
+                {
+                  "file": "apps/workers-bindings/src/bindings.app.ts",
+                  "lines": "14-20",
+                  "contains": "'workers:write':",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/bindings.app.ts#L14-L20"
+                },
+                {
+                  "file": "packages/mcp-common/src/cloudflare-oauth-handler.ts",
+                  "lines": "494",
+                  "contains": "oauthReqInfo.scope = Object.keys(scopes)",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/cloudflare-oauth-handler.ts#L494"
+                },
+                {
+                  "file": "packages/mcp-common/src/oauth-router.ts",
+                  "lines": "108-111",
+                  "contains": "resolveExternalToken,",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/oauth-router.ts#L108-L111"
+                },
+                {
+                  "file": "packages/mcp-common/src/api-token-mode.ts",
+                  "lines": "99-104",
+                  "contains": "accessToken: token",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/api-token-mode.ts#L99-L104"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All tools reach Cloudflare through the per-request user token, and account-scoped tools validate the header/argument account against the token's own account list, failing closed when props are missing.",
+              "gap": "Authorization is Cloudflare's own check on whatever token arrives; there is no server-side policy intersecting the requesting user with a least-privilege policy per tool.",
+              "evidence": [
+                {
+                  "file": "packages/mcp-common/src/account-manager.ts",
+                  "lines": "99-108",
+                  "contains": "this.accounts.some((a) => a.id === providedAccountId)",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/account-manager.ts#L99-L108"
+                },
+                {
+                  "file": "packages/mcp-common/src/server.ts",
+                  "lines": "188-195",
+                  "contains": "Authenticated request props are required",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/server.ts#L188-L195"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "OAuth is the default and requests a per-server scope set, but the bindings server requests write scopes by default and any client can widen authority by sending a broader API token.",
+              "gap": "Default should be read-only scopes with write requiring an explicit elevation, and client-supplied tokens should not widen authority.",
+              "evidence": [
+                {
+                  "file": "apps/workers-bindings/src/bindings.app.ts",
+                  "lines": "17-19",
+                  "contains": "'d1:write'",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/bindings.app.ts#L17-L19"
+                },
+                {
+                  "file": "server.json",
+                  "lines": "19-26",
+                  "contains": "Optional Cloudflare API key for authentication if not using OAuth",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/server.json#L19-L26"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked bindings-server session can create and delete D1 databases, R2 buckets, KV namespaces and Hyperdrive configs across every account the user belongs to; a passthrough account token can be broader still.",
+              "gap": "Writes are not limited to one account or to non-destructive operations, and refresh tokens live 30 days.",
+              "evidence": [
+                {
+                  "file": "apps/workers-bindings/src/tools/d1.tools.ts",
+                  "lines": "128",
+                  "contains": "client.d1.database.delete",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/tools/d1.tools.ts#L128"
+                },
+                {
+                  "file": "packages/mcp-common/src/oauth-router.ts",
+                  "lines": "101-102",
+                  "contains": "refreshTokenTTL: 2_592_000",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/oauth-router.ts#L101-L102"
+                },
+                {
+                  "file": "packages/mcp-common/src/scopes.ts",
+                  "lines": "4",
+                  "contains": "offline_access",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/scopes.ts#L4"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "These are tool servers, so the approval prompt belongs to the MCP client; the server's job is to label which tools are risky. Only some servers set read-only/destructive hints. The container server (shell execution, file delete), the DEX server (remote packet captures on employees' devices), the Browser Run server and the URL scanner carry no hints, and the D1 query tool, which runs arbitrary SQL including DROP/DELETE, is explicitly labelled non-destructive. There is no dry-run, no read-only mode and no server-side confirmation; the DEX capture tools ask the model in their description to confirm with the user, which is not a control. Deleting databases, buckets and namespaces is irreversible.",
+      "max": 1.0,
+      "notes": "C2-POWERBYPASS was considered for d1_database_query (arbitrary SQL labelled non-destructive) but not applied because the gate is host-owned; the mislabel is reflected in S.",
+      "status": "scored",
+      "score": 0.2,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Annotations exist on bindings, builds and shared tools but are missing on many mutating tools and wrong on d1_database_query.",
+          "gap": "Every tool needs accurate readOnlyHint/destructiveHint, with reads and writes in separate tools.",
+          "evidence": [
+            {
+              "file": "apps/workers-bindings/src/tools/d1.tools.ts",
+              "lines": "193-206",
+              "contains": "destructiveHint: false",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/tools/d1.tools.ts#L193-L206"
+            },
+            {
+              "search": "rg -n readOnlyHint|destructiveHint",
+              "scope": "apps/sandbox-container/server apps/dex-analysis/src apps/browser-rendering/src apps/radar/src apps/autorag/src apps/ai-gateway/src apps/graphql/src apps/logpush/src",
+              "hits": 0,
+              "note": "No annotations at all on the container, DEX, Browser Run, Radar/URL-scanner, AutoRAG, AI Gateway, GraphQL or Logpush tools."
+            },
+            {
+              "file": "apps/sandbox-container/server/container-tools.ts",
+              "lines": "60-66",
+              "contains": "'container_exec'",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/container-tools.ts#L60-L66"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Mutating tools such as container_exec, container_file_delete, dex_create_remote_pcap, kill_browser_session and create_url_scan carry no risk signal from the server.",
+          "gap": "All mutating tools would need flags so the host's gate applies uniformly.",
+          "evidence": [
+            {
+              "file": "apps/dex-analysis/src/tools/dex-analysis.tools.ts",
+              "lines": "200-203",
+              "contains": "dex_create_remote_pcap",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/dex-analysis/src/tools/dex-analysis.tools.ts#L200-L203"
+            },
+            {
+              "file": "apps/browser-rendering/src/tools/browser.tools.ts",
+              "lines": "611",
+              "contains": "'kill_browser_session'",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/browser-rendering/src/tools/browser.tools.ts#L611"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Risk signalling is static in code and cannot be changed by the model, but the server offers no enforced confirmation or read-only mode, so any gate depends entirely on the host; the DEX tools rely on a prompt instruction to confirm.",
+          "gap": "A server-enforced read-only mode or confirmation step would be needed.",
+          "evidence": [
+            {
+              "file": "apps/dex-analysis/src/tools/dex-analysis.tools.ts",
+              "lines": "203",
+              "contains": "Always ask for confirmation from the user",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/dex-analysis/src/tools/dex-analysis.tools.ts#L203"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A wrongly approved or unflagged call can irreversibly delete D1 databases, R2 buckets, KV namespaces and Hyperdrive configs, or start packet captures on real user devices, with no undo or preview.",
+          "gap": "Destructive operations need previews/dry-runs or recovery, and quantities need bounds.",
+          "evidence": [
+            {
+              "file": "apps/workers-bindings/src/tools/d1.tools.ts",
+              "lines": "113-128",
+              "contains": "'d1_database_delete'",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/tools/d1.tools.ts#L113-L128"
+            },
+            {
+              "file": "apps/dex-analysis/src/tools/dex-analysis.tools.ts",
+              "lines": "236-251",
+              "contains": "type: 'pcap'",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/dex-analysis/src/tools/dex-analysis.tools.ts#L236-L251"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.2,
+          "raw": 0.2,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Annotations exist on bindings, builds and shared tools but are missing on many mutating tools and wrong on d1_database_query.",
+              "gap": "Every tool needs accurate readOnlyHint/destructiveHint, with reads and writes in separate tools.",
+              "evidence": [
+                {
+                  "file": "apps/workers-bindings/src/tools/d1.tools.ts",
+                  "lines": "193-206",
+                  "contains": "destructiveHint: false",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/tools/d1.tools.ts#L193-L206"
+                },
+                {
+                  "search": "rg -n readOnlyHint|destructiveHint",
+                  "scope": "apps/sandbox-container/server apps/dex-analysis/src apps/browser-rendering/src apps/radar/src apps/autorag/src apps/ai-gateway/src apps/graphql/src apps/logpush/src",
+                  "hits": 0,
+                  "note": "No annotations at all on the container, DEX, Browser Run, Radar/URL-scanner, AutoRAG, AI Gateway, GraphQL or Logpush tools."
+                },
+                {
+                  "file": "apps/sandbox-container/server/container-tools.ts",
+                  "lines": "60-66",
+                  "contains": "'container_exec'",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/container-tools.ts#L60-L66"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Mutating tools such as container_exec, container_file_delete, dex_create_remote_pcap, kill_browser_session and create_url_scan carry no risk signal from the server.",
+              "gap": "All mutating tools would need flags so the host's gate applies uniformly.",
+              "evidence": [
+                {
+                  "file": "apps/dex-analysis/src/tools/dex-analysis.tools.ts",
+                  "lines": "200-203",
+                  "contains": "dex_create_remote_pcap",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/dex-analysis/src/tools/dex-analysis.tools.ts#L200-L203"
+                },
+                {
+                  "file": "apps/browser-rendering/src/tools/browser.tools.ts",
+                  "lines": "611",
+                  "contains": "'kill_browser_session'",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/browser-rendering/src/tools/browser.tools.ts#L611"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Risk signalling is static in code and cannot be changed by the model, but the server offers no enforced confirmation or read-only mode, so any gate depends entirely on the host; the DEX tools rely on a prompt instruction to confirm.",
+              "gap": "A server-enforced read-only mode or confirmation step would be needed.",
+              "evidence": [
+                {
+                  "file": "apps/dex-analysis/src/tools/dex-analysis.tools.ts",
+                  "lines": "203",
+                  "contains": "Always ask for confirmation from the user",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/dex-analysis/src/tools/dex-analysis.tools.ts#L203"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A wrongly approved or unflagged call can irreversibly delete D1 databases, R2 buckets, KV namespaces and Hyperdrive configs, or start packet captures on real user devices, with no undo or preview.",
+              "gap": "Destructive operations need previews/dry-runs or recovery, and quantities need bounds.",
+              "evidence": [
+                {
+                  "file": "apps/workers-bindings/src/tools/d1.tools.ts",
+                  "lines": "113-128",
+                  "contains": "'d1_database_delete'",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/tools/d1.tools.ts#L113-L128"
+                },
+                {
+                  "file": "apps/dex-analysis/src/tools/dex-analysis.tools.ts",
+                  "lines": "236-251",
+                  "contains": "type: 'pcap'",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/dex-analysis/src/tools/dex-analysis.tools.ts#L236-L251"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "Tool inputs are typed with zod schemas and the account ID is checked against an allowlist of the user's accounts, but many tools are general-purpose: arbitrary shell in the container, arbitrary SQL against D1, arbitrary GraphQL, any URL for Browser Run, and a Hyperdrive edit that can point a database connection at any host. Several free-form IDs (crawl job and browser session IDs) are pasted into API paths without validation. Each server ships its full tool set, so the bindings server exposes create/delete tools by default. A misused tool acts on production resources in the user's Cloudflare accounts.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.45,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Typed schemas and an account allowlist exist, but SQL, shell, URL and host arguments are passed through and some IDs are interpolated into API paths unvalidated.",
+          "gap": "Arguments would need allowlist validation (path-safe IDs, host allowlists, bounded or parameterized queries).",
+          "evidence": [
+            {
+              "file": "apps/workers-bindings/src/tools/d1.tools.ts",
+              "lines": "196-200",
+              "contains": "sql: D1DatabaseQuerySqlParam",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/tools/d1.tools.ts#L196-L200"
+            },
+            {
+              "file": "apps/workers-bindings/src/tools/hyperdrive.tools.ts",
+              "lines": "190",
+              "contains": "host: HyperdriveOriginHostSchema",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/tools/hyperdrive.tools.ts#L190"
+            },
+            {
+              "file": "apps/browser-rendering/src/tools/browser.tools.ts",
+              "lines": "505-508",
+              "contains": "browser-run/crawl/${params.job_id}",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/browser-rendering/src/tools/browser.tools.ts#L505-L508"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Most tools have schemas, and account resolution is shared through accountTool, but argument validation beyond types is per-tool and absent on many.",
+          "gap": "A shared validation layer covering all tools' risky arguments is missing.",
+          "evidence": [
+            {
+              "file": "packages/mcp-common/src/registration-context.ts",
+              "lines": "128-146",
+              "contains": "accountTool<Shape extends z.ZodRawShape>(",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/registration-context.ts#L128-L146"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Tools are grouped by server, and most servers are read-oriented, but the bindings and container servers ship write, delete and exec tools by default with no read-only toggle.",
+          "gap": "A read-only default with explicit enabling of write/exec tools is missing.",
+          "evidence": [
+            {
+              "file": "apps/workers-bindings/src/bindings.app.ts",
+              "lines": "26-33",
+              "contains": "registerD1Tools(context)",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/bindings.app.ts#L26-L33"
+            },
+            {
+              "file": "apps/sandbox-container/server/container-tools.ts",
+              "lines": "60-70",
+              "contains": "container_exec",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/container-tools.ts#L60-L70"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A misused tool can delete or rewrite production Cloudflare resources across every account the user can access, with no quantity bounds.",
+          "gap": "Tools would need to be scoped to one account/project and quantity-bounded.",
+          "evidence": [
+            {
+              "file": "apps/workers-bindings/src/tools/d1.tools.ts",
+              "lines": "208-216",
+              "contains": "client.d1.database.query",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/tools/d1.tools.ts#L208-L216"
+            },
+            {
+              "file": "apps/workers-bindings/src/tools/hyperdrive.tools.ts",
+              "lines": "251-255",
+              "contains": "client.hyperdrive.configs.edit",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/tools/hyperdrive.tools.ts#L251-L255"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.45,
+          "raw": 0.45,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Typed schemas and an account allowlist exist, but SQL, shell, URL and host arguments are passed through and some IDs are interpolated into API paths unvalidated.",
+              "gap": "Arguments would need allowlist validation (path-safe IDs, host allowlists, bounded or parameterized queries).",
+              "evidence": [
+                {
+                  "file": "apps/workers-bindings/src/tools/d1.tools.ts",
+                  "lines": "196-200",
+                  "contains": "sql: D1DatabaseQuerySqlParam",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/tools/d1.tools.ts#L196-L200"
+                },
+                {
+                  "file": "apps/workers-bindings/src/tools/hyperdrive.tools.ts",
+                  "lines": "190",
+                  "contains": "host: HyperdriveOriginHostSchema",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/tools/hyperdrive.tools.ts#L190"
+                },
+                {
+                  "file": "apps/browser-rendering/src/tools/browser.tools.ts",
+                  "lines": "505-508",
+                  "contains": "browser-run/crawl/${params.job_id}",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/browser-rendering/src/tools/browser.tools.ts#L505-L508"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Most tools have schemas, and account resolution is shared through accountTool, but argument validation beyond types is per-tool and absent on many.",
+              "gap": "A shared validation layer covering all tools' risky arguments is missing.",
+              "evidence": [
+                {
+                  "file": "packages/mcp-common/src/registration-context.ts",
+                  "lines": "128-146",
+                  "contains": "accountTool<Shape extends z.ZodRawShape>(",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/registration-context.ts#L128-L146"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Tools are grouped by server, and most servers are read-oriented, but the bindings and container servers ship write, delete and exec tools by default with no read-only toggle.",
+              "gap": "A read-only default with explicit enabling of write/exec tools is missing.",
+              "evidence": [
+                {
+                  "file": "apps/workers-bindings/src/bindings.app.ts",
+                  "lines": "26-33",
+                  "contains": "registerD1Tools(context)",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/bindings.app.ts#L26-L33"
+                },
+                {
+                  "file": "apps/sandbox-container/server/container-tools.ts",
+                  "lines": "60-70",
+                  "contains": "container_exec",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/container-tools.ts#L60-L70"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A misused tool can delete or rewrite production Cloudflare resources across every account the user can access, with no quantity bounds.",
+              "gap": "Tools would need to be scoped to one account/project and quantity-bounded.",
+              "evidence": [
+                {
+                  "file": "apps/workers-bindings/src/tools/d1.tools.ts",
+                  "lines": "208-216",
+                  "contains": "client.d1.database.query",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/tools/d1.tools.ts#L208-L216"
+                },
+                {
+                  "file": "apps/workers-bindings/src/tools/hyperdrive.tools.ts",
+                  "lines": "251-255",
+                  "contains": "client.hyperdrive.configs.edit",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/tools/hyperdrive.tools.ts#L251-L255"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "Only the container server runs model-written commands: container_exec passes the string to a shell inside a per-user Cloudflare Container, and nothing runs on the Worker itself. The container image in the repo is a stock Alpine image running as root with full internet access, and production deploys a pinned registry image that cannot be checked against the repo. No credentials are passed into the container. Exec has no timeout (the timeout argument is accepted but ignored), and a dev/test environment setting routes calls to a local process instead of a container.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.575,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "Execution happens in a per-user platform container; the repo's Dockerfile is a stock Alpine image with no USER (root) and no hardening, and the production image is a pinned registry tag not built from this commit.",
+          "gap": "A hardened (non-root, dropped capabilities, read-only root) or microVM/gVisor-class boundary would need to be shown in code.",
+          "evidence": [
+            {
+              "file": "apps/sandbox-container/container/sandbox.container.app.ts",
+              "lines": "138-140",
+              "contains": "exec(execParams.args)",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/container/sandbox.container.app.ts#L138-L140"
+            },
+            {
+              "file": "apps/sandbox-container/Dockerfile",
+              "lines": "2",
+              "contains": "FROM alpine:3.19 as base",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/Dockerfile#L2"
+            },
+            {
+              "file": "apps/sandbox-container/wrangler.jsonc",
+              "lines": "136",
+              "contains": "registry.cloudchamber.cfdata.org/sandbox-container:d802004",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/wrangler.jsonc#L136"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every model-reachable exec and file path goes through the user's container Durable Object; the only exception is the dev/test environment, documented as a local-dev hack.",
+          "gap": "There is no fail-closed guarantee covering spawned processes, and the local fallback is driven by an environment value.",
+          "evidence": [
+            {
+              "file": "apps/sandbox-container/server/container-tools.ts",
+              "lines": "12-19",
+              "contains": "idFromName(props.user.id)",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/container-tools.ts#L12-L19"
+            },
+            {
+              "file": "apps/sandbox-container/CONTRIBUTING.md",
+              "lines": "7",
+              "contains": "run the server in your local environment",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/CONTRIBUTING.md#L7"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The container path is always used in production, but the ENVIRONMENT value 'dev' or 'test' silently routes execution to localhost.",
+          "gap": "Disabling the sandbox should require an explicit, loudly named operator flag rather than an environment name.",
+          "evidence": [
+            {
+              "file": "apps/sandbox-container/server/containerHelpers.ts",
+              "lines": "8-11",
+              "contains": "environment === 'dev' || environment === 'test'",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/containerHelpers.ts#L8-L11"
+            },
+            {
+              "file": "apps/sandbox-container/server/containerHelpers.ts",
+              "lines": "70-74",
+              "contains": "http://localhost",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/containerHelpers.ts#L70-L74"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Inside the container the process runs as root with unrestricted internet (enableInternet: true), but holds no Cloudflare credentials; containers are reaped after 15 minutes only when capacity is half used.",
+          "gap": "Network egress would need to be off or allowlisted, with CPU/memory/time limits in code.",
+          "evidence": [
+            {
+              "file": "apps/sandbox-container/server/containerHelpers.ts",
+              "lines": "25-27",
+              "contains": "enableInternet: true",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/containerHelpers.ts#L25-L27"
+            },
+            {
+              "file": "apps/sandbox-container/server/containerManager.ts",
+              "lines": "40-41",
+              "contains": "15 * 60 * 1000",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/containerManager.ts#L40-L41"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.575,
+          "raw": 0.575,
+          "cap": null,
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "Execution happens in a per-user platform container; the repo's Dockerfile is a stock Alpine image with no USER (root) and no hardening, and the production image is a pinned registry tag not built from this commit.",
+              "gap": "A hardened (non-root, dropped capabilities, read-only root) or microVM/gVisor-class boundary would need to be shown in code.",
+              "evidence": [
+                {
+                  "file": "apps/sandbox-container/container/sandbox.container.app.ts",
+                  "lines": "138-140",
+                  "contains": "exec(execParams.args)",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/container/sandbox.container.app.ts#L138-L140"
+                },
+                {
+                  "file": "apps/sandbox-container/Dockerfile",
+                  "lines": "2",
+                  "contains": "FROM alpine:3.19 as base",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/Dockerfile#L2"
+                },
+                {
+                  "file": "apps/sandbox-container/wrangler.jsonc",
+                  "lines": "136",
+                  "contains": "registry.cloudchamber.cfdata.org/sandbox-container:d802004",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/wrangler.jsonc#L136"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every model-reachable exec and file path goes through the user's container Durable Object; the only exception is the dev/test environment, documented as a local-dev hack.",
+              "gap": "There is no fail-closed guarantee covering spawned processes, and the local fallback is driven by an environment value.",
+              "evidence": [
+                {
+                  "file": "apps/sandbox-container/server/container-tools.ts",
+                  "lines": "12-19",
+                  "contains": "idFromName(props.user.id)",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/container-tools.ts#L12-L19"
+                },
+                {
+                  "file": "apps/sandbox-container/CONTRIBUTING.md",
+                  "lines": "7",
+                  "contains": "run the server in your local environment",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/CONTRIBUTING.md#L7"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The container path is always used in production, but the ENVIRONMENT value 'dev' or 'test' silently routes execution to localhost.",
+              "gap": "Disabling the sandbox should require an explicit, loudly named operator flag rather than an environment name.",
+              "evidence": [
+                {
+                  "file": "apps/sandbox-container/server/containerHelpers.ts",
+                  "lines": "8-11",
+                  "contains": "environment === 'dev' || environment === 'test'",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/containerHelpers.ts#L8-L11"
+                },
+                {
+                  "file": "apps/sandbox-container/server/containerHelpers.ts",
+                  "lines": "70-74",
+                  "contains": "http://localhost",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/containerHelpers.ts#L70-L74"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Inside the container the process runs as root with unrestricted internet (enableInternet: true), but holds no Cloudflare credentials; containers are reaped after 15 minutes only when capacity is half used.",
+              "gap": "Network egress would need to be off or allowlisted, with CPU/memory/time limits in code.",
+              "evidence": [
+                {
+                  "file": "apps/sandbox-container/server/containerHelpers.ts",
+                  "lines": "25-27",
+                  "contains": "enableInternet: true",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/containerHelpers.ts#L25-L27"
+                },
+                {
+                  "file": "apps/sandbox-container/server/containerManager.ts",
+                  "lines": "40-41",
+                  "contains": "15 * 60 * 1000",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/containerManager.ts#L40-L41"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "Several servers return attacker-influenced content to the model: web pages from Browser Run, Workers logs (anyone who can hit the user's Worker can write log lines), AI Gateway prompt logs, D1 and KV data, and DEX diagnostic files. Results are returned as plain JSON text with no marking of what is untrusted, and the DEX server mixes its own instructions to the model into the same output as the data. The server has no read-only or no-egress mode. A hijacked session on the bindings server can irreversibly delete databases and buckets unattended; leaking data out needs a second server or a less direct path, such as repointing a Hyperdrive config.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.05,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Outputs are untagged JSON text, and DEX outputs carry model directives (llmContext) alongside API data.",
+          "gap": "Outputs need structured separation of content from metadata, plus provenance flags the host can act on.",
+          "evidence": [
+            {
+              "file": "apps/dex-analysis/src/tools/dex-analysis.tools.ts",
+              "lines": "608-614",
+              "contains": "JSON.stringify({ data: res, llmContext })",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/dex-analysis/src/tools/dex-analysis.tools.ts#L608-L614"
+            },
+            {
+              "file": "apps/workers-bindings/src/tools/d1.tools.ts",
+              "lines": "217-223",
+              "contains": "JSON.stringify(queryResult.result)",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/tools/d1.tools.ts#L217-L223"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No untrusted source is distinguished from trusted data in any server.",
+          "gap": "At least one untrusted source (e.g., fetched web pages) would need to be marked.",
+          "evidence": [
+            {
+              "file": "apps/browser-rendering/src/tools/browser.tools.ts",
+              "lines": "22-48",
+              "contains": "client.browserRendering.content.create",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/browser-rendering/src/tools/browser.tools.ts#L22-L48"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No mechanism exists to be on by default.",
+          "gap": "An untrusted-content marking or read-only mode would need to exist and be on by default.",
+          "evidence": [
+            {
+              "search": "rg -n -i untrusted|provenance|readOnlyMode|read_only",
+              "scope": "apps packages/mcp-common/src -g *.ts -g !worker-configuration.d.ts -g !*.spec.ts",
+              "hits": 0,
+              "note": "No untrusted-content marking or read-only mode anywhere in server code."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "With the bindings server, a hijack can irreversibly delete D1/R2/KV/Hyperdrive resources unattended; a clean exfiltration channel inside that one server is limited (Hyperdrive host repointing), though hosts routinely combine it with Browser Run.",
+          "gap": "Irreversible actions would need server-side confirmation or a read-only mode so only reversible changes happen unattended.",
+          "evidence": [
+            {
+              "file": "apps/workers-bindings/src/tools/d1.tools.ts",
+              "lines": "113-128",
+              "contains": "'d1_database_delete'",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/tools/d1.tools.ts#L113-L128"
+            },
+            {
+              "file": "apps/workers-bindings/src/tools/hyperdrive.tools.ts",
+              "lines": "190",
+              "contains": "host: HyperdriveOriginHostSchema",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/tools/hyperdrive.tools.ts#L190"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.05,
+          "raw": 0.05,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Outputs are untagged JSON text, and DEX outputs carry model directives (llmContext) alongside API data.",
+              "gap": "Outputs need structured separation of content from metadata, plus provenance flags the host can act on.",
+              "evidence": [
+                {
+                  "file": "apps/dex-analysis/src/tools/dex-analysis.tools.ts",
+                  "lines": "608-614",
+                  "contains": "JSON.stringify({ data: res, llmContext })",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/dex-analysis/src/tools/dex-analysis.tools.ts#L608-L614"
+                },
+                {
+                  "file": "apps/workers-bindings/src/tools/d1.tools.ts",
+                  "lines": "217-223",
+                  "contains": "JSON.stringify(queryResult.result)",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/tools/d1.tools.ts#L217-L223"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No untrusted source is distinguished from trusted data in any server.",
+              "gap": "At least one untrusted source (e.g., fetched web pages) would need to be marked.",
+              "evidence": [
+                {
+                  "file": "apps/browser-rendering/src/tools/browser.tools.ts",
+                  "lines": "22-48",
+                  "contains": "client.browserRendering.content.create",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/browser-rendering/src/tools/browser.tools.ts#L22-L48"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No mechanism exists to be on by default.",
+              "gap": "An untrusted-content marking or read-only mode would need to exist and be on by default.",
+              "evidence": [
+                {
+                  "search": "rg -n -i untrusted|provenance|readOnlyMode|read_only",
+                  "scope": "apps packages/mcp-common/src -g *.ts -g !worker-configuration.d.ts -g !*.spec.ts",
+                  "hits": 0,
+                  "note": "No untrusted-content marking or read-only mode anywhere in server code."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "With the bindings server, a hijack can irreversibly delete D1/R2/KV/Hyperdrive resources unattended; a clean exfiltration channel inside that one server is limited (Hyperdrive host repointing), though hosts routinely combine it with Browser Run.",
+              "gap": "Irreversible actions would need server-side confirmation or a read-only mode so only reversible changes happen unattended.",
+              "evidence": [
+                {
+                  "file": "apps/workers-bindings/src/tools/d1.tools.ts",
+                  "lines": "113-128",
+                  "contains": "'d1_database_delete'",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/tools/d1.tools.ts#L113-L128"
+                },
+                {
+                  "file": "apps/workers-bindings/src/tools/hyperdrive.tools.ts",
+                  "lines": "190",
+                  "contains": "host: HyperdriveOriginHostSchema",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/tools/hyperdrive.tools.ts#L190"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "The servers keep no model-writable memory and auto-load no instruction or configuration files. Durable state is OAuth grants, an identity cache keyed by token hash, and per-user container working files that are only read when the model asks for them. Server instructions are static strings plus the user's account list from Cloudflare's API. There is nothing here for an injection to persist into.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i remember|save_memory|load_dotenv|dotenv|AGENTS\\.md|CLAUDE\\.md|\\.cursorrules -g *.ts -g !worker-configuration.d.ts",
+              "scope": "apps packages",
+              "hits": 0,
+              "note": "No memory tool, dotenv loading or instruction-file loading in server code (the only raw hits are generated Workers type definitions, excluded)."
+            },
+            {
+              "search": "rg -n DurableKVStore",
+              "scope": "apps",
+              "hits": 0,
+              "note": "The generic Durable Object KV helper in mcp-common is not used by any app."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i remember|save_memory|load_dotenv|dotenv|AGENTS\\.md|CLAUDE\\.md|\\.cursorrules -g *.ts -g !worker-configuration.d.ts",
+              "scope": "apps packages",
+              "hits": 0,
+              "note": "No memory tool, dotenv loading or instruction-file loading in server code (the only raw hits are generated Workers type definitions, excluded)."
+            },
+            {
+              "search": "rg -n DurableKVStore",
+              "scope": "apps",
+              "hits": 0,
+              "note": "The generic Durable Object KV helper in mcp-common is not used by any app."
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i remember|save_memory|load_dotenv|dotenv|AGENTS\\.md|CLAUDE\\.md|\\.cursorrules -g *.ts -g !worker-configuration.d.ts",
+              "scope": "apps packages",
+              "hits": 0,
+              "note": "No memory tool, dotenv loading or instruction-file loading in server code (the only raw hits are generated Workers type definitions, excluded)."
+            },
+            {
+              "search": "rg -n DurableKVStore",
+              "scope": "apps",
+              "hits": 0,
+              "note": "The generic Durable Object KV helper in mcp-common is not used by any app."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n -i remember|save_memory|load_dotenv|dotenv|AGENTS\\.md|CLAUDE\\.md|\\.cursorrules -g *.ts -g !worker-configuration.d.ts",
+              "scope": "apps packages",
+              "hits": 0,
+              "note": "No memory tool, dotenv loading or instruction-file loading in server code (the only raw hits are generated Workers type definitions, excluded)."
+            },
+            {
+              "search": "rg -n DurableKVStore",
+              "scope": "apps",
+              "hits": 0,
+              "note": "The generic Durable Object KV helper in mcp-common is not used by any app."
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i remember|save_memory|load_dotenv|dotenv|AGENTS\\.md|CLAUDE\\.md|\\.cursorrules -g *.ts -g !worker-configuration.d.ts",
+                  "scope": "apps packages",
+                  "hits": 0,
+                  "note": "No memory tool, dotenv loading or instruction-file loading in server code (the only raw hits are generated Workers type definitions, excluded)."
+                },
+                {
+                  "search": "rg -n DurableKVStore",
+                  "scope": "apps",
+                  "hits": 0,
+                  "note": "The generic Durable Object KV helper in mcp-common is not used by any app."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i remember|save_memory|load_dotenv|dotenv|AGENTS\\.md|CLAUDE\\.md|\\.cursorrules -g *.ts -g !worker-configuration.d.ts",
+                  "scope": "apps packages",
+                  "hits": 0,
+                  "note": "No memory tool, dotenv loading or instruction-file loading in server code (the only raw hits are generated Workers type definitions, excluded)."
+                },
+                {
+                  "search": "rg -n DurableKVStore",
+                  "scope": "apps",
+                  "hits": 0,
+                  "note": "The generic Durable Object KV helper in mcp-common is not used by any app."
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i remember|save_memory|load_dotenv|dotenv|AGENTS\\.md|CLAUDE\\.md|\\.cursorrules -g *.ts -g !worker-configuration.d.ts",
+                  "scope": "apps packages",
+                  "hits": 0,
+                  "note": "No memory tool, dotenv loading or instruction-file loading in server code (the only raw hits are generated Workers type definitions, excluded)."
+                },
+                {
+                  "search": "rg -n DurableKVStore",
+                  "scope": "apps",
+                  "hits": 0,
+                  "note": "The generic Durable Object KV helper in mcp-common is not used by any app."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n -i remember|save_memory|load_dotenv|dotenv|AGENTS\\.md|CLAUDE\\.md|\\.cursorrules -g *.ts -g !worker-configuration.d.ts",
+                  "scope": "apps packages",
+                  "hits": 0,
+                  "note": "No memory tool, dotenv loading or instruction-file loading in server code (the only raw hits are generated Workers type definitions, excluded)."
+                },
+                {
+                  "search": "rg -n DurableKVStore",
+                  "scope": "apps",
+                  "hits": 0,
+                  "note": "The generic Durable Object KV helper in mcp-common is not used by any app."
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n -i remember|save_memory|load_dotenv|dotenv|AGENTS\\.md|CLAUDE\\.md|\\.cursorrules -g *.ts -g !worker-configuration.d.ts",
+          "scope": "apps packages",
+          "hits": 0,
+          "note": "No memory tool, dotenv loading or instruction-file loading in server code (the only raw hits are generated Workers type definitions, excluded)."
+        },
+        {
+          "search": "rg -n DurableKVStore",
+          "scope": "apps",
+          "hits": 0,
+          "note": "The generic Durable Object KV helper in mcp-common is not used by any app."
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "The servers load no plugins or third-party MCP servers. The container server, however, tells the model to install whatever packages it needs, so pip/npm packages chosen by the model are downloaded and run without verification or consent. That code is confined to the user's container, which holds no Cloudflare credentials but has full internet access and runs as root.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.1,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C7-RCELOAD",
+        "max": 0.25,
+        "reason": "By default the container server has the model download and run unverified packages (pip/npm) without user consent."
+      },
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Model-chosen package installs run unverified inside the container, and the server instructions encourage them.",
+          "gap": "Installs would need pinned versions or an allowlisted registry.",
+          "evidence": [
+            {
+              "file": "apps/sandbox-container/server/prompts.ts",
+              "lines": "16-20",
+              "contains": "install additional packages",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/prompts.ts#L16-L20"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No extension type is verified.",
+          "gap": "At least package installs would need verification.",
+          "evidence": [
+            {
+              "file": "apps/sandbox-container/container/sandbox.container.app.ts",
+              "lines": "138-140",
+              "contains": "exec(execParams.args)",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/container/sandbox.container.app.ts#L138-L140"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Packages are installed whenever the model runs pip/npm, with no consent step from the server.",
+          "gap": "Installing third-party code should require explicit user consent showing the package.",
+          "evidence": [
+            {
+              "file": "apps/sandbox-container/server/prompts.ts",
+              "lines": "20",
+              "contains": "ALWAYS make sure to install dependencies",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/prompts.ts#L20"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A malicious package runs in the user's container separate from the Worker and with no Cloudflare credentials, but as root with full internet and access to all of the user's container files.",
+          "gap": "Per-extension sandboxing with its own scoped access is missing.",
+          "evidence": [
+            {
+              "file": "apps/sandbox-container/server/containerHelpers.ts",
+              "lines": "25-27",
+              "contains": "enableInternet: true",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/containerHelpers.ts#L25-L27"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.1,
+          "raw": 0.1,
+          "cap": {
+            "id": "C7-RCELOAD",
+            "max": 0.25,
+            "reason": "By default the container server has the model download and run unverified packages (pip/npm) without user consent."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Model-chosen package installs run unverified inside the container, and the server instructions encourage them.",
+              "gap": "Installs would need pinned versions or an allowlisted registry.",
+              "evidence": [
+                {
+                  "file": "apps/sandbox-container/server/prompts.ts",
+                  "lines": "16-20",
+                  "contains": "install additional packages",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/prompts.ts#L16-L20"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No extension type is verified.",
+              "gap": "At least package installs would need verification.",
+              "evidence": [
+                {
+                  "file": "apps/sandbox-container/container/sandbox.container.app.ts",
+                  "lines": "138-140",
+                  "contains": "exec(execParams.args)",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/container/sandbox.container.app.ts#L138-L140"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Packages are installed whenever the model runs pip/npm, with no consent step from the server.",
+              "gap": "Installing third-party code should require explicit user consent showing the package.",
+              "evidence": [
+                {
+                  "file": "apps/sandbox-container/server/prompts.ts",
+                  "lines": "20",
+                  "contains": "ALWAYS make sure to install dependencies",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/prompts.ts#L20"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A malicious package runs in the user's container separate from the Worker and with no Cloudflare credentials, but as root with full internet and access to all of the user's container files.",
+              "gap": "Per-extension sandboxing with its own scoped access is missing.",
+              "evidence": [
+                {
+                  "file": "apps/sandbox-container/server/containerHelpers.ts",
+                  "lines": "25-27",
+                  "contains": "enableInternet: true",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/containerHelpers.ts#L25-L27"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "Cloudflare credentials stay on the server side: the model never sees them, the identity cache stores a SHA-256 of API tokens rather than the token, and Sentry reporting uses a header allowlist that excludes Authorization and strips query parameters other than scope. Upstream OAuth tokens and 30-day refresh tokens are stored in the OAuth provider's grant props, whose encryption is library behaviour rather than code here. Errors returned to the model include upstream error text, and Workers traces are enabled by default. Leaked tokens are scoped per server but refresh tokens are long-lived, and passthrough API tokens can be broader.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.5,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Header and search-param allowlists for Sentry and hashing of cached API tokens are in code; at-rest encryption of stored tokens relies on the provider library.",
+          "gap": "Redaction before model-bound messages and verified encryption at rest are not shown in code.",
+          "evidence": [
+            {
+              "file": "packages/mcp-common/src/sentry.ts",
+              "lines": "69-80",
+              "contains": "allowedSearchParams: /^scope$/",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/sentry.ts#L69-L80"
+            },
+            {
+              "file": "packages/mcp-common/src/api-token-mode.ts",
+              "lines": "59",
+              "contains": "hashApiToken(token)",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/api-token-mode.ts#L59"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Telemetry (Sentry) and the identity cache are protected and tokens never enter tool outputs, but upstream error bodies flow into tool results and console logs without redaction.",
+          "gap": "Error messages and console logs would need redaction too.",
+          "evidence": [
+            {
+              "file": "apps/workers-bindings/src/tools/d1.tools.ts",
+              "lines": "230",
+              "contains": "Error querying D1 database",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/tools/d1.tools.ts#L230"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Sentry and Workers traces are on by default but go to the operator's own first-party services, with request headers allowlisted; metrics are content-free.",
+          "gap": "Telemetry would need to be opt-in or content-free with redaction always on.",
+          "evidence": [
+            {
+              "file": "apps/workers-bindings/wrangler.jsonc",
+              "lines": "27-33",
+              "contains": "head_sampling_rate",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/wrangler.jsonc#L27-L33"
+            },
+            {
+              "file": "packages/mcp-observability/src/metrics.ts",
+              "lines": "20-21",
+              "contains": "blob4: this.toolCall.toolName",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-observability/src/metrics.ts#L20-L21"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Stored credentials are scoped per server but include 30-day refresh tokens, and passthrough API tokens can be long-lived and broad.",
+          "gap": "Credentials would need to be short-lived and rotatable end to end.",
+          "evidence": [
+            {
+              "file": "packages/mcp-common/src/oauth-router.ts",
+              "lines": "101-102",
+              "contains": "refreshTokenTTL: 2_592_000",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/oauth-router.ts#L101-L102"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.5,
+          "raw": 0.5,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Header and search-param allowlists for Sentry and hashing of cached API tokens are in code; at-rest encryption of stored tokens relies on the provider library.",
+              "gap": "Redaction before model-bound messages and verified encryption at rest are not shown in code.",
+              "evidence": [
+                {
+                  "file": "packages/mcp-common/src/sentry.ts",
+                  "lines": "69-80",
+                  "contains": "allowedSearchParams: /^scope$/",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/sentry.ts#L69-L80"
+                },
+                {
+                  "file": "packages/mcp-common/src/api-token-mode.ts",
+                  "lines": "59",
+                  "contains": "hashApiToken(token)",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/api-token-mode.ts#L59"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Telemetry (Sentry) and the identity cache are protected and tokens never enter tool outputs, but upstream error bodies flow into tool results and console logs without redaction.",
+              "gap": "Error messages and console logs would need redaction too.",
+              "evidence": [
+                {
+                  "file": "apps/workers-bindings/src/tools/d1.tools.ts",
+                  "lines": "230",
+                  "contains": "Error querying D1 database",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/src/tools/d1.tools.ts#L230"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Sentry and Workers traces are on by default but go to the operator's own first-party services, with request headers allowlisted; metrics are content-free.",
+              "gap": "Telemetry would need to be opt-in or content-free with redaction always on.",
+              "evidence": [
+                {
+                  "file": "apps/workers-bindings/wrangler.jsonc",
+                  "lines": "27-33",
+                  "contains": "head_sampling_rate",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/wrangler.jsonc#L27-L33"
+                },
+                {
+                  "file": "packages/mcp-observability/src/metrics.ts",
+                  "lines": "20-21",
+                  "contains": "blob4: this.toolCall.toolName",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-observability/src/metrics.ts#L20-L21"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Stored credentials are scoped per server but include 30-day refresh tokens, and passthrough API tokens can be long-lived and broad.",
+              "gap": "Credentials would need to be short-lived and rotatable end to end.",
+              "evidence": [
+                {
+                  "file": "packages/mcp-common/src/oauth-router.ts",
+                  "lines": "101-102",
+                  "contains": "refreshTokenTTL: 2_592_000",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/oauth-router.ts#L101-L102"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "Every tool registered through the shared layer emits a metric to Workers Analytics Engine with the tool name, the user ID and an error code, written by server code the model cannot influence. It does not record arguments, the target account or results, so you cannot reconstruct what was deleted or executed. Tools that return an error result instead of throwing are recorded as successes, and the metric is written after the call, best-effort, with failures only logged to the console.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.375,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Records hold tool name, user ID and error code only, with no arguments, account or result.",
+          "gap": "Each call's arguments, target account and result status would need to be recorded.",
+          "evidence": [
+            {
+              "file": "packages/mcp-observability/src/metrics.ts",
+              "lines": "15-24",
+              "contains": "blob3: this.toolCall.userId",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-observability/src/metrics.ts#L15-L24"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "All tools registered via registerTool/accountTool pass through trackTool.",
+          "gap": "Coverage of approvals/denials and of the target resource is missing.",
+          "evidence": [
+            {
+              "file": "packages/mcp-common/src/registration-context.ts",
+              "lines": "106-118",
+              "contains": "trackTool(name, callback, metrics, userId, recordError)",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/registration-context.ts#L106-L118"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Metrics are on by default in every production wrangler config and written to Analytics Engine outside model control.",
+          "gap": "Records written by a component the model can't control are present, but the record content is too thin to rely on (level limited by Strength).",
+          "evidence": [
+            {
+              "file": "apps/workers-bindings/wrangler.jsonc",
+              "lines": "118-123",
+              "contains": "mcp-metrics-production",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/wrangler.jsonc#L118-L123"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The metric is written after the tool runs, failures are caught and only console-logged, and error results returned without throwing are logged as successes.",
+          "gap": "Records would need to be written per action with errors surfaced.",
+          "evidence": [
+            {
+              "file": "packages/mcp-observability/src/analytics-engine.ts",
+              "lines": "18-26",
+              "contains": "Failed to log metrics event",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-observability/src/analytics-engine.ts#L18-L26"
+            },
+            {
+              "file": "packages/mcp-common/src/registration-context.ts",
+              "lines": "161-164",
+              "contains": "new ToolCall({ toolName: name, userId })",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/registration-context.ts#L161-L164"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.375,
+          "raw": 0.375,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Records hold tool name, user ID and error code only, with no arguments, account or result.",
+              "gap": "Each call's arguments, target account and result status would need to be recorded.",
+              "evidence": [
+                {
+                  "file": "packages/mcp-observability/src/metrics.ts",
+                  "lines": "15-24",
+                  "contains": "blob3: this.toolCall.userId",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-observability/src/metrics.ts#L15-L24"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "All tools registered via registerTool/accountTool pass through trackTool.",
+              "gap": "Coverage of approvals/denials and of the target resource is missing.",
+              "evidence": [
+                {
+                  "file": "packages/mcp-common/src/registration-context.ts",
+                  "lines": "106-118",
+                  "contains": "trackTool(name, callback, metrics, userId, recordError)",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/registration-context.ts#L106-L118"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Metrics are on by default in every production wrangler config and written to Analytics Engine outside model control.",
+              "gap": "Records written by a component the model can't control are present, but the record content is too thin to rely on (level limited by Strength).",
+              "evidence": [
+                {
+                  "file": "apps/workers-bindings/wrangler.jsonc",
+                  "lines": "118-123",
+                  "contains": "mcp-metrics-production",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-bindings/wrangler.jsonc#L118-L123"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The metric is written after the tool runs, failures are caught and only console-logged, and error results returned without throwing are logged as successes.",
+              "gap": "Records would need to be written per action with errors surfaced.",
+              "evidence": [
+                {
+                  "file": "packages/mcp-observability/src/analytics-engine.ts",
+                  "lines": "18-26",
+                  "contains": "Failed to log metrics event",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-observability/src/analytics-engine.ts#L18-L26"
+                },
+                {
+                  "file": "packages/mcp-common/src/registration-context.ts",
+                  "lines": "161-164",
+                  "contains": "new ToolCall({ toolName: name, userId })",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/registration-context.ts#L161-L164"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "The servers cap MCP request bodies at 4 MB, and the container server limits the fleet to 50 containers and reaps containers older than 15 minutes, but only when capacity is already half used. Shell commands in the container have no timeout: the timeout argument is declared but never applied, so a process can run until the container is reaped. Crawl depth and page limits are left to the model, and there is no per-user rate limit in code. Workers' platform CPU limits are not credited because they are not configured here.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.375,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Server-enforced caps exist on request size and container count, but exec has no timeout and there are no rate limits.",
+          "gap": "Caps on every operation plus concurrency/rate limits would be needed.",
+          "evidence": [
+            {
+              "file": "packages/mcp-common/src/server.ts",
+              "lines": "112",
+              "contains": "MAX_MCP_REQUEST_BODY_BYTES = 4 * 1024 * 1024",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/server.ts#L112"
+            },
+            {
+              "file": "apps/sandbox-container/server/containerHelpers.ts",
+              "lines": "1",
+              "contains": "MAX_CONTAINERS = 50",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/containerHelpers.ts#L1"
+            },
+            {
+              "file": "apps/sandbox-container/shared/schema.ts",
+              "lines": "6",
+              "contains": "timeout: z.number().optional()",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/shared/schema.ts#L6"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Bounds cover the HTTP request and container count only; container exec and crawl jobs are unbounded.",
+          "gap": "Tool-level timeouts on exec and long-running jobs are missing.",
+          "evidence": [
+            {
+              "file": "apps/sandbox-container/container/sandbox.container.app.ts",
+              "lines": "138-141",
+              "contains": "const proc = exec(execParams.args)",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/container/sandbox.container.app.ts#L138-L141"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Limits are hard-coded constants the model cannot raise, but the crawl limit/depth and exec timeout are model-chosen or ignored.",
+          "gap": "Defaults for every operation that the model cannot raise are missing.",
+          "evidence": [
+            {
+              "file": "apps/browser-rendering/src/tools/browser.tools.ts",
+              "lines": "435-436",
+              "contains": "How many links deep to crawl",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/browser-rendering/src/tools/browser.tools.ts#L435-L436"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A runaway exec keeps running until the container is reaped, which only happens under capacity pressure, and started crawls continue after the call returns.",
+          "gap": "Tight per-call time ceilings and cancellation of in-flight work are missing.",
+          "evidence": [
+            {
+              "file": "apps/sandbox-container/server/userContainer.ts",
+              "lines": "43-44",
+              "contains": "MAX_CONTAINERS / 2",
+              "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/userContainer.ts#L43-L44"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.375,
+          "raw": 0.375,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Server-enforced caps exist on request size and container count, but exec has no timeout and there are no rate limits.",
+              "gap": "Caps on every operation plus concurrency/rate limits would be needed.",
+              "evidence": [
+                {
+                  "file": "packages/mcp-common/src/server.ts",
+                  "lines": "112",
+                  "contains": "MAX_MCP_REQUEST_BODY_BYTES = 4 * 1024 * 1024",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/server.ts#L112"
+                },
+                {
+                  "file": "apps/sandbox-container/server/containerHelpers.ts",
+                  "lines": "1",
+                  "contains": "MAX_CONTAINERS = 50",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/containerHelpers.ts#L1"
+                },
+                {
+                  "file": "apps/sandbox-container/shared/schema.ts",
+                  "lines": "6",
+                  "contains": "timeout: z.number().optional()",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/shared/schema.ts#L6"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Bounds cover the HTTP request and container count only; container exec and crawl jobs are unbounded.",
+              "gap": "Tool-level timeouts on exec and long-running jobs are missing.",
+              "evidence": [
+                {
+                  "file": "apps/sandbox-container/container/sandbox.container.app.ts",
+                  "lines": "138-141",
+                  "contains": "const proc = exec(execParams.args)",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/container/sandbox.container.app.ts#L138-L141"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Limits are hard-coded constants the model cannot raise, but the crawl limit/depth and exec timeout are model-chosen or ignored.",
+              "gap": "Defaults for every operation that the model cannot raise are missing.",
+              "evidence": [
+                {
+                  "file": "apps/browser-rendering/src/tools/browser.tools.ts",
+                  "lines": "435-436",
+                  "contains": "How many links deep to crawl",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/browser-rendering/src/tools/browser.tools.ts#L435-L436"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A runaway exec keeps running until the container is reaped, which only happens under capacity pressure, and started crawls continue after the call returns.",
+              "gap": "Tight per-call time ceilings and cancellation of in-flight work are missing.",
+              "evidence": [
+                {
+                  "file": "apps/sandbox-container/server/userContainer.ts",
+                  "lines": "43-44",
+                  "contains": "MAX_CONTAINERS / 2",
+                  "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/userContainer.ts#L43-L44"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "Every authenticated server accepts a client-supplied Cloudflare API token and forwards it unchanged to the Cloudflare API (token passthrough).",
+      "criterion": "C1",
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "evidence": [
+        {
+          "file": "packages/mcp-common/src/oauth-router.ts",
+          "lines": "108-111",
+          "contains": "resolveExternalToken,",
+          "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/oauth-router.ts#L108-L111"
+        },
+        {
+          "file": "packages/mcp-common/src/api-token-mode.ts",
+          "lines": "99-104",
+          "contains": "accessToken: token",
+          "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/api-token-mode.ts#L99-L104"
+        }
+      ]
+    },
+    {
+      "summary": "The container server has the model install and run unverified pip/npm packages, as root with full internet, without user consent.",
+      "criterion": "C7",
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "evidence": [
+        {
+          "file": "apps/sandbox-container/server/prompts.ts",
+          "lines": "16-20",
+          "contains": "install additional packages",
+          "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/prompts.ts#L16-L20"
+        },
+        {
+          "file": "apps/sandbox-container/server/containerHelpers.ts",
+          "lines": "25-27",
+          "contains": "enableInternet: true",
+          "url": "https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/containerHelpers.ts#L25-L27"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "D1/KV contents and Workers logs written by end users of the customer's apps; web pages via Browser Run (apps/browser-rendering/src/tools/browser.tools.ts:35)",
+    "sensitive_data": "Customer D1 query results and account data (apps/workers-bindings/src/tools/d1.tools.ts:221)",
+    "state_change_or_egress": "Irreversible deletes of D1/R2/KV/Hyperdrive (apps/workers-bindings/src/tools/d1.tools.ts:128) and Hyperdrive host repointing (apps/workers-bindings/src/tools/hyperdrive.tools.ts:252)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Add accurate readOnlyHint/destructiveHint to every tool (container, DEX, Browser Run, URL scanner) and mark d1_database_query and hyperdrive_config_edit destructive.",
+      "criterion": "C2",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 5",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Stop accepting raw Cloudflare API tokens on the MCP endpoint (or exchange them for server-issued, down-scoped tokens) so the server only acts on tokens issued for it.",
+      "criterion": "C1",
+      "parameter": "S",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 4",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Record tool arguments (redacted), target account and true result status in the tool-call metric.",
+      "criterion": "C9",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 1 step 3",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Apply a server-side exec timeout and kill the process tree; reap containers on a fixed schedule, not only under capacity pressure.",
+      "criterion": "C10",
+      "parameter": "C",
+      "from_level": 1,
+      "to_level": 2,
+      "playbook": "Playbook 3 step 3",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Run the sandbox as a non-root user with an egress allowlist and resource limits.",
+      "criterion": "C4",
+      "parameter": "B",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.05
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was executed, installed, or probed.",
+    "The whole monorepo (17 apps plus packages/mcp-common) was scored as one project; per-server risk differs widely (most servers are read-only, workers-bindings and sandbox-container carry the write/exec surface). Radar (3.4k lines) and GraphQL tool files were sampled, not read line by line.",
+    "Behaviour of @cloudflare/workers-oauth-provider (grant-prop encryption, token handling) and of the Cloudflare Containers platform (VM isolation, resource limits) was not verified and not credited.",
+    "The production container image is a pinned registry tag (wrangler.jsonc) that cannot be tied to the repo's Dockerfile at this commit.",
+    "The recommended Code Mode server lives in a different repository (cloudflare/mcp) and is out of scope.",
+    "No reviewer-injection text aimed at AI auditors was found in the repository."
+  ]
+}

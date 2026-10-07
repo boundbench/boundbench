@@ -1,0 +1,2327 @@
+{
+  "schema_version": "2.0",
+  "scorecard_version": "0.9",
+  "id": "kubernetes-mcp-server",
+  "name": "Kubernetes MCP Server (containers)",
+  "repo_url": "https://github.com/containers/kubernetes-mcp-server",
+  "subpath": null,
+  "description": "Native Go MCP server for Kubernetes and OpenShift (pods, resources, Helm)",
+  "category": "infrastructure_ops",
+  "pinned_commit": "26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40",
+  "version": null,
+  "scored_date": "2026-10-03",
+  "scored_configuration": "Local stdio server launched as the README leads (npx -y kubernetes-mcp-server@latest) with no config file: default toolsets core+config, read_only=false, no confirmation rules, credentials from the operator's kubeconfig.",
+  "score": 4.4,
+  "max_score": 10.0,
+  "band": {
+    "id": "weak",
+    "label": "Minimal",
+    "color": "red"
+  },
+  "applicable": {
+    "count": 8,
+    "score": 2.35,
+    "max": 8.0,
+    "percent": 29
+  },
+  "capability_profile": {
+    "code_execution": "yes",
+    "filesystem_write": "no",
+    "network_egress": "yes",
+    "external_credentials": "yes",
+    "persistent_memory": "no",
+    "untrusted_input": "yes",
+    "third_party_extensions": "no",
+    "sub_agents": "no",
+    "external_communication": "no"
+  },
+  "headline": "As shipped, this server hands the model the operator's full kubeconfig authority across every context in it: it can exec arbitrary commands in any pod, run any image, apply or delete any resource, and read Secrets and the raw kubeconfig (including tokens and client keys) through configuration_view. Every tool carries accurate read-only/destructive annotations and there are solid opt-in controls (read_only mode, elicitation-based confirmation rules, a central denied-resources filter, OAuth with token exchange), but none of them is on by default. The dominant risk is a prompt-injected or misled host agent using cluster-admin-equivalent credentials unattended, with nothing in the server's default configuration to stop or record it.",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "Identity & least privilege",
+      "number": 1,
+      "owasp": [
+        "ASI03",
+        "T3",
+        "T9"
+      ],
+      "question": "Does the agent act with an identity scoped to its job, with authority checked per request rather than inherited?",
+      "summary": "In the default local mode the server uses whatever credentials are in the operator's kubeconfig, and the model can pick any context in that file per call, so it inherits the operator's full authority across every cluster they can reach. In HTTP mode the default auth mode forwards the client's bearer token straight to the Kubernetes API (token passthrough), and HTTP-mode access control is not otherwise locked down. An opt-in OAuth mode with token exchange gives each request the requesting user's own cluster identity and fails closed when no token is present, which is a genuinely strong design, but it is off by default and only applies to HTTP deployments.",
+      "max": 1.0,
+      "notes": "resources_create_or_update can write RoleBindings/ClusterRoleBindings, but Kubernetes' own RBAC escalation prevention stops a credential granting more than it already holds, so C1-SELFESC was not applied. The Helm chart creates a ServiceAccount with no RBAC bindings by default (charts/kubernetes-mcp-server/values.yaml), a sound in-cluster default that is not the README's lead mode.",
+      "status": "scored",
+      "score": 0.5,
+      "counted": "alt",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Opt-in mechanism: off in the scored default configuration."
+      },
+      "parameters": {
+        "S": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "With OAuth required and token exchange configured, each request's user token is exchanged (RFC 8693 / Entra OBO / Keycloak) for a cluster token on behalf of that user before any client is built.",
+          "gap": "Exchanged authority is not intersected with a server-side least-privilege policy by default and is not revoked after use.",
+          "evidence": [
+            {
+              "file": "pkg/kubernetes/provider_token_exchange.go",
+              "lines": "35-55",
+              "contains": "ExchangeTokenInContext(ctx, cfg, p.provider, target, tokenExchangeConfig)",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/provider_token_exchange.go#L35-L55"
+            },
+            {
+              "file": "pkg/kubernetes/manager.go",
+              "lines": "206-216",
+              "contains": "BearerToken: strings.TrimPrefix(authorization, \"Bearer \")",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/manager.go#L206-L216"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every tool obtains its client through GetDerivedKubernetes, and require_oauth makes tokenless requests fail closed.",
+          "gap": "Not every policy-resolution failure is shown to deny: a missing token endpoint logs a warning and skips exchange.",
+          "evidence": [
+            {
+              "file": "pkg/mcp/handler_params.go",
+              "lines": "10",
+              "contains": "s.p.GetDerivedKubernetes(ctx, cluster)",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/mcp/handler_params.go#L10"
+            },
+            {
+              "file": "pkg/kubernetes/manager.go",
+              "lines": "193-196",
+              "contains": "return nil, errors.New(\"oauth token required\")",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/manager.go#L193-L196"
+            },
+            {
+              "file": "pkg/kubernetes/provider_token_exchange.go",
+              "lines": "77-81",
+              "contains": "no token endpoint available for token exchange",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/provider_token_exchange.go#L77-L81"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "require_oauth defaults to false and token exchange is unset by default.",
+          "gap": "Not on in the scored configuration.",
+          "evidence": [
+            {
+              "file": "pkg/config/config.go",
+              "lines": "433",
+              "contains": "opt(\"require_oauth\", false)",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L433"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked session is bounded by the requesting user's own RBAC on the target cluster, which typically includes writes.",
+          "gap": "Not limited to read-mostly or non-destructive writes.",
+          "evidence": [
+            {
+              "file": "pkg/kubernetes/manager.go",
+              "lines": "206-222",
+              "contains": "Impersonate: rest.ImpersonationConfig{}",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/manager.go#L206-L222"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.075,
+          "raw": 0.075,
+          "cap": {
+            "id": "C1-PASSTHRU",
+            "max": 0.25,
+            "reason": "Default cluster_auth_mode resolves to passthrough: in HTTP mode a client's Authorization bearer token is copied into the Kubernetes rest.Config and forwarded to the API server."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default credentials are the operator's ambient kubeconfig (kubeconfig provider auto-selected), with no narrowing of verbs or resources.",
+              "gap": "No dedicated identity: the server never obtains its own scoped credential in the default local mode.",
+              "evidence": [
+                {
+                  "file": "pkg/kubernetes/provider.go",
+                  "lines": "151-165",
+                  "contains": "return config.ClusterProviderKubeConfig",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/provider.go#L151-L165"
+                },
+                {
+                  "file": "pkg/kubernetes/manager.go",
+                  "lines": "193-198",
+                  "contains": "falling back to kubeconfig credentials",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/manager.go#L193-L198"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every Kubernetes API request passes one central round tripper, but by default it authorizes everything (empty denied list) and the model chooses which kubeconfig context to use on each call.",
+              "gap": "No authorization layer narrows what built-in tools can do with the credential; per-call context selection is unrestricted.",
+              "evidence": [
+                {
+                  "file": "pkg/kubernetes/accesscontrol_round_tripper.go",
+                  "lines": "275-278",
+                  "contains": "if len(denied) == 0",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/accesscontrol_round_tripper.go#L275-L278"
+                },
+                {
+                  "file": "pkg/mcp/tools_gosdk.go",
+                  "lines": "98",
+                  "contains": "cluster := toolCallRequest.GetString(s.p.GetTargetParameterName()",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/mcp/tools_gosdk.go#L98"
+                },
+                {
+                  "file": "pkg/kubernetes/provider_kubeconfig.go",
+                  "lines": "16",
+                  "contains": "KubeConfigTargetParameterName = \"context\"",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/provider_kubeconfig.go#L16"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default install runs with whatever the kubeconfig grants (commonly cluster-admin) and read_only defaults to false.",
+              "gap": "No least-privilege default; narrowing requires the operator to write a config file or supply a scoped kubeconfig.",
+              "evidence": [
+                {
+                  "file": "pkg/config/config.go",
+                  "lines": "411",
+                  "contains": "opt(\"read_only\", false)",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L411"
+                },
+                {
+                  "file": "pkg/config/config.go",
+                  "lines": "503-507",
+                  "contains": "return ClusterAuthPassthrough",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L503-L507"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked session holds the operator's full authority over every cluster in the kubeconfig, including writes, deletes, and pod exec.",
+              "gap": "Blast radius is not limited to one cluster, one namespace, or read-mostly access.",
+              "evidence": [
+                {
+                  "file": "pkg/kubernetes/provider_kubeconfig.go",
+                  "lines": "16",
+                  "contains": "KubeConfigTargetParameterName = \"context\"",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/provider_kubeconfig.go#L16"
+                },
+                {
+                  "file": "pkg/config/config.go",
+                  "lines": "416",
+                  "contains": "opt(\"toolsets\", []string{\"core\", \"config\"})",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L416"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        },
+        {
+          "kind": "alt",
+          "label": "opt-in require_oauth with token_exchange (HTTP mode)",
+          "score": 0.5,
+          "raw": 0.55,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Opt-in mechanism: off in the scored default configuration."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "With OAuth required and token exchange configured, each request's user token is exchanged (RFC 8693 / Entra OBO / Keycloak) for a cluster token on behalf of that user before any client is built.",
+              "gap": "Exchanged authority is not intersected with a server-side least-privilege policy by default and is not revoked after use.",
+              "evidence": [
+                {
+                  "file": "pkg/kubernetes/provider_token_exchange.go",
+                  "lines": "35-55",
+                  "contains": "ExchangeTokenInContext(ctx, cfg, p.provider, target, tokenExchangeConfig)",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/provider_token_exchange.go#L35-L55"
+                },
+                {
+                  "file": "pkg/kubernetes/manager.go",
+                  "lines": "206-216",
+                  "contains": "BearerToken: strings.TrimPrefix(authorization, \"Bearer \")",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/manager.go#L206-L216"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every tool obtains its client through GetDerivedKubernetes, and require_oauth makes tokenless requests fail closed.",
+              "gap": "Not every policy-resolution failure is shown to deny: a missing token endpoint logs a warning and skips exchange.",
+              "evidence": [
+                {
+                  "file": "pkg/mcp/handler_params.go",
+                  "lines": "10",
+                  "contains": "s.p.GetDerivedKubernetes(ctx, cluster)",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/mcp/handler_params.go#L10"
+                },
+                {
+                  "file": "pkg/kubernetes/manager.go",
+                  "lines": "193-196",
+                  "contains": "return nil, errors.New(\"oauth token required\")",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/manager.go#L193-L196"
+                },
+                {
+                  "file": "pkg/kubernetes/provider_token_exchange.go",
+                  "lines": "77-81",
+                  "contains": "no token endpoint available for token exchange",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/provider_token_exchange.go#L77-L81"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "require_oauth defaults to false and token exchange is unset by default.",
+              "gap": "Not on in the scored configuration.",
+              "evidence": [
+                {
+                  "file": "pkg/config/config.go",
+                  "lines": "433",
+                  "contains": "opt(\"require_oauth\", false)",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L433"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked session is bounded by the requesting user's own RBAC on the target cluster, which typically includes writes.",
+              "gap": "Not limited to read-mostly or non-destructive writes.",
+              "evidence": [
+                {
+                  "file": "pkg/kubernetes/manager.go",
+                  "lines": "206-222",
+                  "contains": "Impersonate: rest.ImpersonationConfig{}",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/manager.go#L206-L222"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Approval gates",
+      "number": 2,
+      "owasp": [
+        "ASI09",
+        "ASI02",
+        "T10",
+        "T15"
+      ],
+      "question": "Do consequential actions require a human's informed approval by default, with no path around the gate?",
+      "summary": "The server owns no approval loop itself, so it is rated on what it gives the host. Read and write operations are separate tools and every tool in every toolset carries read-only and destructive annotations, with pod exec, deletes, scale, and create-or-update all flagged as non-read-only. The server also offers a server-enforced read-only mode and elicitation-based confirmation rules, but both are off by default, there is no dry-run or preview for destructive operations, and when confirmation rules are configured a client without elicitation support is allowed through by default. A wrongly approved delete or full-replace apply is irreversible.",
+      "max": 1.0,
+      "notes": "Opt-in confirmation_rules (tool-level and Kubernetes verb/kind-level) run inside the server via MCP elicitation (pkg/mcp/tools_gosdk.go:90-95, pkg/kubernetes/confirmation_validator.go). Without a dry-run they would not raise S above L2, so they were not scored as a separate alt.",
+      "status": "scored",
+      "score": 0.525,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Separate read and write tools with readOnlyHint/destructiveHint on every tool; pods_exec is flagged destructive.",
+          "gap": "No preview or dry-run for destructive operations (resources_create_or_update, resources_delete, helm).",
+          "evidence": [
+            {
+              "file": "pkg/toolsets/core/pods.go",
+              "lines": "231-235",
+              "contains": "DestructiveHint: ptr.To(true), // Depending on the Pod's entrypoint",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/toolsets/core/pods.go#L231-L235"
+            },
+            {
+              "file": "pkg/toolsets/core/resources.go",
+              "lines": "130-134",
+              "contains": "DestructiveHint: ptr.To(true)",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/toolsets/core/resources.go#L130-L134"
+            },
+            {
+              "search": "rg -n -i 'dry.?run' -g '!*_test.go'",
+              "scope": "pkg",
+              "hits": 1,
+              "note": "the only hit sets Helm install.DryRun = false; no dry-run is offered to callers"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Every mutating tool in the default toolsets lacks readOnlyHint, and read_only mode excludes any tool not explicitly annotated read-only, so the annotation signal covers every path.",
+          "gap": "pods_run is marked non-destructive although it server-side-applies a Pod and Service that can update existing objects of the same name; no parsed per-argument policy.",
+          "evidence": [
+            {
+              "file": "pkg/mcp/mcp.go",
+              "lines": "70-75",
+              "contains": "if c.ReadOnly.Get() && !ptr.Deref(tool.Tool.Annotations.ReadOnlyHint, false)",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/mcp/mcp.go#L70-L75"
+            },
+            {
+              "file": "pkg/toolsets/core/pods.go",
+              "lines": "332-335",
+              "contains": "DestructiveHint: ptr.To(false)",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/toolsets/core/pods.go#L332-L335"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.225
+        },
+        "D": {
+          "level": 3,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Annotations are hard-coded per tool and tool_overrides can only change descriptions, so neither the model nor a workspace file can alter the risk signal.",
+          "gap": "The server-enforced read-only mode and confirmation rules are opt-in, and confirmation_fallback defaults to allow.",
+          "evidence": [
+            {
+              "file": "pkg/config/config.go",
+              "lines": "39-42",
+              "contains": "Description replaces the tool's advertised description",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L39-L42"
+            },
+            {
+              "file": "pkg/config/config.go",
+              "lines": "421-424",
+              "contains": "opt(\"confirmation_fallback\", \"allow\")",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L421-L424"
+            },
+            {
+              "file": "pkg/confirmation/confirmation.go",
+              "lines": "56-62",
+              "contains": "proceeding with fallback",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/confirmation/confirmation.go#L56-L62"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.15
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Default tools can delete arbitrary resources and replace resources via server-side apply in any cluster in the kubeconfig, with no undo.",
+          "gap": "No rollback, preview, or quantity bounds on consequential actions.",
+          "evidence": [
+            {
+              "file": "pkg/toolsets/core/resources.go",
+              "lines": "141",
+              "contains": "\"resources_delete\"",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/toolsets/core/resources.go#L141"
+            },
+            {
+              "file": "pkg/toolsets/core/resources.go",
+              "lines": "118-119",
+              "contains": "any field this tool previously set and the new manifest omits is removed",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/toolsets/core/resources.go#L118-L119"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.525,
+          "raw": 0.525,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Separate read and write tools with readOnlyHint/destructiveHint on every tool; pods_exec is flagged destructive.",
+              "gap": "No preview or dry-run for destructive operations (resources_create_or_update, resources_delete, helm).",
+              "evidence": [
+                {
+                  "file": "pkg/toolsets/core/pods.go",
+                  "lines": "231-235",
+                  "contains": "DestructiveHint: ptr.To(true), // Depending on the Pod's entrypoint",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/toolsets/core/pods.go#L231-L235"
+                },
+                {
+                  "file": "pkg/toolsets/core/resources.go",
+                  "lines": "130-134",
+                  "contains": "DestructiveHint: ptr.To(true)",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/toolsets/core/resources.go#L130-L134"
+                },
+                {
+                  "search": "rg -n -i 'dry.?run' -g '!*_test.go'",
+                  "scope": "pkg",
+                  "hits": 1,
+                  "note": "the only hit sets Helm install.DryRun = false; no dry-run is offered to callers"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Every mutating tool in the default toolsets lacks readOnlyHint, and read_only mode excludes any tool not explicitly annotated read-only, so the annotation signal covers every path.",
+              "gap": "pods_run is marked non-destructive although it server-side-applies a Pod and Service that can update existing objects of the same name; no parsed per-argument policy.",
+              "evidence": [
+                {
+                  "file": "pkg/mcp/mcp.go",
+                  "lines": "70-75",
+                  "contains": "if c.ReadOnly.Get() && !ptr.Deref(tool.Tool.Annotations.ReadOnlyHint, false)",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/mcp/mcp.go#L70-L75"
+                },
+                {
+                  "file": "pkg/toolsets/core/pods.go",
+                  "lines": "332-335",
+                  "contains": "DestructiveHint: ptr.To(false)",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/toolsets/core/pods.go#L332-L335"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.225
+            },
+            "D": {
+              "level": 3,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Annotations are hard-coded per tool and tool_overrides can only change descriptions, so neither the model nor a workspace file can alter the risk signal.",
+              "gap": "The server-enforced read-only mode and confirmation rules are opt-in, and confirmation_fallback defaults to allow.",
+              "evidence": [
+                {
+                  "file": "pkg/config/config.go",
+                  "lines": "39-42",
+                  "contains": "Description replaces the tool's advertised description",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L39-L42"
+                },
+                {
+                  "file": "pkg/config/config.go",
+                  "lines": "421-424",
+                  "contains": "opt(\"confirmation_fallback\", \"allow\")",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L421-L424"
+                },
+                {
+                  "file": "pkg/confirmation/confirmation.go",
+                  "lines": "56-62",
+                  "contains": "proceeding with fallback",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/confirmation/confirmation.go#L56-L62"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.15
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default tools can delete arbitrary resources and replace resources via server-side apply in any cluster in the kubeconfig, with no undo.",
+              "gap": "No rollback, preview, or quantity bounds on consequential actions.",
+              "evidence": [
+                {
+                  "file": "pkg/toolsets/core/resources.go",
+                  "lines": "141",
+                  "contains": "\"resources_delete\"",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/toolsets/core/resources.go#L141"
+                },
+                {
+                  "file": "pkg/toolsets/core/resources.go",
+                  "lines": "118-119",
+                  "contains": "any field this tool previously set and the new manifest omits is removed",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/toolsets/core/resources.go#L118-L119"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "name": "Tool & action scoping",
+      "number": 3,
+      "owasp": [
+        "ASI02",
+        "T2",
+        "LLM06"
+      ],
+      "question": "Is each tool the narrowest thing that does its job, with arguments validated in code against allowlists and bounds?",
+      "summary": "The default tools are general-purpose: pods_exec runs any command array in any pod, pods_run starts any image, and resources_create_or_update applies any manifest of any kind. Inputs are typed JSON schemas, and a central round tripper can enforce a denied-resources list on every Kubernetes API call, but that list is empty by default, is a denylist of resource kinds only, and pod exec can still read data (such as mounted Secrets) whose kind is denied. Toolsets are selectable, but the default set includes write and exec tools.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.325,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The only argument-level control is a GVK denylist checked in the HTTP round tripper; commands, images, and manifests are otherwise passed through.",
+          "gap": "No allowlists on namespaces, kinds, images, or commands, and no numeric bounds.",
+          "evidence": [
+            {
+              "file": "pkg/kubernetes/accesscontrol_round_tripper.go",
+              "lines": "177-178",
+              "contains": "resource not allowed",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/accesscontrol_round_tripper.go#L177-L178"
+            },
+            {
+              "file": "pkg/kubernetes/pods.go",
+              "lines": "278-281",
+              "contains": "Command:   command,",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/pods.go#L278-L281"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The denylist runs for every client built from the wrapped rest.Config, but pod exec reaches data inside containers that the kind-level list cannot see.",
+          "gap": "Coverage is limited by the mechanism: exec into pods bypasses kind-level restrictions on Secrets and similar data.",
+          "evidence": [
+            {
+              "file": "pkg/kubernetes/kubernetes.go",
+              "lines": "93-106",
+              "contains": "return NewAccessControlRoundTripper(ctx, AccessControlRoundTripperConfig{",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/kubernetes.go#L93-L106"
+            },
+            {
+              "file": "pkg/toolsets/core/pods.go",
+              "lines": "204-205",
+              "contains": "\"pods_exec\"",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/toolsets/core/pods.go#L204-L205"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Toolsets are selectable, but the default core toolset includes exec, run, apply, and delete tools.",
+          "gap": "Default tool set is not read-only.",
+          "evidence": [
+            {
+              "file": "pkg/config/config.go",
+              "lines": "416",
+              "contains": "opt(\"toolsets\", []string{\"core\", \"config\"})",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L416"
+            },
+            {
+              "file": "pkg/config/config.go",
+              "lines": "410",
+              "contains": "opt(\"denied_resources\", []GroupVersionKind(nil))",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L410"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Misused tools act on any resource, namespace, image, or command in production clusters.",
+          "gap": "No workspace-style scoping or quantity bounds.",
+          "evidence": [
+            {
+              "file": "pkg/toolsets/core/pods.go",
+              "lines": "308-309",
+              "contains": "\"pods_run\"",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/toolsets/core/pods.go#L308-L309"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.325,
+          "raw": 0.325,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The only argument-level control is a GVK denylist checked in the HTTP round tripper; commands, images, and manifests are otherwise passed through.",
+              "gap": "No allowlists on namespaces, kinds, images, or commands, and no numeric bounds.",
+              "evidence": [
+                {
+                  "file": "pkg/kubernetes/accesscontrol_round_tripper.go",
+                  "lines": "177-178",
+                  "contains": "resource not allowed",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/accesscontrol_round_tripper.go#L177-L178"
+                },
+                {
+                  "file": "pkg/kubernetes/pods.go",
+                  "lines": "278-281",
+                  "contains": "Command:   command,",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/pods.go#L278-L281"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The denylist runs for every client built from the wrapped rest.Config, but pod exec reaches data inside containers that the kind-level list cannot see.",
+              "gap": "Coverage is limited by the mechanism: exec into pods bypasses kind-level restrictions on Secrets and similar data.",
+              "evidence": [
+                {
+                  "file": "pkg/kubernetes/kubernetes.go",
+                  "lines": "93-106",
+                  "contains": "return NewAccessControlRoundTripper(ctx, AccessControlRoundTripperConfig{",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/kubernetes.go#L93-L106"
+                },
+                {
+                  "file": "pkg/toolsets/core/pods.go",
+                  "lines": "204-205",
+                  "contains": "\"pods_exec\"",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/toolsets/core/pods.go#L204-L205"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Toolsets are selectable, but the default core toolset includes exec, run, apply, and delete tools.",
+              "gap": "Default tool set is not read-only.",
+              "evidence": [
+                {
+                  "file": "pkg/config/config.go",
+                  "lines": "416",
+                  "contains": "opt(\"toolsets\", []string{\"core\", \"config\"})",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L416"
+                },
+                {
+                  "file": "pkg/config/config.go",
+                  "lines": "410",
+                  "contains": "opt(\"denied_resources\", []GroupVersionKind(nil))",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L410"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Misused tools act on any resource, namespace, image, or command in production clusters.",
+              "gap": "No workspace-style scoping or quantity bounds.",
+              "evidence": [
+                {
+                  "file": "pkg/toolsets/core/pods.go",
+                  "lines": "308-309",
+                  "contains": "\"pods_run\"",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/toolsets/core/pods.go#L308-L309"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "Code-execution isolation",
+      "number": 4,
+      "owasp": [
+        "ASI05",
+        "T11",
+        "LLM05"
+      ],
+      "question": "When model-influenced code runs, does a boundary the model cannot redefine contain it on every path?",
+      "summary": "The server never runs code on its own host, but pods_exec executes model-chosen commands inside whatever existing container the model names, and pods_run or resources_create_or_update can start any image with any pod spec. There is no sandbox the model cannot redefine: the execution target is a production workload carrying its own service-account token, network access, and mounts, and the model can also create a privileged pod with host mounts if the credentials allow it. Nothing in the server constrains this.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Commands run directly in the chosen workload container via the exec subresource; no isolation primitive is provided by the server.",
+          "gap": "No separate execution environment the model cannot choose or redefine (e.g., a dedicated hardened debug pod).",
+          "evidence": [
+            {
+              "file": "pkg/kubernetes/pods.go",
+              "lines": "266-283",
+              "contains": "func (c *Core) PodsExec(",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/pods.go#L266-L283"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Neither pods_exec, pods_run, nor arbitrary workload creation passes through any isolation layer.",
+          "gap": "The main exec path is not sandboxed.",
+          "evidence": [
+            {
+              "file": "pkg/kubernetes/pods.go",
+              "lines": "313",
+              "contains": "executor.StreamWithContext(ctx",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/pods.go#L313"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No sandbox exists to enable; exec tools are in the default toolset.",
+          "gap": "No isolation control exists at any setting.",
+          "evidence": [
+            {
+              "file": "pkg/config/config.go",
+              "lines": "416",
+              "contains": "opt(\"toolsets\", []string{\"core\", \"config\"})",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L416"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Executed commands reach the target workload's credentials and network, and the model can schedule privileged or host-mounting pods with the operator's credentials.",
+          "gap": "Execution is host-equivalent in the cluster when the kubeconfig allows privileged pods.",
+          "evidence": [
+            {
+              "file": "pkg/toolsets/core/resources.go",
+              "lines": "118-126",
+              "contains": "Complete YAML or JSON representation of the Kubernetes resource",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/toolsets/core/resources.go#L118-L126"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.0,
+          "raw": 0.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Commands run directly in the chosen workload container via the exec subresource; no isolation primitive is provided by the server.",
+              "gap": "No separate execution environment the model cannot choose or redefine (e.g., a dedicated hardened debug pod).",
+              "evidence": [
+                {
+                  "file": "pkg/kubernetes/pods.go",
+                  "lines": "266-283",
+                  "contains": "func (c *Core) PodsExec(",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/pods.go#L266-L283"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Neither pods_exec, pods_run, nor arbitrary workload creation passes through any isolation layer.",
+              "gap": "The main exec path is not sandboxed.",
+              "evidence": [
+                {
+                  "file": "pkg/kubernetes/pods.go",
+                  "lines": "313",
+                  "contains": "executor.StreamWithContext(ctx",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/pods.go#L313"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No sandbox exists to enable; exec tools are in the default toolset.",
+              "gap": "No isolation control exists at any setting.",
+              "evidence": [
+                {
+                  "file": "pkg/config/config.go",
+                  "lines": "416",
+                  "contains": "opt(\"toolsets\", []string{\"core\", \"config\"})",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L416"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Executed commands reach the target workload's credentials and network, and the model can schedule privileged or host-mounting pods with the operator's credentials.",
+              "gap": "Execution is host-equivalent in the cluster when the kubeconfig allows privileged pods.",
+              "evidence": [
+                {
+                  "file": "pkg/toolsets/core/resources.go",
+                  "lines": "118-126",
+                  "contains": "Complete YAML or JSON representation of the Kubernetes resource",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/toolsets/core/resources.go#L118-L126"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "Untrusted input blast radius",
+      "number": 5,
+      "owasp": [
+        "ASI01",
+        "ASI09",
+        "ASI07",
+        "T6",
+        "T12",
+        "T15",
+        "LLM01"
+      ],
+      "question": "When the agent reads untrusted content, what limits how far that content can steer it?",
+      "summary": "Pod logs, exec output, events, and resource contents (annotations, ConfigMaps) are returned as plain text with no provenance or untrusted marker, so anything a workload writes reaches the model on equal footing with real data. The server offers a read-only mode that would drop the state-change leg, but it is opt-in. In the default configuration a hijacked host agent can read Secrets and the raw kubeconfig and exfiltrate them (for example by running a pod that posts them out) and delete or replace resources, all without the server asking anyone.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.075,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "C5-WORSTCASE",
+        "max": 0.25,
+        "reason": "Worst case (B L0): a hijacked agent can leak data and take irreversible actions unattended."
+      },
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Outputs are plain text (pod logs, exec stdout) with no source tagging or untrusted flag.",
+          "gap": "No structured separation of untrusted content from metadata on the log/exec paths.",
+          "evidence": [
+            {
+              "file": "pkg/toolsets/core/pods.go",
+              "lines": "483-499",
+              "contains": "return api.NewToolCallResult(ret, err), nil",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/toolsets/core/pods.go#L483-L499"
+            },
+            {
+              "search": "rg -n -i 'untrusted|provenance' -g '!*_test.go'",
+              "scope": "pkg",
+              "hits": 0
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "No untrusted source is distinguished from any other output.",
+          "gap": "No source (logs, events, resource fields) carries an untrusted marker.",
+          "evidence": [
+            {
+              "search": "rg -n -i 'untrusted|provenance' -g '!*_test.go'",
+              "scope": "pkg",
+              "hits": 0
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.0
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The read-only mode that would remove the state-change leg is off by default.",
+          "gap": "No Rule-of-Two leg is dropped by default.",
+          "evidence": [
+            {
+              "file": "pkg/config/config.go",
+              "lines": "411",
+              "contains": "opt(\"read_only\", false)",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L411"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "A hijacked session can read credentials via configuration_view or Secret reads and both exfiltrate and destroy cluster state unattended.",
+          "gap": "Exfiltration and irreversible actions are both available without any server-side human step.",
+          "evidence": [
+            {
+              "file": "pkg/kubernetes/configuration.go",
+              "lines": "66-82",
+              "contains": "clientcmdapi.FlattenConfig(&cfg)",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/configuration.go#L66-L82"
+            },
+            {
+              "file": "pkg/toolsets/core/resources.go",
+              "lines": "141",
+              "contains": "\"resources_delete\"",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/toolsets/core/resources.go#L141"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.075,
+          "raw": 0.075,
+          "cap": {
+            "id": "C5-WORSTCASE",
+            "max": 0.25,
+            "reason": "Worst case (B L0): a hijacked agent can leak data and take irreversible actions unattended."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Outputs are plain text (pod logs, exec stdout) with no source tagging or untrusted flag.",
+              "gap": "No structured separation of untrusted content from metadata on the log/exec paths.",
+              "evidence": [
+                {
+                  "file": "pkg/toolsets/core/pods.go",
+                  "lines": "483-499",
+                  "contains": "return api.NewToolCallResult(ret, err), nil",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/toolsets/core/pods.go#L483-L499"
+                },
+                {
+                  "search": "rg -n -i 'untrusted|provenance' -g '!*_test.go'",
+                  "scope": "pkg",
+                  "hits": 0
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "No untrusted source is distinguished from any other output.",
+              "gap": "No source (logs, events, resource fields) carries an untrusted marker.",
+              "evidence": [
+                {
+                  "search": "rg -n -i 'untrusted|provenance' -g '!*_test.go'",
+                  "scope": "pkg",
+                  "hits": 0
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.0
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The read-only mode that would remove the state-change leg is off by default.",
+              "gap": "No Rule-of-Two leg is dropped by default.",
+              "evidence": [
+                {
+                  "file": "pkg/config/config.go",
+                  "lines": "411",
+                  "contains": "opt(\"read_only\", false)",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L411"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "A hijacked session can read credentials via configuration_view or Secret reads and both exfiltrate and destroy cluster state unattended.",
+              "gap": "Exfiltration and irreversible actions are both available without any server-side human step.",
+              "evidence": [
+                {
+                  "file": "pkg/kubernetes/configuration.go",
+                  "lines": "66-82",
+                  "contains": "clientcmdapi.FlattenConfig(&cfg)",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/configuration.go#L66-L82"
+                },
+                {
+                  "file": "pkg/toolsets/core/resources.go",
+                  "lines": "141",
+                  "contains": "\"resources_delete\"",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/toolsets/core/resources.go#L141"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Memory, context & configuration integrity",
+      "number": 6,
+      "owasp": [
+        "ASI06",
+        "T1",
+        "T5",
+        "LLM04",
+        "LLM08"
+      ],
+      "question": "Can anything the agent reads persist into future behaviour through memory, retrieval, or auto-loaded files, and is that path controlled?",
+      "summary": "The server keeps no memory, conversation store, or retrieval index, and it does not load instruction or configuration files from the working directory. Configuration comes only from an explicit --config/--config-dir path or the MCP_CONFIG_PATH environment variable, and credentials from the user's kubeconfig, all user scope. Cluster state the model writes and later reads back is untrusted input, covered in C5.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'godotenv|os\\.Getwd|os\\.WriteFile' -g '!*_test.go'",
+              "scope": "pkg cmd",
+              "hits": 0,
+              "note": "no dotenv loading, no working-directory lookup, no file writes by the server"
+            },
+            {
+              "file": "pkg/kubernetes-mcp-server/cmd/root.go",
+              "lines": "115-116",
+              "contains": "Path of the config file.",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes-mcp-server/cmd/root.go#L115-L116"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'godotenv|os\\.Getwd|os\\.WriteFile' -g '!*_test.go'",
+              "scope": "pkg cmd",
+              "hits": 0,
+              "note": "no dotenv loading, no working-directory lookup, no file writes by the server"
+            },
+            {
+              "file": "pkg/kubernetes-mcp-server/cmd/root.go",
+              "lines": "115-116",
+              "contains": "Path of the config file.",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes-mcp-server/cmd/root.go#L115-L116"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'godotenv|os\\.Getwd|os\\.WriteFile' -g '!*_test.go'",
+              "scope": "pkg cmd",
+              "hits": 0,
+              "note": "no dotenv loading, no working-directory lookup, no file writes by the server"
+            },
+            {
+              "file": "pkg/kubernetes-mcp-server/cmd/root.go",
+              "lines": "115-116",
+              "contains": "Path of the config file.",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes-mcp-server/cmd/root.go#L115-L116"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'godotenv|os\\.Getwd|os\\.WriteFile' -g '!*_test.go'",
+              "scope": "pkg cmd",
+              "hits": 0,
+              "note": "no dotenv loading, no working-directory lookup, no file writes by the server"
+            },
+            {
+              "file": "pkg/kubernetes-mcp-server/cmd/root.go",
+              "lines": "115-116",
+              "contains": "Path of the config file.",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes-mcp-server/cmd/root.go#L115-L116"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'godotenv|os\\.Getwd|os\\.WriteFile' -g '!*_test.go'",
+                  "scope": "pkg cmd",
+                  "hits": 0,
+                  "note": "no dotenv loading, no working-directory lookup, no file writes by the server"
+                },
+                {
+                  "file": "pkg/kubernetes-mcp-server/cmd/root.go",
+                  "lines": "115-116",
+                  "contains": "Path of the config file.",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes-mcp-server/cmd/root.go#L115-L116"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'godotenv|os\\.Getwd|os\\.WriteFile' -g '!*_test.go'",
+                  "scope": "pkg cmd",
+                  "hits": 0,
+                  "note": "no dotenv loading, no working-directory lookup, no file writes by the server"
+                },
+                {
+                  "file": "pkg/kubernetes-mcp-server/cmd/root.go",
+                  "lines": "115-116",
+                  "contains": "Path of the config file.",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes-mcp-server/cmd/root.go#L115-L116"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'godotenv|os\\.Getwd|os\\.WriteFile' -g '!*_test.go'",
+                  "scope": "pkg cmd",
+                  "hits": 0,
+                  "note": "no dotenv loading, no working-directory lookup, no file writes by the server"
+                },
+                {
+                  "file": "pkg/kubernetes-mcp-server/cmd/root.go",
+                  "lines": "115-116",
+                  "contains": "Path of the config file.",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes-mcp-server/cmd/root.go#L115-L116"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'godotenv|os\\.Getwd|os\\.WriteFile' -g '!*_test.go'",
+                  "scope": "pkg cmd",
+                  "hits": 0,
+                  "note": "no dotenv loading, no working-directory lookup, no file writes by the server"
+                },
+                {
+                  "file": "pkg/kubernetes-mcp-server/cmd/root.go",
+                  "lines": "115-116",
+                  "contains": "Path of the config file.",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes-mcp-server/cmd/root.go#L115-L116"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n 'godotenv|os\\.Getwd|os\\.WriteFile' -g '!*_test.go'",
+          "scope": "pkg cmd",
+          "hits": 0,
+          "note": "no dotenv loading, no working-directory lookup, no file writes by the server"
+        },
+        {
+          "file": "pkg/kubernetes-mcp-server/cmd/root.go",
+          "lines": "115-116",
+          "contains": "Path of the config file.",
+          "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes-mcp-server/cmd/root.go#L115-L116"
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "Third-party extensions",
+      "number": 7,
+      "owasp": [
+        "ASI04",
+        "T17",
+        "LLM03"
+      ],
+      "question": "Are plugins, MCP servers and downloaded tools verified or isolated before they run with the agent's access?",
+      "summary": "The server loads no plugins and launches no MCP servers or local processes; it is a single Go binary talking to the Kubernetes API. Container images the model asks pods_run to start run inside the cluster, not in the server, and are scored as code execution under C4 and tool scope under C3.",
+      "max": 1.0,
+      "status": "structural_absence",
+      "score": 1.0,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'plugin\\.Open|\"os/exec\"|exec\\.Command' -g '!*_test.go'",
+              "scope": "pkg cmd",
+              "hits": 0,
+              "note": "no plugin loading or subprocess launch in server code"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "C": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'plugin\\.Open|\"os/exec\"|exec\\.Command' -g '!*_test.go'",
+              "scope": "pkg cmd",
+              "hits": 0,
+              "note": "no plugin loading or subprocess launch in server code"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.3
+        },
+        "D": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'plugin\\.Open|\"os/exec\"|exec\\.Command' -g '!*_test.go'",
+              "scope": "pkg cmd",
+              "hits": 0,
+              "note": "no plugin loading or subprocess launch in server code"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        },
+        "B": {
+          "level": 4,
+          "structural_absence": true,
+          "status": "verified",
+          "finding": "Risk surface absent at this commit.",
+          "evidence": [
+            {
+              "search": "rg -n 'plugin\\.Open|\"os/exec\"|exec\\.Command' -g '!*_test.go'",
+              "scope": "pkg cmd",
+              "hits": 0,
+              "note": "no plugin loading or subprocess launch in server code"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.2
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "structural absence",
+          "score": 1.0,
+          "raw": 1.0,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'plugin\\.Open|\"os/exec\"|exec\\.Command' -g '!*_test.go'",
+                  "scope": "pkg cmd",
+                  "hits": 0,
+                  "note": "no plugin loading or subprocess launch in server code"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "C": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'plugin\\.Open|\"os/exec\"|exec\\.Command' -g '!*_test.go'",
+                  "scope": "pkg cmd",
+                  "hits": 0,
+                  "note": "no plugin loading or subprocess launch in server code"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.3
+            },
+            "D": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'plugin\\.Open|\"os/exec\"|exec\\.Command' -g '!*_test.go'",
+                  "scope": "pkg cmd",
+                  "hits": 0,
+                  "note": "no plugin loading or subprocess launch in server code"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            },
+            "B": {
+              "level": 4,
+              "structural_absence": true,
+              "status": "verified",
+              "finding": "Risk surface absent at this commit.",
+              "evidence": [
+                {
+                  "search": "rg -n 'plugin\\.Open|\"os/exec\"|exec\\.Command' -g '!*_test.go'",
+                  "scope": "pkg cmd",
+                  "hits": 0,
+                  "note": "no plugin loading or subprocess launch in server code"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.2
+            }
+          }
+        }
+      ],
+      "absence_evidence": [
+        {
+          "search": "rg -n 'plugin\\.Open|\"os/exec\"|exec\\.Command' -g '!*_test.go'",
+          "scope": "pkg cmd",
+          "hits": 0,
+          "note": "no plugin loading or subprocess launch in server code"
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Secrets & sensitive-data protection",
+      "number": 8,
+      "owasp": [
+        "ASI03",
+        "LLM02",
+        "T9"
+      ],
+      "question": "Are credentials and sensitive data kept out of logs, telemetry, subprocesses, and the model provider?",
+      "summary": "Protocol logs pass through a regex-based sanitizer and sensitive config options are redacted when the configuration is dumped, and telemetry is off unless an endpoint is set. But the model-bound path is unprotected: the default configuration_view tool returns the flattened kubeconfig without redaction (tokens and client keys included) in stdio mode, and Secret objects come back in full through the generic resource tools. Those are long-lived, often cluster-admin credentials.",
+      "max": 1.0,
+      "notes": "C8-MODELSECRETS was not applied: credentials enter model context only when configuration_view or a Secret read is called, not routinely in every prompt. The opt-in KubeVirt troubleshoot tool redacts cloud-init secrets before returning them.",
+      "status": "scored",
+      "score": 0.325,
+      "counted": "default",
+      "confidence": "high",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Log sanitization is a regex denylist; nothing masks credentials in tool results sent to the model, and configuration_view deliberately returns them.",
+          "gap": "No redaction before model-bound messages (e.g., ShortenConfig on configuration_view, Secret data masking).",
+          "evidence": [
+            {
+              "file": "pkg/mcplog/log.go",
+              "lines": "125",
+              "contains": "func Sanitize(msg string) string",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/mcplog/log.go#L125"
+            },
+            {
+              "file": "pkg/kubernetes/configuration.go",
+              "lines": "66-82",
+              "contains": "clientcmdapi.FlattenConfig(&cfg)",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/configuration.go#L66-L82"
+            },
+            {
+              "search": "rg -n -i 'shortenconfig|DATA\\+OMITTED|REDACTED'",
+              "scope": "pkg/kubernetes pkg/toolsets/config pkg/toolsets/core",
+              "hits": 0
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Protocol logs and config dumps are sanitized; configuration_view is hidden only in HTTP mode.",
+          "gap": "Model-bound tool results are not covered in stdio mode.",
+          "evidence": [
+            {
+              "file": "pkg/mcp/middleware.go",
+              "lines": "66-68",
+              "contains": "mcplog.Sanitize(jsonCompact(rawParams))",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/mcp/middleware.go#L66-L68"
+            },
+            {
+              "file": "pkg/config/option.go",
+              "lines": "44-47",
+              "contains": "return redactedValue",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/option.go#L44-L47"
+            },
+            {
+              "file": "pkg/mcp/tool_filter.go",
+              "lines": "56-61",
+              "contains": "return !isHTTP ||",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/mcp/tool_filter.go#L56-L61"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Telemetry is off unless an OTLP endpoint is configured, log level defaults to 0, and sanitization is always applied to logs.",
+          "gap": "Redaction is best-effort regex and absent from the model path, so it does not meet always-on redaction.",
+          "evidence": [
+            {
+              "file": "pkg/config/config.go",
+              "lines": "131-136",
+              "contains": "return c.Endpoint.Get() != \"\"",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L131-L136"
+            },
+            {
+              "file": "pkg/config/config.go",
+              "lines": "395",
+              "contains": "opt(\"log_level\", 0)",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L395"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.1
+        },
+        "B": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The model can obtain long-lived, high-privilege kubeconfig credentials for every context on request.",
+          "gap": "Credentials reachable by the model are neither scoped nor short-lived.",
+          "evidence": [
+            {
+              "file": "pkg/toolsets/config/configuration.go",
+              "lines": "176-182",
+              "contains": "minify := p.OptionalBool(\"minified\", true)",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/toolsets/config/configuration.go#L176-L182"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.325,
+          "raw": 0.325,
+          "cap": null,
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Log sanitization is a regex denylist; nothing masks credentials in tool results sent to the model, and configuration_view deliberately returns them.",
+              "gap": "No redaction before model-bound messages (e.g., ShortenConfig on configuration_view, Secret data masking).",
+              "evidence": [
+                {
+                  "file": "pkg/mcplog/log.go",
+                  "lines": "125",
+                  "contains": "func Sanitize(msg string) string",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/mcplog/log.go#L125"
+                },
+                {
+                  "file": "pkg/kubernetes/configuration.go",
+                  "lines": "66-82",
+                  "contains": "clientcmdapi.FlattenConfig(&cfg)",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/configuration.go#L66-L82"
+                },
+                {
+                  "search": "rg -n -i 'shortenconfig|DATA\\+OMITTED|REDACTED'",
+                  "scope": "pkg/kubernetes pkg/toolsets/config pkg/toolsets/core",
+                  "hits": 0
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Protocol logs and config dumps are sanitized; configuration_view is hidden only in HTTP mode.",
+              "gap": "Model-bound tool results are not covered in stdio mode.",
+              "evidence": [
+                {
+                  "file": "pkg/mcp/middleware.go",
+                  "lines": "66-68",
+                  "contains": "mcplog.Sanitize(jsonCompact(rawParams))",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/mcp/middleware.go#L66-L68"
+                },
+                {
+                  "file": "pkg/config/option.go",
+                  "lines": "44-47",
+                  "contains": "return redactedValue",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/option.go#L44-L47"
+                },
+                {
+                  "file": "pkg/mcp/tool_filter.go",
+                  "lines": "56-61",
+                  "contains": "return !isHTTP ||",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/mcp/tool_filter.go#L56-L61"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Telemetry is off unless an OTLP endpoint is configured, log level defaults to 0, and sanitization is always applied to logs.",
+              "gap": "Redaction is best-effort regex and absent from the model path, so it does not meet always-on redaction.",
+              "evidence": [
+                {
+                  "file": "pkg/config/config.go",
+                  "lines": "131-136",
+                  "contains": "return c.Endpoint.Get() != \"\"",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L131-L136"
+                },
+                {
+                  "file": "pkg/config/config.go",
+                  "lines": "395",
+                  "contains": "opt(\"log_level\", 0)",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L395"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.1
+            },
+            "B": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The model can obtain long-lived, high-privilege kubeconfig credentials for every context on request.",
+              "gap": "Credentials reachable by the model are neither scoped nor short-lived.",
+              "evidence": [
+                {
+                  "file": "pkg/toolsets/config/configuration.go",
+                  "lines": "176-182",
+                  "contains": "minify := p.OptionalBool(\"minified\", true)",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/toolsets/config/configuration.go#L176-L182"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Audit & traceability",
+      "number": 9,
+      "owasp": [
+        "T8",
+        "ASI10"
+      ],
+      "question": "Can you reconstruct what the agent did, for whom, and who approved it, from a record the agent couldn't alter?",
+      "summary": "In the default configuration the server keeps no record of tool calls: names and arguments are logged only at verbosity 5 and results at 6, while the default verbosity is 0, and OpenTelemetry tracing is off unless an endpoint is configured. When enabled, logs carry tool name, sanitized arguments, and results, and spans carry tool name and status, but there is no actor attribution beyond user agent and no tamper-evidence. Kubernetes API audit logs on the cluster side are not the server's own record.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.35,
+      "counted": "default",
+      "confidence": "high",
+      "cap": {
+        "id": "G1",
+        "max": 0.5,
+        "reason": "Tool-call recording exists only above the default log level or with telemetry configured."
+      },
+      "parameters": {
+        "S": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "When verbosity is raised, each tool call is logged with name and sanitized arguments, and results at V(6); OTel spans record tool name and status.",
+          "gap": "No requesting-principal or approver attribution in the record.",
+          "evidence": [
+            {
+              "file": "pkg/mcp/middleware.go",
+              "lines": "69-91",
+              "contains": "logger.V(5).Info(\"mcp tool call\", attributes...)",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/mcp/middleware.go#L69-L91"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "C": {
+          "level": 2,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The logging middleware wraps every tools/call, so all built-in tools are covered when enabled.",
+          "gap": "Confirmation approvals and denials are not recorded as distinct events.",
+          "evidence": [
+            {
+              "file": "pkg/mcp/mcp.go",
+              "lines": "184",
+              "contains": "s.server.AddReceivingMiddleware(protocolReceivingMiddleware)",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/mcp/mcp.go#L184"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.15
+        },
+        "D": {
+          "level": 0,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Default log_level is 0 and telemetry requires an endpoint, so tool calls are not recorded by default.",
+          "gap": "Recording is opt-in.",
+          "evidence": [
+            {
+              "file": "pkg/config/config.go",
+              "lines": "395",
+              "contains": "opt(\"log_level\", 0)",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L395"
+            },
+            {
+              "file": "pkg/config/config.go",
+              "lines": "131-136",
+              "contains": "return c.Endpoint.Get() != \"\"",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L131-L136"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.0
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Logging is best-effort klog output; actions proceed regardless of whether anything is written.",
+          "gap": "No per-action durable record.",
+          "evidence": [
+            {
+              "file": "pkg/mcp/middleware.go",
+              "lines": "91-93",
+              "contains": "result, err := next(ctx, method, req)",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/mcp/middleware.go#L91-L93"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.35,
+          "raw": 0.35,
+          "cap": {
+            "id": "G1",
+            "max": 0.5,
+            "reason": "Tool-call recording exists only above the default log level or with telemetry configured."
+          },
+          "confidence": "high",
+          "parameters": {
+            "S": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "When verbosity is raised, each tool call is logged with name and sanitized arguments, and results at V(6); OTel spans record tool name and status.",
+              "gap": "No requesting-principal or approver attribution in the record.",
+              "evidence": [
+                {
+                  "file": "pkg/mcp/middleware.go",
+                  "lines": "69-91",
+                  "contains": "logger.V(5).Info(\"mcp tool call\", attributes...)",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/mcp/middleware.go#L69-L91"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "C": {
+              "level": 2,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The logging middleware wraps every tools/call, so all built-in tools are covered when enabled.",
+              "gap": "Confirmation approvals and denials are not recorded as distinct events.",
+              "evidence": [
+                {
+                  "file": "pkg/mcp/mcp.go",
+                  "lines": "184",
+                  "contains": "s.server.AddReceivingMiddleware(protocolReceivingMiddleware)",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/mcp/mcp.go#L184"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.15
+            },
+            "D": {
+              "level": 0,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Default log_level is 0 and telemetry requires an endpoint, so tool calls are not recorded by default.",
+              "gap": "Recording is opt-in.",
+              "evidence": [
+                {
+                  "file": "pkg/config/config.go",
+                  "lines": "395",
+                  "contains": "opt(\"log_level\", 0)",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L395"
+                },
+                {
+                  "file": "pkg/config/config.go",
+                  "lines": "131-136",
+                  "contains": "return c.Endpoint.Get() != \"\"",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L131-L136"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.0
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Logging is best-effort klog output; actions proceed regardless of whether anything is written.",
+              "gap": "No per-action durable record.",
+              "evidence": [
+                {
+                  "file": "pkg/mcp/middleware.go",
+                  "lines": "91-93",
+                  "contains": "result, err := next(ctx, method, req)",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/mcp/middleware.go#L91-L93"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Limits & kill switch",
+      "number": 10,
+      "owasp": [
+        "ASI08",
+        "ASI10",
+        "T4",
+        "LLM10"
+      ],
+      "question": "Are there hard limits on steps, time, and cost, and does stopping the agent actually stop everything?",
+      "summary": "The server bounds little of its own work. Pod logs default to the last 100 lines but the caller can raise that, list and get operations have no size limits, exec output is buffered without a cap or timeout, and the per-session rate limiter is disabled by default. Request contexts are passed to exec streaming, so a cancelled MCP request should stop in-flight exec, but nothing enforces a ceiling.",
+      "max": 1.0,
+      "status": "scored",
+      "score": 0.25,
+      "counted": "default",
+      "confidence": "medium",
+      "cap": null,
+      "parameters": {
+        "S": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Limits are caller-chosen (log tail) and the rate limiter is opt-in; no output-size caps or tool timeouts.",
+          "gap": "No server-enforced output caps or timeouts on list, get, log, or exec operations.",
+          "evidence": [
+            {
+              "file": "pkg/kubernetes/pods.go",
+              "lines": "136-142",
+              "contains": "logOptions.TailLines = &tail",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/pods.go#L136-L142"
+            },
+            {
+              "file": "pkg/mcp/middleware.go",
+              "lines": "374-377",
+              "contains": "if limit <= 0 {",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/mcp/middleware.go#L374-L377"
+            },
+            {
+              "search": "rg -n '\"limit\"'",
+              "scope": "pkg/toolsets/core",
+              "hits": 0
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "C": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "Only pod logs have a default bound; other tools have none.",
+          "gap": "No per-tool timeout or cap across the tool set.",
+          "evidence": [
+            {
+              "file": "pkg/kubernetes/pods.go",
+              "lines": "28",
+              "contains": "DefaultTailLines = int64(100)",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/pods.go#L28"
+            }
+          ],
+          "weight": 0.3,
+          "points": 0.075
+        },
+        "D": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "verified",
+          "finding": "The rate limit defaults to 0 (disabled) and the log tail default can be raised by the model.",
+          "gap": "No sensible enforced default the model cannot raise.",
+          "evidence": [
+            {
+              "file": "pkg/config/config.go",
+              "lines": "68",
+              "contains": "opt(\"rate_limit_rps\", 0.0)",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L68"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        },
+        "B": {
+          "level": 1,
+          "structural_absence": false,
+          "status": "inferred",
+          "finding": "Exec streams honour the request context, so cancellation from the go-sdk (assumed to cancel the handler context on notifications/cancelled) stops in-flight exec, but there is no ceiling on what runs before that.",
+          "gap": "No time or volume ceilings on server work.",
+          "evidence": [
+            {
+              "file": "pkg/kubernetes/pods.go",
+              "lines": "313-315",
+              "contains": "executor.StreamWithContext(ctx",
+              "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/pods.go#L313-L315"
+            }
+          ],
+          "weight": 0.2,
+          "points": 0.05
+        }
+      },
+      "mechanisms": [
+        {
+          "kind": "default",
+          "label": "default configuration",
+          "score": 0.25,
+          "raw": 0.25,
+          "cap": null,
+          "confidence": "medium",
+          "parameters": {
+            "S": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Limits are caller-chosen (log tail) and the rate limiter is opt-in; no output-size caps or tool timeouts.",
+              "gap": "No server-enforced output caps or timeouts on list, get, log, or exec operations.",
+              "evidence": [
+                {
+                  "file": "pkg/kubernetes/pods.go",
+                  "lines": "136-142",
+                  "contains": "logOptions.TailLines = &tail",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/pods.go#L136-L142"
+                },
+                {
+                  "file": "pkg/mcp/middleware.go",
+                  "lines": "374-377",
+                  "contains": "if limit <= 0 {",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/mcp/middleware.go#L374-L377"
+                },
+                {
+                  "search": "rg -n '\"limit\"'",
+                  "scope": "pkg/toolsets/core",
+                  "hits": 0
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "C": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "Only pod logs have a default bound; other tools have none.",
+              "gap": "No per-tool timeout or cap across the tool set.",
+              "evidence": [
+                {
+                  "file": "pkg/kubernetes/pods.go",
+                  "lines": "28",
+                  "contains": "DefaultTailLines = int64(100)",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/pods.go#L28"
+                }
+              ],
+              "weight": 0.3,
+              "points": 0.075
+            },
+            "D": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "verified",
+              "finding": "The rate limit defaults to 0 (disabled) and the log tail default can be raised by the model.",
+              "gap": "No sensible enforced default the model cannot raise.",
+              "evidence": [
+                {
+                  "file": "pkg/config/config.go",
+                  "lines": "68",
+                  "contains": "opt(\"rate_limit_rps\", 0.0)",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L68"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            },
+            "B": {
+              "level": 1,
+              "structural_absence": false,
+              "status": "inferred",
+              "finding": "Exec streams honour the request context, so cancellation from the go-sdk (assumed to cancel the handler context on notifications/cancelled) stops in-flight exec, but there is no ceiling on what runs before that.",
+              "gap": "No time or volume ceilings on server work.",
+              "evidence": [
+                {
+                  "file": "pkg/kubernetes/pods.go",
+                  "lines": "313-315",
+                  "contains": "executor.StreamWithContext(ctx",
+                  "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/pods.go#L313-L315"
+                }
+              ],
+              "weight": 0.2,
+              "points": 0.05
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "critical_findings": [
+    {
+      "summary": "Default local mode gives the model the operator's full kubeconfig authority across every context, with no narrowing.",
+      "criterion": "C1",
+      "owasp": [
+        "ASI03",
+        "T3"
+      ],
+      "evidence": [
+        {
+          "file": "pkg/kubernetes/provider.go",
+          "lines": "151-165",
+          "contains": "return config.ClusterProviderKubeConfig",
+          "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/provider.go#L151-L165"
+        },
+        {
+          "file": "pkg/kubernetes/provider_kubeconfig.go",
+          "lines": "16",
+          "contains": "KubeConfigTargetParameterName = \"context\"",
+          "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/provider_kubeconfig.go#L16"
+        }
+      ]
+    },
+    {
+      "summary": "MCP token passthrough is the default cluster auth mode in HTTP deployments: the client's bearer token is forwarded to the Kubernetes API.",
+      "criterion": "C1",
+      "owasp": [
+        "ASI03",
+        "T9"
+      ],
+      "evidence": [
+        {
+          "file": "pkg/config/config.go",
+          "lines": "503-507",
+          "contains": "return ClusterAuthPassthrough",
+          "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L503-L507"
+        },
+        {
+          "file": "pkg/kubernetes/manager.go",
+          "lines": "206-216",
+          "contains": "BearerToken: strings.TrimPrefix(authorization, \"Bearer \")",
+          "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/manager.go#L206-L216"
+        }
+      ]
+    },
+    {
+      "summary": "pods_exec runs model-chosen commands in any existing workload container, and arbitrary pods can be created, with no isolation provided by the server.",
+      "criterion": "C4",
+      "owasp": [
+        "ASI05",
+        "T11"
+      ],
+      "evidence": [
+        {
+          "file": "pkg/kubernetes/pods.go",
+          "lines": "266-283",
+          "contains": "func (c *Core) PodsExec(",
+          "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/pods.go#L266-L283"
+        },
+        {
+          "file": "pkg/toolsets/core/pods.go",
+          "lines": "204-205",
+          "contains": "\"pods_exec\"",
+          "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/toolsets/core/pods.go#L204-L205"
+        }
+      ]
+    },
+    {
+      "summary": "Worst case under injection: the default tool set can read credentials (configuration_view, Secrets) and both exfiltrate and delete cluster state with no server-side human step.",
+      "criterion": "C5",
+      "owasp": [
+        "ASI01",
+        "LLM01"
+      ],
+      "evidence": [
+        {
+          "file": "pkg/kubernetes/configuration.go",
+          "lines": "66-82",
+          "contains": "clientcmdapi.FlattenConfig(&cfg)",
+          "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/configuration.go#L66-L82"
+        },
+        {
+          "file": "pkg/config/config.go",
+          "lines": "411",
+          "contains": "opt(\"read_only\", false)",
+          "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L411"
+        }
+      ]
+    }
+  ],
+  "rule_of_two": {
+    "untrusted_input": "Pod logs, exec output, events, and resource fields returned verbatim (pkg/toolsets/core/pods.go:483-499)",
+    "sensitive_data": "Raw kubeconfig credentials and Secret objects (pkg/kubernetes/configuration.go:66-82)",
+    "state_change_or_egress": "pods_exec, pods_run, resources_create_or_update, resources_delete in the default toolset (pkg/toolsets/core/resources.go:118-141)",
+    "same_session": true
+  },
+  "fixes": [
+    {
+      "summary": "Redact credentials in configuration_view (clientcmdapi.ShortenConfig or drop the tool from the default stdio set) and mask Secret data in resource tool output.",
+      "criterion": "C8",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Ship read_only=true (or a read-only default toolset) so write and exec tools require explicit operator elevation.",
+      "criterion": "C3",
+      "parameter": "D",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 3",
+      "estimated_gain": 0.05
+    },
+    {
+      "summary": "Log every tool call (name, target context, arguments, outcome) at the default log level.",
+      "criterion": "C9",
+      "parameter": "D",
+      "from_level": 0,
+      "to_level": 2,
+      "playbook": "Playbook 1 step 3",
+      "estimated_gain": 0.1
+    },
+    {
+      "summary": "Add server-side dry-run previews for resources_create_or_update, resources_delete, and helm operations.",
+      "criterion": "C2",
+      "parameter": "S",
+      "from_level": 2,
+      "to_level": 3,
+      "playbook": "Playbook 5",
+      "estimated_gain": 0.075
+    },
+    {
+      "summary": "Enforce default output-size caps and timeouts on list, log, and exec tools and enable a default rate limit.",
+      "criterion": "C10",
+      "parameter": "S",
+      "from_level": 1,
+      "to_level": 2,
+      "estimated_gain": 0.075
+    }
+  ],
+  "reaudit_log": [],
+  "limitations": [
+    "Static source review of the pinned commit only; nothing was executed, installed, or probed.",
+    "Scored the README-led local stdio mode; HTTP mode differs (configuration_view hidden) and the Helm chart ships a ServiceAccount with no RBAC bindings.",
+    "Optional toolsets (helm, kiali, kubevirt, tekton, kcp, netobserv) were checked only for annotations; helm_install can deploy charts from model-chosen repositories when enabled.",
+    "Kubeconfig exec credential plugins run by client-go are operator-configured (user scope) and were not treated as extensions.",
+    "C10 B relies on the go-sdk cancelling the handler context on notifications/cancelled (library behaviour, inferred).",
+    "No reviewer-directed prompt injection was found in README, AGENTS.md, SECURITY.md, or .agents skills."
+  ]
+}
