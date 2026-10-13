@@ -24,6 +24,31 @@
 
 Jan's chat shell runs in an OS sandbox with no network, its own disposable folder, no secrets and no view of your home directory, and it is not offered at all when no sandbox is available. Every MCP tool call asks you first. The dominant risk is the web access that is on by default: web search and page fetch run without approval, so text injected into a page or document can make the model send your conversation or memory notes to an outside URL. The chat loop also has no step or spend limit, and MCP servers you add run unpinned with your full environment.
 
+## Safest setup
+
+Jan's chat shell runs in an OS sandbox with no network and no view of your home directory, and every MCP tool call asks you first. Web search and page fetch run without approval and the chat loop has no step or spend limit, so the safest setup keeps MCP approval on, turns web access off where it isn't needed and puts limits around the app yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A spend-limited provider key | Use a model-provider key with a spending limit set at the provider, or a local model | A runaway chat stops at a ceiling the provider enforces (C10) |
+| Per-call MCP approval | Keep Allow All MCP Tool Permissions off, the default `allowAllMCPPermissions: false` ([web-app/src/hooks/useToolApproval.ts:32](https://github.com/janhq/jan/blob/98c3b84a5a218fafbe8428ce5c930566e5943475/web-app/src/hooks/useToolApproval.ts#L32); [web-app/src/locales/en/mcp-servers.json:50](https://github.com/janhq/jan/blob/98c3b84a5a218fafbe8428ce5c930566e5943475/web-app/src/locales/en/mcp-servers.json#L50)) | A person sees the exact input before each MCP tool call runs (C2) |
+| Web access only when needed | Switch off Enable Web Search (`webSearchEnabled`) in settings for chats that don't need the web ([web-app/src/hooks/useWebSearchConfig.ts:70](https://github.com/janhq/jan/blob/98c3b84a5a218fafbe8428ce5c930566e5943475/web-app/src/hooks/useWebSearchConfig.ts#L70); [web-app/src/locales/en/settings.json:195](https://github.com/janhq/jan/blob/98c3b84a5a218fafbe8428ce5c930566e5943475/web-app/src/locales/en/settings.json#L195)) | The model loses Jan's search and fetch tools, the ones that run without approval (C5) |
+| Reviewed, pinned MCP servers | Add only MCP servers you have read, with an exact package version in their launch arguments | Each server keeps running the code you reviewed (C7) |
+| A lean launch environment | Start Jan from an environment holding only the keys your MCP servers need | MCP servers, which inherit Jan's full environment, see nothing beyond those keys (C1) |
+| Memory notes you trust | Remember only messages you trust, and review the memory notes in settings from time to time | Every later chat starts from background context you have checked (C6) |
+| Its own OS account or VM | Run Jan under a separate OS user account or in a VM once you add MCP servers | An outer boundary around MCP servers, which run on the host outside the shell sandbox (C4) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; allow for this chat and always allow also cover later calls with different arguments.
+- Always-allow grants have no screen to review or revoke them, so keep them for tools you would approve every time.
+- The chat loop has no step limit; press Stop when a run keeps calling tools.
+
+### Handling data
+
+- Each conversation's JSONL file in the Jan data folder holds tool arguments and results; store it like the documents you chat about.
+- MCP server keys sit in plain text in the MCP config; protect that file like the services those keys unlock.
+
 ## Critical gaps
 - None: no criterion is capped and no blast radius is at the worst level.
 

@@ -36,6 +36,147 @@
     "external_communication": "yes"
   },
   "headline": "As shipped, this server runs any AWS API the model asks for, with the operator's own AWS credentials and no confirmation, including IAM changes, deletions and remote shell commands through SSM. AWS IAM is the only real limit, so deploy it with a scoped-down role. The opt-in read-only mode and per-write consent are well built, mapping every request to AWS's own permission data and failing closed, but both are off by default. File access is confined to a working directory by default, and there is no local shell.",
+  "safe_setup": {
+    "intro": "As shipped, the server runs any AWS operation the model asks for with your own credentials and no confirmation, so AWS IAM is the real boundary. It parses commands without a shell and keeps local file arguments inside a working directory, and its read-only and consent modes are well built but off by default. The safest setup starts with a scoped role and turns those modes on.",
+    "steps": [
+      {
+        "setup": "A scoped-down AWS role",
+        "how": "Set `AWS_API_MCP_PROFILE_NAME` to a profile whose role allows only the actions and resources the task needs, and run the server where that is the only profile configured",
+        "gives_you": "AWS itself refuses anything outside that role, whichever command or profile the model picks",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+            "lines": "168",
+            "contains": "AWS_API_MCP_PROFILE_NAME = os.getenv('AWS_API_MCP_PROFILE_NAME')",
+            "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L168"
+          }
+        ]
+      },
+      {
+        "setup": "Remote execution left out",
+        "how": "Grant SSM Run Command, CloudFormation and Lambda actions in that role only when the task needs them",
+        "gives_you": "Model-written scripts and templates have no route to run in your account",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Read-only mode",
+        "how": "`READ_OPERATIONS_ONLY=true` in the server's environment",
+        "gives_you": "Every operation AWS classes as a write is refused before it runs, and unknown services fail closed",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+            "lines": "28",
+            "contains": "READ_ONLY_KEY = 'READ_OPERATIONS_ONLY'",
+            "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L28"
+          },
+          {
+            "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+            "lines": "171",
+            "contains": "READ_OPERATIONS_ONLY_MODE = get_env_bool(READ_ONLY_KEY, False)",
+            "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L171"
+          }
+        ]
+      },
+      {
+        "setup": "Per-write consent",
+        "how": "For tasks that need writes, `REQUIRE_MUTATION_CONSENT=true` with a client that supports elicitation",
+        "gives_you": "A person sees the exact CLI command before each write runs, and a client that can't ask refuses the call",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+            "lines": "30",
+            "contains": "REQUIRE_MUTATION_CONSENT_KEY = 'REQUIRE_MUTATION_CONSENT'",
+            "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L30"
+          },
+          {
+            "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+            "lines": "174",
+            "contains": "REQUIRE_MUTATION_CONSENT = get_env_bool(REQUIRE_MUTATION_CONSENT_KEY, False)",
+            "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L174"
+          }
+        ]
+      },
+      {
+        "setup": "A denylist of operations",
+        "how": "List operations the task never needs under `denyList` in `mcp-security-policy.json` in ~/.aws/aws-api-mcp",
+        "gives_you": "Those operations are blocked outright, ahead of every other mode",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+            "lines": "58",
+            "contains": "mcp-security-policy.json",
+            "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L58"
+          },
+          {
+            "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py",
+            "lines": "75-76",
+            "contains": "denyList",
+            "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/security/policy.py#L75-L76"
+          }
+        ]
+      },
+      {
+        "setup": "A dedicated working directory",
+        "how": "Keep the default `workdir` for `AWS_API_MCP_ALLOW_UNRESTRICTED_LOCAL_FILE_ACCESS` with `AWS_API_MCP_WORKING_DIR` set to a directory for this task, or `no-access` when no local files are needed",
+        "gives_you": "Local file arguments stay inside one directory you chose for the task",
+        "criterion": "C3",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+            "lines": "31",
+            "contains": "AWS_API_MCP_ALLOW_UNRESTRICTED_LOCAL_FILE_ACCESS",
+            "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L31"
+          },
+          {
+            "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+            "lines": "32",
+            "contains": "AWS_API_MCP_WORKING_DIR",
+            "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L32"
+          },
+          {
+            "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+            "lines": "39-40",
+            "contains": "NO_ACCESS = 'no-access'",
+            "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L39-L40"
+          },
+          {
+            "file": "src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py",
+            "lines": "75",
+            "contains": "os.getenv(FILE_ACCESS_MODE_KEY, 'workdir')",
+            "url": "https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/aws-api-mcp-server/awslabs/aws_api_mcp_server/core/common/config.py#L75"
+          }
+        ]
+      },
+      {
+        "setup": "An AWS-side audit trail",
+        "how": "Turn on AWS CloudTrail for the account and regions the role can reach",
+        "gives_you": "A record of every call with its parameters and identity, kept where the server can't change it",
+        "criterion": "C9",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Read each consent prompt and approve calls one at a time; it shows the exact CLI command, so check the account, region and resources it names.",
+      "Calls AWS classes as read-only run without a prompt, including token-minting ones such as eks get-token, so scope the role to keep those within what the task needs."
+    ],
+    "handling": [
+      "AWS responses reach the model unredacted, including any secret it reads; treat the conversation like the data it touched.",
+      "The server log in ~/.aws/aws-api-mcp records only service and operation; CloudTrail holds the detail.",
+      "`AWS_API_MCP_TELEMETRY=false` leaves the client name and configuration flags out of the AWS User-Agent."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

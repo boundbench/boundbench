@@ -25,6 +25,29 @@ Controls where a risk surface exists: 1.70 / 9.0 (19%); 1 criterion scored SA (s
 
 As shipped in the README's first WebUI, DeepAnalyze executes every block of Python the model writes directly on the host, as your user, with your environment variables, full network access, and no approval, sandbox, round limit, or log. The backend's network exposure and access control, and that of its workspace file server, are not locked down. The newer WebUI v2 in the same repo is substantially safer by default (hardened per-session Docker sandbox with no network, run budgets, stop, execution records); deployers should use it, bound to localhost.
 
+## Safest setup
+
+The default WebUI runs model-written Python on your host as your user, with no approval, sandbox, round limit or log, and its network access is not locked down. The project's WebUI v2 ships a hardened Docker sandbox, run budgets and execution records on by default, so the safest setup uses v2 and builds the identity and network boundaries around it yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, credential-free account | Start the backend as a dedicated OS user whose environment and home directory hold no API keys, cloud or SSH credentials | Whatever code runs, it reaches only what that account holds, not your own credentials (C1) |
+| Reachable only by you | Bind the backend and file server to localhost, and use an SSH tunnel or an authenticating reverse proxy for remote access | Only you can start analyses or read the workspace (C1) |
+| WebUI v2's Docker sandbox | Run WebUI v2 (demo/chat_v2) with the default `DEEPANALYZE_EXECUTION_MODE` of docker and `DEEPANALYZE_ALLOW_UNSAFE_LOCAL_EXECUTION` left false ([demo/chat_v2/backend_app/settings.py:100-104](https://github.com/ruc-datalab/DeepAnalyze/blob/f04a1c3b9ed3ae6c6efbb70e0cdcce4552c04ba4/demo/chat_v2/backend_app/settings.py#L100-L104)) | Model code runs in a per-session container with no host environment and only the session workspace mounted (C4) |
+| The sandbox's hardening kept | Keep the shipped `DEEPANALYZE_DOCKER_NETWORK_MODE` of none, `DEEPANALYZE_DOCKER_USER` of 1000:1000 and `DEEPANALYZE_DOCKER_READ_ONLY` of true in the environment and .env ([demo/chat_v2/backend_app/settings.py:124](https://github.com/ruc-datalab/DeepAnalyze/blob/f04a1c3b9ed3ae6c6efbb70e0cdcce4552c04ba4/demo/chat_v2/backend_app/settings.py#L124); [demo/chat_v2/backend_app/settings.py:130-131](https://github.com/ruc-datalab/DeepAnalyze/blob/f04a1c3b9ed3ae6c6efbb70e0cdcce4552c04ba4/demo/chat_v2/backend_app/settings.py#L130-L131)) | The container stays offline, non-root and read-only, so data has no direct path out (C4) |
+| Run budgets | Keep `DEEPANALYZE_CHAT_MAX_ROUNDS` at 12 and `DEEPANALYZE_CHAT_MAX_DURATION_SEC` at 900, or lower ([demo/chat_v2/backend_app/settings.py:160-163](https://github.com/ruc-datalab/DeepAnalyze/blob/f04a1c3b9ed3ae6c6efbb70e0cdcce4552c04ba4/demo/chat_v2/backend_app/settings.py#L160-L163)) | Every analysis ends after a fixed number of rounds and minutes (C10) |
+| A fresh session per dataset | Start a new session for each dataset from outside, and remove leftover files you didn't add before the next request | Files written during one analysis can't steer the next one (C6) |
+| Its own VM | Run the whole stack in a VM whose network reaches only the model server and the hosts the task needs | An outer boundary around model code and a narrow path for data to leave (C5) |
+| A lasting execution record | Copy the `.session_state` directory beside the workspace to storage the backend can't modify ([demo/chat_v2/backend_app/services/session_state.py:42](https://github.com/ruc-datalab/DeepAnalyze/blob/f04a1c3b9ed3ae6c6efbb70e0cdcce4552c04ba4/demo/chat_v2/backend_app/services/session_state.py#L42)) | A record of every executed script and its output that outlives the 200-run limit (C9) |
+
+### Approving with confidence
+
+- No mode asks before code runs; WebUI v2's manual mode pauses after each execution, so read what ran and its output before letting the analysis continue.
+
+### Handling data
+
+- Uploaded datasets and generated outputs stay in the workspace, and execution records keep code and output; store both like the data you analysed.
+
 ## Critical gaps
 - Model code inherits the operator's full environment and runs as the OS user, so the agent's authority is the user's entire account; the backend's network access control is also not locked down. (ASI03; C1) — [demo/chat/backend.py:63](https://github.com/ruc-datalab/DeepAnalyze/blob/f04a1c3b9ed3ae6c6efbb70e0cdcce4552c04ba4/demo/chat/backend.py#L63)
 - Arbitrary model-generated Python, the most powerful action, executes automatically with no approval gate on both the agent loop and /execute. (ASI02, ASI09; C2) — [demo/chat/backend.py:666](https://github.com/ruc-datalab/DeepAnalyze/blob/f04a1c3b9ed3ae6c6efbb70e0cdcce4552c04ba4/demo/chat/backend.py#L666); [demo/chat/backend.py:504-516](https://github.com/ruc-datalab/DeepAnalyze/blob/f04a1c3b9ed3ae6c6efbb70e0cdcce4552c04ba4/demo/chat/backend.py#L504-L516)

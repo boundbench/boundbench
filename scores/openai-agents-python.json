@@ -36,6 +36,162 @@
     "external_communication": "yes"
   },
   "headline": "The SDK ships strong building blocks (per-call approvals bound to exact arguments, remote sandbox backends, log redaction) but turns none of them on: every tool runs without approval by default, and the README's sandbox example runs model-written shell commands directly on a Linux host with the developer's full environment. A prompt-injected agent built from defaults can read host credentials and act or exfiltrate unattended, and tracing exports full prompts and tool data to OpenAI by default. Safety depends on the developer opting into needs_approval, a hosted or hardened sandbox, environment filtering, and turning off sensitive trace data.",
+  "safe_setup": {
+    "intro": "The SDK keeps model and tool data out of its own logs, stops every run after 10 turns, and ships per-call approval, environment filtering and hosted sandboxes as building blocks. Approval, filtering and sandboxing are all off by default, and the README's local sandbox runs commands on your host with your full environment, so the safest setup turns them on and puts containment around the process.",
+    "steps": [
+      {
+        "setup": "Scoped, low-limit keys",
+        "how": "Give the process only the API keys this agent needs, each scoped or read-only with a spending limit set at the provider",
+        "gives_you": "Whatever a hijacked agent does, it reaches only the systems and spend you chose",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A filtered sandbox environment",
+        "how": "Pass `inherit_host_environment=False` with a `host_environment_allowlist` of the variables commands need to `UnixLocalSandboxClient`",
+        "gives_you": "Model-run commands see only the variables you list, not your host credentials",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/agents/sandbox/sandboxes/unix_local.py",
+            "lines": "1518",
+            "contains": "class UnixLocalSandboxClient(",
+            "url": "https://github.com/openai/openai-agents-python/blob/81f0ccf20c6e24063b9da36fa37f2bdb6a43d8d3/src/agents/sandbox/sandboxes/unix_local.py#L1518"
+          },
+          {
+            "file": "src/agents/sandbox/sandboxes/unix_local.py",
+            "lines": "1537-1538",
+            "contains": "inherit_host_environment: bool = True",
+            "url": "https://github.com/openai/openai-agents-python/blob/81f0ccf20c6e24063b9da36fa37f2bdb6a43d8d3/src/agents/sandbox/sandboxes/unix_local.py#L1537-L1538"
+          }
+        ]
+      },
+      {
+        "setup": "Per-call approval",
+        "how": "Set `needs_approval=True` on each tool that writes, sends or spends",
+        "gives_you": "The run pauses and a person sees the exact tool and arguments before each such call runs",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/agents/tool.py",
+            "lines": "499-501",
+            "contains": "needs_approval: (",
+            "url": "https://github.com/openai/openai-agents-python/blob/81f0ccf20c6e24063b9da36fa37f2bdb6a43d8d3/src/agents/tool.py#L499-L501"
+          },
+          {
+            "file": "src/agents/tool.py",
+            "lines": "2606-2607",
+            "contains": "needs_approval: bool",
+            "url": "https://github.com/openai/openai-agents-python/blob/81f0ccf20c6e24063b9da36fa37f2bdb6a43d8d3/src/agents/tool.py#L2606-L2607"
+          }
+        ]
+      },
+      {
+        "setup": "Only the capabilities needed",
+        "how": "Pass `capabilities=[...]` on `SandboxAgent` listing just the capabilities the task uses",
+        "gives_you": "The agent gets shell and file-write tools only when the task calls for them",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/agents/sandbox/sandbox_agent.py",
+            "lines": "54",
+            "contains": "capabilities: Sequence[Capability]",
+            "url": "https://github.com/openai/openai-agents-python/blob/81f0ccf20c6e24063b9da36fa37f2bdb6a43d8d3/src/agents/sandbox/sandbox_agent.py#L54"
+          }
+        ]
+      },
+      {
+        "setup": "A hosted sandbox",
+        "how": "Run sandbox sessions on `E2BSandboxClient` with `allow_internet_access=False` in its options",
+        "gives_you": "Sandbox commands run in a remote VM away from your host files and keys, with no open internet",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/agents/extensions/sandbox/e2b/sandbox.py",
+            "lines": "1677",
+            "contains": "class E2BSandboxClient(",
+            "url": "https://github.com/openai/openai-agents-python/blob/81f0ccf20c6e24063b9da36fa37f2bdb6a43d8d3/src/agents/extensions/sandbox/e2b/sandbox.py#L1677"
+          },
+          {
+            "file": "src/agents/extensions/sandbox/e2b/sandbox.py",
+            "lines": "619",
+            "contains": "allow_internet_access: bool = True",
+            "url": "https://github.com/openai/openai-agents-python/blob/81f0ccf20c6e24063b9da36fa37f2bdb6a43d8d3/src/agents/extensions/sandbox/e2b/sandbox.py#L619"
+          }
+        ]
+      },
+      {
+        "setup": "Traces without payloads",
+        "how": "Set `trace_include_sensitive_data=False` in `RunConfig`, or `OPENAI_AGENTS_TRACE_INCLUDE_SENSITIVE_DATA=false`",
+        "gives_you": "Traces keep the span record of each call while prompts and tool data stay with you",
+        "criterion": "C8",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/agents/run_config.py",
+            "lines": "414-415",
+            "contains": "trace_include_sensitive_data: bool = field(",
+            "url": "https://github.com/openai/openai-agents-python/blob/81f0ccf20c6e24063b9da36fa37f2bdb6a43d8d3/src/agents/run_config.py#L414-L415"
+          },
+          {
+            "file": "src/agents/run_config.py",
+            "lines": "55",
+            "contains": "OPENAI_AGENTS_TRACE_INCLUDE_SENSITIVE_DATA",
+            "url": "https://github.com/openai/openai-agents-python/blob/81f0ccf20c6e24063b9da36fa37f2bdb6a43d8d3/src/agents/run_config.py#L55"
+          }
+        ]
+      },
+      {
+        "setup": "Turn and time limits",
+        "how": "Keep the default `max_turns=10` and set `timeout=<seconds>` on each function tool",
+        "gives_you": "Each run ends after a fixed number of turns, and each function tool call ends at its timeout",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "src/agents/run.py",
+            "lines": "267",
+            "contains": "max_turns: int | None = DEFAULT_MAX_TURNS",
+            "url": "https://github.com/openai/openai-agents-python/blob/81f0ccf20c6e24063b9da36fa37f2bdb6a43d8d3/src/agents/run.py#L267"
+          },
+          {
+            "file": "src/agents/run_config.py",
+            "lines": "45",
+            "contains": "DEFAULT_MAX_TURNS = 10",
+            "url": "https://github.com/openai/openai-agents-python/blob/81f0ccf20c6e24063b9da36fa37f2bdb6a43d8d3/src/agents/run_config.py#L45"
+          },
+          {
+            "file": "src/agents/tool.py",
+            "lines": "2610",
+            "contains": "timeout: float | None = None",
+            "url": "https://github.com/openai/openai-agents-python/blob/81f0ccf20c6e24063b9da36fa37f2bdb6a43d8d3/src/agents/tool.py#L2610"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the agent process in a container or VM whose network reaches only the hosts the task needs",
+        "gives_you": "An outer boundary around function tools, MCP servers and local shell executors, which run on the host",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; an always-approve decision covers later calls of that tool with any arguments.",
+      "LocalShellTool and ComputerTool calls run without a prompt, so give actions a person should review to tools with approval on."
+    ],
+    "handling": [
+      "Model and tool data stay out of SDK logs while `OPENAI_AGENTS_DONT_LOG_MODEL_DATA` and `OPENAI_AGENTS_DONT_LOG_TOOL_DATA` are left unset.",
+      "Traces, with their content, go to OpenAI by default; `tracing_disabled=True` in `RunConfig` turns them off.",
+      "The sandbox prompt follows AGENTS.md files in the workspace, so mount only repositories whose instruction files you have read."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

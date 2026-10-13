@@ -25,6 +25,31 @@ Controls where a risk surface exists: 2.35 / 8.0 (29%); 2 criteria scored SA (su
 
 As shipped, this server hands the model the operator's full kubeconfig authority across every context in it: it can exec arbitrary commands in any pod, run any image, apply or delete any resource, and read Secrets and the raw kubeconfig (including tokens and client keys) through configuration_view. Every tool carries accurate read-only/destructive annotations and there are solid opt-in controls (read_only mode, elicitation-based confirmation rules, a central denied-resources filter, OAuth with token exchange), but none of them is on by default. The dominant risk is a prompt-injected or misled host agent using cluster-admin-equivalent credentials unattended, with nothing in the server's default configuration to stop or record it.
 
+## Safest setup
+
+Kubernetes MCP Server labels every tool as read-only or destructive and includes a read-only mode, confirmation prompts, a resource denylist and per-user OAuth, but none of them is on by default: as shipped it acts with your full kubeconfig across every context. The safest setup narrows the cluster identity first and then turns those controls on in a config file passed with `--config`.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A scoped kubeconfig | Set `kubeconfig` to a file holding one context whose identity has read-only or single-namespace RBAC, such as a ServiceAccount bound to the view ClusterRole ([pkg/config/config.go:406](https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L406)) | The Kubernetes API itself refuses anything outside that role, on the one cluster you chose (C1) |
+| Per-user OAuth over HTTP | For HTTP deployments, set `require_oauth = true` and configure a `[token_exchange]` table ([pkg/config/validate.go:291-292](https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/validate.go#L291-L292); [pkg/config/config.go:338](https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L338)) | Each request reaches the cluster with the requesting user's own identity, and requests without a token are refused (C1) |
+| Read-only mode | `read_only = true` in the config file ([pkg/config/config.go:411](https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L411)) | Only tools annotated read-only are exposed, so nothing the agent reads can lead to exec, apply or delete (C5) |
+| Only the toolsets needed | `toolsets = ["core"]`, leaving out `config` unless the task needs it ([pkg/config/config.go:416](https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L416)) | The raw kubeconfig stays out of the model's context and the tool list stays small (C8) |
+| Secrets on the denylist | Add `{ group = "", version = "v1", kind = "Secret" }` to `denied_resources` ([pkg/config/config.go:410](https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L410); [pkg/config/schema.go:38-40](https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/schema.go#L38-L40)) | Tool requests for Secret objects are refused at the one point every Kubernetes API call passes (C3) |
+| Confirmation before destructive calls | Add a `confirmation_rules` entry with `destructive = true`, and set `confirmation_fallback = "deny"` ([pkg/config/config.go:421-424](https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L421-L424); [pkg/config/schema.go:82-83](https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/schema.go#L82-L83)) | The server asks you through your MCP client before each destructive call, and clients that can't ask are refused (C2) |
+| Restricted pod security | Use the server only on namespaces where Pod Security admission enforces the restricted profile | Any pod the agent starts runs without privileges or host mounts (C4) |
+| A tool-call log | `log_level = 5` with `log_file = "<path>"` outside any workspace ([pkg/config/config.go:395-396](https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L395-L396)) | A record of each tool call's name and sanitized arguments that outlives the session (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; deletes and full-replace applies have no preview and no undo.
+- `pods_run` is not marked destructive, so add a rule with `tool = "pods_run"` if you want a prompt before new pods start.
+
+### Handling data
+
+- `configuration_view` and Secret reads return credentials in full; treat the session transcript like the kubeconfig itself.
+- Log sanitization is best-effort and results are logged from level 6; store the log like the cluster data it covers.
+
 ## Critical gaps
 - Default local mode gives the model the operator's full kubeconfig authority across every context, with no narrowing. (ASI03, T3; C1) — [pkg/kubernetes/provider.go:151-165](https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/provider.go#L151-L165); [pkg/kubernetes/provider_kubeconfig.go:16](https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/provider_kubeconfig.go#L16)
 - MCP token passthrough is the default cluster auth mode in HTTP deployments: the client's bearer token is forwarded to the Kubernetes API. (ASI03, T9; C1) — [pkg/config/config.go:503-507](https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L503-L507); [pkg/kubernetes/manager.go:206-216](https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/kubernetes/manager.go#L206-L216)

@@ -36,6 +36,136 @@
     "external_communication": "no"
   },
   "headline": "AutoChain is a thin agent loop with almost no safety controls: whatever tool the model picks runs immediately, with no approval, no argument validation by default, and no handling of untrusted tool output. Its surface is small (no code execution, no bundled write tools), so real risk depends on the tools a developer registers. The shipped Redis memory backend is not integrity-protected, and the HuggingFace wrapper's own example enables remote code. The project has been inactive since November 2023.",
+  "safe_setup": {
+    "intro": "AutoChain gives an agent only the tools you pass it and ends every run after 15 iterations. Beyond that the defaults are thin: there is no approval step, no handling of untrusted tool output and no durable record, and any registered tool runs as soon as the model picks it. The safest setup narrows the keys and tools, turns on typed arguments and time limits, and builds containment around the process yourself.",
+    "steps": [
+      {
+        "setup": "A dedicated, low-limit key",
+        "how": "Run the agent in an environment whose `OPENAI_API_KEY` and tool credentials belong to this agent alone, each scoped with a spending limit at the provider",
+        "gives_you": "Whatever the agent does, it reaches only the systems and spend you chose, not everything your shell can",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "autochain/models/chat_openai.py",
+            "lines": "171",
+            "contains": "OPENAI_API_KEY",
+            "url": "https://github.com/forethought-technologies/autochain/blob/5a1203bb01208b3e186c927222ae31702d309270/autochain/models/chat_openai.py#L171"
+          }
+        ]
+      },
+      {
+        "setup": "Only the tools needed",
+        "how": "Pass the agent's `from_llm_and_tools` just the `tools` this task uses",
+        "gives_you": "The model can call only those tools, and any other tool name is refused",
+        "criterion": "C3",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "autochain/agent/conversational_agent/conversational_agent.py",
+            "lines": "43-46",
+            "contains": "def from_llm_and_tools",
+            "url": "https://github.com/forethought-technologies/autochain/blob/5a1203bb01208b3e186c927222ae31702d309270/autochain/agent/conversational_agent/conversational_agent.py#L43-L46"
+          }
+        ]
+      },
+      {
+        "setup": "Typed tool arguments",
+        "how": "Set `args_schema` to a pydantic model on every tool you register",
+        "gives_you": "Model-written arguments are type-checked before your function sees them",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "autochain/tools/base.py",
+            "lines": "33",
+            "contains": "args_schema: Optional[Type[BaseModel]] = None",
+            "url": "https://github.com/forethought-technologies/autochain/blob/5a1203bb01208b3e186c927222ae31702d309270/autochain/tools/base.py#L33"
+          }
+        ]
+      },
+      {
+        "setup": "Confirmation inside consequential tools",
+        "how": "Have each tool that writes, sends or spends ask a person and show its exact input before it acts",
+        "gives_you": "A person decides on every consequential action, which the agent loop itself never pauses for",
+        "criterion": "C2",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Time limits",
+        "how": "Set `max_execution_time=<seconds>` on the chain, keep `max_iterations` at 15 or lower, and set `request_timeout=<seconds>` on the model",
+        "gives_you": "Every run and every model request ends within a time you chose",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "autochain/chain/base_chain.py",
+            "lines": "30-31",
+            "contains": "max_execution_time: Optional[float] = None",
+            "url": "https://github.com/forethought-technologies/autochain/blob/5a1203bb01208b3e186c927222ae31702d309270/autochain/chain/base_chain.py#L30-L31"
+          },
+          {
+            "file": "autochain/models/chat_openai.py",
+            "lines": "151",
+            "contains": "request_timeout",
+            "url": "https://github.com/forethought-technologies/autochain/blob/5a1203bb01208b3e186c927222ae31702d309270/autochain/models/chat_openai.py#L151"
+          }
+        ]
+      },
+      {
+        "setup": "In-process memory",
+        "how": "Keep the README's `BufferMemory`",
+        "gives_you": "Conversation and tool output stay in the process and end with it",
+        "criterion": "C6",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "autochain/memory/buffer_memory.py",
+            "lines": "7",
+            "contains": "class BufferMemory(BaseMemory)",
+            "url": "https://github.com/forethought-technologies/autochain/blob/5a1203bb01208b3e186c927222ae31702d309270/autochain/memory/buffer_memory.py#L7"
+          }
+        ]
+      },
+      {
+        "setup": "Reviewed local models",
+        "how": "Point `model_name` at a local model copy you have reviewed and keep remote code off in `model_kwargs`",
+        "gives_you": "Only model code you have read runs inside your agent, and it can't change after you read it",
+        "criterion": "C7",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "autochain/models/huggingface_text_generation_model.py",
+            "lines": "35",
+            "contains": "model_name: str",
+            "url": "https://github.com/forethought-technologies/autochain/blob/5a1203bb01208b3e186c927222ae31702d309270/autochain/models/huggingface_text_generation_model.py#L35"
+          },
+          {
+            "file": "autochain/models/huggingface_text_generation_model.py",
+            "lines": "40",
+            "contains": "model_kwargs: Dict[str, Any]",
+            "url": "https://github.com/forethought-technologies/autochain/blob/5a1203bb01208b3e186c927222ae31702d309270/autochain/models/huggingface_text_generation_model.py#L40"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the agent in a container or VM whose network reaches only the model provider and the hosts its tools need",
+        "gives_you": "An outer boundary around in-process tools and a narrow path for data to leave",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "AutoChain has no approval prompt of its own; a confirmation built into a tool is the place to read each call and approve calls one at a time."
+    ],
+    "handling": [
+      "Every tool input and output prints to stdout unredacted, and `--verbose` adds full prompts; treat captured output like the data the agent read.",
+      "Nothing is stored by default, so for a record of tool calls capture stdout to storage the agent can't modify."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

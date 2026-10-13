@@ -36,6 +36,94 @@
     "external_communication": "no"
   },
   "headline": "A narrow code-search server: it runs no code and loads no plugins, and it keeps dotfiles and .env files out of its index. Around that core it has few safeguards. Any directory the user can read can be indexed and uploaded to the embedding provider and vector database, the destructive clear tool carries no risk labels for hosts, and search results return indexed code (including third-party code) unmarked. The index persists and re-syncs in the background, with no audit log of the server's own.",
+  "safe_setup": {
+    "intro": "Claude Context runs no code, loads no plugins and keeps dotfiles and .env files out of its index. It has no read-only mode, no approval step of its own and no limit on which directories it reads, so the safest setup narrows its keys and its view of your files from the outside.",
+    "steps": [
+      {
+        "setup": "A cluster-scoped database token",
+        "how": "Set `MILVUS_TOKEN` to a token scoped to one dedicated cluster, in place of an account-level Personal Key",
+        "gives_you": "The vector database itself keeps the server's writes and deletions inside that one cluster",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "packages/mcp/src/config.ts",
+            "lines": "186",
+            "contains": "milvusToken: envManager.get('MILVUS_TOKEN')",
+            "url": "https://github.com/zilliztech/claude-context/blob/6fc318b4e3ce58e2898b00a9c3538ead9e24dee5/packages/mcp/src/config.ts#L186"
+          }
+        ]
+      },
+      {
+        "setup": "A dedicated, low-limit embedding key",
+        "how": "Give the server its own embedding-provider key with a spending limit set at the provider",
+        "gives_you": "Indexing spend has a ceiling, and a leaked key reaches only this one use",
+        "criterion": "C10",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Local embeddings",
+        "how": "`EMBEDDING_PROVIDER=Ollama` with `OLLAMA_HOST` pointing at an Ollama server you run",
+        "gives_you": "Your source code is embedded on your own machine instead of at a third-party provider",
+        "criterion": "C8",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/mcp/src/config.ts",
+            "lines": "170",
+            "contains": "embeddingProvider: (envManager.get('EMBEDDING_PROVIDER')",
+            "url": "https://github.com/zilliztech/claude-context/blob/6fc318b4e3ce58e2898b00a9c3538ead9e24dee5/packages/mcp/src/config.ts#L170"
+          },
+          {
+            "file": "packages/mcp/src/config.ts",
+            "lines": "182",
+            "contains": "ollamaHost: envManager.get('OLLAMA_HOST')",
+            "url": "https://github.com/zilliztech/claude-context/blob/6fc318b4e3ce58e2898b00a9c3538ead9e24dee5/packages/mcp/src/config.ts#L182"
+          }
+        ]
+      },
+      {
+        "setup": "Indexing on request",
+        "how": "`CLAUDE_CONTEXT_BACKGROUND_SYNC=false`",
+        "gives_you": "Tracked codebases stop re-indexing on a timer, so spend and index contents follow your own calls",
+        "criterion": "C6",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/mcp/src/sync.ts",
+            "lines": "16",
+            "contains": "CLAUDE_CONTEXT_BACKGROUND_SYNC",
+            "url": "https://github.com/zilliztech/claude-context/blob/6fc318b4e3ce58e2898b00a9c3538ead9e24dee5/packages/mcp/src/sync.ts#L16"
+          }
+        ]
+      },
+      {
+        "setup": "Only the projects you mean",
+        "how": "Run the server in a container or as an OS user that can read only the repositories you want indexed",
+        "gives_you": "Whatever the model asks for, only those directories can reach the index and the embedding provider",
+        "criterion": "C3",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A kept server log",
+        "how": "Have your MCP host save the server's stderr to a file the agent can't modify",
+        "gives_you": "A record of index runs, searches and clears that outlives the session",
+        "criterion": "C9",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; search_code and get_indexing_status only read, while index_codebase uploads file contents and clear_index drops an index.",
+      "Check the path in each index_codebase call, and approve force=true only when you want the existing index rebuilt."
+    ],
+    "handling": [
+      "Keys stored in ~/.context/.env sit in plain text; keep that file readable only by you.",
+      "Indexed code, including any secrets inside source files, is stored at the embedding provider and in the vector database, and stderr logs include search queries and file paths."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

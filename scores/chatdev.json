@@ -36,6 +36,129 @@
     "external_communication": "no"
   },
   "headline": "ChatDev 2.0 runs agent-written code, package installs and MCP servers directly on the host, with the provider API key in every subprocess and no approval step. The backend's default network exposure is not locked down. Only the file tools are meaningfully scoped. Run it only on an isolated machine or container, bound to localhost.",
+  "safe_setup": {
+    "intro": "ChatDev's file tools keep their paths inside the session workspace, each agent node gets only the tools its workflow lists, and every tool call is recorded. Beyond that the defaults are weak: agent-written code, package installs and MCP servers run on the host with your provider key and no approval step. The safest setup narrows each workflow's tools and builds containment around the whole backend.",
+    "steps": [
+      {
+        "setup": "A dedicated, low-limit key",
+        "how": "Give the backend its own provider key with a spending limit set at the provider, and keep other credentials out of its environment",
+        "gives_you": "Code the agents run can reach only that key and its budget, not your other accounts",
+        "criterion": "C8",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Reachable only by you",
+        "how": "Run the backend and console bound to localhost on a machine only you use",
+        "gives_you": "Other machines on your network can't reach the server",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Tools per agent node",
+        "how": "List in each agent node's `tooling` only the tools its task needs, leaving out the code-running and delete tools where the task allows",
+        "gives_you": "Agents work through the workspace-scoped file tools rather than running code on the host",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "entity/configs/node/agent.py",
+            "lines": "332",
+            "contains": "tooling: List[ToolingConfig]",
+            "url": "https://github.com/openbmb/chatdev/blob/4fb2db0ea90375ce1059f44fe03ffbd191a7a169/entity/configs/node/agent.py#L332"
+          }
+        ]
+      },
+      {
+        "setup": "MCP servers without your keys",
+        "how": "Set `inherit_env: false` on each local MCP server, pass only what it needs in `env`, and pin the version in its `command`",
+        "gives_you": "Each MCP server runs the release you chose and never sees your provider key",
+        "criterion": "C7",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "entity/configs/node/tooling.py",
+            "lines": "427-431",
+            "contains": "inherit_env: bool = True",
+            "url": "https://github.com/openbmb/chatdev/blob/4fb2db0ea90375ce1059f44fe03ffbd191a7a169/entity/configs/node/tooling.py#L427-L431"
+          }
+        ]
+      },
+      {
+        "setup": "Memory left off",
+        "how": "Keep the default empty `memories` list on agent nodes",
+        "gives_you": "Each run starts clean, with nothing carried over from earlier runs",
+        "criterion": "C6",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "entity/configs/node/agent.py",
+            "lines": "334",
+            "contains": "memories: List[MemoryAttachmentConfig] = field(default_factory=list)",
+            "url": "https://github.com/openbmb/chatdev/blob/4fb2db0ea90375ce1059f44fe03ffbd191a7a169/entity/configs/node/agent.py#L334"
+          }
+        ]
+      },
+      {
+        "setup": "Tighter run limits",
+        "how": "Set `tool_loop_limit: <n>` in each agent node's `params`, and keep python nodes at the default `timeout_seconds: 60` or lower",
+        "gives_you": "Each agent stops after fewer tool rounds and each python node ends on time",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "runtime/node/executor/agent_executor.py",
+            "lines": "1061-1069",
+            "contains": "tool_loop_limit",
+            "url": "https://github.com/openbmb/chatdev/blob/4fb2db0ea90375ce1059f44fe03ffbd191a7a169/runtime/node/executor/agent_executor.py#L1061-L1069"
+          },
+          {
+            "file": "entity/configs/node/agent.py",
+            "lines": "329",
+            "contains": "params: Dict[str, Any]",
+            "url": "https://github.com/openbmb/chatdev/blob/4fb2db0ea90375ce1059f44fe03ffbd191a7a169/entity/configs/node/agent.py#L329"
+          },
+          {
+            "file": "entity/configs/node/python_runner.py",
+            "lines": "27",
+            "contains": "timeout_seconds: int = 60",
+            "url": "https://github.com/openbmb/chatdev/blob/4fb2db0ea90375ce1059f44fe03ffbd191a7a169/entity/configs/node/python_runner.py#L27"
+          }
+        ]
+      },
+      {
+        "setup": "The container deployment",
+        "how": "Run the backend through the shipped Docker Compose setup, which runs it as the non-root `appuser`",
+        "gives_you": "Agent-written code, package installs and MCP servers run inside a container rather than on your host",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "Dockerfile",
+            "lines": "56-57",
+            "contains": "USER appuser",
+            "url": "https://github.com/openbmb/chatdev/blob/4fb2db0ea90375ce1059f44fe03ffbd191a7a169/Dockerfile#L56-L57"
+          }
+        ]
+      },
+      {
+        "setup": "Its own VM",
+        "how": "Run the whole deployment in a VM or disposable machine that holds no other files or keys, with outbound network limited to the model provider and the hosts the task needs",
+        "gives_you": "An outer boundary around everything the agents run, and a narrow path for data to leave",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "There is no per-call approval; human nodes and `call_user` ask for input but don't hold back tool calls, so pick workflows whose tools you are comfortable running unattended."
+    ],
+    "handling": [
+      "`execution_logs.json` in the session directory keeps every tool's arguments and results unredacted and is written only after a successful run; store it like the data the agents read.",
+      "The web console streams the same unredacted tool output, so view it only where others can't see it."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

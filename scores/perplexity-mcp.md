@@ -25,6 +25,28 @@ Controls where a risk surface exists: 3.22 / 7.0 (46%); 3 criteria scored SA (su
 
 This is a small, read-only server: four tools that send a question to Perplexity and return web-derived text, with no shell, file access, memory or plugins, and the API key never leaves the request header. The main risks are what it can carry outward and what it costs: any text the host model puts in a question goes to Perplexity's hosted agent, which browses the web, so a prompt-injected host can use it to send data out, and returned web content arrives unlabelled. The server keeps no record of the queries it ran and has no rate or spend limit beyond a per-call timeout.
 
+## Safest setup
+
+The Perplexity MCP server is small and read-only: four web search and Q&A tools, no shell, files, memory or plugins, a fixed API host and a deadline on every call. It keeps no record of its own and has no spend limit, so the safest setup bounds the key at Perplexity and adds the review and logging in your host.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, low-limit key | Create a Perplexity API key used only by this server, on an account with a low credit balance or spending limit | Misuse can only spend what you set aside, and the key can be revoked without touching anything else (C1) |
+| Local stdio mode | Launch it over stdio; if you run the HTTP mode, keep the default `BIND_ADDRESS` of `127.0.0.1` ([src/http.ts:204](https://github.com/perplexityai/modelcontextprotocol/blob/c58e4ad254608952606f09a40934ab6cca65bfad/src/http.ts#L204)) | Only your own host can call the server and spend your key (C1) |
+| The official API host | Leave `PERPLEXITY_BASE_URL` unset so it stays `https://api.perplexity.ai` ([src/server.ts:22](https://github.com/perplexityai/modelcontextprotocol/blob/c58e4ad254608952606f09a40934ab6cca65bfad/src/server.ts#L22)) | Your key and questions go only to Perplexity (C1) |
+| A per-call deadline | Keep the default `PERPLEXITY_TIMEOUT_MS` of `300000`, or lower it ([src/server.ts:429](https://github.com/perplexityai/modelcontextprotocol/blob/c58e4ad254608952606f09a40934ab6cca65bfad/src/server.ts#L429)) | Every call, research runs included, stops within minutes and the remote run is asked to cancel (C10) |
+| Only the tools needed | In your host, enable only `perplexity_search` when the task needs plain web search | Questions reach a search endpoint only, not the hosted agent that browses the web (C5) |
+| A host-side call record | Turn on your host's tool-call logging and check usage in your Perplexity account | A record of which questions were sent and what they cost (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; the question text is exactly what is sent to Perplexity.
+- `perplexity_research` runs the most expensive preset, so approve it when a deep research run is what you want.
+
+### Handling data
+
+- Upstream error text reaches the model and stderr unredacted; keep host logs as private as the key.
+
 ## Critical gaps
 - None: no criterion is capped and no blast radius is at the worst level.
 

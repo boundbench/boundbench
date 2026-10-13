@@ -24,6 +24,30 @@
 
 A capable stealth-browser MCP server with unusually careful file-upload scoping and password masking, but the dominant risk is that browser_evaluate runs arbitrary JavaScript while advertising itself as read-only, so hosts that auto-run read-only tools let an injected web page exfiltrate data or act on sites unattended. Navigation has no URL restrictions (file://, localhost and internal hosts are reachable), the server keeps no record of what it did, and it auto-loads a .env from the launch directory that can silently enable uploads, swap the proxy or engine binary, or expose the server over HTTP.
 
+## Safest setup
+
+invisible_playwright_mcp starts each browser on a fresh profile with no logins, keeps file uploads off until you name a directory, and masks password fields in what it returns. Beyond that the defaults are thin: no URL limits, no record of tool calls, and browser_evaluate is labelled read-only, so the safest setup leans on your host's approval and on containment around the process.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated OS user | Run the server under an OS account that holds no browser profiles, saved logins or files the task doesn't need | Whatever profile or file:// path the model reaches for, it finds only what that account holds (C1) |
+| Per-call approval in your host | Set your MCP client to ask before every tool call, browser_evaluate included, whatever its read-only label says | A person sees each script, navigation and form action before it runs on a live site (C2) |
+| Uploads off or staged | Keep `INVISIBLE_MCP_UPLOAD_DIRS` unset, or set it to one absolute staging directory holding only the files to send ([src/invisible_playwright_mcp/mcp/actions.py:909](https://github.com/feder-cr/invisible_playwright_mcp/blob/4139237b0abc6712bb44e4a3a2ff3dbeb77f1d80/src/invisible_playwright_mcp/mcp/actions.py#L909)) | Pages can only receive files you put in place for them (C3) |
+| The stdio transport | Keep the default `STEALTHFOX_MCP_TRANSPORT` of `stdio` ([src/invisible_playwright_mcp/mcp/server.py:665](https://github.com/feder-cr/invisible_playwright_mcp/blob/4139237b0abc6712bb44e4a3a2ff3dbeb77f1d80/src/invisible_playwright_mcp/mcp/server.py#L665)) | Only the client that started the server can talk to it (C6) |
+| A clean launch directory | Have your host start the server from a directory holding no `.env` file you didn't write ([src/invisible_playwright_mcp/cli.py:21](https://github.com/feder-cr/invisible_playwright_mcp/blob/4139237b0abc6712bb44e4a3a2ff3dbeb77f1d80/src/invisible_playwright_mcp/cli.py#L21)) | Uploads, proxy, engine binary and transport stay as you set them, not as a cloned repository sets them (C6) |
+| Its own container or VM | Run the server and its browser in a container or VM whose network reaches only the sites the task needs, with local and internal addresses out of reach | An outer boundary on where pages, scripts and navigation can send data (C3) |
+| A record in your host | Keep your MCP client's transcript of every tool call and its arguments | A record of what the browser was asked to do, since the server keeps none (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; a browser_evaluate call runs any JavaScript in the page, so read the script before approving it.
+- Navigation to file:// paths, localhost or internal hosts, or a profile or proxy you didn't choose, is worth a closer look before approving.
+
+### Handling data
+
+- The saved session file keeps proxy credentials in plain text with default permissions; store it like other credentials.
+- Standalone clients share one session file, so run one client per OS user.
+
 ## Critical gaps
 - browser_evaluate runs arbitrary model-written JavaScript but is annotated readOnlyHint=true, which the server documents as permission for hosts to run it without asking. (ASI02, ASI09, T2; C2) — [src/invisible_playwright_mcp/mcp/server.py:642](https://github.com/feder-cr/invisible_playwright_mcp/blob/4139237b0abc6712bb44e4a3a2ff3dbeb77f1d80/src/invisible_playwright_mcp/mcp/server.py#L642); [src/invisible_playwright_mcp/mcp/server.py:256](https://github.com/feder-cr/invisible_playwright_mcp/blob/4139237b0abc6712bb44e4a3a2ff3dbeb77f1d80/src/invisible_playwright_mcp/mcp/server.py#L256); [src/invisible_playwright_mcp/mcp/server.py:660](https://github.com/feder-cr/invisible_playwright_mcp/blob/4139237b0abc6712bb44e4a3a2ff3dbeb77f1d80/src/invisible_playwright_mcp/mcp/server.py#L660)
 - Hijacked sessions can leak page data and act on live sites unattended: arbitrary JavaScript runs through a tool advertised as read-only, and navigate has no URL restrictions. (ASI01, LLM01, T6; C5) — [src/invisible_playwright_mcp/mcp/server.py:642](https://github.com/feder-cr/invisible_playwright_mcp/blob/4139237b0abc6712bb44e4a3a2ff3dbeb77f1d80/src/invisible_playwright_mcp/mcp/server.py#L642); [src/invisible_playwright_mcp/mcp/actions.py:1354](https://github.com/feder-cr/invisible_playwright_mcp/blob/4139237b0abc6712bb44e4a3a2ff3dbeb77f1d80/src/invisible_playwright_mcp/mcp/actions.py#L1354); [src/invisible_playwright_mcp/mcp/actions.py:125](https://github.com/feder-cr/invisible_playwright_mcp/blob/4139237b0abc6712bb44e4a3a2ff3dbeb77f1d80/src/invisible_playwright_mcp/mcp/actions.py#L125)

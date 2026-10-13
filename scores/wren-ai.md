@@ -24,6 +24,32 @@
 
 Wren puts an always-on read-only SQL check in front of your databases, and handles secrets carefully, but most other agent-safety controls are missing. Its shipped Claude Code skill pre-approves every `wren` command, so an agent can query anything your database login can read and publish it to Vercel or Cloudflare with `wren genbi deploy` without a human prompt. Queries run directly under your credentials with no row or cost cap on the CLI, nothing is logged, and project files (.env, wren_project.yml) silently choose credentials. Use a read-only database role, turn on strict mode, and remove the blanket skill permission before pointing it at production data.
 
+## Safest setup
+
+Wren keeps connection secrets in owner-only profile files, masks them in debug output, sends no telemetry and runs a read-only SQL check on every query. Beyond that the defaults are thin: the shipped skill pre-approves every wren command, queries run under your full database login with no row or time limit on the CLI, and nothing is logged. The safest setup narrows the database identity first, brings back a human prompt, and turns on the strict mode and limits Wren already includes.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A read-only database role | Point the connection profile at a database login, or for BigQuery a dedicated service account, that can only read the schemas the task needs | The database itself refuses writes and hides every other table, whatever SQL the agent sends (C1) |
+| A prompt for each command | Remove the `allowed-tools: Bash(wren:*)` line from the installed `wren` skill so your host agent asks before each wren command ([skills/wren/SKILL.md:5](https://github.com/Canner/WrenAI/blob/2cc843fd87d6cfe9831554721559018dda2938a0/skills/wren/SKILL.md#L5)) | A person sees every query, memory write and deploy before it runs (C2) |
+| The read-only MCP server | Connect agents through wren serve mcp and keep the default `--allow-write` off ([core/wren/src/wren/serve_cli.py:141-144](https://github.com/Canner/WrenAI/blob/2cc843fd87d6cfe9831554721559018dda2938a0/core/wren/src/wren/serve_cli.py#L141-L144); [core/wren/src/wren/mcp_server.py:23](https://github.com/Canner/WrenAI/blob/2cc843fd87d6cfe9831554721559018dda2938a0/core/wren/src/wren/mcp_server.py#L23)) | Agents get labelled query tools with results capped at 1,000 rows, and no deploy, cloud or memory-write tool (C2) |
+| Strict mode | Set `strict_mode` to true in `~/.wren/config.json` ([core/wren/src/wren/config.py:1](https://github.com/Canner/WrenAI/blob/2cc843fd87d6cfe9831554721559018dda2938a0/core/wren/src/wren/config.py#L1); [core/wren/src/wren/config.py:61](https://github.com/Canner/WrenAI/blob/2cc843fd87d6cfe9831554721559018dda2938a0/core/wren/src/wren/config.py#L61)) | Queries reach only the tables modelled in your project, with file and URL readers blocked (C3) |
+| Row and time limits | Pass `--limit <n>` on CLI queries and set `job_timeout_ms` in BigQuery profiles ([core/wren/src/wren/cli.py:303](https://github.com/Canner/WrenAI/blob/2cc843fd87d6cfe9831554721559018dda2938a0/core/wren/src/wren/cli.py#L303); [core/wren/src/wren/model/__init__.py:53](https://github.com/Canner/WrenAI/blob/2cc843fd87d6cfe9831554721559018dda2938a0/core/wren/src/wren/model/__init__.py#L53)) | Each query returns a bounded result and a runaway warehouse job stops on time (C10) |
+| A clean project directory | Run Wren from a project whose .env and wren_project.yml you wrote yourself | The credential profile, secrets and deploy tokens come only from you (C6) |
+| Its own container or VM | Run Wren and the host agent in a container or VM holding only this task's profile and keys, with outbound access limited to your database hosts | An outer boundary around the deploy subprocess and a narrow path for data to leave (C4) |
+| Database-side query logging | Turn on statement or audit logging in the database for the login Wren uses | A record of every query Wren ran, kept outside the agent's workspace (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve wren commands one at a time.
+- `wren genbi deploy` publishes the app and the data bundled in it to a public host, so check what it carries before approving.
+- Stored question-to-SQL pairs steer later queries and Git Sync shares them with teammates, so approve memory stores you have read.
+
+### Handling data
+
+- Profiles under ~/.wren are plaintext files readable only by you; `${VAR}` placeholders keep the secret itself out of the file.
+- Review the project's knowledge/ files and rules in git like code, since they reach every teammate's agent.
+
 ## Critical gaps
 - The shipped Claude Code skill pre-approves every `wren` command (`allowed-tools: Bash(wren:*)`), including `wren genbi deploy`, which publishes warehouse data to a public host with no confirmation. (ASI09, ASI02; C2) — [skills/wren/SKILL.md:5](https://github.com/Canner/WrenAI/blob/2cc843fd87d6cfe9831554721559018dda2938a0/skills/wren/SKILL.md#L5); [core/wren/src/wren/genbi/cli.py:355-362](https://github.com/Canner/WrenAI/blob/2cc843fd87d6cfe9831554721559018dda2938a0/core/wren/src/wren/genbi/cli.py#L355-L362)
 - Model-written SQL executes directly on the target database under the operator's credential, and the wrangler deploy subprocess inherits the full environment, with no isolation layer. (ASI05, LLM05; C4) — [core/wren/src/wren/connector/postgres.py:299](https://github.com/Canner/WrenAI/blob/2cc843fd87d6cfe9831554721559018dda2938a0/core/wren/src/wren/connector/postgres.py#L299); [core/wren/src/wren/genbi/providers/cloudflare.py:80-84](https://github.com/Canner/WrenAI/blob/2cc843fd87d6cfe9831554721559018dda2938a0/core/wren/src/wren/genbi/providers/cloudflare.py#L80-L84)

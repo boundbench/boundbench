@@ -24,6 +24,32 @@
 
 Vibe asks before running shell commands, fetching from new sites or calling MCP tools, and its command parser is unusually careful about hidden side effects. But the default profile writes and edits project files without asking, there is no sandbox, and unattended edits are not fully contained by the workspace-trust and approval controls. Avoid untrusted content in sessions that hold sensitive credentials.
 
+## Safest setup
+
+Vibe asks before shell commands, new web origins and MCP calls, ignores a repository's project files until you trust the folder, and records every session in a full transcript. It has no sandbox and its default profile writes and edits files without asking, so the safest setup turns on approval for edits too and builds containment around the process.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A scoped, low-limit environment | Start Vibe from a shell that exports only the keys this task needs, each scoped or read-only, with a spending limit on the Mistral key | Commands the agent runs reach only the accounts and spend you chose, not every credential in your shell (C1) |
+| Approval for every call | `--agent ask`, or `default_agent` set to ask in your user config ([vibe/cli/entrypoint.py:123](https://github.com/mistralai/mistral-vibe/blob/7c19608af06f6c61d63f8f7a5c3430da73fba2ab/vibe/cli/entrypoint.py#L123); [vibe/core/agents/models.py:74-77](https://github.com/mistralai/mistral-vibe/blob/7c19608af06f6c61d63f8f7a5c3430da73fba2ab/vibe/core/agents/models.py#L74-L77); [vibe/core/config/vibe_schema.py:472](https://github.com/mistralai/mistral-vibe/blob/7c19608af06f6c61d63f8f7a5c3430da73fba2ab/vibe/core/config/vibe_schema.py#L472)) | File writes and edits wait for your approval, alongside shell, network and MCP calls (C2) |
+| The reviewed harness | `--legacy-harness` ([vibe/cli/entrypoint.py:134](https://github.com/mistralai/mistral-vibe/blob/7c19608af06f6c61d63f8f7a5c3430da73fba2ab/vibe/cli/entrypoint.py#L134)) | The session stays on the reviewed Python harness and its approval rules, whatever a remote rollout selects (C2) |
+| Only the tools needed | `--disabled-tools <name>` for each tool the task has no use for, such as web fetch or search ([vibe/cli/entrypoint.py:106](https://github.com/mistralai/mistral-vibe/blob/7c19608af06f6c61d63f8f7a5c3430da73fba2ab/vibe/cli/entrypoint.py#L106)) | The model sees a smaller tool set, with network tools only when you want them (C3) |
+| Trust after reading | Trust a folder only after reading the files the trust prompt lists ([vibe/core/trusted_folders.py:74-75](https://github.com/mistralai/mistral-vibe/blob/7c19608af06f6c61d63f8f7a5c3430da73fba2ab/vibe/core/trusted_folders.py#L74-L75)) | Project config, hooks, tools and instructions load only in folders you have chosen to trust (C6) |
+| Limits for unattended runs | Run unattended work with `-p` plus `--max-turns <n>` and `--max-price <dollars>` ([vibe/cli/entrypoint.py:65-66](https://github.com/mistralai/mistral-vibe/blob/7c19608af06f6c61d63f8f7a5c3430da73fba2ab/vibe/cli/entrypoint.py#L65-L66); [vibe/cli/entrypoint.py:75](https://github.com/mistralai/mistral-vibe/blob/7c19608af06f6c61d63f8f7a5c3430da73fba2ab/vibe/cli/entrypoint.py#L75); [vibe/cli/entrypoint.py:82](https://github.com/mistralai/mistral-vibe/blob/7c19608af06f6c61d63f8f7a5c3430da73fba2ab/vibe/cli/entrypoint.py#L82)) | Each run stops at a turn and cost ceiling you set (C10) |
+| Its own container or VM | Run Vibe in a container or VM that mounts only the project and reaches only the hosts the task needs | An outer boundary around shell commands, hooks and extensions, which otherwise run on your host as you (C4) |
+| The session transcript | Keep the default `enabled = true` under `session_logging`, and copy transcripts somewhere the agent can't write ([vibe/core/config/models.py:73](https://github.com/mistralai/mistral-vibe/blob/7c19608af06f6c61d63f8f7a5c3430da73fba2ab/vibe/core/config/models.py#L73); [vibe/core/config/vibe_schema.py:630](https://github.com/mistralai/mistral-vibe/blob/7c19608af06f6c61d63f8f7a5c3430da73fba2ab/vibe/core/config/vibe_schema.py#L630)) | A record of every tool call and result that outlives the session (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; an 'always allow' grant covers similar later commands, not only the exact one shown.
+- Approving a test runner or build command runs whatever the repository contains, so read what it will run first.
+- Once you approve a web origin, later requests to it run unattended.
+
+### Handling data
+
+- Transcripts under ~/.vibe/logs/session hold tool output unredacted; store them like the data the agent read.
+- Usage telemetry is on by default and carries metadata, not content; `enable_telemetry = false` turns it off.
+
 ## Critical gaps
 - No execution isolation: shell commands, hooks and extensions run on the host as the user with the full environment and network. (ASI05, T11; C4) — [vibe/core/utils/shell.py:46-55](https://github.com/mistralai/mistral-vibe/blob/7c19608af06f6c61d63f8f7a5c3430da73fba2ab/vibe/core/utils/shell.py#L46-L55); [vibe/core/utils/shell.py:58-59](https://github.com/mistralai/mistral-vibe/blob/7c19608af06f6c61d63f8f7a5c3430da73fba2ab/vibe/core/utils/shell.py#L58-L59)
 - Custom tool files are imported into the agent's own process, giving them its credentials and full environment. (ASI04, T17; C7) — [vibe/core/tools/manager.py:205-214](https://github.com/mistralai/mistral-vibe/blob/7c19608af06f6c61d63f8f7a5c3430da73fba2ab/vibe/core/tools/manager.py#L205-L214)

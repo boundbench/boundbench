@@ -24,6 +24,32 @@
 
 Crush asks before most shell commands and file writes, and shows the real command or diff. But the prompt does not cover every path, and a cloned repository can turn approval off or run its own shell script the moment you launch Crush there. Nothing is sandboxed, every command gets your full environment and credentials, and there are no step, time or cost limits. Treat it as running with your full user authority, and only launch it in repositories whose crushrc/crush.json you have reviewed.
 
+## Safest setup
+
+Crush asks before most shell commands, file writes, fetches and MCP calls, shows the real command or diff, and records every tool call in a local database. Beyond that the defaults are thin: commands run as you with your full environment, nothing is sandboxed, there is no step, time or cost limit, and a repository's own config files are trusted on launch. The safest setup keeps the approval prompt in your hands and builds the boundaries around Crush yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, low-limit key | Launch Crush from a shell or account that holds only the model key and credentials this project needs, with a spending limit set at the provider | Whatever a session runs, it reaches only the systems and spend you chose, not everything your account can (C1) |
+| Reviewed project config | Open Crush only in repositories whose crush.json, .crush.json, .crushrc, crushrc and .crush/crush.json you have read | Startup scripts, MCP servers, hooks and approval settings come only from you (C6) |
+| Per-call approval | Run the interactive TUI without `--yolo`, and keep `allowed_tools` under `permissions` empty in your user config ([internal/cmd/root.go:60](https://github.com/charmbracelet/crush/blob/bdcf796cb1ff241b0eb18139071d46a84dc1ee91/internal/cmd/root.go#L60); [internal/config/config.go:431-432](https://github.com/charmbracelet/crush/blob/bdcf796cb1ff241b0eb18139071d46a84dc1ee91/internal/config/config.go#L431-L432); [internal/config/config.go:852](https://github.com/charmbracelet/crush/blob/bdcf796cb1ff241b0eb18139071d46a84dc1ee91/internal/config/config.go#L852)) | A person sees the actual command or diff before most shell commands, file writes, fetches and MCP calls run (C2) |
+| Only the tools needed | List the built-in tools the task doesn't use, such as `sourcegraph` or `download`, in `disabled_tools` under `options` ([internal/config/config.go:471](https://github.com/charmbracelet/crush/blob/bdcf796cb1ff241b0eb18139071d46a84dc1ee91/internal/config/config.go#L471); [internal/config/config.go:850](https://github.com/charmbracelet/crush/blob/bdcf796cb1ff241b0eb18139071d46a84dc1ee91/internal/config/config.go#L850)) | The model sees fewer tools, and the sourcegraph search that runs without a prompt is gone when unused (C3) |
+| Its own container or VM | Run Crush in a container or VM holding only the project and its key, with network limited to the model provider and the hosts the task needs | An outer boundary around shell commands, MCP servers and startup scripts, which otherwise run as you on your machine (C4) |
+| Records outside the project | `--data-dir <path outside the project>` when launching Crush ([internal/cmd/root.go:56](https://github.com/charmbracelet/crush/blob/bdcf796cb1ff241b0eb18139071d46a84dc1ee91/internal/cmd/root.go#L56)) | The session database lives outside the directory the agent works in (C9) |
+| A watched session | Stay with the session and quit Crush when the task is done or starts to drift | Runs and background shell jobs end when you say, since Crush sets no step, time or cost limit of its own (C10) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; 'Allow for session' on bash covers every later command in that directory.
+- Approving agentic_fetch also approves everything its sub-agent does in that run, so approve it for pages you trust.
+- Non-interactive `crush run` approves every permission on its own, so keep it for runs inside the container or VM.
+
+### Handling data
+
+- The session database keeps every tool call and result; store it like the project itself.
+- `--debug` logging writes full request and response bodies, so leave it off where logs are shared.
+- Anonymous usage metrics are on by default and carry no prompt content; `CRUSH_DISABLE_METRICS=1` or `disable_metrics` turns them off.
+
 ## Critical gaps
 - A repository's crush.json, .crushrc or .crush/crush.json can set permissions.allowed_tools to auto-approve bash, silently disabling the approval gate. (ASI09, ASI06, T10; C2) — [internal/permission/permission.go:186-190](https://github.com/charmbracelet/crush/blob/bdcf796cb1ff241b0eb18139071d46a84dc1ee91/internal/permission/permission.go#L186-L190); [internal/app/app.go:104-107](https://github.com/charmbracelet/crush/blob/bdcf796cb1ff241b0eb18139071d46a84dc1ee91/internal/app/app.go#L104-L107); [internal/config/load.go:960-976](https://github.com/charmbracelet/crush/blob/bdcf796cb1ff241b0eb18139071d46a84dc1ee91/internal/config/load.go#L960-L976); [internal/config/load.go:66-67](https://github.com/charmbracelet/crush/blob/bdcf796cb1ff241b0eb18139071d46a84dc1ee91/internal/config/load.go#L66-L67)
 - A .crushrc or crushrc in the opened project is executed as a shell script at startup with the user's full environment and no trust prompt. (ASI06, ASI05, T1, T11; C6) — [internal/config/load.go:960-976](https://github.com/charmbracelet/crush/blob/bdcf796cb1ff241b0eb18139071d46a84dc1ee91/internal/config/load.go#L960-L976); [internal/config/load.go:1228-1231](https://github.com/charmbracelet/crush/blob/bdcf796cb1ff241b0eb18139071d46a84dc1ee91/internal/config/load.go#L1228-L1231); [internal/shellconfig/load.go:46-52](https://github.com/charmbracelet/crush/blob/bdcf796cb1ff241b0eb18139071d46a84dc1ee91/internal/shellconfig/load.go#L46-L52)

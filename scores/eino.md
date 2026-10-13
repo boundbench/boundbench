@@ -24,6 +24,31 @@
 
 Eino is an orchestration library: it runs whatever tools you register, immediately and in parallel, with no approval gate, no sandbox, and no authorization layer by default. Its built-in shell 'execute' tool passes model-written commands straight to your Shell implementation while telling the model it runs in an isolated sandbox. The dominant risk is prompt injection through tool results turning a DeepAgent with shell, file, and web tools into an unattended attacker; all containment must be built by the integrator, using the opt-in interrupt/resume primitive for approvals.
 
+## Safest setup
+
+Eino is a library: it adds no approval step, sandbox or authorization layer of its own, and every tool you register runs at once with your process's authority. A ChatModelAgent does stop after 20 model calls by default. The safest setup uses the interrupt and callback primitives Eino offers, registers only the tools a task needs, and builds containment around the process yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit credentials | Give the process only the keys its tools need, each scoped or read-only with a spending limit set at the provider | A hijacked agent reaches only the systems and spend you chose, not everything your process can (C1) |
+| Per-call approval | Return `Interrupt` with the exact arguments from each tool that writes, sends or executes, and resume only after a person reviews them ([components/tool/interrupt.go:44](https://github.com/cloudwego/eino/blob/58d184303f4e73413c454a9626f79c17af0fd9fb/components/tool/interrupt.go#L44)) | A person decides on each consequential call before it runs (C2) |
+| Only the file tools needed | Leave `Shell` and `StreamingShell` unset unless the task runs commands, and set `Disable` in `WriteFileToolConfig` and `EditFileToolConfig` for read-only tasks ([adk/middlewares/filesystem/filesystem.go:229](https://github.com/cloudwego/eino/blob/58d184303f4e73413c454a9626f79c17af0fd9fb/adk/middlewares/filesystem/filesystem.go#L229); [adk/middlewares/filesystem/filesystem.go:233](https://github.com/cloudwego/eino/blob/58d184303f4e73413c454a9626f79c17af0fd9fb/adk/middlewares/filesystem/filesystem.go#L233); [adk/middlewares/filesystem/filesystem.go:245](https://github.com/cloudwego/eino/blob/58d184303f4e73413c454a9626f79c17af0fd9fb/adk/middlewares/filesystem/filesystem.go#L245); [adk/middlewares/filesystem/filesystem.go:248](https://github.com/cloudwego/eino/blob/58d184303f4e73413c454a9626f79c17af0fd9fb/adk/middlewares/filesystem/filesystem.go#L248); [adk/middlewares/filesystem/filesystem.go:71](https://github.com/cloudwego/eino/blob/58d184303f4e73413c454a9626f79c17af0fd9fb/adk/middlewares/filesystem/filesystem.go#L71)) | The agent gets read access only, with write and command tools added deliberately (C3) |
+| Iteration limits everywhere | Keep ChatModelAgent's `MaxIterations` at 20 or lower, and set `MaxIterations` on every `LoopAgentConfig` ([adk/chatmodel.go:305-308](https://github.com/cloudwego/eino/blob/58d184303f4e73413c454a9626f79c17af0fd9fb/adk/chatmodel.go#L305-L308); [adk/workflow.go:655-660](https://github.com/cloudwego/eino/blob/58d184303f4e73413c454a9626f79c17af0fd9fb/adk/workflow.go#L655-L660)) | Every agent loop and workflow loop ends after a fixed number of rounds (C10) |
+| A Shell that really isolates | If the agent runs commands, supply a Shell that runs them in a container or VM with only the workspace mounted, no secrets in its environment, and limited network | Model-written commands and skill scripts run inside a real boundary, as the execute tool already tells the model they do (C4) |
+| Reviewed, read-only instructions | Keep AGENTS.md files and the skills directory outside the backend the agent can write, holding only files and skills you have read | Every run starts from instructions and skills you chose, and the agent can't rewrite them for later sessions (C6) |
+| Its own container or VM | Run the whole agent process in a container or VM whose network reaches only the model provider and the hosts the task needs | An outer boundary around in-process tools and a narrow path for data to leave (C5) |
+| A durable tool-call record | Register a handler with `AppendGlobalHandlers` that writes each tool start, end and error to storage the agent can't modify ([callbacks/interface.go:103](https://github.com/cloudwego/eino/blob/58d184303f4e73413c454a9626f79c17af0fd9fb/callbacks/interface.go#L103)) | A record of every tool call, sub-agents included, that outlives the run (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; put the exact tool arguments in the interrupt info, since Eino doesn't show them for you.
+- The built-in write_file, edit_file and execute tools never pause on their own, so gating them takes a tool of your own in their place.
+
+### Handling data
+
+- Tool output, including anything a command prints, reaches the model provider, callback handlers and checkpoints unredacted; store those records like the data the agent reads.
+- Keys in the process environment are visible to every tool and to a host Shell, so give the agent's process a minimal environment.
+
 ## Critical gaps
 - Assuming a successful prompt injection, the documented DeepAgent configuration can both exfiltrate data and take irreversible actions with no human involved (C5 worst case). (ASI01, T6, LLM01; C5) — [README.md:81](https://github.com/cloudwego/eino/blob/58d184303f4e73413c454a9626f79c17af0fd9fb/README.md#L81); [compose/tool_node.go:1240](https://github.com/cloudwego/eino/blob/58d184303f4e73413c454a9626f79c17af0fd9fb/compose/tool_node.go#L1240)
 - The built-in execute tool forwards raw model commands to the developer's Shell with no isolation, while its default description tells the model commands run in an isolated sandbox. (ASI05, T11, LLM05; C4) — [adk/middlewares/filesystem/filesystem.go:1028-1031](https://github.com/cloudwego/eino/blob/58d184303f4e73413c454a9626f79c17af0fd9fb/adk/middlewares/filesystem/filesystem.go#L1028-L1031); [adk/middlewares/filesystem/prompt.go:206](https://github.com/cloudwego/eino/blob/58d184303f4e73413c454a9626f79c17af0fd9fb/adk/middlewares/filesystem/prompt.go#L206)

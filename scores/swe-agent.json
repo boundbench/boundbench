@@ -36,6 +36,149 @@
     "external_communication": "opt_in"
   },
   "headline": "SWE-agent runs every model command in a throwaway Docker container, which keeps the host filesystem and the model API key out of reach. But it has no approval step and no egress limits, and it feeds an issue that anyone can write straight into the prompt. GitHub token handling is also not locked down. Prefer running without a token, or with a fine-grained read-only token.",
+  "safe_setup": {
+    "intro": "SWE-agent runs every model command in a throwaway Docker container, keeps the model API key on the host, caps each run at $3 of model spend and records every step. It has no approval step and no egress limits, and it acts on issue text that anyone can write, so the safest setup keeps credentials minimal, feeds it trusted tasks and builds containment around the container.",
+    "steps": [
+      {
+        "setup": "No token, or a read-only one",
+        "how": "Leave `GITHUB_TOKEN` empty in the environment and in .env; when a private repository needs one, use a fine-grained read-only token for that repository alone",
+        "gives_you": "GitHub itself limits what any run can reach to what you chose to grant",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "sweagent/agent/problem_statement.py",
+            "lines": "151",
+            "contains": "os.getenv(\"GITHUB_TOKEN\")",
+            "url": "https://github.com/SWE-agent/SWE-agent/blob/3ea751c087f32b16e039a2233dd6eefecef325d5/sweagent/agent/problem_statement.py#L151"
+          }
+        ]
+      },
+      {
+        "setup": "Tasks you wrote",
+        "how": "Point it at issues from you or your team, or at a task file of your own with `--problem_statement.path`",
+        "gives_you": "The instructions the agent acts on come from people you trust",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "sweagent/run/run_single.py",
+            "lines": "26",
+            "contains": "--problem_statement.path=path/to/problem_statement.md",
+            "url": "https://github.com/SWE-agent/SWE-agent/blob/3ea751c087f32b16e039a2233dd6eefecef325d5/sweagent/run/run_single.py#L26"
+          }
+        ]
+      },
+      {
+        "setup": "The Docker sandbox",
+        "how": "Keep the default Docker `deployment` rather than a local one",
+        "gives_you": "Model commands run in a fresh container that is removed after the run, away from your files and model key",
+        "criterion": "C4",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "sweagent/environment/swe_env.py",
+            "lines": "27-28",
+            "contains": "default_factory=lambda: DockerDeploymentConfig(image=\"python:3.11\"",
+            "url": "https://github.com/SWE-agent/SWE-agent/blob/3ea751c087f32b16e039a2233dd6eefecef325d5/sweagent/environment/swe_env.py#L27-L28"
+          }
+        ]
+      },
+      {
+        "setup": "Patch-only results",
+        "how": "Keep `open_pr` and `apply_patch_locally` at their default of off",
+        "gives_you": "Each run ends with a patch file you review before anything changes outside the container",
+        "criterion": "C2",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "sweagent/run/run_single.py",
+            "lines": "59",
+            "contains": "open_pr: bool = False",
+            "url": "https://github.com/SWE-agent/SWE-agent/blob/3ea751c087f32b16e039a2233dd6eefecef325d5/sweagent/run/run_single.py#L59"
+          },
+          {
+            "file": "sweagent/run/run_single.py",
+            "lines": "62",
+            "contains": "apply_patch_locally: bool = False",
+            "url": "https://github.com/SWE-agent/SWE-agent/blob/3ea751c087f32b16e039a2233dd6eefecef325d5/sweagent/run/run_single.py#L62"
+          }
+        ]
+      },
+      {
+        "setup": "Spend and time limits",
+        "how": "Keep `per_instance_cost_limit` at 3.0 or lower and the default `execution_timeout` and `total_execution_timeout`, all above 0",
+        "gives_you": "Every run stops at a fixed model spend and command time",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "sweagent/agent/models.py",
+            "lines": "73-74",
+            "contains": "default=3.0",
+            "url": "https://github.com/SWE-agent/SWE-agent/blob/3ea751c087f32b16e039a2233dd6eefecef325d5/sweagent/agent/models.py#L73-L74"
+          },
+          {
+            "file": "sweagent/tools/tools.py",
+            "lines": "139",
+            "contains": "execution_timeout: int = 30",
+            "url": "https://github.com/SWE-agent/SWE-agent/blob/3ea751c087f32b16e039a2233dd6eefecef325d5/sweagent/tools/tools.py#L139"
+          },
+          {
+            "file": "sweagent/tools/tools.py",
+            "lines": "145",
+            "contains": "total_execution_timeout: int = 1800",
+            "url": "https://github.com/SWE-agent/SWE-agent/blob/3ea751c087f32b16e039a2233dd6eefecef325d5/sweagent/tools/tools.py#L145"
+          }
+        ]
+      },
+      {
+        "setup": "A hardened container",
+        "how": "Add dropped capabilities, no-new-privileges and memory and process limits to `docker_args` under `deployment` in your config",
+        "gives_you": "Commands inside the container run with fewer privileges and bounded resources",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "config/benchmarks/250522_anthropic_filemap_simple_review.yaml",
+            "lines": "13-16",
+            "contains": "docker_args:",
+            "url": "https://github.com/SWE-agent/SWE-agent/blob/3ea751c087f32b16e039a2233dd6eefecef325d5/config/benchmarks/250522_anthropic_filemap_simple_review.yaml#L13-L16"
+          }
+        ]
+      },
+      {
+        "setup": "Limited container egress",
+        "how": "Run on a Docker host whose firewall or proxy lets containers reach only the package indexes and hosts the task needs",
+        "gives_you": "A narrow path for repository contents to leave a run",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A clean working directory",
+        "how": "Start runs from a directory with no .env file you didn't write",
+        "gives_you": "The model endpoint and credentials come only from you",
+        "criterion": "C6",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "sweagent/utils/config.py",
+            "lines": "65-71",
+            "contains": "cwd_path = Path.cwd() / \".env\"",
+            "url": "https://github.com/SWE-agent/SWE-agent/blob/3ea751c087f32b16e039a2233dd6eefecef325d5/sweagent/utils/config.py#L65-L71"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "There is no approval prompt, so the saved patch is your review point; read it in full before applying it."
+    ],
+    "handling": [
+      "Trajectories and the trace, debug and info logs record every model input and command output unredacted; store them like the repository they cover.",
+      "With `open_pr` on, the trajectory is posted into the PR body, so keep it off for private code."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

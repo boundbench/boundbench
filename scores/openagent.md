@@ -24,6 +24,26 @@
 
 OpenAgent ships with every built-in tool enabled, including an unsandboxed host shell that inherits the server's full environment, local file read/write, desktop GUI control and browser automation, and none of them require human approval. A casbin-based permission engine exists in the repo but is never called from the tool path. Authentication and access control in the default install are not locked down. A hijacked session (for example via a fetched web page) can exfiltrate data and take irreversible actions on the host with nobody in the loop.
 
+## Safest setup
+
+OpenAgent records each tool call in the chat transcript and a per-session audit file, snapshots local file writes for rollback, and keeps web_fetch on public addresses. Beyond that the defaults are weak: every tool and skill is on, no call waits for approval, and the shell runs on the host as the server's user. The safest setup narrows the tool set and builds the boundaries around the server yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated low-privilege user | Run the server as its own OS user that holds only the model key and the files the assistant needs | Shell and file tools reach only what that user owns, not your own files and credentials (C1) |
+| Access only for you | Keep the server on a private network or behind an authenticated reverse proxy | Only people you chose can reach the admin role that unlocks the high-risk tools (C1) |
+| Only the tools needed | In each store, list just the tools the task needs in `tools` in place of All, leaving shell, file write, GUI and browser out where you can ([object/store.go:78](https://github.com/the-open-agent/openagent/blob/c9a8fca73702a55b4c3bd171461a02fc8f8cef0b/object/store.go#L78)) | The model sees a smaller tool set, with host-changing tools only where you chose them (C3) |
+| Only the skills needed | In each store, list just the skills you have read in `skills` in place of All ([object/store.go:77](https://github.com/the-open-agent/openagent/blob/c9a8fca73702a55b4c3bd171461a02fc8f8cef0b/object/store.go#L77)) | Instructions to fetch and install third-party packages stay out of the prompt (C7) |
+| A shell command list | Where a store keeps the shell, set `shellCommandAllowlist` in the server config to the commands the task uses ([object/tool_audit.go:86](https://github.com/the-open-agent/openagent/blob/c9a8fca73702a55b4c3bd171461a02fc8f8cef0b/object/tool_audit.go#L86)) | Each shell command must start with a command you listed (C3) |
+| Skills written by you | Keep the default `enableExperienceReview` off ([object/store.go:103](https://github.com/the-open-agent/openagent/blob/c9a8fca73702a55b4c3bd171461a02fc8f8cef0b/object/store.go#L103)) | New skills come from you rather than from automatic review of past sessions (C6) |
+| Its own container or VM | Run the server in a container or VM whose user has no sudo and whose network reaches only the hosts the task needs | An outer boundary around shell commands, MCP servers and the browser, and a narrow path for data to leave (C4) |
+| Audit records off the host | Ship the audit directory and server logs to storage the server's user can't modify | A record of every tool call that the assistant's own tools can't rewrite (C9) |
+
+### Handling data
+
+- Provider keys sit unencrypted in the database next to the binary; store and back it up like a secrets file.
+- Tool results and knowledge passages print to stdout unredacted; treat server output like the data the assistant read.
+
 ## Critical gaps
 - No approval gate or isolation: the default store exposes an unsandboxed host shell with full environment to the model, and the permission engine is never wired in. (ASI05, T11; C4) — [tool/shell.go:527-528](https://github.com/the-open-agent/openagent/blob/c9a8fca73702a55b4c3bd171461a02fc8f8cef0b/tool/shell.go#L527-L528); [tool/shell.go:743-744](https://github.com/the-open-agent/openagent/blob/c9a8fca73702a55b4c3bd171461a02fc8f8cef0b/tool/shell.go#L743-L744); [audit/audit.go:49-50](https://github.com/the-open-agent/openagent/blob/c9a8fca73702a55b4c3bd171461a02fc8f8cef0b/audit/audit.go#L49-L50)
 - A hijacked default session can exfiltrate and take irreversible host actions unattended (C5-WORSTCASE). (ASI01, LLM01, T6; C5) — [controllers/message_answer.go:227](https://github.com/the-open-agent/openagent/blob/c9a8fca73702a55b4c3bd171461a02fc8f8cef0b/controllers/message_answer.go#L227); [object/init.go:128-129](https://github.com/the-open-agent/openagent/blob/c9a8fca73702a55b4c3bd171461a02fc8f8cef0b/object/init.go#L128-L129)

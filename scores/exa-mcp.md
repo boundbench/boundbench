@@ -25,6 +25,28 @@ Controls where a risk surface exists: 2.88 / 7.0 (41%); 3 criteria scored SA (su
 
 A small, read-only web search and fetch server: it runs no code, touches no files and only talks to Exa's API, and its default tools cannot change anything. Its main gaps in posture are around untrusted content and authority: web pages come back as unmarked text, the fetch tool gives a hijacked model an outbound channel to any URL, and callers' API keys and OAuth tokens are forwarded unchanged to Exa's API. Limits exist as timeouts and free-tier rate limits, but result sizes are model-chosen and logging is plain console text.
 
+## Safest setup
+
+Exa MCP is a small read-only server: it runs no code, touches no files, and its two default tools only search and fetch through Exa's API. It forwards your Exa credential as is and returns web pages as unmarked text, so the safest setup narrows the key, keeps the tool set small and puts review and separation around fetching in your MCP host.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated Exa key | Give the server its own Exa API key, used by no other app or agent | Whatever reaches Exa through this server spends only that key, and revoking it cuts off this agent alone (C1) |
+| The default tool set | Keep the default `web_search_exa` and `web_fetch_exa` and add agent or advanced tools only when a task needs them ([src/toolRegistry.ts:12-15](https://github.com/exa-labs/exa-mcp-server/blob/f3d71fb6b0ff4b4683f108f05bc2bae61a9f7e97/src/toolRegistry.ts#L12-L15); [src/toolRegistry.ts:39-42](https://github.com/exa-labs/exa-mcp-server/blob/f3d71fb6b0ff4b4683f108f05bc2bae61a9f7e97/src/toolRegistry.ts#L39-L42)) | The model has two read-only lookups and no billable agent runs (C3) |
+| Search only for sensitive work | Add `tools=web_search_exa` to the server URL for sessions that hold private data ([api/mcp.ts:374](https://github.com/exa-labs/exa-mcp-server/blob/f3d71fb6b0ff4b4683f108f05bc2bae61a9f7e97/api/mcp.ts#L374); [api/mcp.ts:494](https://github.com/exa-labs/exa-mcp-server/blob/f3d71fb6b0ff4b4683f108f05bc2bae61a9f7e97/api/mcp.ts#L494)) | Those sessions have no tool that requests a model-chosen URL (C5) |
+| The key in a header | Send the key in the `x-api-key` header rather than in the server URL ([api/mcp.ts:369](https://github.com/exa-labs/exa-mcp-server/blob/f3d71fb6b0ff4b4683f108f05bc2bae61a9f7e97/api/mcp.ts#L369); [api/mcp.ts:444](https://github.com/exa-labs/exa-mcp-server/blob/f3d71fb6b0ff4b4683f108f05bc2bae61a9f7e97/api/mcp.ts#L444)) | The key stays out of the server address, which clients and config files often store and display (C8) |
+| Host approval for fetches | Set your MCP host to ask before each `web_fetch_exa` call ([src/toolRegistry.ts:39](https://github.com/exa-labs/exa-mcp-server/blob/f3d71fb6b0ff4b4683f108f05bc2bae61a9f7e97/src/toolRegistry.ts#L39)) | A person sees every URL before Exa requests it (C5) |
+| A separate research session | Use Exa in host sessions that hold no secrets or private files | Web content the model reads can only shape a session with little to give away (C5) |
+
+### Approving with confidence
+
+- Read each prompt and approve fetch calls one at a time; a long URL carrying text from your session is worth a closer look.
+- The agent tools start billable multi-minute runs although they are labelled read-only, so add them when you want that spend.
+
+### Handling data
+
+- The server logs every search query and fetched URL and sends content-free usage analytics to Agnost by default, so keep secrets and personal data out of queries.
+
 ## Critical gaps
 - OAuth access tokens and API keys presented to the MCP server are forwarded unchanged to Exa's API rather than exchanged for a server-scoped credential (token passthrough). (ASI03, T3; C1) — [api/mcp.ts:456-462](https://github.com/exa-labs/exa-mcp-server/blob/f3d71fb6b0ff4b4683f108f05bc2bae61a9f7e97/api/mcp.ts#L456-L462); [src/tools/config.ts:23-25](https://github.com/exa-labs/exa-mcp-server/blob/f3d71fb6b0ff4b4683f108f05bc2bae61a9f7e97/src/tools/config.ts#L23-L25)
 

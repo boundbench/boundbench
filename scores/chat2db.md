@@ -24,6 +24,30 @@
 
 Chat2DB's AI assistant can query every database you have saved, using your full stored credentials, and the model chooses which one. Its best control is a hard refusal of write SQL: anything other than SELECT/SHOW/DESCRIBE is handed back for you to run yourself, and there is no setting to turn that off. The dominant risk is data exfiltration: content in your databases or uploaded files can steer the model, and the chat UI offers an unattended egress path. There are also no time, step, or query-timeout limits on an AI turn.
 
+## Safest setup
+
+Chat2DB hands any AI-written SQL other than SELECT, SHOW or DESCRIBE back to you to run by hand, with no setting to turn that off, and keeps chat history per session. Beyond that the defaults are thin: the assistant can use every saved connection with its full stored credential, and nothing limits a turn's time or queries. The safest setup narrows what the database accounts can do and builds containment around the app.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A read-only database account | Save each connection you use with AI under a dedicated database account that can only read | The database itself refuses writes, whatever SQL reaches it (C1) |
+| A replica for AI work | Point the connections you use with AI at a read replica or a copy rather than the primary | Model-written SQL runs away from the live data your applications depend on (C4) |
+| A server-side statement timeout | Set a statement timeout for that database account on the database server | A long or runaway query ends on its own, even after you stop the response (C10) |
+| Only the connections needed | Use AI chat in an install whose saved connections hold only the datasources the task needs | The assistant can reach only those databases, whichever one the model picks (C1) |
+| The MCP server off | Keep the default `enableMcp` setting off ([chat2db-community-server/chat2db-community-tools/src/main/java/ai/chat2db/community/tools/config/SystemSettingConstant.java:7](https://github.com/OtterMind/Chat2DB/blob/dc2b80a3b0189bb3fd92d69ce8f52de2d4136ac8/chat2db-community-server/chat2db-community-tools/src/main/java/ai/chat2db/community/tools/config/SystemSettingConstant.java#L7); [chat2db-community-server/chat2db-community-tools/src/main/java/ai/chat2db/community/tools/util/SystemSettingsUtil.java:38](https://github.com/OtterMind/Chat2DB/blob/dc2b80a3b0189bb3fd92d69ce8f52de2d4136ac8/chat2db-community-server/chat2db-community-tools/src/main/java/ai/chat2db/community/tools/util/SystemSettingsUtil.java#L38)) | AI tools are used only from the chat in front of you, where every call is traced (C9) |
+| A response length limit | Set Max Tokens (`maxTokens`) in the AI model configuration ([chat2db-community-client/src/blocks/AI/components/AIModelConfigModal/index.tsx:343](https://github.com/OtterMind/Chat2DB/blob/dc2b80a3b0189bb3fd92d69ce8f52de2d4136ac8/chat2db-community-client/src/blocks/AI/components/AIModelConfigModal/index.tsx#L343)) | Each model response stops at a length you chose (C10) |
+| Its own VM with limited egress | Run Chat2DB in a VM or separate account whose network reaches only your model provider and the databases you use | A narrow path for query results to leave, and your other files and keys stay out of reach (C5) |
+
+### Approving with confidence
+
+- Read each statement the assistant hands back and run it yourself only when it matches what you asked for.
+- Queries run without a prompt, so check which datasource each tool call in the chat trace names.
+
+### Handling data
+
+- Chat history keeps tool results, query rows included, as plain JSON on disk; store it like the data it holds and delete sessions you no longer need.
+- Query results the assistant reads go to your model provider without redaction, so pick a provider your data may go to.
+
 ## Critical gaps
 - JDBC drivers run in-process with every decrypted datasource password and AI API key, and the MySQL drivers are downloaded automatically from the vendor CDN at startup without integrity verification. (ASI04, T17, LLM03; C7) — [chat2db-community-server/chat2db-community-domain/chat2db-community-domain-core/src/main/java/ai/chat2db/community/domain/core/impl/db/DbJdbcDriverServiceImpl.java:133-153](https://github.com/OtterMind/Chat2DB/blob/dc2b80a3b0189bb3fd92d69ce8f52de2d4136ac8/chat2db-community-server/chat2db-community-domain/chat2db-community-domain-core/src/main/java/ai/chat2db/community/domain/core/impl/db/DbJdbcDriverServiceImpl.java#L133-L153); [chat2db-community-server/chat2db-community-tools/src/main/java/ai/chat2db/community/tools/util/JdbcJarUtils.java:145-151](https://github.com/OtterMind/Chat2DB/blob/dc2b80a3b0189bb3fd92d69ce8f52de2d4136ac8/chat2db-community-server/chat2db-community-tools/src/main/java/ai/chat2db/community/tools/util/JdbcJarUtils.java#L145-L151); [chat2db-community-server/chat2db-community-tools/src/main/java/ai/chat2db/community/tools/constant/JdbcDriverConstants.java:12](https://github.com/OtterMind/Chat2DB/blob/dc2b80a3b0189bb3fd92d69ce8f52de2d4136ac8/chat2db-community-server/chat2db-community-tools/src/main/java/ai/chat2db/community/tools/constant/JdbcDriverConstants.java#L12)
 

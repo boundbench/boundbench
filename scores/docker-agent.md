@@ -24,6 +24,32 @@
 
 Docker Agent asks before every shell command, file write and web fetch by default, showing the exact call, and its fetch tool blocks internal addresses and scrubs secrets from what goes to the model. But everything that is approved runs directly on your machine with your full environment, since the VM sandbox is opt-in, and there are no default step or spend limits. A docker-agent.yaml in the folder you run it from is loaded automatically and can switch off approvals, add MCP servers and hooks without any trust prompt, and usage telemetry, which can include prompts given on the command line, is on by default.
 
+## Safest setup
+
+Docker Agent asks before every shell command, file write and web fetch by default, shows the exact call, and scrubs secrets from what reaches the model. Approved commands run on your machine with your full environment, and the sandbox, limits and rollback are all opt-in, so the safest setup turns those on and narrows what the process can reach.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Start the agent with only the API keys the task needs, each scoped or read-only with a spending limit set at the provider | Every approved command and MCP server reaches only the systems and spend you chose (C1) |
+| Your own safety mode | Pass `--safety strict`, or set `safety: strict` in your user settings ([cmd/root/run.go:182](https://github.com/docker/docker-agent/blob/54cea981dfc521617ae81e598b8235df5803b6ae/cmd/root/run.go#L182); [pkg/userconfig/userconfig.go:94-97](https://github.com/docker/docker-agent/blob/54cea981dfc521617ae81e598b8235df5803b6ae/pkg/userconfig/userconfig.go#L94-L97)) | Every call asks first, and a project agent file can no longer pick the approval mode for you (C2) |
+| A reviewed working directory | Start from a folder whose docker-agent.yaml, AGENTS.md and skill folders you have read | Instructions, MCP servers and hooks come only from files you chose (C6) |
+| A filesystem allow-list | In your own agent file, give the filesystem toolset an `allow_list` naming only the task's directories ([pkg/config/latest/types.go:1660-1669](https://github.com/docker/docker-agent/blob/54cea981dfc521617ae81e598b8235df5803b6ae/pkg/config/latest/types.go#L1660-L1669)) | File reads and writes stay inside the folders you listed (C3) |
+| Step and spend limits | In your own agent file, set `max_iterations: <n>` and a top-level `budget:` with `max_cost`, `max_tokens` or `max_time` ([pkg/config/latest/types.go:764](https://github.com/docker/docker-agent/blob/54cea981dfc521617ae81e598b8235df5803b6ae/pkg/config/latest/types.go#L764); [pkg/config/latest/types.go:51](https://github.com/docker/docker-agent/blob/54cea981dfc521617ae81e598b8235df5803b6ae/pkg/config/latest/types.go#L51); [pkg/config/latest/types.go:92-109](https://github.com/docker/docker-agent/blob/54cea981dfc521617ae81e598b8235df5803b6ae/pkg/config/latest/types.go#L92-L109)) | A ceiling on steps, spend and working time for the whole run, sub-agents included (C10) |
+| The Docker Sandboxes VM | Run with `--sandbox` ([cmd/root/run.go:217](https://github.com/docker/docker-agent/blob/54cea981dfc521617ae81e598b8235df5803b6ae/cmd/root/run.go#L217)) | Every tool runs inside a VM with the working directory as its only read-write mount and a default-deny network (C4) |
+| Automatic snapshots | Set `snapshot: true` in your user settings ([pkg/userconfig/userconfig.go:112-113](https://github.com/docker/docker-agent/blob/54cea981dfc521617ae81e598b8235df5803b6ae/pkg/userconfig/userconfig.go#L112-L113)) | Shadow-git snapshots of the workspace, so file changes can be rolled back (C2) |
+| Approval traces | Run with `--otel` and an OpenTelemetry collector you control ([cmd/root/root.go:173](https://github.com/docker/docker-agent/blob/54cea981dfc521617ae81e598b8235df5803b6ae/cmd/root/root.go#L173)) | A record of each approval decision alongside the session history (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; the prompt also offers to switch the whole session to balanced or autonomous.
+- An 'always allow' answer for a shell call covers every later command that starts with the same word.
+
+### Handling data
+
+- Usage telemetry is on by default and includes command-line arguments, which can hold prompts; `TELEMETRY_ENABLED=false` turns it off.
+- The session database in your home directory keeps every tool call and result; store it like other sensitive files.
+- Background jobs keep running after you stop a turn, until the session ends.
+
 ## Critical gaps
 - A docker-agent.yaml in the working directory is loaded without a trust prompt and can set the autonomous safety mode, turning off per-call approval. (ASI09, ASI02, ASI06; C2). Evidence: [cmd/root/run.go:653-666](https://github.com/docker/docker-agent/blob/54cea981dfc521617ae81e598b8235df5803b6ae/cmd/root/run.go#L653-L666); [cmd/root/run.go:1286-1304](https://github.com/docker/docker-agent/blob/54cea981dfc521617ae81e598b8235df5803b6ae/cmd/root/run.go#L1286-L1304)
 - Project agent files, AGENTS.md and project skills are auto-loaded from the working directory, and the agent file can add MCP servers, hooks and permission rules with no workspace-trust decision. (ASI06, ASI04, T1; C6). Evidence: [cmd/root/run.go:643-666](https://github.com/docker/docker-agent/blob/54cea981dfc521617ae81e598b8235df5803b6ae/cmd/root/run.go#L643-L666); [pkg/skills/local.go:66-71](https://github.com/docker/docker-agent/blob/54cea981dfc521617ae81e598b8235df5803b6ae/pkg/skills/local.go#L66-L71)

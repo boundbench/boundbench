@@ -25,6 +25,25 @@ Controls where a risk surface exists: 2.40 / 8.0 (30%); 2 criteria scored SA (su
 
 Nanobrowser drives your real, logged-in Chrome browser on any website with no approval step: whatever the model decides to click, type or submit happens immediately. Its prompt-injection defenses are a regex filter and warning tags around page content, so a hostile page that hijacks the agent can send your data to any URL and act in your accounts with no human involved. It runs no model-generated code and loads no plugins, but keep it to a separate browser profile and set a domain allowlist in the firewall settings before using it.
 
+## Safest setup
+
+Nanobrowser runs no model-written code, loads no plugins, keeps step replay off and stops a task after 100 steps or three failures in a row. It has no approval step and acts in your real, logged-in browser on any site by default, so the safest setup gives it a browser profile of its own, narrows where it can go and keeps you watching each run.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated browser profile | Install it in a separate Chrome profile signed in only to the accounts the task needs | The agent works with those sessions alone, not every account in your everyday browser (C1) |
+| A scoped, low-limit model key | Give it a provider key made for this extension, with a spending limit set at the provider | The stored key reaches only this use and spend, and you can rotate it on its own (C8) |
+| A domain allowlist | Keep the firewall's default `enabled: true` and add only the task's domains to its `allowList` ([src/storage/lib/settings/firewall.ts:36-38](https://github.com/nanobrowser/nanobrowser/blob/ad47282a17ecdfb894745af093e0f7332fc1f71a/src/storage/lib/settings/firewall.ts#L36-L38)) | Narrows where the agent's navigation actions can go, though the review found the firewall is not a complete boundary (C3) |
+| A step budget | Keep the default `maxSteps: 100` and `maxFailures: 3`, or lower them for short tasks ([src/storage/lib/settings/generalSettings.ts:26-28](https://github.com/nanobrowser/nanobrowser/blob/ad47282a17ecdfb894745af093e0f7332fc1f71a/src/storage/lib/settings/generalSettings.ts#L26-L28)) | Every task ends after a fixed number of steps or a short run of failures (C10) |
+| Replay left off | Keep the default `replayHistoricalTasks: false` ([src/storage/lib/settings/generalSettings.ts:34](https://github.com/nanobrowser/nanobrowser/blob/ad47282a17ecdfb894745af093e0f7332fc1f71a/src/storage/lib/settings/generalSettings.ts#L34)) | No step history is stored, so one session's content can't carry into a later one (C6) |
+| Analytics turned off | Switch off the analytics setting in Options, which ships as `enabled: true` ([src/storage/lib/settings/analyticsSettings.ts:24-26](https://github.com/nanobrowser/nanobrowser/blob/ad47282a17ecdfb894745af093e0f7332fc1f71a/src/storage/lib/settings/analyticsSettings.ts#L24-L26)) | The domains the agent visits stay on your machine (C8) |
+| A watched run | Keep the side panel in view while a task runs and press stop when it heads somewhere you didn't expect | A person can end the loop between actions, since clicks, typing and submissions run without a prompt (C2) |
+
+### Handling data
+
+- Console logs hold every action's arguments, typed text included; treat them like the pages the agent worked on.
+- Chat transcripts and model keys sit in extension storage, the keys unencrypted; clear the profile's extension data when you are done with it.
+
 ## Critical gaps
 - The agent acts with the user's full logged-in browser identity across all sites (<all_urls> plus the debugger permission); a hijack reaches every account the user is signed into. (ASI03, T3; C1) — [wxt.config.ts:57-58](https://github.com/nanobrowser/nanobrowser/blob/ad47282a17ecdfb894745af093e0f7332fc1f71a/wxt.config.ts#L57-L58); [wxt.config.ts:58](https://github.com/nanobrowser/nanobrowser/blob/ad47282a17ecdfb894745af093e0f7332fc1f71a/wxt.config.ts#L58)
 - Prompt-injected web content can make the agent both exfiltrate data (navigate to any URL) and take irreversible actions in the user's logged-in sites with no human approval (C5-WORSTCASE). (ASI01, LLM01, T6; C5) — [src/background/agent/actions/builder.ts:181-185](https://github.com/nanobrowser/nanobrowser/blob/ad47282a17ecdfb894745af093e0f7332fc1f71a/src/background/agent/actions/builder.ts#L181-L185); [src/background/browser/util.ts:34-37](https://github.com/nanobrowser/nanobrowser/blob/ad47282a17ecdfb894745af093e0f7332fc1f71a/src/background/browser/util.ts#L34-L37); [src/background/agent/actions/builder.ts:279-292](https://github.com/nanobrowser/nanobrowser/blob/ad47282a17ecdfb894745af093e0f7332fc1f71a/src/background/agent/actions/builder.ts#L279-L292); [src/background/agent/messages/utils.ts:277-288](https://github.com/nanobrowser/nanobrowser/blob/ad47282a17ecdfb894745af093e0f7332fc1f71a/src/background/agent/messages/utils.ts#L277-L288)

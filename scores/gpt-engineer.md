@@ -24,6 +24,30 @@
 
 gpt-engineer writes model-generated files to disk with no approval and no path containment, then asks a single default-yes question before running a generated bash script on the host as you, with your full environment and API keys. There is no sandbox, no timeout, and no redaction. A .env file in the working directory can silently redirect the model endpoint, and the analytics consent check is not a strict boundary. The repository is archived, so none of this will be fixed upstream.
 
+## Safest setup
+
+gpt-engineer shows the generated run.sh and asks before running it, and improve mode shows a full diff before applying changes. Beyond that the defaults are weak: generated files are written with no approval or path limit, and generated code runs on your host with your full environment and API keys. The repository is archived, so the safest setup builds the boundaries around it yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, low-limit key | Give gpt-engineer its own model API key with a spending limit set at the provider, and no other credentials in its environment | Generated code that inherits the environment can reach only that key and its budget (C8) |
+| Review before each run | Leave `--self-heal` off and type y at the run.sh prompt only after reading the script and the files it runs ([gpt_engineer/applications/cli/main.py:310-315](https://github.com/antonosika/gpt-engineer/blob/a90fcd543eedcc0ff2c34561bc0785d2ba83c47e/gpt_engineer/applications/cli/main.py#L310-L315)) | A person checks every execution of generated code before it starts (C2) |
+| Diff review for changes | Use `--improve` when changing an existing project ([gpt_engineer/applications/cli/main.py:292-297](https://github.com/antonosika/gpt-engineer/blob/a90fcd543eedcc0ff2c34561bc0785d2ba83c47e/gpt_engineer/applications/cli/main.py#L292-L297)) | You see the full diff and decide before any file changes (C2) |
+| The shipped Docker image | Run gpt-engineer through the repo's Docker compose setup, with `volumes` mounting only the project directory ([docker-compose.yml:9-16](https://github.com/antonosika/gpt-engineer/blob/a90fcd543eedcc0ff2c34561bc0785d2ba83c47e/docker-compose.yml#L9-L16)) | Generated code and file writes stay inside a container, away from your home directory and host credentials (C4) |
+| A hardened outer boundary | Run that container or a disposable VM as a non-root user, with network limited to the model provider and package registry | A smaller blast radius and a narrow path for data to leave if generated code misbehaves (C4) |
+| A clean working directory | Start each run from a fresh directory holding no .env file you didn't write ([gpt_engineer/applications/cli/main.py:80-83](https://github.com/antonosika/gpt-engineer/blob/a90fcd543eedcc0ff2c34561bc0785d2ba83c47e/gpt_engineer/applications/cli/main.py#L80-L83)) | The model endpoint and API key come only from you (C6) |
+| A time limit you control | Stop a runaway script by stopping its whole container or VM, and give long runs a wall-clock limit there | Every process a script started ends when you stop it (C10) |
+| Logs kept outside the workspace | Copy `.gpteng` logs after each run to storage the generated code can't reach ([gpt_engineer/core/default/paths.py:42-43](https://github.com/antonosika/gpt-engineer/blob/a90fcd543eedcc0ff2c34561bc0785d2ba83c47e/gpt_engineer/core/default/paths.py#L42-L43)) | A record of each model exchange that executed code can't edit (C9) |
+
+### Approving with confidence
+
+- Read run.sh and the generated files it runs before answering, and type y; pressing Enter counts as yes.
+- run.sh installs packages the model chose; check each name before approving.
+
+### Handling data
+
+- The .gpteng logs hold every prompt and generated file in plain text; store them like the project's source.
+
 ## Critical gaps
 - Generated code runs with the user's full ambient authority and inherits the process environment, including OPENAI_API_KEY/ANTHROPIC_API_KEY. (ASI03, T3; C1) — [gpt_engineer/core/default/disk_execution_env.py:76-83](https://github.com/antonosika/gpt-engineer/blob/a90fcd543eedcc0ff2c34561bc0785d2ba83c47e/gpt_engineer/core/default/disk_execution_env.py#L76-L83); [gpt_engineer/applications/cli/main.py:80-90](https://github.com/antonosika/gpt-engineer/blob/a90fcd543eedcc0ff2c34561bc0785d2ba83c47e/gpt_engineer/applications/cli/main.py#L80-L90)
 - Model-generated run.sh executes on the host as the user, with no isolation and the full environment (C4 blast radius L0 in the default config). (ASI05, T11; C4) — [gpt_engineer/core/default/disk_execution_env.py:76-83](https://github.com/antonosika/gpt-engineer/blob/a90fcd543eedcc0ff2c34561bc0785d2ba83c47e/gpt_engineer/core/default/disk_execution_env.py#L76-L83); [gpt_engineer/core/default/steps.py:267](https://github.com/antonosika/gpt-engineer/blob/a90fcd543eedcc0ff2c34561bc0785d2ba83c47e/gpt_engineer/core/default/steps.py#L267)

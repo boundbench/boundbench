@@ -36,6 +36,146 @@
     "external_communication": "no"
   },
   "headline": "As shipped for IDE use, Toolbox hands the connected AI an execute_sql tool that runs any SQL against your database with the full privileges of the login you configure, with no read-only mode, timeout, row cap, or authorization check for the postgres source. Its safety depends almost entirely on the database role you give it and on your MCP host's approval prompts; the tool is correctly marked destructive so hosts can gate it. Tool calls are not recorded unless debug logging or telemetry export is enabled. Stronger controls (session-locked read-only mode, BigQuery write blocking, per-tool auth) exist for some sources but are opt-in.",
+  "safe_setup": {
+    "intro": "Toolbox marks `execute_sql` as destructive so your MCP host can ask before it runs, and keeps SQL and parameters out of its default logs. For the postgres source the server itself has no read-only mode, query timeout or call record, so the safest setup puts the limits in the database login and around the process.",
+    "steps": [
+      {
+        "setup": "A read-only database login",
+        "how": "Put a dedicated Postgres login in `POSTGRES_USER` and `POSTGRES_PASSWORD` that holds only SELECT on the schemas the task needs",
+        "gives_you": "Postgres itself refuses writes and DDL, whatever SQL the model sends",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+            "lines": "21-22",
+            "contains": "POSTGRES_USER",
+            "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L21-L22"
+          }
+        ]
+      },
+      {
+        "setup": "Only the toolset needed",
+        "how": "`--prebuilt=postgres/<toolset>`, choosing `health`, `view-config` or `replication` when the task only inspects the database",
+        "gives_you": "The model sees only fixed, parameterised listing tools, with no free-form SQL tool",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "cmd/internal/flags.go",
+            "lines": "62",
+            "contains": "\"prebuilt\"",
+            "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/cmd/internal/flags.go#L62"
+          },
+          {
+            "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+            "lines": "283",
+            "contains": "name: health",
+            "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L283"
+          },
+          {
+            "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+            "lines": "295",
+            "contains": "name: view-config",
+            "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L295"
+          },
+          {
+            "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+            "lines": "304",
+            "contains": "name: replication",
+            "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L304"
+          }
+        ]
+      },
+      {
+        "setup": "Per-call approval",
+        "how": "Keep the prebuilt definitions, which mark `execute_sql` destructive, in a host set to ask before each destructive call",
+        "gives_you": "A person reads each free-form SQL statement before it reaches the database",
+        "criterion": "C2",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+            "lines": "26",
+            "contains": "name: execute_sql",
+            "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L26"
+          },
+          {
+            "file": "internal/tools/postgres/postgresexecutesql/postgresexecutesql.go",
+            "lines": "74",
+            "contains": "tools.NewDestructiveAnnotations",
+            "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L74"
+          }
+        ]
+      },
+      {
+        "setup": "An explicit tool config",
+        "how": "Always start the server with `--prebuilt` or `--config <path>`",
+        "gives_you": "Tool definitions come only from you, never from a tools.yaml in the directory it starts in",
+        "criterion": "C6",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "cmd/internal/flags.go",
+            "lines": "62",
+            "contains": "\"prebuilt\"",
+            "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/cmd/internal/flags.go#L62"
+          },
+          {
+            "file": "cmd/internal/flags.go",
+            "lines": "47",
+            "contains": "\"config\"",
+            "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/cmd/internal/flags.go#L47"
+          }
+        ]
+      },
+      {
+        "setup": "A statement timeout",
+        "how": "Add a Postgres statement timeout to the connection through `POSTGRES_QUERY_PARAMS`",
+        "gives_you": "Every query ends after a time you choose",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "internal/prebuiltconfigs/tools/postgres.yaml",
+            "lines": "23",
+            "contains": "POSTGRES_QUERY_PARAMS",
+            "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L23"
+          }
+        ]
+      },
+      {
+        "setup": "A copy, not production",
+        "how": "Point the server at a replica or staging copy of the database whenever the task allows",
+        "gives_you": "A wrongly approved statement can only change data you can rebuild",
+        "criterion": "C2",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A tool-call trace",
+        "how": "`--telemetry-otlp <endpoint>` or `--telemetry-gcp` to export spans to a collector the agent can't reach",
+        "gives_you": "A record of which tool ran and when, kept outside the session",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "cmd/internal/flags.go",
+            "lines": "35-37",
+            "contains": "telemetry-otlp",
+            "url": "https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/cmd/internal/flags.go#L35-L37"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve `execute_sql` calls one at a time; nothing in the server previews or undoes a statement."
+    ],
+    "handling": [
+      "Keep the default `--log-level` of INFO where logs are shared; DEBUG writes full SQL and parameters unredacted.",
+      "Query results go to the model as they are, so treat the conversation like the data the login can read."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

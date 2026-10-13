@@ -24,6 +24,31 @@
 
 LobeHub ships a real per-call approval system that shows exact arguments, and model-written code runs in a remote sandbox rather than on the server. But approval covers only tools that declare it, so a model steered by a web page or document can fetch arbitrary URLs and delete knowledge bases and memories without a human, and delegated and background runs execute in headless mode. Memory is on by default and model-writable, and server-side runs have no default step or cost limit.
 
+## Safest setup
+
+LobeHub ships per-call approval that shows the exact arguments, a remote sandbox for model-written code, and a stored record of every tool call. Approval covers only tools that declare it, memory is on and model-writable, and server-side runs have no step or cost limit by default, so the safest setup narrows who can sign in and what the server holds, and adds limits at the provider and the network.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Give the server provider keys with a spending limit set at the provider, and give each connector read-only credentials where the task allows | Whatever a run does, it reaches only the systems and spend you chose (C1) |
+| Invited accounts only | Set `AUTH_ALLOWED_EMAILS` to your users' addresses, or `AUTH_DISABLE_EMAIL_PASSWORD=1` for SSO-only sign-in, in .env ([docker-compose/deploy/.env.example:5-12](https://github.com/lobehub/lobehub/blob/251f9cb64777e79a0c0d72f846f12afbecd47e78/docker-compose/deploy/.env.example#L5-L12)) | Only people you chose get accounts that can run agents and add connectors (C1) |
+| Scoped API keys | Issue each API key with only the scopes its integration needs ([packages/const/src/apiKeyScope.ts:1-7](https://github.com/lobehub/lobehub/blob/251f9cb64777e79a0c0d72f846f12afbecd47e78/packages/const/src/apiKeyScope.ts#L1-L7)) | A key can do less than its owner, never more (C1) |
+| Manual approval | Keep the approval mode at its default `manual` in each account's tool settings ([src/store/user/slices/settings/selectors/toolIntervention.ts:14-17](https://github.com/lobehub/lobehub/blob/251f9cb64777e79a0c0d72f846f12afbecd47e78/src/store/user/slices/settings/selectors/toolIntervention.ts#L14-L17)) | Tools that declare an approval policy pause and show their exact arguments before they run (C2) |
+| The remote code sandbox | Keep `SANDBOX_PROVIDER` at a remote provider, `market` by default ([apps/server/src/services/sandbox/factory.ts:13-15](https://github.com/lobehub/lobehub/blob/251f9cb64777e79a0c0d72f846f12afbecd47e78/apps/server/src/services/sandbox/factory.ts#L13-L15)) | Model-written code runs on a separate service, not on the LobeHub server (C4) |
+| Memory only where needed | Turn off Enable Memory in the settings of accounts that don't need it (default `enabled: true`) ([packages/const/src/settings/memory.ts:3-4](https://github.com/lobehub/lobehub/blob/251f9cb64777e79a0c0d72f846f12afbecd47e78/packages/const/src/settings/memory.ts#L3-L4)) | Memories the model writes in one chat no longer shape later chats (C6) |
+| Limited outbound network | Run the deployment with outbound access limited to your model providers, sandbox service and the sites your users need | A narrow path for data to leave, whatever a steered model fetches (C5) |
+| Off-host database backups | Back up the database regularly to storage that LobeHub users and the server can't change | Tool-call and approval records that outlast deleted chats (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; you can edit the arguments before approving.
+- Scheduled tasks, bot conversations and delegated runs proceed without prompts, so schedule only work you are happy to run unattended.
+
+### Handling data
+
+- Tool-call usage reports (names, sizes and errors, no content) go to the LobeHub market by default for signed-in users; Send Anonymous Usage Data (`telemetry`) turns them off.
+- Chats, including tool arguments and results, are stored in plain text; protect database backups like the data itself.
+
 ## Critical gaps
 - Approval mode is set per run, and server-side, delegated and background runs default to headless approval instead of the user's foreground manual mode (G2). (ASI09, ASI02, T10; C2) — [apps/server/src/services/aiAgent/index.ts:915](https://github.com/lobehub/lobehub/blob/251f9cb64777e79a0c0d72f846f12afbecd47e78/apps/server/src/services/aiAgent/index.ts#L915)
 - A hijacked model can leak user data through the crawler and delete knowledge bases and memories without a human (C5-WORSTCASE). (ASI01, T6, LLM01; C5) — [packages/builtin-tool-web-browsing/src/manifest.ts:40](https://github.com/lobehub/lobehub/blob/251f9cb64777e79a0c0d72f846f12afbecd47e78/packages/builtin-tool-web-browsing/src/manifest.ts#L40); [packages/builtin-tool-knowledge-base/src/manifest.ts:177](https://github.com/lobehub/lobehub/blob/251f9cb64777e79a0c0d72f846f12afbecd47e78/packages/builtin-tool-knowledge-base/src/manifest.ts#L177)

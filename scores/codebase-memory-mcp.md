@@ -25,6 +25,29 @@ Controls where a risk surface exists: 4.17 / 9.0 (46%); 1 criterion scored SA (s
 
 A local code-graph server that holds no credentials, makes no network calls and ships accurate read-only and destructive labels on all 17 tools, so a hijacked agent can do limited damage through it. The main gap is that git, grep and find helpers run unsandboxed through a shell, with only a character filter guarding the model-supplied values they include. Any non-sensitive directory can be indexed and read back by default. ADR text and repository-supplied graph snapshots persist into later sessions without review, and the audit log records tool names but not what each call did.
 
+## Safest setup
+
+codebase-memory-mcp holds no credentials, makes no network calls, labels every tool as read-only or destructive, and refuses to index your home directory and credential folders. As shipped it can index any other directory you can read, exposes its write tools, and runs its git, grep and find helpers unsandboxed, so the safest setup declares a root, picks a read-only tool profile and contains the process.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A declared project root | Set `CBM_ALLOWED_ROOT=<project dir>` in the server's environment, or record each root with `allow-root <path>` ([src/main.c:1644](https://github.com/DeusData/codebase-memory-mcp/blob/268a9d8886642eb7f9b2ce45f5ce27cdecf0f519/src/main.c#L1644); [src/main.c:1200](https://github.com/DeusData/codebase-memory-mcp/blob/268a9d8886642eb7f9b2ce45f5ce27cdecf0f519/src/main.c#L1200)) | Indexing and source reads stay inside the projects you named (C1) |
+| A read-only tool profile | Add `--tool-profile scout` to the server command, or `--tool-profile=analysis` when the task needs code search and diffs ([src/mcp/mcp.c:966-974](https://github.com/DeusData/codebase-memory-mcp/blob/268a9d8886642eb7f9b2ce45f5ce27cdecf0f519/src/mcp/mcp.c#L966-L974); [src/mcp/mcp.c:924-927](https://github.com/DeusData/codebase-memory-mcp/blob/268a9d8886642eb7f9b2ce45f5ce27cdecf0f519/src/mcp/mcp.c#L924-L927)) | The write tools are left out, and scout also leaves out the tools that call git and grep (C3) |
+| Its own container or VM | Run the server in a container or VM with only the project mounted, a minimal environment and no network | An outer boundary around the git, grep and find helpers, which otherwise run with your full user rights (C4) |
+| Indexes you build yourself | Index repositories you didn't write from a checkout that has no committed graph snapshot | The graph the model reads comes from the source itself, not from a file someone committed (C6) |
+| Index size limits | `config set index_max_files <n>` and `config set index_max_source_mb <n>` ([src/foundation/index_policy.h:8-9](https://github.com/DeusData/codebase-memory-mcp/blob/268a9d8886642eb7f9b2ce45f5ce27cdecf0f519/src/foundation/index_policy.h#L8-L9); [src/cli/cli.c:7759](https://github.com/DeusData/codebase-memory-mcp/blob/268a9d8886642eb7f9b2ce45f5ce27cdecf0f519/src/cli/cli.c#L7759)) | Indexing an unexpectedly large tree stops at a size you chose (C10) |
+| Watcher only when needed | `config set auto_watch false` when you don't need automatic re-indexing ([src/cli/cli.h:453](https://github.com/DeusData/codebase-memory-mcp/blob/268a9d8886642eb7f9b2ce45f5ce27cdecf0f519/src/cli/cli.h#L453); [src/cli/cli.c:7759](https://github.com/DeusData/codebase-memory-mcp/blob/268a9d8886642eb7f9b2ce45f5ce27cdecf0f519/src/cli/cli.c#L7759)) | No background re-index work runs outside the calls you make (C10) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; delete_project and manage_adr writes have no preview or undo.
+- ADR text is returned to the model in later sessions, so read what a manage_adr call will store before approving it.
+
+### Handling data
+
+- Index databases in the cache folder hold source text unencrypted; store the cache like the repositories it covers.
+- The request log records tool names and timings only; keep your host's transcript if you need to know what each call did.
+
 ## Critical gaps
 - Helper git, grep and find commands are built as shell strings that include model-supplied values, guarded only by a character filter, and run unsandboxed as the user with the inherited environment. (ASI05, T11; C4) — [src/foundation/compat_fs.c:932](https://github.com/DeusData/codebase-memory-mcp/blob/268a9d8886642eb7f9b2ce45f5ce27cdecf0f519/src/foundation/compat_fs.c#L932); [src/foundation/str_util.c:246-270](https://github.com/DeusData/codebase-memory-mcp/blob/268a9d8886642eb7f9b2ce45f5ce27cdecf0f519/src/foundation/str_util.c#L246-L270)
 

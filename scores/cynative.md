@@ -25,6 +25,31 @@ Controls where a risk surface exists: 6.35 / 8.0 (79%); 2 criteria scored SA (su
 
 Cynative holds no cloud credentials of its own: it checks each model-made cloud request in code against a read-only role before attaching the credentials already in your shell, asks for approval before http_request and code_execution calls by default, and stops if the audit log can't be written. The main limits: the approval prompt isn't guaranteed to show the exact call, requests inside an approved script aren't shown individually, and the read-only ceilings are the providers' audit and viewer roles, which still permit a few non-read operations. Also missing: an explicit spend ceiling, a sandbox outside the credential-holding process, pinned permission data, and binding of cloud API requests to your own accounts (exact endpoint pinning covers Kubernetes clusters and GitLab only).
 
+## Safest setup
+
+Cynative ships with strong protections already on: a read-only permission check on every model-made cloud request, per-call approval for the two tools that reach the outside world, and an audit log of every tool call. The safest setup keeps those on and adds a few layers around them.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A read-only identity | Run Cynative from a cloud identity that can only read, such as an AWS role with SecurityAudit or a GCP Viewer account | The cloud provider itself blocks writes, so safety rests on more than Cynative's own check (C1) |
+| An AWS assumed role | On AWS, sign in with an assumed-role identity | Cynative narrows it further, to a scoped one-hour session (C1) |
+| Per-call approval | Run interactively, without `--auto-approve` ([internal/cli/root.go:69](https://github.com/cynative/cynative/blob/7138ad75ffa986f4541582d6b02472780c20da7e/internal/cli/root.go#L69)) | A person decides on every top-level call that reaches the outside world, sub-agent calls included (C2) |
+| Read-only connector roles | Keep the default `policy`, `role`, `role_definition` and `cluster_role` under `connectors:`, with GitHub and GitLab `permissions` left empty ([internal/config/config.go:39](https://github.com/cynative/cynative/blob/7138ad75ffa986f4541582d6b02472780c20da7e/internal/config/config.go#L39); [internal/config/config.go:48](https://github.com/cynative/cynative/blob/7138ad75ffa986f4541582d6b02472780c20da7e/internal/config/config.go#L48); [internal/config/config.go:73](https://github.com/cynative/cynative/blob/7138ad75ffa986f4541582d6b02472780c20da7e/internal/config/config.go#L73); [internal/config/config.go:85](https://github.com/cynative/cynative/blob/7138ad75ffa986f4541582d6b02472780c20da7e/internal/config/config.go#L85); [internal/config/config.go:96](https://github.com/cynative/cynative/blob/7138ad75ffa986f4541582d6b02472780c20da7e/internal/config/config.go#L96); [internal/config/config.go:109](https://github.com/cynative/cynative/blob/7138ad75ffa986f4541582d6b02472780c20da7e/internal/config/config.go#L109); [internal/config/config.go:133](https://github.com/cynative/cynative/blob/7138ad75ffa986f4541582d6b02472780c20da7e/internal/config/config.go#L133)) | Write access stays something you add deliberately, per connector (C3) |
+| A token ceiling | `max_total_tokens: <n>` in the config file, or `CYNATIVE_MAX_TOTAL_TOKENS` ([internal/config/config.go:156](https://github.com/cynative/cynative/blob/7138ad75ffa986f4541582d6b02472780c20da7e/internal/config/config.go#L156)) | A ceiling on model spend for the whole run, shared with sub-agents (C10) |
+| Its own container or VM | Run Cynative in a container or VM with outbound access limited to the model provider and the cloud endpoints you use | An outer boundary around model-written scripts, which otherwise run inside the process that holds your credentials (C4) |
+| The audit log | Keep the default `enabled: true` in the `audit:` block ([internal/config/config.go:121-125](https://github.com/cynative/cynative/blob/7138ad75ffa986f4541582d6b02472780c20da7e/internal/config/config.go#L121-L125)) | A record of every tool call, with the approval decision for each (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; the session-wide 'a' answer covers every later call to that tool, sub-agents included.
+- A `code_execution` approval covers every request the script makes, so read the script before approving it.
+- Requests to your own accounts and buckets are the expected pattern; a host or bucket you don't recognize is worth a closer look.
+
+### Handling data
+
+- `~/.cynative/audit.log` keeps the raw arguments of top-level calls for 30 days, readable only by you; store it like other sensitive logs.
+- `--verbose` prints raw tool-call arguments to stderr, so leave it off where output lands in shared logs.
+
 ## Critical gaps
 - None: no criterion is capped and no blast radius is at the worst level.
 

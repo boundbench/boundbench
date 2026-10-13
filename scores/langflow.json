@@ -36,6 +36,160 @@
     "external_communication": "yes"
   },
   "headline": "Run as the README shows, Langflow's default authentication is not locked down. Flows, agent tools, custom components and the built-in Assistant's generated code all run inside the server process, which holds every stored credential and the key that decrypts them. Defenses against server-side request forgery (SSRF) and file-path restriction are good and on by default. A microVM sandbox and per-tool human approval exist, but both are opt-in, and nothing limits what a prompt-injected agent can do with its tools.",
+  "safe_setup": {
+    "intro": "Langflow blocks internal addresses and keeps file paths inside each user's storage by default, and caps each agent at 15 model calls. As shipped, default authentication is not locked down, and flows, custom code and the Assistant run in the server process that holds every stored credential, so the safest setup turns on the sandbox, approval and lockdown settings Langflow offers and builds containment around the server.",
+    "steps": [
+      {
+        "setup": "Scoped, low-limit keys",
+        "how": "Store only the provider and service keys your flows need, each scoped or read-only with a spending limit set at the provider",
+        "gives_you": "Whatever a flow does, it reaches only the systems and spend you chose",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Login on a private network",
+        "how": "Turn on authentication with a login for each user, and serve Langflow only on a network you control",
+        "gives_you": "Only people you chose can run flows or reach the credentials stored in them",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Server components only",
+        "how": "`LANGFLOW_ALLOW_CUSTOM_COMPONENTS=false`",
+        "gives_you": "Only the server's own component code runs, with the built-in code-execution components switched off",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/lfx/src/lfx/services/settings/groups/security.py",
+            "lines": "117",
+            "contains": "allow_custom_components: bool = True",
+            "url": "https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/src/lfx/src/lfx/services/settings/groups/security.py#L117"
+          },
+          {
+            "file": "src/lfx/src/lfx/services/settings/groups/security.py",
+            "lines": "189",
+            "contains": "LANGFLOW_ALLOW_CUSTOM_COMPONENTS=false",
+            "url": "https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/src/lfx/src/lfx/services/settings/groups/security.py#L189"
+          }
+        ]
+      },
+      {
+        "setup": "A microVM for Python",
+        "how": "Where flows need the Python Interpreter, set `LANGFLOW_SANDBOX_BACKEND=exec-sandbox` and keep the default `sandbox_allow_network` off",
+        "gives_you": "That code runs in an offline microVM, away from the server's database, keys and files",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/lfx/src/lfx/services/settings/groups/security.py",
+            "lines": "196",
+            "contains": "sandbox_backend: str = \"none\"",
+            "url": "https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/src/lfx/src/lfx/services/settings/groups/security.py#L196"
+          },
+          {
+            "file": "pyproject.toml",
+            "lines": "204",
+            "contains": "LANGFLOW_SANDBOX_BACKEND=exec-sandbox",
+            "url": "https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/pyproject.toml#L204"
+          },
+          {
+            "file": "src/lfx/src/lfx/services/settings/groups/security.py",
+            "lines": "225",
+            "contains": "sandbox_allow_network: bool = False",
+            "url": "https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/src/lfx/src/lfx/services/settings/groups/security.py#L225"
+          }
+        ]
+      },
+      {
+        "setup": "Assistant turned off",
+        "how": "`LANGFLOW_AGENTIC_EXPERIENCE=false`",
+        "gives_you": "No model-generated component code runs on the server",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/lfx/src/lfx/services/settings/groups/variables.py",
+            "lines": "20",
+            "contains": "agentic_experience: bool = True",
+            "url": "https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/src/lfx/src/lfx/services/settings/groups/variables.py#L20"
+          },
+          {
+            "file": "src/backend/base/langflow/agentic/api/deps.py",
+            "lines": "23",
+            "contains": "LANGFLOW_AGENTIC_EXPERIENCE=false",
+            "url": "https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/src/backend/base/langflow/agentic/api/deps.py#L23"
+          }
+        ]
+      },
+      {
+        "setup": "Per-tool approval",
+        "how": "In each Agent, pick approval actions for every tool that writes, sends or runs code",
+        "gives_you": "The agent pauses for a person before those tools run",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/lfx/src/lfx/components/models_and_agents/agent_helpers/tool_approval.py",
+            "lines": "63",
+            "contains": "approval_actions",
+            "url": "https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/src/lfx/src/lfx/components/models_and_agents/agent_helpers/tool_approval.py#L63"
+          }
+        ]
+      },
+      {
+        "setup": "MCP servers you chose",
+        "how": "`LANGFLOW_SKIP_MCP_AUTO_INIT=true`, and `LANGFLOW_MCP_SERVER_ALLOWED_PACKAGES=<packages>` listing the stdio packages you use",
+        "gives_you": "Startup skips its MCP reconciliation, and package runners fetch only packages you named",
+        "criterion": "C7",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/lfx/src/lfx/services/settings/groups/mcp.py",
+            "lines": "85",
+            "contains": "skip_mcp_auto_init: bool = False",
+            "url": "https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/src/lfx/src/lfx/services/settings/groups/mcp.py#L85"
+          },
+          {
+            "file": "src/backend/base/langflow/cli/preflight.py",
+            "lines": "364",
+            "contains": "LANGFLOW_SKIP_MCP_AUTO_INIT",
+            "url": "https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/src/backend/base/langflow/cli/preflight.py#L364"
+          },
+          {
+            "file": "src/lfx/src/lfx/services/settings/groups/mcp.py",
+            "lines": "132",
+            "contains": "mcp_server_allowed_packages: str | None = None",
+            "url": "https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/src/lfx/src/lfx/services/settings/groups/mcp.py#L132"
+          },
+          {
+            "file": "src/lfx/src/lfx/base/mcp/security.py",
+            "lines": "647",
+            "contains": "LANGFLOW_MCP_SERVER_ALLOWED_PACKAGES",
+            "url": "https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/src/lfx/src/lfx/base/mcp/security.py#L647"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the server in a container or VM whose outbound network reaches only the model provider and the hosts your flows need",
+        "gives_you": "An outer boundary around in-process code, and a narrow path for data to leave",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Read each approval card and approve calls one at a time; when the agent requests several calls at once, the card describes only the first.",
+      "Assistant edits to a flow get a restore point, but HTTP requests, messages and code runs can't be undone, so check those before approving."
+    ],
+    "handling": [
+      "Transaction records keep component inputs and outputs, masking only values under sensitive key names; protect the Langflow database and config directory like the credentials they hold.",
+      "Usage telemetry, error messages included, goes to Scarf by default; `DO_NOT_TRACK=true` turns it off."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

@@ -24,6 +24,30 @@
 
 MS-Agent ships shell, Python and notebook execution on the host, and its Python tool runs model code inside the agent process itself, with no sandbox by default. The WebUI and TUI ask before most actions, but any project directory can switch that off through its own .ms_agent/config.yaml, permission_memory.json or hooks.json, with no workspace-trust prompt. The SDK and `ms-agent run` default to auto-approve. Treat opening an untrusted repository as running its code.
 
+## Safest setup
+
+MS-Agent's TUI and WebUI ask before most tool calls, give spawned shells, MCP servers and hooks an environment without API keys, and keep a session log outside the project. Model-written Python runs inside the agent process with no sandbox by default, and a project's own .ms_agent files can change approval and settings, so the safest setup turns on the Docker sandbox, opens only folders you trust and adds containment around the process.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Give the process only the model and tool keys this task needs, each scoped where the provider allows and with a spending limit set at the provider | Whatever the agent runs reaches only the systems and spend you chose, not every credential in your shell (C1) |
+| Per-call approval | Keep the default `--permission_mode` of `restricted` in the TUI and WebUI, and set `mode: restricted` under `permission:` in the config for ms-agent run and the SDK ([ms_agent/cli/tui.py:47-49](https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/cli/tui.py#L47-L49); [webui/backend/app/schemas/project.py:43](https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/schemas/project.py#L43); [ms_agent/permission/config.py:203-204](https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/permission/config.py#L203-L204)) | A person decides on every shell, Python, write and other non-read tool call before it runs (C2) |
+| A reviewed project folder | Open only project directories whose `.ms_agent/` folder, `AGENTS.md` and `.env` you wrote or have read | Approval settings, hooks, MCP servers and instructions come only from you (C6) |
+| Only the tools needed | List only the tools the task needs in the `include` lists under `file_system` and `code_executor` in the agent config ([ms_agent/agent/agent.yaml:80-101](https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/agent/agent.yaml#L80-L101)) | The model sees write and code execution tools only when the task calls for them (C3) |
+| The Docker sandbox | Set `implementation: sandbox` under `code_executor`, with `network_enabled: false` in its `sandbox` block ([ms_agent/tools/tool_manager.py:199-208](https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/tool_manager.py#L199-L208); [ms_agent/tools/code/code_executor.py:165-166](https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/code_executor.py#L165-L166)) | Shell, Python and notebook code run in a container away from the agent's keys and your home directory, with no network (C4) |
+| Pre-task snapshots | `enable_snapshots: true` in the agent config ([ms_agent/agent/llm_agent.py:213-222](https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/agent/llm_agent.py#L213-L222)) | A snapshot of the work directory before each task, to roll back to (C2) |
+| Its own container or VM | Run MS-Agent in a container or VM with outbound access limited to the model provider and the hosts the task needs | An outer boundary around hooks, MCP servers and in-process code, and one place to stop everything the agent started (C4) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; the TUI and CLI prompts shorten long arguments, so see a long script or command in full before approving it.
+- Prefer allow once over always: an always answer is saved as a rule for that project and covers every later matching call.
+
+### Handling data
+
+- Session logs under ~/.ms_agent/projects hold every message and tool result unredacted; store them like the data the agent read.
+- Project memory in .ms_agent/memory is written without a prompt and loaded into later sessions, so read MEMORY.md before relying on it.
+
 ## Critical gaps
 - Model-generated Python executes in-process via exec() by default, with the agent's credentials and the user's full filesystem in reach. (ASI05; C4) — [ms_agent/tools/code/local_code_executor.py:782-786](https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/local_code_executor.py#L782-L786); [ms_agent/agent/agent.yaml:97-101](https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/agent/agent.yaml#L97-L101)
 - Workspace files the agent opens (.ms_agent/config.yaml, permission_memory.json, hooks.json) can switch off or bypass the approval gate with no trust decision. (ASI09, ASI02; C2) — [webui/backend/app/backends/ms_agent/config.py:729-739](https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/backends/ms_agent/config.py#L729-L739); [ms_agent/config/resolver.py:288-291](https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/config/resolver.py#L288-L291); [ms_agent/hooks/permission_resolve.py:75-88](https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/hooks/permission_resolve.py#L75-L88)

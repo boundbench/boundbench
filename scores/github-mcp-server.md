@@ -25,6 +25,29 @@ Controls where a risk surface exists: 3.35 / 7.0 (48%); 3 criteria scored SA (su
 
 The server acts on GitHub with the user's own token, which by default carries full 'repo' control of every private repository the user can reach, and its default tool set can push files, merge pull requests, post comments and open issues with no confirmation step of its own. Content from any public issue, pull request or file flows to the model alongside those write tools and private-repo reads, so a prompt-injected agent can leak private code into a public comment unattended: the server's lockdown mode, information-flow labels and read-only mode would break that chain but are all off by default. Risk annotations are accurate and enforced by a test, repository deletion needs a typed human confirmation, and the token is never sent off GitHub hosts, but there is no audit record of tool calls unless verbose stdio logging is switched on.
 
+## Safest setup
+
+GitHub MCP Server keeps your token away from the model and on GitHub's own hosts, labels every tool as read-only or not, and asks you to type the repository name before deleting one. As shipped it pairs a broad token and write tools with content from any public repository, so the safest setup narrows the identity and turns on the read-only, lockdown and labelling modes the server already includes.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A narrowly scoped grant | Give the App installation or fine-grained token only the repositories and permissions the task needs, read-only where the task allows | GitHub itself refuses anything outside that grant, whatever the model asks for (C1) |
+| GitHub App mode | `--app-id`, `--app-installation-id` and `--app-private-key-path` on the stdio server ([cmd/github-mcp-server/main.go:266-268](https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L266-L268)) | A dedicated identity whose tokens expire within an hour, in place of your own account's access (C1) |
+| Read-only mode | `--read-only` ([cmd/github-mcp-server/main.go:247](https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L247)) | Every write tool is removed, so nothing the agent reads can be posted, pushed or merged (C5) |
+| Only the toolsets needed | `--toolsets <list>` naming just the toolsets the task uses ([cmd/github-mcp-server/main.go:243](https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L243)) | The model sees a smaller set of tools, with write tools only where you chose them (C3) |
+| Lockdown mode | `--lockdown-mode` ([cmd/github-mcp-server/main.go:253](https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L253)) | Issue and pull request content from non-collaborators in public repositories stays out of the model's context (C5) |
+| Trust labels on results | `--features ifc_labels` ([cmd/github-mcp-server/main.go:246](https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L246); [pkg/github/feature_flags.go:17](https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/feature_flags.go#L17)) | Each result is marked trusted or untrusted and public or private, for your host to act on (C5) |
+| A tool-call log | `--enable-command-logging` with `--log-file <path>` outside any workspace ([cmd/github-mcp-server/main.go:248-249](https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L248-L249)) | A timestamped record of every tool call and result that outlives the session (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve write calls one at a time; merges, file pushes and deletions, and comments have no preview of their own.
+- Assigning the Copilot coding agent starts work on GitHub that keeps running after the session ends, so approve it when you want that work to go ahead.
+
+### Handling data
+
+- The command log holds every request and response unredacted, file contents included; store it like the repositories it covers.
+
 ## Critical gaps
 - In the default configuration, content from any public issue, PR or file reaches the model in the same session that holds full 'repo' access to private repositories and unattended write tools (comments, issues, push_files), so a prompt injection can exfiltrate private code publicly; lockdown, IFC labels and read-only mode are all opt-in. (ASI01, ASI02, LLM01; C5) — [pkg/scopes/scopes.go:84-85](https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/scopes/scopes.go#L84-L85); [pkg/github/issues.go:1369-1374](https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/pkg/github/issues.go#L1369-L1374); [cmd/github-mcp-server/main.go:253](https://github.com/github/github-mcp-server/blob/f10e4e1f923d46b86f2e80e849aa74084c847184/cmd/github-mcp-server/main.go#L253)
 

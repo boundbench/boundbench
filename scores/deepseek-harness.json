@@ -36,6 +36,129 @@
     "external_communication": "yes"
   },
   "headline": "DeepSeek Harness runs a capable coding agent inside a real but loose OS sandbox: writes are confined to the workspace, while the whole host filesystem stays readable and the network stays open. Its approval prompts are precise and fail closed, but they fire only when a command needs to write outside the workspace, so a hijacked agent can read your credentials and push, upload or delete over the network with no prompt. The sandbox is also not a complete boundary. Run it in a disposable VM or container without real credentials.",
+  "safe_setup": {
+    "intro": "DeepSeek Harness keeps shell writes inside the workspace, asks before any command needs more than that, and logs every tool call before it runs. Its sandbox still leaves the host filesystem readable and the network open, and nothing else gates a networked command, so the safest setup runs it in a disposable VM or container that holds no real credentials.",
+    "steps": [
+      {
+        "setup": "A disposable VM or container",
+        "how": "Run the harness in a VM or container that holds only the workspace and a dedicated DeepSeek key with a spending limit, and none of your SSH keys, agent socket or cloud credential files",
+        "gives_you": "Whatever the agent reads or runs, it finds only the one key you chose to give it",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A narrow outbound network",
+        "how": "Limit the VM or container's outbound traffic to the DeepSeek API and the hosts the task needs",
+        "gives_you": "Data and pushes can only reach destinations you picked, even when no prompt appears",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Per-call approval",
+        "how": "Keep the default `workspace-write` mode, which pairs with the `ask` approval policy",
+        "gives_you": "A person decides on each command or edit that needs access beyond the workspace, one call at a time",
+        "criterion": "C2",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "packages/bundle/base/cordis.patch.yml",
+            "lines": "232",
+            "contains": "process.env.DSH_PERMISSION_MODE ?? 'workspace-write'",
+            "url": "https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/bundle/base/cordis.patch.yml#L232"
+          },
+          {
+            "file": "packages/bundle/base/cordis.patch.yml",
+            "lines": "248",
+            "contains": "? 'never' : 'ask'",
+            "url": "https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/bundle/base/cordis.patch.yml#L248"
+          }
+        ]
+      },
+      {
+        "setup": "Read-only mode for reviews",
+        "how": "Start with `DSH_PERMISSION_MODE=read-only` for tasks that only read and explain code",
+        "gives_you": "The sandbox keeps every file unchanged, and each write becomes a call you approve",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/bundle/base/cordis.patch.yml",
+            "lines": "232",
+            "contains": "DSH_PERMISSION_MODE",
+            "url": "https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/bundle/base/cordis.patch.yml#L232"
+          },
+          {
+            "file": "packages/bundle/base/cordis.patch.yml",
+            "lines": "254-256",
+            "contains": "read-only:",
+            "url": "https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/bundle/base/cordis.patch.yml#L254-L256"
+          }
+        ]
+      },
+      {
+        "setup": "A clean launch directory",
+        "how": "Start from a directory with no .env file you didn't write, and read any AGENTS.md, CLAUDE.md and .agents/skills in a repository before starting",
+        "gives_you": "Settings, keys and standing instructions come only from you",
+        "criterion": "C6",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Reviewed plugins only",
+        "how": "Keep the plugin tool off as shipped (`disabled: true` under `tool-plugin-manager`) and add only plugins you have read",
+        "gives_you": "Only code you chose runs inside the harness process, which sits outside the sandbox",
+        "criterion": "C7",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "packages/bundle/web-app/presets/standard.patch.yml",
+            "lines": "160-162",
+            "contains": "tool-plugin-manager",
+            "url": "https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/bundle/web-app/presets/standard.patch.yml#L160-L162"
+          }
+        ]
+      },
+      {
+        "setup": "Session uploads off",
+        "how": "`DSH_TELEMETRY_MODE=DISABLED`",
+        "gives_you": "Session logs stay on your machine, even when you send feedback",
+        "criterion": "C8",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/bundle/base/cordis.patch.yml",
+            "lines": "207",
+            "contains": "DSH_TELEMETRY_MODE",
+            "url": "https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/bundle/base/cordis.patch.yml#L207"
+          },
+          {
+            "file": "packages/session/session-telemetry-otel/src/index.ts",
+            "lines": "35",
+            "contains": "DISABLED = 'DISABLED'",
+            "url": "https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/session/session-telemetry-otel/src/index.ts#L35"
+          }
+        ]
+      },
+      {
+        "setup": "A time limit on the VM",
+        "how": "Stop or discard the VM or container when the task ends",
+        "gives_you": "Background commands and scheduled reminders end with it, since stopping a turn leaves them running",
+        "criterion": "C10",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; each approval grants only that one call.",
+      "Networked commands such as a push or an upload run without a prompt, so check the session's tool calls when the task touches remote systems."
+    ],
+    "handling": [
+      "Session logs in the harness home keep tool arguments and output unredacted; store them like the data the agent read.",
+      "The stored DeepSeek key sits in a plaintext file readable by the agent, so use a dedicated key you can revoke."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

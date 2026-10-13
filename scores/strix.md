@@ -24,6 +24,32 @@
 
 Strix runs autonomous multi-agent pentests that execute arbitrary commands in a Docker container with unrestricted network access, with no human approval of any action and with the target scope enforced only by the prompt. The container is a stock one (default capabilities plus NET_ADMIN and NET_RAW, passwordless sudo) but it keeps the LLM key and the host's credentials out. Content from targets and scanned repositories is not separated from instructions, so a prompt injection can turn the agent against other hosts or leak mounted source. Cost is unbounded unless --max-budget is passed.
 
+## Safest setup
+
+Strix runs every model-written command inside a per-scan Docker container that never holds your LLM key or home credentials, and stops each agent after 500 turns. Beyond that it is fully autonomous, with no approval step, no target scope enforced in code and no cost ceiling by default, so the safest setup adds the budget and resource limits Strix offers and builds scope and containment around it.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, low-limit key | Give Strix its own model API key with a spending limit set at the provider | Spend stays capped by the provider, however long a scan runs (C10) |
+| Test-only target credentials | Put only throwaway test-account credentials in `--instruction` ([strix/interface/cli_args.py:148](https://github.com/usestrix/strix/blob/99c0711687ac7d6acbe5a214143f97b8d6f8f282/strix/interface/cli_args.py#L148)) | Anything the model, logs or run record expose reaches only accounts made for the test (C8) |
+| A cost and turn ceiling | `--max-budget <usd>` on every scan, with `--max-turns <n>` below the default 500 for short scans ([strix/interface/cli_args.py:257](https://github.com/usestrix/strix/blob/99c0711687ac7d6acbe5a214143f97b8d6f8f282/strix/interface/cli_args.py#L257); [strix/interface/cli_args.py:270](https://github.com/usestrix/strix/blob/99c0711687ac7d6acbe5a214143f97b8d6f8f282/strix/interface/cli_args.py#L270)) | The whole scan, sub-agents included, stops cleanly at a spend you chose (C10) |
+| Sandbox resource limits | Set `STRIX_SANDBOX_MEM_LIMIT`, `STRIX_SANDBOX_CPUS` and `STRIX_SANDBOX_PIDS_LIMIT` in the environment ([strix/runtime/docker_client.py:72](https://github.com/usestrix/strix/blob/99c0711687ac7d6acbe5a214143f97b8d6f8f282/strix/runtime/docker_client.py#L72); [strix/runtime/docker_client.py:80](https://github.com/usestrix/strix/blob/99c0711687ac7d6acbe5a214143f97b8d6f8f282/strix/runtime/docker_client.py#L80); [strix/runtime/docker_client.py:87](https://github.com/usestrix/strix/blob/99c0711687ac7d6acbe5a214143f97b8d6f8f282/strix/runtime/docker_client.py#L87)) | A runaway process in the sandbox stays within the memory, CPU and process count you set (C4) |
+| Only pinned MCP servers | Keep the default of no `mcp-servers.json`, and pin each server's version in its command when a scan needs one ([strix/tools/mcp/loader.py:30](https://github.com/usestrix/strix/blob/99c0711687ac7d6acbe5a214143f97b8d6f8f282/strix/tools/mcp/loader.py#L30)) | Only extension code you chose, at a version you checked, runs beside Strix on your host (C7) |
+| Scope enforced by the network | Run Strix where a firewall lets traffic reach only the authorized targets and the model provider | The target list holds in the network, whatever the agent decides to try (C3) |
+| Its own VM | Run Strix and its Docker daemon in a dedicated VM that holds only the code you are scanning | An outer boundary around a sandbox whose user has root-equivalent rights inside it (C4) |
+| Run records outside the target | Start Strix from a directory other than the one you scan, so `strix_runs` sits outside the mounted tree ([strix/core/paths.py:8](https://github.com/usestrix/strix/blob/99c0711687ac7d6acbe5a214143f97b8d6f8f282/strix/core/paths.py#L8)) | The run record and the state a resume reloads stay out of the agent's writable workspace (C9) |
+
+### Approving with confidence
+
+- Strix runs tool calls without asking, so the review that counts happens before the scan: read the target list and instruction once more before you start.
+- When Strix asks which local directory to mount, read the path and confirm only the tree you mean to scan.
+
+### Handling data
+
+- Each run directory holds `strix.log` at debug level, the full session history and `run.json` with your instruction text, all unredacted; store it like the target's own secrets.
+- `~/.strix/cli-config.json` keeps the model key in plaintext, readable only by you.
+- Content-free usage telemetry is on by default; `STRIX_TELEMETRY=0` turns it off.
+
 ## Critical gaps
 - The most powerful action path (a root-capable shell in the sandbox) and every other tool execute with no approval gate, by design. (ASI02, ASI09, T10; C2) — [strix/agents/prompts/system_prompt.jinja:77](https://github.com/usestrix/strix/blob/99c0711687ac7d6acbe5a214143f97b8d6f8f282/strix/agents/prompts/system_prompt.jinja#L77); [strix/agents/factory.py:736-740](https://github.com/usestrix/strix/blob/99c0711687ac7d6acbe5a214143f97b8d6f8f282/strix/agents/factory.py#L736-L740)
 - Untrusted target and repository content enters model context unmarked, and a hijacked agent has unrestricted egress plus a root-capable shell with no approval gate. (ASI01, T6, LLM01; C5) — [strix/agents/factory.py:736-740](https://github.com/usestrix/strix/blob/99c0711687ac7d6acbe5a214143f97b8d6f8f282/strix/agents/factory.py#L736-L740); [strix/runtime/docker_client.py:233](https://github.com/usestrix/strix/blob/99c0711687ac7d6acbe5a214143f97b8d6f8f282/strix/runtime/docker_client.py#L233)

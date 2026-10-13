@@ -36,6 +36,121 @@
     "external_communication": "no"
   },
   "headline": "Despite the documentation saying only registry tools are on by default, the code enables every tool group, so giving the server a Terraform token hands the model write access to workspaces, variables, teams and access grants across every organization that token reaches. Delete and apply tools sit behind ENABLE_TF_OPERATIONS, though enforcement of that gate does not cover every path, and the model can point a workspace at any repository and run its code with attached credentials. Handling of sensitive values on the logging path is also not locked down. Run it with --toolsets=registry or a read-only, narrowly scoped team token.",
+  "safe_setup": {
+    "intro": "Terraform MCP Server runs nothing locally, keeps its token away from the model, rate-limits every call and holds back its delete and destroy tools unless you turn them on. As shipped it enables every tool group once a token is present, so the safest setup starts with a narrow token and a small tool set.",
+    "steps": [
+      {
+        "setup": "A narrowly scoped token",
+        "how": "Set `TFE_TOKEN` to a team token with read access to only the organization and projects the task needs",
+        "gives_you": "HCP Terraform itself refuses anything outside that grant, and the server never falls back to your own CLI credentials",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "pkg/client/tfe_client.go",
+            "lines": "22",
+            "contains": "TerraformToken          = \"TFE_TOKEN\"",
+            "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/tfe_client.go#L22"
+          }
+        ]
+      },
+      {
+        "setup": "Only the tools needed",
+        "how": "`--toolsets=registry` for registry lookups, or `--tools <list>` naming just the tools the task uses",
+        "gives_you": "The model sees only the tools you chose, with write, team and access tools left out",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "pkg/cli/commands.go",
+            "lines": "121-122",
+            "contains": "rootCmd.PersistentFlags().String(\"tools\", \"\"",
+            "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/cli/commands.go#L121-L122"
+          },
+          {
+            "file": "pkg/toolsets/toolsets.go",
+            "lines": "10",
+            "contains": "Registry        = \"registry\"",
+            "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/toolsets/toolsets.go#L10"
+          }
+        ]
+      },
+      {
+        "setup": "Destructive tools held back",
+        "how": "Keep the default with `ENABLE_TF_OPERATIONS` unset",
+        "gives_you": "The delete, force-unlock and destroy tools stay out of the tool list",
+        "criterion": "C2",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "pkg/tools/dynamic_tool.go",
+            "lines": "95",
+            "contains": "utils.GetEnv(\"ENABLE_TF_OPERATIONS\", \"false\")",
+            "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/dynamic_tool.go#L95"
+          }
+        ]
+      },
+      {
+        "setup": "Call rate limits",
+        "how": "Keep the defaults, or set lower `MCP_RATE_LIMIT_SESSION` and `MCP_RATE_LIMIT_GLOBAL` values as `<rps>:<burst>`",
+        "gives_you": "Every session is held to a fixed number of tool calls per second",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "pkg/client/ratelimit.go",
+            "lines": "32-34",
+            "contains": "PerSessionLimit: rate.Every(time.Second / 5)",
+            "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/ratelimit.go#L32-L34"
+          },
+          {
+            "file": "pkg/client/ratelimit.go",
+            "lines": "44",
+            "contains": "MCP_RATE_LIMIT_GLOBAL",
+            "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/ratelimit.go#L44"
+          },
+          {
+            "file": "pkg/client/ratelimit.go",
+            "lines": "55",
+            "contains": "MCP_RATE_LIMIT_SESSION",
+            "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/ratelimit.go#L55"
+          }
+        ]
+      },
+      {
+        "setup": "A tool-call log on disk",
+        "how": "`--log-file <path>` outside any workspace, with `--log-format json`",
+        "gives_you": "A timestamped record of every tool call that outlives the host session",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "pkg/cli/commands.go",
+            "lines": "118-120",
+            "contains": "String(\"log-file\", \"\"",
+            "url": "https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/cli/commands.go#L118-L120"
+          }
+        ]
+      },
+      {
+        "setup": "HCP Terraform's audit trail",
+        "how": "Review the token's actions in HCP Terraform's own audit trail",
+        "gives_you": "A provider-side record of the token's activity, out of the server's reach",
+        "criterion": "C9",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; `update_workspace`, `grant_team_access` and `add_team_member` carry no destructive label, so give them the same care as a delete.",
+      "A new workspace or run executes code from its repository with the variable sets attached, so check both before approving.",
+      "Runs keep going on HCP Terraform after the session ends; cancel any you don't want there."
+    ],
+    "handling": [
+      "The server log records each tool call's arguments; store it like the workspace variables it covers.",
+      "Plan JSON output reaches the model as HCP Terraform returns it and can include sensitive values; treat transcripts the same way."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

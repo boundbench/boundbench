@@ -36,6 +36,186 @@
     "external_communication": "yes"
   },
   "headline": "Hermes Agent runs shell commands and Python directly on the host as your user by default, with every core tool (terminal, code execution, file writes, browser, messaging, cron, sub-agents) enabled. Its approval gate is a pattern denylist whose flagged commands are first judged by an auxiliary LLM, and the execute_code tool skips it entirely in the interactive CLI, so a hijacked model can run arbitrary code, rewrite the agent's own security config, and exfiltrate data without a human. The project's own SECURITY.md says the only real boundary is OS-level isolation (Docker/remote backend or a whole-process sandbox), which is opt-in. Good engineering is visible in env scrubbing, SSRF guards, gateway allowlists and secret redaction, but these are heuristics on an unsandboxed host.",
+  "safe_setup": {
+    "intro": "Hermes Agent ships with secret redaction, scrubbed child environments, per-command timeouts and a full session transcript, but by default it runs shell and Python directly on your host with every core tool on and an LLM deciding most approvals. The project itself names OS-level isolation as the real boundary, so the safest setup starts from a narrow account and the Docker backend, then turns on the human gates and limits Hermes already offers.",
+    "steps": [
+      {
+        "setup": "A dedicated, narrow account",
+        "how": "Run Hermes under its own OS account or VM holding only the credentials this agent needs, each scoped and with a spending limit at the provider",
+        "gives_you": "Whatever the agent does, it reaches only the files, services and spend you gave it, not your whole account",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "The Docker backend, offline",
+        "how": "`backend: docker` under `terminal:`, with `docker_network: false` when the task needs no network from commands",
+        "gives_you": "Shell, file and code tools run in a hardened container, cut off from the network",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "hermes_cli/config_defaults.py",
+            "lines": "299-300",
+            "contains": "\"backend\": \"local\"",
+            "url": "https://github.com/NousResearch/hermes-agent/blob/f4d3e626a732010d23d02c24018091b311a2eb06/hermes_cli/config_defaults.py#L299-L300"
+          },
+          {
+            "file": "hermes_cli/config_defaults.py",
+            "lines": "374",
+            "contains": "\"docker_network\": True",
+            "url": "https://github.com/NousResearch/hermes-agent/blob/f4d3e626a732010d23d02c24018091b311a2eb06/hermes_cli/config_defaults.py#L374"
+          }
+        ]
+      },
+      {
+        "setup": "No host mounts",
+        "how": "Keep the default empty `docker_volumes` and `docker_forward_env`, and `docker_mount_cwd_to_workspace` off",
+        "gives_you": "The container sees none of your home directory, keys or host environment",
+        "criterion": "C4",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "hermes_cli/config_defaults.py",
+            "lines": "354",
+            "contains": "\"docker_forward_env\": []",
+            "url": "https://github.com/NousResearch/hermes-agent/blob/f4d3e626a732010d23d02c24018091b311a2eb06/hermes_cli/config_defaults.py#L354"
+          },
+          {
+            "file": "hermes_cli/config_defaults.py",
+            "lines": "372-373",
+            "contains": "\"docker_mount_cwd_to_workspace\": False",
+            "url": "https://github.com/NousResearch/hermes-agent/blob/f4d3e626a732010d23d02c24018091b311a2eb06/hermes_cli/config_defaults.py#L372-L373"
+          }
+        ]
+      },
+      {
+        "setup": "Human command approval",
+        "how": "`mode: manual` under `approvals:`",
+        "gives_you": "A person, not an auxiliary model, decides on every flagged shell command and sees the exact command",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "hermes_cli/config_defaults.py",
+            "lines": "1668",
+            "contains": "\"approvals\": {",
+            "url": "https://github.com/NousResearch/hermes-agent/blob/f4d3e626a732010d23d02c24018091b311a2eb06/hermes_cli/config_defaults.py#L1668"
+          },
+          {
+            "file": "tools/approval_context.py",
+            "lines": "198",
+            "contains": "_VALID_MODES = (\"manual\", \"smart\", \"off\")",
+            "url": "https://github.com/NousResearch/hermes-agent/blob/f4d3e626a732010d23d02c24018091b311a2eb06/tools/approval_context.py#L198"
+          }
+        ]
+      },
+      {
+        "setup": "Only the toolsets needed",
+        "how": "List the toolsets the task doesn't use in `disabled_toolsets` under `agent:`",
+        "gives_you": "The model sees fewer tools, so messaging, scheduling or browsing exist only where you chose them",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "hermes_cli/config_defaults.py",
+            "lines": "75",
+            "contains": "\"agent\": {",
+            "url": "https://github.com/NousResearch/hermes-agent/blob/f4d3e626a732010d23d02c24018091b311a2eb06/hermes_cli/config_defaults.py#L75"
+          },
+          {
+            "file": "hermes_cli/config_defaults.py",
+            "lines": "281",
+            "contains": "\"disabled_toolsets\": []",
+            "url": "https://github.com/NousResearch/hermes-agent/blob/f4d3e626a732010d23d02c24018091b311a2eb06/hermes_cli/config_defaults.py#L281"
+          }
+        ]
+      },
+      {
+        "setup": "Reviewed memory and skills",
+        "how": "`write_approval: true` under both `memory:` and `skills:`, plus `guard_agent_created: true`",
+        "gives_you": "You see each memory and skill change before it shapes future sessions, and agent-written skills are scanned",
+        "criterion": "C6",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "hermes_cli/config_defaults.py",
+            "lines": "1314-1320",
+            "contains": "\"write_approval\": False",
+            "url": "https://github.com/NousResearch/hermes-agent/blob/f4d3e626a732010d23d02c24018091b311a2eb06/hermes_cli/config_defaults.py#L1314-L1320"
+          },
+          {
+            "file": "hermes_cli/config_defaults.py",
+            "lines": "1451",
+            "contains": "\"skills\": {",
+            "url": "https://github.com/NousResearch/hermes-agent/blob/f4d3e626a732010d23d02c24018091b311a2eb06/hermes_cli/config_defaults.py#L1451"
+          },
+          {
+            "file": "hermes_cli/config_defaults.py",
+            "lines": "1476",
+            "contains": "\"guard_agent_created\": False",
+            "url": "https://github.com/NousResearch/hermes-agent/blob/f4d3e626a732010d23d02c24018091b311a2eb06/hermes_cli/config_defaults.py#L1476"
+          },
+          {
+            "file": "hermes_cli/config_defaults.py",
+            "lines": "1485",
+            "contains": "\"write_approval\": False",
+            "url": "https://github.com/NousResearch/hermes-agent/blob/f4d3e626a732010d23d02c24018091b311a2eb06/hermes_cli/config_defaults.py#L1485"
+          }
+        ]
+      },
+      {
+        "setup": "File checkpoints",
+        "how": "`enabled: true` under `checkpoints:`, or `hermes chat --checkpoints`",
+        "gives_you": "File changes in the working directory can be rolled back with /rollback",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "hermes_cli/config_defaults.py",
+            "lines": "501-502",
+            "contains": "\"checkpoints\": {",
+            "url": "https://github.com/NousResearch/hermes-agent/blob/f4d3e626a732010d23d02c24018091b311a2eb06/hermes_cli/config_defaults.py#L501-L502"
+          },
+          {
+            "file": "hermes_cli/_parser.py",
+            "lines": "288",
+            "contains": "\"--checkpoints\"",
+            "url": "https://github.com/NousResearch/hermes-agent/blob/f4d3e626a732010d23d02c24018091b311a2eb06/hermes_cli/_parser.py#L288"
+          }
+        ]
+      },
+      {
+        "setup": "Turn and time limits",
+        "how": "`max_turns: <n>` and `run_budget_seconds: <seconds>` under `agent:`",
+        "gives_you": "Every run ends after a fixed number of turns and a fixed amount of time",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "hermes_cli/config_defaults.py",
+            "lines": "75-78",
+            "contains": "\"max_turns\": None",
+            "url": "https://github.com/NousResearch/hermes-agent/blob/f4d3e626a732010d23d02c24018091b311a2eb06/hermes_cli/config_defaults.py#L75-L78"
+          },
+          {
+            "file": "hermes_cli/config_defaults.py",
+            "lines": "85",
+            "contains": "\"run_budget_seconds\": None",
+            "url": "https://github.com/NousResearch/hermes-agent/blob/f4d3e626a732010d23d02c24018091b311a2eb06/hermes_cli/config_defaults.py#L85"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve commands one at a time, and leave YOLO mode off for the session.",
+      "In the interactive CLI, execute_code runs without a prompt, so the Docker backend is what bounds it."
+    ],
+    "handling": [
+      "Every message, tool call and tool result is kept in ~/.hermes/state.db; store it like the data the agent read.",
+      "Keep the default `redact_secrets: true` under `security:` so logs and model-bound output stay filtered."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

@@ -24,6 +24,32 @@
 
 PI-Desktop has a real, centralized approval gate: in the default 'ask' mode every Write, Edit, Bash and MCP call stops for a per-call approval card. Behind that gate there is no sandbox. Approved commands run as you, with your full environment and network. Repository-supplied configuration is not integrity-protected, and rendered model output is not fully confined.
 
+## Safest setup
+
+PI-Desktop ships with a real approval gate: in the default ask mode every Write, Edit, Bash and MCP call stops for your approval, file tools stay inside the project, and every gated call is written to a redacted audit table. Behind that gate approved commands run as you, with your full environment and network, so the safest setup narrows what your account holds and builds containment around the app.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated OS account | Run PI-Desktop under an OS account whose environment holds only the credentials this project needs | Approved commands and MCP servers inherit only those credentials, not everything in your own shell (C1) |
+| A spend-limited provider key | Give the app a model provider key with a spending limit set at the provider | A hard ceiling on spend for every run, subagents and scheduled tasks included (C10) |
+| Per-call approval | Keep the default `defaultPermissionMode` of `ask`, with each session left on `inherit` ([packages/shared/src/types/settings.ts:82](https://github.com/vastsa/pi-desktop/blob/831b66dfa8e819d2079c31b1cd98206818d9ac15/packages/shared/src/types/settings.ts#L82); [packages/shared/src/types/permissions.ts:17-21](https://github.com/vastsa/pi-desktop/blob/831b66dfa8e819d2079c31b1cd98206818d9ac15/packages/shared/src/types/permissions.ts#L17-L21); [crates/host-core/src/sessions.rs:61-63](https://github.com/vastsa/pi-desktop/blob/831b66dfa8e819d2079c31b1cd98206818d9ac15/crates/host-core/src/sessions.rs#L61-L63)) | Every Write, Edit, Bash and MCP call waits for a person to approve it (C2) |
+| Plan mode for review work | Switch the session to Plan mode when the task only needs reading and inspecting ([crates/host-core/src/permissions.rs:144-149](https://github.com/vastsa/pi-desktop/blob/831b66dfa8e819d2079c31b1cd98206818d9ac15/crates/host-core/src/permissions.rs#L144-L149)) | Write, Edit and plugin tools are refused in every permission mode (C3) |
+| Reviewed projects only | Open project folders whose AGENTS.md, CLAUDE.md and other agent configuration files you have read | Only instructions and capabilities you have checked take effect when a session starts (C6) |
+| Pinned MCP servers | When adding an MCP server, name a pinned package version you have reviewed | The server code that starts with your environment is code you chose, and it stays the same (C7) |
+| Its own VM | Run PI-Desktop in a VM with network access limited to the model provider and the hosts the task needs | An outer boundary around approved commands and MCP servers, and a narrow path for data to leave (C4) |
+| An audit copy elsewhere | After each session, copy the app data database to storage the agent's account can't write | A record of gated tool calls that later shell commands can't alter (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; Allow for session covers every later call to that tool, whatever its arguments.
+- Write and Edit changes can be rolled back from review snapshots, while shell and MCP side effects can't, so give those prompts the closest read.
+- A subagent or scheduled task set to auto runs without prompts; keeping them on the default mode keeps their calls in front of you.
+
+### Handling data
+
+- Provider keys are encrypted with a key stored beside them in the app data directory; protect that directory like a credentials file.
+- Tool output reaches the model unredacted, so keep secrets in files outside the project folder.
+
 ## Critical gaps
 - Shell commands and MCP servers run unsandboxed as the desktop user with the full inherited environment (credentials, home directory, network). (ASI05, T11; C4) — [packages/host-runtime/src/host-process.ts:101-107](https://github.com/vastsa/pi-desktop/blob/831b66dfa8e819d2079c31b1cd98206818d9ac15/packages/host-runtime/src/host-process.ts#L101-L107); [apps/desktop/electron/main/plugin-mcp.ts:160-170](https://github.com/vastsa/pi-desktop/blob/831b66dfa8e819d2079c31b1cd98206818d9ac15/apps/desktop/electron/main/plugin-mcp.ts#L160-L170)
 - MCP stdio servers are spawned with the full process environment and no verification. (ASI04, T17; C7) — [apps/desktop/electron/main/plugin-mcp.ts:160-170](https://github.com/vastsa/pi-desktop/blob/831b66dfa8e819d2079c31b1cd98206818d9ac15/apps/desktop/electron/main/plugin-mcp.ts#L160-L170); [apps/desktop/electron/main/user-mcp.ts:432](https://github.com/vastsa/pi-desktop/blob/831b66dfa8e819d2079c31b1cd98206818d9ac15/apps/desktop/electron/main/user-mcp.ts#L432)

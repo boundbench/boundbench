@@ -25,6 +25,25 @@ Controls where a risk surface exists: 2.02 / 8.0 (25%); 2 criteria scored SA (su
 
 GPTeam is safe mostly because it can do little: by default its agents only talk to each other and write to a local sqlite file, with no shell, file or network tools. It has essentially no controls of its own - no approval step, an authorization mechanism that is not enforced on every path, unvalidated persistent memory, and no step or spending limit, so a run calls GPT-4 forever until killed. Enabling the Discord integration lets any channel member inject text into agent memory while agents post back unattended.
 
+## Safest setup
+
+GPTeam's agents have no shell, file or network tools by default: they talk to each other and write rows to a local sqlite file. It has no approval step, no limit on run length or spend, and memory that carries over between runs, so the safest setup keeps the optional integrations off and puts limits and containment around the process yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A spend-limited OpenAI key | Give the process its own `OPENAI_API_KEY` with a usage limit set at OpenAI ([src/main.py:30](https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/main.py#L30)) | A simulation that keeps running stops at the spend you chose (C10) |
+| Local-only tools | Leave `ANNOUNCER_DISCORD_TOKEN`, `SERPAPI_KEY` and `WOLFRAM_ALPHA_APPID` unset, as shipped ([src/utils/parameters.py:43-48](https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/parameters.py#L43-L48); [src/tools/base.py:176-177](https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/tools/base.py#L176-L177)) | Agents reach only the local simulation database, with no outbound channel beyond the model provider (C1) |
+| A private Discord server | If you turn on Discord, map agents only to channels in a server whose members you trust | Only people you chose can put text into agent memory or see what agents post (C5) |
+| A fresh memory store | Run the `db-reset` script before each new simulation ([pyproject.toml:13](https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/pyproject.toml#L13)) | Memories and documents from earlier runs stop shaping new plans (C6) |
+| A wall-clock limit | Start the world under a process timeout you choose | Every run ends at a set time, since the agent loop itself never stops (C10) |
+| Its own container or VM | Run it in a container or VM that holds only this app's keys, with its web port reachable only from your machine | The live log view, the local database and the keys stay visible only to you (C8) |
+| A kept run log | Copy `src/web/logs/agent.txt` to storage outside the checkout before each relaunch ([src/utils/logging.py:89](https://github.com/101dotxyz/gpteam/blob/a216364ea2dbb208e6501468c5e5b791594cc3d5/src/utils/logging.py#L89)) | A record of earlier runs survives, since each launch empties the file (C9) |
+
+### Handling data
+
+- The agent log and the agents/*.txt dumps hold full transcripts unredacted; store copies like the conversations they record.
+- With Discord on, bot tokens are copied into database.db in plain text; protect that file like the tokens themselves.
+
 ## Critical gaps
 - None: no criterion is capped and no blast radius is at the worst level.
 

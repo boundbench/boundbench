@@ -36,6 +36,127 @@
     "external_communication": "no"
   },
   "headline": "As a CLI, k8sgpt is a fixed pipeline, not a tool-using agent: hard-coded read-only analyzers collect cluster problems, the model explains each one in text, and nothing the model says is executed. A hijacked model can only mislead the operator. The main posture gaps are elsewhere: the CLI uses the operator's full kubeconfig with no narrowing, keeps no record of what it sent to the AI provider, and stores the provider key in plaintext. The score does not cover `k8sgpt serve --mcp`, which hands an MCP host tools that read any Secret and rewrite cache and analyzer endpoints. Assess that mode separately before using it.",
+  "safe_setup": {
+    "intro": "In the CLI analyze flow the model only writes explanations: the analyzers are fixed read-only code and nothing the model says is run. The weak spots are around it, with the full kubeconfig identity, a plaintext provider key and no record of what was sent, so the safest setup narrows the identity and the data and adds containment outside the tool. The serve and MCP modes were not scored and need their own assessment.",
+    "steps": [
+      {
+        "setup": "A read-only identity",
+        "how": "Pass `--kubeconfig` and `--kubecontext` for a context bound to a view-only ServiceAccount",
+        "gives_you": "The cluster itself refuses writes and reads outside that role, whatever the tool does",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "cmd/root.go",
+            "lines": "86-87",
+            "contains": "kubecontext",
+            "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/root.go#L86-L87"
+          }
+        ]
+      },
+      {
+        "setup": "A scoped provider key",
+        "how": "Use an AI provider key made for k8sgpt alone, with a spending limit set at the provider",
+        "gives_you": "A leaked key reaches only this use and a bounded spend",
+        "criterion": "C8",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Only the namespaces needed",
+        "how": "`--namespace <ns>` and `--filter <analyzers>` on each analyze run",
+        "gives_you": "Each run reads and sends to the provider only the resources you chose",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "cmd/analyze/analyze.go",
+            "lines": "199",
+            "contains": "\"namespace\"",
+            "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/analyze/analyze.go#L199"
+          },
+          {
+            "file": "cmd/analyze/analyze.go",
+            "lines": "205",
+            "contains": "\"filter\"",
+            "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/analyze/analyze.go#L205"
+          }
+        ]
+      },
+      {
+        "setup": "Anonymized prompts",
+        "how": "`--anonymize` on each explain run",
+        "gives_you": "Object names and labels are masked before they reach the provider",
+        "criterion": "C8",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "cmd/analyze/analyze.go",
+            "lines": "203",
+            "contains": "\"anonymize\"",
+            "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/analyze/analyze.go#L203"
+          }
+        ]
+      },
+      {
+        "setup": "Built-in analyzers only",
+        "how": "Keep the default `custom-analysis` off by leaving out `-z`",
+        "gives_you": "Every analyzer result comes from code shipped in k8sgpt",
+        "criterion": "C7",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "cmd/analyze/analyze.go",
+            "lines": "221",
+            "contains": "\"custom-analysis\", \"z\", false",
+            "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/analyze/analyze.go#L221"
+          }
+        ]
+      },
+      {
+        "setup": "Fresh answers per cluster",
+        "how": "`--no-cache` when switching clusters, and `k8sgpt cache purge --all` to clear stored answers",
+        "gives_you": "Explanations come from the current cluster's problems, not an earlier stored answer",
+        "criterion": "C6",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "cmd/analyze/analyze.go",
+            "lines": "201",
+            "contains": "\"no-cache\"",
+            "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/analyze/analyze.go#L201"
+          },
+          {
+            "file": "cmd/cache/purge.go",
+            "lines": "29",
+            "contains": "purge",
+            "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/cache/purge.go#L29"
+          },
+          {
+            "file": "cmd/cache/purge.go",
+            "lines": "81",
+            "contains": "\"all\"",
+            "url": "https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/cache/purge.go#L81"
+          }
+        ]
+      },
+      {
+        "setup": "Cluster-side audit logging",
+        "how": "Turn on Kubernetes API audit logging for the identity k8sgpt uses",
+        "gives_you": "A record of what each run read, which the CLI does not keep itself",
+        "criterion": "C9",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "There are no approval prompts; read each suggested fix and check it against the cluster before running it, since workload messages can shape the advice."
+    ],
+    "handling": [
+      "k8sgpt.yaml in the user config directory holds the provider key in plaintext; keep it readable only by your user.",
+      "Cached answers stay in the user cache directory with no expiry; clear them with the purge command when they are no longer needed."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

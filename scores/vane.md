@@ -25,6 +25,25 @@ Controls where a risk surface exists: 2.15 / 9.0 (24%); 1 criterion scored SA (s
 
 A search-and-answer agent with a small tool set: it can search, fetch web pages and read uploaded files, but it cannot write files, run commands or send messages. Around that core there are almost no safeguards: the web app has no authentication (the README lists it as upcoming), so anyone who can reach the port can use the agent, read every chat and change provider settings and keys. Web content enters the model unmarked while a URL-fetch tool can reach any address, and the whole app runs as root in one container with the provider keys.
 
+## Safest setup
+
+Vane's tools only search, read web pages and read uploaded files, and each research run stops after a fixed number of rounds. Beyond that the defaults are thin and there is nothing in the tool to turn on: no sign-in, no approval step, a URL fetch that reaches any address, and one root container holding the provider keys and every chat. The safest setup builds those boundaries around it.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Dedicated, low-limit provider keys | Enter provider keys created only for this instance, each with a spending limit set at the provider | A misused instance can spend only what you allowed, and you can revoke its keys without touching anything else (C1) |
+| Sign-in in front | Publish port 3000 only on localhost or a private network, and reach it through a reverse proxy that requires sign-in ([docker-compose.yaml:7](https://github.com/ItzCrazyKns/Vane/blob/348feca3e378fb4157b217724ed508dc707f853f/docker-compose.yaml#L7)) | Only people you let in can run searches, read chats or change providers and settings (C1) |
+| One instance per person | Run a separate container and data volume for each person or group that shouldn't see each other's chats | Chats and uploaded files stay with the people who made them (C6) |
+| The Docker image, on its own VM | Use the recommended Docker deployment on a VM or host that holds no other credentials or data | The headless browser and math evaluator stay inside a boundary that contains only Vane's own keys and chats (C4) |
+| A public-only network | Place the container on a network segment that reaches the internet and your model provider but not your internal services | Model-chosen page fetches reach public sites only, not the systems around the server (C3) |
+| Answer history on a volume | Keep the default `vane-data` volume mounted ([docker-compose.yaml:14](https://github.com/ItzCrazyKns/Vane/blob/348feca3e378fb4157b217724ed508dc707f853f/docker-compose.yaml#L14)) | Each answer's searches and pages read are kept across restarts, as a partial record of what the agent did (C9) |
+| A reliable stop | Restart the container to end a run, since closing the tab only stops the reply stream | In-flight searches, fetches and model calls end when you decide (C10) |
+
+### Handling data
+
+- The data volume holds every chat, every uploaded file and the provider keys in plaintext; store and back it up like a secrets file.
+- Upload only documents you'd be comfortable sharing with everyone who can reach the instance.
+
 ## Critical gaps
 - A hijacked session can send data out through the always-on URL fetch with no gate, and with no user separation it can reach other users' chats. (ASI01, LLM01; C5). Evidence: [src/lib/scraper.ts:70-73](https://github.com/ItzCrazyKns/Vane/blob/348feca3e378fb4157b217724ed508dc707f853f/src/lib/scraper.ts#L70-L73); [src/app/api/chats/route.ts:5](https://github.com/ItzCrazyKns/Vane/blob/348feca3e378fb4157b217724ed508dc707f853f/src/app/api/chats/route.ts#L5)
 - Model-influenced execution (headless browser, math evaluator) shares a root process with the provider keys and all chat data, with no dedicated isolation. (ASI05; C4). Evidence: [Dockerfile:64](https://github.com/ItzCrazyKns/Vane/blob/348feca3e378fb4157b217724ed508dc707f853f/Dockerfile#L64); [src/lib/agents/search/widgets/calculationWidget.ts:58](https://github.com/ItzCrazyKns/Vane/blob/348feca3e378fb4157b217724ed508dc707f853f/src/lib/agents/search/widgets/calculationWidget.ts#L58)

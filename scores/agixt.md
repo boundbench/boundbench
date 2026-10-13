@@ -24,6 +24,29 @@
 
 AGiXT gives every new agent a shell, Python execution, arbitrary outbound HTTP, agent creation and recurring scheduled tasks, all enabled by default and with no human approval step. Code-execution isolation does not cover every execution path. A prompt injection can reach the user's connected-account tokens unattended. Path and SSRF validation on the file and URL tools is solid but easily sidestepped by the raw exec tools.
 
+## Safest setup
+
+AGiXT keeps its file and URL tools inside the conversation workspace with solid address checks, records every command before it runs, and adds no third-party extensions by default. Every new agent also gets a shell, Python, outbound HTTP and agent creation with no approval step, so the safest setup trims each agent's commands and builds the boundaries around the deployment yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Narrowly scoped connected accounts | Connect only the accounts this deployment needs, each with the narrowest scopes and repositories the provider offers | Every command receives these tokens, so the provider itself limits what any command can reach (C1) |
+| A provider spending limit | Use a model API key with a spending limit set at the provider | A hard ceiling on model spend, which AGiXT does not set by default (C10) |
+| Only the commands needed | In each agent's command settings, keep enabled only the Core Abilities commands its task uses, leaving terminal, Python, Custom API Endpoint, agent creation and scheduling off unless needed ([agixt/endpoints/Agent.py:747](https://github.com/josh-xt/agixt/blob/3a3202419a962aa815d139849d6f218d3f81c998/agixt/endpoints/Agent.py#L747)) | The agent reaches a shell, outbound HTTP, new agents or recurring tasks only where you chose to give them (C3) |
+| No extension hub | Keep the default empty `EXTENSIONS_HUB`, or point it at a repository you control and review ([agixt/Globals.py:223](https://github.com/josh-xt/agixt/blob/3a3202419a962aa815d139849d6f218d3f81c998/agixt/Globals.py#L223)) | Only code you have read is imported into the server process (C7) |
+| Its own VM | Run the whole compose deployment inside a dedicated VM | The root server container and the host Docker socket it holds reach only that VM, not your other systems (C4) |
+| A private, egress-limited network | Keep the VM reachable only by your users, with outbound access limited to the model provider and the services you connect | A narrow path for data to leave, whatever the agent reads (C5) |
+| An off-box command log | Subscribe a webhook to command events and store them outside the AGiXT deployment ([agixt/WebhookManager.py:1160-1161](https://github.com/josh-xt/agixt/blob/3a3202419a962aa815d139849d6f218d3f81c998/agixt/WebhookManager.py#L1160-L1161)) | A record of every command that the agent's own user can't delete (C9) |
+
+### Approving with confidence
+
+- AGiXT has no approval prompt for commands, so the command list you enable for each agent is the review point; check it when you create an agent.
+
+### Handling data
+
+- Command arguments are written into the conversation unredacted, and connected-account tokens are stored unencrypted in the database; protect conversation history and database backups like the accounts themselves.
+- Scheduled tasks keep running after you stop a conversation; review an agent's scheduled tasks when you retire it.
+
 ## Critical gaps
 - Create AGiXT Agent lets the model enable AI-selected commands on a new agent and a delegation chain on itself, expanding its own reachable permissions. (ASI03, T3; C1) — [agixt/extensions/essential_abilities.py:4453-4456](https://github.com/josh-xt/agixt/blob/3a3202419a962aa815d139849d6f218d3f81c998/agixt/extensions/essential_abilities.py#L4453-L4456); [agixt/extensions/essential_abilities.py:4237-4239](https://github.com/josh-xt/agixt/blob/3a3202419a962aa815d139849d6f218d3f81c998/agixt/extensions/essential_abilities.py#L4237-L4239)
 - A hijacked agent can exfiltrate data (Custom API Endpoint, networked shell) and take irreversible actions with no human in the loop. (ASI01, LLM01; C5) — [agixt/extensions/essential_abilities.py:1943-1970](https://github.com/josh-xt/agixt/blob/3a3202419a962aa815d139849d6f218d3f81c998/agixt/extensions/essential_abilities.py#L1943-L1970); [agixt/extensions/essential_abilities.py:224-243](https://github.com/josh-xt/agixt/blob/3a3202419a962aa815d139849d6f218d3f81c998/agixt/extensions/essential_abilities.py#L224-L243)

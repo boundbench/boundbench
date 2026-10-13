@@ -24,6 +24,29 @@
 
 Vibe Kanban launches every coding agent with its permission prompts switched off by default (Claude Code with --dangerously-skip-permissions, Codex with full access, Gemini and Qwen in yolo mode) and runs it unsandboxed on the host with the user's full environment. A prompt injection in a repository, issue or web page can make an agent read credentials, push code and send data out with no human involved. Each task gets its own git worktree and branch, which keeps file changes reviewable, and a per-call approval mode exists, but it is opt-in, covers only some agents, and is not tamper-resistant.
 
+## Safest setup
+
+Vibe Kanban gives each task its own git worktree and branch, so file changes arrive as a diff you review, and its stop button ends an agent's whole process group. Beyond that the defaults are weak: every agent profile ships with its permission prompts off, and agents run on your machine with your full environment and logins. The safest setup turns on the approval and sandbox modes that exist and builds most of the protection around the app yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit credentials | Run Vibe Kanban from an account holding only a fine-grained git token for the repositories in use and model keys with a spending limit set at the provider | A hijacked agent reaches only those repositories and that budget, not every login on your machine (C1) |
+| Per-call approval | In the Claude Code profile, set `approvals: true` in place of `dangerously_skip_permissions: true` ([crates/executors/src/executors/claude.rs:128](https://github.com/BloopAI/vibe-kanban/blob/d5cbb5380fa0b32e98ef9b8d987f63decce4be3a/crates/executors/src/executors/claude.rs#L128); [crates/executors/src/executors/claude.rs:136](https://github.com/BloopAI/vibe-kanban/blob/d5cbb5380fa0b32e98ef9b8d987f63decce4be3a/crates/executors/src/executors/claude.rs#L136)) | Each non-read tool call waits on an approval card showing the call before it runs (C2) |
+| Codex's own sandbox | When using Codex, set `sandbox` to `workspace-write` in a custom Codex profile ([crates/executors/src/executors/codex.rs:157](https://github.com/BloopAI/vibe-kanban/blob/d5cbb5380fa0b32e98ef9b8d987f63decce4be3a/crates/executors/src/executors/codex.rs#L157); [shared/types.ts:634](https://github.com/BloopAI/vibe-kanban/blob/d5cbb5380fa0b32e98ef9b8d987f63decce4be3a/shared/types.ts#L634)) | Codex keeps its writes inside the project directory (C4) |
+| Its own container or VM | Run Vibe Kanban and its agents in a container or VM with outbound access limited to the model provider and your git host | An outer boundary around agents and setup scripts, which otherwise run as you on the host (C4) |
+| Repositories you have read | Start tasks only in repositories whose CLAUDE.md, AGENTS.md and agent settings files you have read | The instructions, hooks and MCP servers agents load come from you (C6) |
+| Analytics off | Turn off analytics in settings (`analytics_enabled: false`) ([crates/services/src/services/config/versions/v8.rs:47](https://github.com/BloopAI/vibe-kanban/blob/d5cbb5380fa0b32e98ef9b8d987f63decce4be3a/crates/services/src/services/config/versions/v8.rs#L47)) | Product usage data stays on your machine (C8) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; Ask mode covers five of the nine agents, and the rest approve on their own.
+- Review each task's diff on its branch before merging; pushes, shell side effects and external calls have no undo, and the stop button ends a run at any point.
+
+### Handling data
+
+- Agent run logs are stored unredacted in the app's data directory; store them like the secrets the agent could read.
+- Error reports go to Sentry in release builds with log lines attached, so keep secrets out of the environment the app starts with.
+
 ## Critical gaps
 - Agents run with the user's full inherited environment and CLI logins and no scoped identity, so a hijacked agent holds the user's whole account. (ASI03, T3; C1). Evidence: [crates/local-deployment/src/container.rs:1359-1367](https://github.com/BloopAI/vibe-kanban/blob/d5cbb5380fa0b32e98ef9b8d987f63decce4be3a/crates/local-deployment/src/container.rs#L1359-L1367); [crates/executors/src/executors/claude.rs:640-642](https://github.com/BloopAI/vibe-kanban/blob/d5cbb5380fa0b32e98ef9b8d987f63decce4be3a/crates/executors/src/executors/claude.rs#L640-L642)
 - Every shipped agent profile disables the agent's permission prompts, so shell commands run with no approval by default. (ASI02, ASI09, T10; C2). Evidence: [crates/executors/default_profiles.json:6](https://github.com/BloopAI/vibe-kanban/blob/d5cbb5380fa0b32e98ef9b8d987f63decce4be3a/crates/executors/default_profiles.json#L6); [crates/executors/src/executors/claude.rs:176-178](https://github.com/BloopAI/vibe-kanban/blob/d5cbb5380fa0b32e98ef9b8d987f63decce4be3a/crates/executors/src/executors/claude.rs#L176-L178); [crates/executors/default_profiles.json:27](https://github.com/BloopAI/vibe-kanban/blob/d5cbb5380fa0b32e98ef9b8d987f63decce4be3a/crates/executors/default_profiles.json#L27)

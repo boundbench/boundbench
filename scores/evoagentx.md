@@ -24,6 +24,30 @@
 
 EvoAgentX gives agents powerful bundled tools (shell, in-process Python, arbitrary HTTP, file I/O, email) but the framework itself adds almost no safety layer: tool calls run without approval or argument validation, and model-written Python executes inside the agent process alongside its API keys. A prompt injection from any web page, search result or email can leak secrets and take irreversible actions unattended. The opt-in Docker interpreter and human-in-the-loop manager are thin and off by default.
 
+## Safest setup
+
+EvoAgentX starts each agent with no tools and stops each agent action after 20 model calls. Beyond that the defaults are thin: tool calls run without approval, model-written Python runs inside the agent process with your keys, and nothing is recorded durably. The safest setup turns on the approval manager and Docker interpreter EvoAgentX offers and builds containment around the process.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Give the process only the API keys this workflow needs, each scoped or read-only with a spending limit set at the provider | Whatever an agent does, it reaches only the systems and spend you chose, not every key in your shell (C1) |
+| Workflow approval | Create a `HITLManager`, call `activate()`, pass it as `hitl_manager` on the workflow and place a `HITLInterceptorAgent` before each consequential step ([evoagentx/hitl/approval_manager.py:10](https://github.com/anative-lab/evoagentx/blob/d77fd6b9a3e76c8dd83bebe3374c53a3f5d16f54/evoagentx/hitl/approval_manager.py#L10); [evoagentx/hitl/approval_manager.py:28](https://github.com/anative-lab/evoagentx/blob/d77fd6b9a3e76c8dd83bebe3374c53a3f5d16f54/evoagentx/hitl/approval_manager.py#L28); [evoagentx/workflow/workflow.py:43](https://github.com/anative-lab/evoagentx/blob/d77fd6b9a3e76c8dd83bebe3374c53a3f5d16f54/evoagentx/workflow/workflow.py#L43); [evoagentx/hitl/interceptor_agent.py:110](https://github.com/anative-lab/evoagentx/blob/d77fd6b9a3e76c8dd83bebe3374c53a3f5d16f54/evoagentx/hitl/interceptor_agent.py#L110)) | A person approves or rejects each wrapped agent action before it runs (C2) |
+| Tools per agent | Keep the default empty `tools` on each `CustomizeAgent` and add only the toolkits that agent needs ([evoagentx/agents/customize_agent.py:93](https://github.com/anative-lab/evoagentx/blob/d77fd6b9a3e76c8dd83bebe3374c53a3f5d16f54/evoagentx/agents/customize_agent.py#L93); [evoagentx/agents/customize_agent.py:36](https://github.com/anative-lab/evoagentx/blob/d77fd6b9a3e76c8dd83bebe3374c53a3f5d16f54/evoagentx/agents/customize_agent.py#L36)) | Each agent can reach only the shell, web, file or email tools its task calls for (C3) |
+| A Docker code interpreter | Run model-written Python through `DockerInterpreterToolkit` with `require_confirm=True`, in place of the in-process interpreter ([evoagentx/tools/interpreter_docker.py:390-396](https://github.com/anative-lab/evoagentx/blob/d77fd6b9a3e76c8dd83bebe3374c53a3f5d16f54/evoagentx/tools/interpreter_docker.py#L390-L396)) | That code runs in a container that holds none of your environment variables, and you confirm each run (C4) |
+| A step budget | Keep the default `max_steps=20` on each `CustomizeAgent`, or lower it for short tasks ([evoagentx/agents/customize_agent.py:95](https://github.com/anative-lab/evoagentx/blob/d77fd6b9a3e76c8dd83bebe3374c53a3f5d16f54/evoagentx/agents/customize_agent.py#L95); [evoagentx/agents/customize_agent.py:36](https://github.com/anative-lab/evoagentx/blob/d77fd6b9a3e76c8dd83bebe3374c53a3f5d16f54/evoagentx/agents/customize_agent.py#L36)) | Every agent action ends after a fixed number of model calls (C10) |
+| A clean working directory | Start each run from a directory holding only the task's files, with no .env file you didn't write | API keys and model endpoints come only from you, not from a checkout you happen to run in (C6) |
+| Its own container or VM | Run the workflow in a container or VM whose network reaches only the model provider and the hosts the task needs | An outer boundary around shell and in-process tools, and a narrow path for data to leave (C5) |
+| A run log on disk | Call `save_logger(<path>)` with a path the agent's tools can't write to, such as one outside its container ([evoagentx/core/logging.py:17](https://github.com/anative-lab/evoagentx/blob/d77fd6b9a3e76c8dd83bebe3374c53a3f5d16f54/evoagentx/core/logging.py#L17)) | A record of every tool call with its arguments and result that outlives the process (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve actions one at a time; a workflow approval covers every tool call inside that agent action.
+- The shell toolkit asks before each command and shows it in full, so read the command before approving it.
+
+### Handling data
+
+- Tool arguments, tool results and raw model output print to stdout at INFO by default; treat console output and any saved log like the data the agent read.
+
 ## Critical gaps
 - Tools run with the developer's ambient OS and API-key authority; a hijack reaches the whole machine and connected accounts. (ASI03, T3; C1) — [evoagentx/models/litellm_model.py:45](https://github.com/anative-lab/evoagentx/blob/d77fd6b9a3e76c8dd83bebe3374c53a3f5d16f54/evoagentx/models/litellm_model.py#L45); [evoagentx/tools/cmd_toolkit.py:200-212](https://github.com/anative-lab/evoagentx/blob/d77fd6b9a3e76c8dd83bebe3374c53a3f5d16f54/evoagentx/tools/cmd_toolkit.py#L200-L212)
 - Default Python execution is in-process exec() with full builtins, sharing the process that holds API keys. (ASI05, T11; C4) — [evoagentx/tools/interpreter_python.py:324-335](https://github.com/anative-lab/evoagentx/blob/d77fd6b9a3e76c8dd83bebe3374c53a3f5d16f54/evoagentx/tools/interpreter_python.py#L324-L335); [evoagentx/models/litellm_model.py:45](https://github.com/anative-lab/evoagentx/blob/d77fd6b9a3e76c8dd83bebe3374c53a3f5d16f54/evoagentx/models/litellm_model.py#L45)

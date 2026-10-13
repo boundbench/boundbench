@@ -25,6 +25,30 @@ Controls where a risk surface exists: 2.27 / 8.0 (28%); 2 criteria scored SA (su
 
 Despite the documentation saying only registry tools are on by default, the code enables every tool group, so giving the server a Terraform token hands the model write access to workspaces, variables, teams and access grants across every organization that token reaches. Delete and apply tools sit behind ENABLE_TF_OPERATIONS, though enforcement of that gate does not cover every path, and the model can point a workspace at any repository and run its code with attached credentials. Handling of sensitive values on the logging path is also not locked down. Run it with --toolsets=registry or a read-only, narrowly scoped team token.
 
+## Safest setup
+
+Terraform MCP Server runs nothing locally, keeps its token away from the model, rate-limits every call and holds back its delete and destroy tools unless you turn them on. As shipped it enables every tool group once a token is present, so the safest setup starts with a narrow token and a small tool set.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A narrowly scoped token | Set `TFE_TOKEN` to a team token with read access to only the organization and projects the task needs ([pkg/client/tfe_client.go:22](https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/tfe_client.go#L22)) | HCP Terraform itself refuses anything outside that grant, and the server never falls back to your own CLI credentials (C1) |
+| Only the tools needed | `--toolsets=registry` for registry lookups, or `--tools <list>` naming just the tools the task uses ([pkg/cli/commands.go:121-122](https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/cli/commands.go#L121-L122); [pkg/toolsets/toolsets.go:10](https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/toolsets/toolsets.go#L10)) | The model sees only the tools you chose, with write, team and access tools left out (C3) |
+| Destructive tools held back | Keep the default with `ENABLE_TF_OPERATIONS` unset ([pkg/tools/dynamic_tool.go:95](https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/dynamic_tool.go#L95)) | The delete, force-unlock and destroy tools stay out of the tool list (C2) |
+| Call rate limits | Keep the defaults, or set lower `MCP_RATE_LIMIT_SESSION` and `MCP_RATE_LIMIT_GLOBAL` values as `<rps>:<burst>` ([pkg/client/ratelimit.go:32-34](https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/ratelimit.go#L32-L34); [pkg/client/ratelimit.go:44](https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/ratelimit.go#L44); [pkg/client/ratelimit.go:55](https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/ratelimit.go#L55)) | Every session is held to a fixed number of tool calls per second (C10) |
+| A tool-call log on disk | `--log-file <path>` outside any workspace, with `--log-format json` ([pkg/cli/commands.go:118-120](https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/cli/commands.go#L118-L120)) | A timestamped record of every tool call that outlives the host session (C9) |
+| HCP Terraform's audit trail | Review the token's actions in HCP Terraform's own audit trail | A provider-side record of the token's activity, out of the server's reach (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; `update_workspace`, `grant_team_access` and `add_team_member` carry no destructive label, so give them the same care as a delete.
+- A new workspace or run executes code from its repository with the variable sets attached, so check both before approving.
+- Runs keep going on HCP Terraform after the session ends; cancel any you don't want there.
+
+### Handling data
+
+- The server log records each tool call's arguments; store it like the workspace variables it covers.
+- Plan JSON output reaches the model as HCP Terraform returns it and can include sensitive values; treat transcripts the same way.
+
 ## Critical gaps
 - The default tool set exposes grant_team_access and add_team_member, letting a hijacked session raise its own team's access with the user's org-wide token. (ASI03, T3; C1) — [pkg/cli/commands.go:121](https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/cli/commands.go#L121); [pkg/tools/tfe/grant_team_access.go:54](https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/grant_team_access.go#L54); [pkg/client/tfe_client.go:209-216](https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/client/tfe_client.go#L209-L216)
 - The model can create a workspace from any VCS repository, attach credential-bearing variable sets and queue a plan, running chosen code with those credentials, and can switch execution off the remote runners. (ASI05, T11; C4) — [pkg/tools/tfe/create_workspace.go:160-174](https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/create_workspace.go#L160-L174); [pkg/tools/tfe/variable_sets.go:275](https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/variable_sets.go#L275); [pkg/tools/tfe/update_workspace.go:138-145](https://github.com/hashicorp/terraform-mcp-server/blob/1d9a2e03a933e0fd00caffa1d4b8c18f9cec0a81/pkg/tools/tfe/update_workspace.go#L138-L145)

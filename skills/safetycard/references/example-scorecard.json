@@ -21,6 +21,119 @@
     "external_communication": "yes"
   },
   "headline": "As shipped, model-written code runs inside the developer's own Python process behind a filter its maintainers say is not a security boundary, with no approval gate and no separation between web content and instructions. The dominant risk is goal hijack: a web page read during a run can steer code that executes with the host's authority. Strong isolation exists but is opt-in, and the framework gives developers no oversight primitive for the tools they register.",
+  "safe_setup": {
+    "intro": "smolagents keeps its own footprint small: agents get only the tools you list, Hub code needs an explicit trust flag, and every run stops after 20 steps. Model-written code runs in your own Python process by default and there is no approval step, so the safest setup moves that code into a sandbox and puts the boundaries around the process yourself.",
+    "steps": [
+      {
+        "setup": "A dedicated, low-limit key",
+        "how": "Run the agent in an environment that holds only the model key and tool credentials this agent needs, with a spending limit set at the provider",
+        "gives_you": "Whatever the agent does, it can only reach the systems and spend you gave it, not everything your shell can",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A remote sandbox",
+        "how": "`executor_type=\"e2b\"` on `CodeAgent`",
+        "gives_you": "Model-written code and your registered tools run in a remote sandbox that never sees your host environment",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/smolagents/agents.py",
+            "lines": "1535",
+            "contains": "executor_type: Literal[\"local\", \"blaxel\", \"e2b\", \"modal\", \"docker\"] = \"local\""
+          }
+        ]
+      },
+      {
+        "setup": "A short import list",
+        "how": "List only the modules the task needs in `additional_authorized_imports`",
+        "gives_you": "The local interpreter keeps blocking `os`, `subprocess` and other modules the task has no use for",
+        "criterion": "C4",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "src/smolagents/agents.py",
+            "lines": "1532",
+            "contains": "additional_authorized_imports: list[str] | None = None"
+          }
+        ]
+      },
+      {
+        "setup": "Reviewed, pinned Hub code",
+        "how": "Keep the default `trust_remote_code=False`; when you load a tool you have read, set it to `True` and pin the commit with `revision`",
+        "gives_you": "Only code you have read runs inside your agent, and it can't change after you read it",
+        "criterion": "C7",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "src/smolagents/tools.py",
+            "lines": "521",
+            "contains": "trust_remote_code: bool = False"
+          },
+          {
+            "file": "src/smolagents/tools.py",
+            "lines": "563",
+            "contains": "revision=kwargs.get(\"revision\")"
+          }
+        ]
+      },
+      {
+        "setup": "A step budget",
+        "how": "Keep the default `max_steps=20`, or lower it for short tasks",
+        "gives_you": "Every run ends after a fixed number of steps",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "src/smolagents/agents.py",
+            "lines": "300",
+            "contains": "max_steps: int = 20"
+          }
+        ]
+      },
+      {
+        "setup": "A clean working directory",
+        "how": "Start agents from a directory that holds no `.env` file you didn't write",
+        "gives_you": "Settings such as the model endpoint come only from you, not from a repository you happen to run in",
+        "criterion": "C6",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "src/smolagents/remote_executors.py",
+            "lines": "48",
+            "contains": "load_dotenv()"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the agent process in a container or VM with network access limited to the hosts the task needs",
+        "gives_you": "An outer boundary around the local executor and your registered tools, and a narrower path for data to leave",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A run record on disk",
+        "how": "Register a callback in `step_callbacks` that writes each step to storage the agent can't modify",
+        "gives_you": "A record of every tool call and observation that outlives the process",
+        "criterion": "C9",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "src/smolagents/agents.py",
+            "lines": "304",
+            "contains": "step_callbacks:"
+          }
+        ]
+      }
+    ],
+    "handling": [
+      "Tool observations print to the console unredacted at the default `verbosity_level`; treat console output and anything a step callback stores like the data the agent read."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

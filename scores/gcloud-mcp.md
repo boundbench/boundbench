@@ -24,6 +24,29 @@
 
 As shipped, this server lets the model run almost any gcloud command with the user's full Google Cloud credentials, with no read-only mode, no confirmation, no risk annotations and no timeouts. The only built-in restriction is a short denylist of interactive commands (SSH, serial console), and it is not a strict boundary. The dominant risk is a prompt-injected model deleting resources, changing IAM, or exfiltrating data and tokens unattended; run it only under a narrowly scoped, impersonated service account. The sibling storage server in this repo is safer by default (no overwrite or delete tools unless enabled).
 
+## Safest setup
+
+gcloud MCP keeps credentials in gcloud's own store, runs commands without a shell, and logs every call's arguments. Beyond that the defaults are weak: the model can run almost any gcloud command with your full account, with no read-only mode, approval step or time limit. The safest setup puts the boundary in Google Cloud IAM and builds containment around the server.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A narrowly scoped service account | Impersonate a service account in one project with a read-only or task-specific role and no IAM admin or key-creation permissions ([README.md:200-205](https://github.com/googleapis/gcloud-mcp/blob/238728f237ecb5f483199906b564a1767a0713f9/README.md#L200-L205)) | Google Cloud itself refuses anything outside that role, including changes to its own access (C1) |
+| Its own gcloud configuration | Give the server a separate gcloud configuration directory that holds only that service account | Settings the model changes stay out of your own gcloud setup, and your personal credentials stay out of reach (C6) |
+| A command allowlist | `--config <absolute path>` to a JSON file whose `allow` list names only the command groups the task needs ([packages/gcloud-mcp/src/index.ts:63](https://github.com/googleapis/gcloud-mcp/blob/238728f237ecb5f483199906b564a1767a0713f9/packages/gcloud-mcp/src/index.ts#L63); [packages/gcloud-mcp/src/index.ts:54](https://github.com/googleapis/gcloud-mcp/blob/238728f237ecb5f483199906b564a1767a0713f9/packages/gcloud-mcp/src/index.ts#L54)) | The model is held to a shorter list of command groups, while the role stays the boundary that holds (C3) |
+| Per-call approval in your host | Set your MCP host to ask before every `run_gcloud_command` call ([packages/gcloud-mcp/src/tools/run_gcloud_command.ts:37](https://github.com/googleapis/gcloud-mcp/blob/238728f237ecb5f483199906b564a1767a0713f9/packages/gcloud-mcp/src/tools/run_gcloud_command.ts#L37)) | A person sees each gcloud command before it runs with your cloud authority (C2) |
+| Its own container or VM | Run the server in a container or VM with no other credentials and outbound access limited to Google Cloud APIs | Local files stay out of reach, data has a narrower path out, and stopping the container ends any gcloud process still running (C4) |
+| The call log | Keep the default info level for `LOG_LEVEL` and have the host store the server's stderr where the agent can't write ([packages/gcloud-mcp/src/utility/logger.ts:47-48](https://github.com/googleapis/gcloud-mcp/blob/238728f237ecb5f483199906b564a1767a0713f9/packages/gcloud-mcp/src/utility/logger.ts#L47-L48)) | A timestamped record of every command the server ran (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; every call uses the same tool, so the gcloud command in the arguments is what tells a list from a delete.
+- Commands that change IAM, gcloud config or components, or copy data to a bucket, are worth a closer look before approving.
+
+### Handling data
+
+- The stderr log holds every command's full arguments unredacted; store it like other sensitive logs.
+- Command output, including tokens or secret values a command prints, goes to the model as is, so treat transcripts like the data the account can read.
+
 ## Critical gaps
 - The model can change IAM policy for the account it runs as, or mint service-account keys, because no IAM or auth command group is restricted by default (C1-SELFESC). (ASI03, T3; C1) — [packages/gcloud-mcp/src/index.ts:32-43](https://github.com/googleapis/gcloud-mcp/blob/238728f237ecb5f483199906b564a1767a0713f9/packages/gcloud-mcp/src/index.ts#L32-L43); [packages/gcloud-mcp/src/gcloud_executor.ts:91-92](https://github.com/googleapis/gcloud-mcp/blob/238728f237ecb5f483199906b564a1767a0713f9/packages/gcloud-mcp/src/gcloud_executor.ts#L91-L92)
 - Every command runs with the user's full ambient gcloud authority across all reachable projects (C1 blast radius L0). (ASI03; C1) — [packages/gcloud-mcp/src/gcloud_executor.ts:91-92](https://github.com/googleapis/gcloud-mcp/blob/238728f237ecb5f483199906b564a1767a0713f9/packages/gcloud-mcp/src/gcloud_executor.ts#L91-L92); [README.md:200-202](https://github.com/googleapis/gcloud-mcp/blob/238728f237ecb5f483199906b564a1767a0713f9/README.md#L200-L202)

@@ -36,6 +36,153 @@
     "external_communication": "no"
   },
   "headline": "kubectl-ai runs model-written bash and kubectl commands on your machine with your full kubeconfig and environment. Its main defence is a parser-based approval prompt for anything that is not a single read-only kubectl call. That allowlist is not a strict boundary, and the default-on trace does not protect sensitive data.",
+  "safe_setup": {
+    "intro": "kubectl-ai asks before running anything it can't classify as a single read-only kubectl call, keeps MCP servers off and stops each request after 20 iterations. Beyond that the defaults are thin: commands run on your machine with your full kubeconfig and environment, so the safest setup narrows the cluster identity, uses the opt-in Kubernetes sandbox and builds containment around the process.",
+    "steps": [
+      {
+        "setup": "A read-only cluster identity",
+        "how": "Pass `--kubeconfig <path>` pointing at a credential bound to a read-only role in the namespaces the task needs, with no access to secrets",
+        "gives_you": "The Kubernetes API itself refuses writes and secret reads, whatever the agent runs",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "cmd/main.go",
+            "lines": "326",
+            "contains": "\"kubeconfig\", opt.KubeConfigPath",
+            "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L326"
+          }
+        ]
+      },
+      {
+        "setup": "The Kubernetes sandbox",
+        "how": "Apply the manifests in k8s/sandbox and run with `--sandbox k8s`",
+        "gives_you": "bash, kubectl and custom tool commands run in a pod under the shipped read-only service account, away from your host",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "cmd/main.go",
+            "lines": "352",
+            "contains": "\"sandbox\", opt.Sandbox",
+            "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L352"
+          },
+          {
+            "file": "cmd/main.go",
+            "lines": "208",
+            "contains": "o.Sandbox = \"\"",
+            "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L208"
+          }
+        ]
+      },
+      {
+        "setup": "A minimal environment",
+        "how": "Launch it from a shell holding only the model API key and kubeconfig, with no cloud CLI credentials",
+        "gives_you": "Commands and MCP servers, which receive the whole environment, find nothing else to use",
+        "criterion": "C8",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Approval prompts on",
+        "how": "Keep the defaults: no `--skip-permissions` flag and no `skipPermissions` key in the config file",
+        "gives_you": "Every command it cannot classify as read-only is shown to you in full before it runs",
+        "criterion": "C2",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "cmd/main.go",
+            "lines": "334",
+            "contains": "\"skip-permissions\"",
+            "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L334"
+          },
+          {
+            "file": "cmd/main.go",
+            "lines": "87",
+            "contains": "json:\"skipPermissions,omitempty\"",
+            "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L87"
+          },
+          {
+            "file": "cmd/main.go",
+            "lines": "167",
+            "contains": "o.SkipPermissions = false",
+            "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L167"
+          }
+        ]
+      },
+      {
+        "setup": "MCP client off",
+        "how": "Keep the default with no `--mcp-client` flag and no `mcpClient` key in the config file",
+        "gives_you": "No unpinned third-party server starts with your credentials",
+        "criterion": "C7",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "cmd/main.go",
+            "lines": "338",
+            "contains": "\"mcp-client\"",
+            "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L338"
+          },
+          {
+            "file": "cmd/main.go",
+            "lines": "96",
+            "contains": "json:\"mcpClient,omitempty\"",
+            "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L96"
+          },
+          {
+            "file": "cmd/main.go",
+            "lines": "169",
+            "contains": "o.MCPClient = false",
+            "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L169"
+          }
+        ]
+      },
+      {
+        "setup": "A checked config directory",
+        "how": "Review the files in ~/.config/kubectl-ai before each session, or keep them read-only to the account that runs the agent",
+        "gives_you": "Approvals, custom tools and MCP servers stay as you set them across sessions",
+        "criterion": "C6",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "An iteration ceiling",
+        "how": "Keep the default `--max-iterations 20`, or lower it for short tasks",
+        "gives_you": "Each request stops after a fixed number of model turns",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "cmd/main.go",
+            "lines": "325",
+            "contains": "\"max-iterations\"",
+            "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L325"
+          },
+          {
+            "file": "cmd/main.go",
+            "lines": "177",
+            "contains": "o.MaxIterations = 20",
+            "url": "https://github.com/GoogleCloudPlatform/kubectl-ai/blob/2c8ff822bacba3009f215df204610a29f5632454/cmd/main.go#L177"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run kubectl-ai in a container or VM whose network reaches only the model provider and the cluster API",
+        "gives_you": "An outer boundary around host commands, with a narrow path for data to leave",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; the session-wide option covers every later call in the session.",
+      "kubectl calls classified as read-only run without a prompt, so the cluster identity is what keeps them in bounds."
+    ],
+    "handling": [
+      "The default trace records every tool call and result unredacted and is overwritten at each launch; copy it elsewhere if you need a record, and store it like the data the agent read."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

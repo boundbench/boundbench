@@ -24,6 +24,26 @@
 
 OpenManus as shipped runs model-written Python directly on your machine as you, with your files, environment and network, and edits any file by absolute path, with no approval step anywhere. It also auto-launches an unpinned Browser Use package from PyPI that can drive your local Chrome. Any web page that hijacks the agent can read secrets (including the plaintext LLM key) and send them out, or destroy files, unattended. Run it only in a disposable VM or container that holds nothing you care about.
 
+## Safest setup
+
+OpenManus ends each run after 20 steps and reads its settings only from its install directory, but model-written Python runs on your machine as you, there is no approval step, and the Docker sandbox covers only the file editor. The safest setup puts the boundaries around the process yourself: a scoped key, a disposable machine, and Browser Use off unless the task needs it.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, low-limit key | Put a model key used only by OpenManus, with a spending limit set at the provider, in `api_key` ([app/config.py:22](https://github.com/FoundationAgents/OpenManus/blob/3309bf4e416fb1c74b008f3e86494439a31bad53/app/config.py#L22)) | Code the agent runs can reach only that key and its spend, not your other accounts (C8) |
+| A disposable VM or container | Run OpenManus in a VM or container holding only the task's files, with network access limited to the model provider and the hosts the task needs | A hijacked run reaches only that throwaway machine, not your home directory, keys or logged-in browser (C1) |
+| Browser Use off | Set `OPENMANUS_DISABLE_BROWSER_USE=1` unless the task needs a browser ([app/agent/manus.py:84-86](https://github.com/FoundationAgents/OpenManus/blob/3309bf4e416fb1c74b008f3e86494439a31bad53/app/agent/manus.py#L84-L86)) | No unpinned package is fetched and run at start, and web content stays out of the session (C7) |
+| The Docker sandbox | `use_sandbox = true` with `network_enabled = false` in the `[sandbox]` section of the config file ([app/config.py:97-105](https://github.com/FoundationAgents/OpenManus/blob/3309bf4e416fb1c74b008f3e86494439a31bad53/app/config.py#L97-L105)) | The file editor works inside a network-off container with memory and CPU limits (C4) |
+| A token budget | `max_input_tokens = <n>` in the `[llm]` section of the config file ([app/config.py:24-27](https://github.com/FoundationAgents/OpenManus/blob/3309bf4e416fb1c74b008f3e86494439a31bad53/app/config.py#L24-L27)) | A ceiling on model input tokens across the whole run (C10) |
+| The step cap | Keep the Manus agent's default `max_steps` of 20 ([app/agent/manus.py:51](https://github.com/FoundationAgents/OpenManus/blob/3309bf4e416fb1c74b008f3e86494439a31bad53/app/agent/manus.py#L51)) | Every run ends after a fixed number of steps (C10) |
+| Settings you control | Keep the install's config directory read-only to the user running the agent, and check mcp.json before each start ([app/config.py:151](https://github.com/FoundationAgents/OpenManus/blob/3309bf4e416fb1c74b008f3e86494439a31bad53/app/config.py#L151)) | The model endpoint and MCP servers stay the ones you chose, run after run (C6) |
+| Logs kept off the machine | Copy the install's logs directory to storage outside the VM as the run goes ([app/logger.py:25](https://github.com/FoundationAgents/OpenManus/blob/3309bf4e416fb1c74b008f3e86494439a31bad53/app/logger.py#L25)) | A record of each step and tool result that the agent can't rewrite (C9) |
+
+### Handling data
+
+- The log file records tool arguments and full tool results at DEBUG level; store it like the data the agent read.
+- The config file holds the model key in plain text; keep it out of shared folders and backups.
+
 ## Critical gaps
 - Model-written Python runs via exec() in a same-user child process with full builtins, environment and network; the Docker sandbox is off by default and never used for python_execute. (ASI05, T11; C4) — [app/tool/python_execute.py:30](https://github.com/FoundationAgents/OpenManus/blob/3309bf4e416fb1c74b008f3e86494439a31bad53/app/tool/python_execute.py#L30); [app/tool/python_execute.py:61](https://github.com/FoundationAgents/OpenManus/blob/3309bf4e416fb1c74b008f3e86494439a31bad53/app/tool/python_execute.py#L61); [app/config.py:97](https://github.com/FoundationAgents/OpenManus/blob/3309bf4e416fb1c74b008f3e86494439a31bad53/app/config.py#L97)
 - The agent holds the launching user's entire authority with no authorization layer, including the user's Chrome via Browser Use. (ASI03, T3; C1) — [app/tool/python_execute.py:30](https://github.com/FoundationAgents/OpenManus/blob/3309bf4e416fb1c74b008f3e86494439a31bad53/app/tool/python_execute.py#L30); [README.md:98](https://github.com/FoundationAgents/OpenManus/blob/3309bf4e416fb1c74b008f3e86494439a31bad53/README.md#L98)

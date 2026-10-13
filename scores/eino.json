@@ -36,6 +36,141 @@
     "external_communication": "opt_in"
   },
   "headline": "Eino is an orchestration library: it runs whatever tools you register, immediately and in parallel, with no approval gate, no sandbox, and no authorization layer by default. Its built-in shell 'execute' tool passes model-written commands straight to your Shell implementation while telling the model it runs in an isolated sandbox. The dominant risk is prompt injection through tool results turning a DeepAgent with shell, file, and web tools into an unattended attacker; all containment must be built by the integrator, using the opt-in interrupt/resume primitive for approvals.",
+  "safe_setup": {
+    "intro": "Eino is a library: it adds no approval step, sandbox or authorization layer of its own, and every tool you register runs at once with your process's authority. A ChatModelAgent does stop after 20 model calls by default. The safest setup uses the interrupt and callback primitives Eino offers, registers only the tools a task needs, and builds containment around the process yourself.",
+    "steps": [
+      {
+        "setup": "Scoped, low-limit credentials",
+        "how": "Give the process only the keys its tools need, each scoped or read-only with a spending limit set at the provider",
+        "gives_you": "A hijacked agent reaches only the systems and spend you chose, not everything your process can",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Per-call approval",
+        "how": "Return `Interrupt` with the exact arguments from each tool that writes, sends or executes, and resume only after a person reviews them",
+        "gives_you": "A person decides on each consequential call before it runs",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "components/tool/interrupt.go",
+            "lines": "44",
+            "contains": "func Interrupt(ctx context.Context, info any) error",
+            "url": "https://github.com/cloudwego/eino/blob/58d184303f4e73413c454a9626f79c17af0fd9fb/components/tool/interrupt.go#L44"
+          }
+        ]
+      },
+      {
+        "setup": "Only the file tools needed",
+        "how": "Leave `Shell` and `StreamingShell` unset unless the task runs commands, and set `Disable` in `WriteFileToolConfig` and `EditFileToolConfig` for read-only tasks",
+        "gives_you": "The agent gets read access only, with write and command tools added deliberately",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "adk/middlewares/filesystem/filesystem.go",
+            "lines": "229",
+            "contains": "Shell filesystem.Shell",
+            "url": "https://github.com/cloudwego/eino/blob/58d184303f4e73413c454a9626f79c17af0fd9fb/adk/middlewares/filesystem/filesystem.go#L229"
+          },
+          {
+            "file": "adk/middlewares/filesystem/filesystem.go",
+            "lines": "233",
+            "contains": "StreamingShell filesystem.StreamingShell",
+            "url": "https://github.com/cloudwego/eino/blob/58d184303f4e73413c454a9626f79c17af0fd9fb/adk/middlewares/filesystem/filesystem.go#L233"
+          },
+          {
+            "file": "adk/middlewares/filesystem/filesystem.go",
+            "lines": "245",
+            "contains": "WriteFileToolConfig *ToolConfig",
+            "url": "https://github.com/cloudwego/eino/blob/58d184303f4e73413c454a9626f79c17af0fd9fb/adk/middlewares/filesystem/filesystem.go#L245"
+          },
+          {
+            "file": "adk/middlewares/filesystem/filesystem.go",
+            "lines": "248",
+            "contains": "EditFileToolConfig *ToolConfig",
+            "url": "https://github.com/cloudwego/eino/blob/58d184303f4e73413c454a9626f79c17af0fd9fb/adk/middlewares/filesystem/filesystem.go#L248"
+          },
+          {
+            "file": "adk/middlewares/filesystem/filesystem.go",
+            "lines": "71",
+            "contains": "Disable bool",
+            "url": "https://github.com/cloudwego/eino/blob/58d184303f4e73413c454a9626f79c17af0fd9fb/adk/middlewares/filesystem/filesystem.go#L71"
+          }
+        ]
+      },
+      {
+        "setup": "Iteration limits everywhere",
+        "how": "Keep ChatModelAgent's `MaxIterations` at 20 or lower, and set `MaxIterations` on every `LoopAgentConfig`",
+        "gives_you": "Every agent loop and workflow loop ends after a fixed number of rounds",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "adk/chatmodel.go",
+            "lines": "305-308",
+            "contains": "MaxIterations int",
+            "url": "https://github.com/cloudwego/eino/blob/58d184303f4e73413c454a9626f79c17af0fd9fb/adk/chatmodel.go#L305-L308"
+          },
+          {
+            "file": "adk/workflow.go",
+            "lines": "655-660",
+            "contains": "type LoopAgentConfig struct",
+            "url": "https://github.com/cloudwego/eino/blob/58d184303f4e73413c454a9626f79c17af0fd9fb/adk/workflow.go#L655-L660"
+          }
+        ]
+      },
+      {
+        "setup": "A Shell that really isolates",
+        "how": "If the agent runs commands, supply a Shell that runs them in a container or VM with only the workspace mounted, no secrets in its environment, and limited network",
+        "gives_you": "Model-written commands and skill scripts run inside a real boundary, as the execute tool already tells the model they do",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Reviewed, read-only instructions",
+        "how": "Keep AGENTS.md files and the skills directory outside the backend the agent can write, holding only files and skills you have read",
+        "gives_you": "Every run starts from instructions and skills you chose, and the agent can't rewrite them for later sessions",
+        "criterion": "C6",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the whole agent process in a container or VM whose network reaches only the model provider and the hosts the task needs",
+        "gives_you": "An outer boundary around in-process tools and a narrow path for data to leave",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A durable tool-call record",
+        "how": "Register a handler with `AppendGlobalHandlers` that writes each tool start, end and error to storage the agent can't modify",
+        "gives_you": "A record of every tool call, sub-agents included, that outlives the run",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "callbacks/interface.go",
+            "lines": "103",
+            "contains": "func AppendGlobalHandlers(handlers ...Handler)",
+            "url": "https://github.com/cloudwego/eino/blob/58d184303f4e73413c454a9626f79c17af0fd9fb/callbacks/interface.go#L103"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; put the exact tool arguments in the interrupt info, since Eino doesn't show them for you.",
+      "The built-in write_file, edit_file and execute tools never pause on their own, so gating them takes a tool of your own in their place."
+    ],
+    "handling": [
+      "Tool output, including anything a command prints, reaches the model provider, callback handlers and checkpoints unredacted; store those records like the data the agent reads.",
+      "Keys in the process environment are visible to every tool and to a host Shell, so give the agent's process a minimal environment."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

@@ -25,6 +25,27 @@ Controls where a risk surface exists: 3.60 / 7.0 (51%); 3 criteria scored SA (su
 
 Context7's MCP server is a small, read-only surface: two documentation lookups against one fixed API, no code execution, no files, no memory, no plugins. The dominant risk is what it delivers: community-contributed documentation goes into your agent's context as plain text with no provenance or untrusted marking, alongside tool descriptions that themselves direct the model, so any prompt injection in an indexed library reaches an agent that may hold far more powerful tools. It also forwards your API key or OAuth token to the Context7 backend without validating most tokens itself, and it keeps no per-call record of what was asked.
 
+## Safest setup
+
+Context7's MCP server exposes just two read-only documentation lookups against one fixed API, with no code execution, files or plugins. What it adds to a session is community-written documentation in the model's context, and it keeps no per-call record, so the safest setup narrows the key and puts the guard rails in the host around it.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated Context7 key | Create a separate Context7 API key for each agent setup and revoke it when that setup is retired | A key that reaches only one Context7 account's documentation reads and can be cut off on its own (C1) |
+| Local stdio mode | When you run the server yourself, keep the default `--transport` of `stdio` ([packages/mcp/src/index.ts:68](https://github.com/upstash/context7/blob/bfa02ea67b5707fe0e0a673faa49d0f50b28c80b/packages/mcp/src/index.ts#L68)) | The server talks only to your own client, with no network port for anyone else to reach (C1) |
+| The key from the environment | In stdio mode, pass the key as `CONTEXT7_API_KEY` in the client's server config rather than with `--api-key` ([packages/mcp/src/index.ts:70](https://github.com/upstash/context7/blob/bfa02ea67b5707fe0e0a673faa49d0f50b28c80b/packages/mcp/src/index.ts#L70); [packages/mcp/src/index.ts:668](https://github.com/upstash/context7/blob/bfa02ea67b5707fe0e0a673faa49d0f50b28c80b/packages/mcp/src/index.ts#L668)) | The key stays out of command lines, shell history and process listings (C8) |
+| Per-call approval elsewhere | In sessions with Context7 connected, keep shell, file-write and messaging tools on per-call approval in your host | Documentation text in the context can't turn into an action without a person seeing it first (C5) |
+| A host-side call log | Turn on your MCP client's or gateway's tool-call log, stored where the agent can't edit it | A record of every lookup and its query, which the server itself keeps only for failures (C9) |
+
+### Approving with confidence
+
+- Read each prompt for the host's other tools and approve calls one at a time, especially right after a documentation lookup.
+
+### Handling data
+
+- Every query the model writes is sent to Context7, so keep secrets and private code out of the questions it asks.
+- Telemetry is content-free and stays local unless you add an exporter; `OTEL_SDK_DISABLED=true` turns it off.
+
 ## Critical gaps
 - The server forwards the client's API key or JWT unchanged to the Context7 API (MCP token passthrough), validating tokens only on the /mcp/oauth route; token validation there is not a strict boundary. (ASI03, T9; C1) — [packages/mcp/src/lib/encryption.ts:72](https://github.com/upstash/context7/blob/bfa02ea67b5707fe0e0a673faa49d0f50b28c80b/packages/mcp/src/lib/encryption.ts#L72); [packages/mcp/src/index.ts:459](https://github.com/upstash/context7/blob/bfa02ea67b5707fe0e0a673faa49d0f50b28c80b/packages/mcp/src/index.ts#L459)
 

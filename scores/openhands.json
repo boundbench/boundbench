@@ -36,6 +36,164 @@
     "external_communication": "yes"
   },
   "headline": "As shipped, the SDK runs model-chosen shell commands and file edits directly on your machine, as you, with no approval step: the confirmation policy defaults to NeverConfirm. Every command inherits your full environment, including the LLM key and any cloud or GitHub tokens, so a prompt injection in a repository file can leak credentials and take irreversible actions unattended. Strong building blocks exist (per-action confirmation, deterministic risk analyzers, secret masking, a Docker workspace), but all are opt-in.",
+  "safe_setup": {
+    "intro": "OpenHands includes strong building blocks: per-action approval, masking for registered secrets, a Docker workspace and a durable event record. As shipped, the README setup runs shell commands and file edits on your own machine, as you, with none of them on, so the safest setup turns them on and gives the agent only the credentials its task needs.",
+    "steps": [
+      {
+        "setup": "A dedicated, limited environment",
+        "how": "Launch the agent from an environment holding only a dedicated LLM key with a provider spending limit, and no cloud or GitHub tokens",
+        "gives_you": "Commands the agent runs can reach only the access you prepared for it, not your whole account",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Per-action approval",
+        "how": "Call `set_confirmation_policy(AlwaysConfirm())` on the conversation before running it",
+        "gives_you": "Each batch of tool calls waits for you with the exact pending actions, which you can run or reject",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "openhands-sdk/openhands/sdk/conversation/base.py",
+            "lines": "239",
+            "contains": "def set_confirmation_policy",
+            "url": "https://github.com/OpenHands/software-agent-sdk/blob/84d4470acd85688b52c510532ffc83b234ebf453/openhands-sdk/openhands/sdk/conversation/base.py#L239"
+          },
+          {
+            "file": "openhands-sdk/openhands/sdk/security/confirmation_policy.py",
+            "lines": "27",
+            "contains": "class AlwaysConfirm",
+            "url": "https://github.com/OpenHands/software-agent-sdk/blob/84d4470acd85688b52c510532ffc83b234ebf453/openhands-sdk/openhands/sdk/security/confirmation_policy.py#L27"
+          }
+        ]
+      },
+      {
+        "setup": "A single-agent tool list",
+        "how": "List in `tools` only the tools the task needs, leaving out `TaskToolSet` and the delegate tool",
+        "gives_you": "Every action stays in the main loop, where the approval step and the event record cover it",
+        "criterion": "C2",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "openhands-sdk/openhands/sdk/agent/base.py",
+            "lines": "128-129",
+            "contains": "default_factory=list",
+            "url": "https://github.com/OpenHands/software-agent-sdk/blob/84d4470acd85688b52c510532ffc83b234ebf453/openhands-sdk/openhands/sdk/agent/base.py#L128-L129"
+          },
+          {
+            "file": "openhands-tools/openhands/tools/task/definition.py",
+            "lines": "210",
+            "contains": "class TaskToolSet",
+            "url": "https://github.com/OpenHands/software-agent-sdk/blob/84d4470acd85688b52c510532ffc83b234ebf453/openhands-tools/openhands/tools/task/definition.py#L210"
+          }
+        ]
+      },
+      {
+        "setup": "Registered secrets",
+        "how": "Pass the credentials a task needs through `secrets` on `Conversation` rather than exporting them",
+        "gives_you": "Each secret reaches a command only when referenced by name and is masked out of output the model sees",
+        "criterion": "C8",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "openhands-sdk/openhands/sdk/conversation/conversation.py",
+            "lines": "34",
+            "contains": "class Conversation",
+            "url": "https://github.com/OpenHands/software-agent-sdk/blob/84d4470acd85688b52c510532ffc83b234ebf453/openhands-sdk/openhands/sdk/conversation/conversation.py#L34"
+          },
+          {
+            "file": "openhands-sdk/openhands/sdk/conversation/conversation.py",
+            "lines": "83",
+            "contains": "secrets: dict[str, SecretValue]",
+            "url": "https://github.com/OpenHands/software-agent-sdk/blob/84d4470acd85688b52c510532ffc83b234ebf453/openhands-sdk/openhands/sdk/conversation/conversation.py#L83"
+          }
+        ]
+      },
+      {
+        "setup": "A Docker workspace",
+        "how": "Pass a `DockerWorkspace` with the default empty `volumes` and `network` set to a Docker network that reaches only the hosts the task needs",
+        "gives_you": "The agent and its tools run in a throwaway container away from your files, with a narrow path for data to leave",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "openhands-workspace/openhands/workspace/docker/workspace.py",
+            "lines": "53",
+            "contains": "class DockerWorkspace",
+            "url": "https://github.com/OpenHands/software-agent-sdk/blob/84d4470acd85688b52c510532ffc83b234ebf453/openhands-workspace/openhands/workspace/docker/workspace.py#L53"
+          },
+          {
+            "file": "openhands-workspace/openhands/workspace/docker/workspace.py",
+            "lines": "97-98",
+            "contains": "volumes: list[str] = Field(",
+            "url": "https://github.com/OpenHands/software-agent-sdk/blob/84d4470acd85688b52c510532ffc83b234ebf453/openhands-workspace/openhands/workspace/docker/workspace.py#L97-L98"
+          },
+          {
+            "file": "openhands-workspace/openhands/workspace/docker/workspace.py",
+            "lines": "119-121",
+            "contains": "network: str | None = Field(",
+            "url": "https://github.com/OpenHands/software-agent-sdk/blob/84d4470acd85688b52c510532ffc83b234ebf453/openhands-workspace/openhands/workspace/docker/workspace.py#L119-L121"
+          }
+        ]
+      },
+      {
+        "setup": "Step and spend ceilings",
+        "how": "Lower `max_iteration_per_run` from its default 500 and, on `LocalConversation`, set `max_budget_per_run=<usd>`",
+        "gives_you": "Every run ends after a fixed number of steps and, locally, a fixed spend",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "openhands-sdk/openhands/sdk/conversation/impl/local_conversation.py",
+            "lines": "179",
+            "contains": "class LocalConversation",
+            "url": "https://github.com/OpenHands/software-agent-sdk/blob/84d4470acd85688b52c510532ffc83b234ebf453/openhands-sdk/openhands/sdk/conversation/impl/local_conversation.py#L179"
+          },
+          {
+            "file": "openhands-sdk/openhands/sdk/conversation/impl/local_conversation.py",
+            "lines": "219",
+            "contains": "max_iteration_per_run: int = 500",
+            "url": "https://github.com/OpenHands/software-agent-sdk/blob/84d4470acd85688b52c510532ffc83b234ebf453/openhands-sdk/openhands/sdk/conversation/impl/local_conversation.py#L219"
+          },
+          {
+            "file": "openhands-sdk/openhands/sdk/conversation/impl/local_conversation.py",
+            "lines": "237",
+            "contains": "max_budget_per_run: float | None = None",
+            "url": "https://github.com/OpenHands/software-agent-sdk/blob/84d4470acd85688b52c510532ffc83b234ebf453/openhands-sdk/openhands/sdk/conversation/impl/local_conversation.py#L237"
+          }
+        ]
+      },
+      {
+        "setup": "A run record on disk",
+        "how": "Set `persistence_dir=\"<path>\"` on a local `Conversation`, pointing outside the workspace",
+        "gives_you": "Every action, observation and rejection is written to disk as it happens and outlives the process",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "openhands-sdk/openhands/sdk/conversation/conversation.py",
+            "lines": "34",
+            "contains": "class Conversation",
+            "url": "https://github.com/OpenHands/software-agent-sdk/blob/84d4470acd85688b52c510532ffc83b234ebf453/openhands-sdk/openhands/sdk/conversation/conversation.py#L34"
+          },
+          {
+            "file": "openhands-sdk/openhands/sdk/conversation/conversation.py",
+            "lines": "70",
+            "contains": "persistence_dir: str | Path | None = None",
+            "url": "https://github.com/OpenHands/software-agent-sdk/blob/84d4470acd85688b52c510532ffc83b234ebf453/openhands-sdk/openhands/sdk/conversation/conversation.py#L70"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve actions one at a time; a shell command can delete files, push or send data, and only file-editor edits can be undone."
+    ],
+    "handling": [
+      "The event record holds commands and their output and has no tamper protection; store it like the repository it covers.",
+      "Laminar and OpenTelemetry tracing export message content once their environment variables are set, so set them only where that content may go."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

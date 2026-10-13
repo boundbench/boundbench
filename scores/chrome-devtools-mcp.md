@@ -24,6 +24,31 @@
 
 Chrome DevTools MCP gives an agent a real Chrome browser with JavaScript execution, navigation (including local file: URLs) and input on by default, and it returns page content to the model unlabelled. Its own file writes are well confined to the temp directory or client roots, but a hijacked agent can still read local secrets through the browser, send data anywhere and act on any site signed into the persistent profile, with nothing in the server asking a human. The biggest structural problem is configuration integrity: security-relevant configuration is not integrity-protected in how it is sourced and applied.
 
+## Safest setup
+
+Chrome DevTools MCP keeps its own file writes inside the temp directory or your client's roots, marks every powerful tool as not read-only for your host's approval prompt, and caps each call at 60 seconds. As shipped it gives the agent a persistent browser profile with JavaScript, local file navigation and unredacted headers on, so the safest setup narrows the accounts and tools, turns on the isolation and redaction options the server already has, and contains the browser.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Test accounts only | Sign the agent's browser into only the test or low-privilege accounts the task needs | Any action the agent takes on a website reaches only those accounts, whatever the model asks for (C1) |
+| An inspection-only tool set | `--javascriptEvaluation=false` and `--fileNavigations=false` when the task doesn't need scripts or local pages ([src/config/mcp-options.ts:128-130](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/b2f522c8ba0fd2e00a679159b4aa5243de5f1b78/src/config/mcp-options.ts#L128-L130); [src/config/mcp-options.ts:134-136](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/b2f522c8ba0fd2e00a679159b4aa5243de5f1b78/src/config/mcp-options.ts#L134-L136)) | Scripts stop running in pages and the navigation tools refuse file: URLs (C3) |
+| Only the tool groups needed | Set `--categoryInput=false` and the other category flags to false for tool groups the task doesn't use, leaving the off-by-default groups off ([docs/configuration.md:7-10](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/b2f522c8ba0fd2e00a679159b4aa5243de5f1b78/docs/configuration.md#L7-L10); [src/config/category-options.ts:74](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/b2f522c8ba0fd2e00a679159b4aa5243de5f1b78/src/config/category-options.ts#L74)) | The model sees a smaller set of tools, with extensions, page-provided tools and WebMCP left out (C3) |
+| A fresh profile per session | `--isolated` ([src/config/browser-options.ts:89-94](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/b2f522c8ba0fd2e00a679159b4aa5243de5f1b78/src/config/browser-options.ts#L89-L94)) | A temporary browser profile, deleted on close, so cookies and sign-ins don't carry across sessions (C6) |
+| Header redaction | `--redactNetworkHeaders=true` ([src/config/mcp-options.ts:175-180](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/b2f522c8ba0fd2e00a679159b4aa5243de5f1b78/src/config/mcp-options.ts#L175-L180)) | Headers the server treats as sensitive are redacted before network details reach the model (C8) |
+| Chrome's renderer sandbox | Keep the default launch arguments, with no `--no-sandbox` in `--chromeArg` ([src/config/browser-options.ts:111-116](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/b2f522c8ba0fd2e00a679159b4aa5243de5f1b78/src/config/browser-options.ts#L111-L116); [src/config/mcp-options.ts:294](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/b2f522c8ba0fd2e00a679159b4aa5243de5f1b78/src/config/mcp-options.ts#L294)) | Model-written JavaScript stays inside Chrome's sandboxed renderer, away from the server process (C4) |
+| Its own container or VM | Run the server and its Chrome in a container or VM that holds no SSH keys or cloud credentials, with network access limited to the sites the task needs | An outer boundary around the browser that keeps home-directory secrets out of reach and narrows where data can go (C5) |
+| A tool-call log | `--logFile <path>` with a path outside any project directory ([src/config/mcp-options.ts:23-27](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/b2f522c8ba0fd2e00a679159b4aa5243de5f1b78/src/config/mcp-options.ts#L23-L27)) | A timestamped record of every tool call and its parameters (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; script, navigation, input and file-writing tools are the ones marked not read-only.
+- A form submission or click on a signed-in site can't be undone, so check the page and the target before approving it.
+
+### Handling data
+
+- The log holds full tool parameters; store it like other sensitive logs.
+- Usage statistics are on by default and content-free; `--usageStatistics=false` or `CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS` turns them off.
+
 ## Critical gaps
 - Worst case under prompt injection: default tools allow reading local files via file: URLs and unredacted headers, exfiltrating via scripted fetch, and irreversible actions on signed-in sites, with no server-side gate (C5-WORSTCASE). (ASI01, LLM01, T6; C5) — [src/config/mcp-options.ts:134-136](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/b2f522c8ba0fd2e00a679159b4aa5243de5f1b78/src/config/mcp-options.ts#L134-L136); [src/tools/script.ts:230-245](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/b2f522c8ba0fd2e00a679159b4aa5243de5f1b78/src/tools/script.ts#L230-L245); [src/config/mcp-options.ts:175-180](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/b2f522c8ba0fd2e00a679159b4aa5243de5f1b78/src/config/mcp-options.ts#L175-L180)
 

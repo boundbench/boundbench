@@ -24,6 +24,30 @@
 
 SWE-agent runs every model command in a throwaway Docker container, which keeps the host filesystem and the model API key out of reach. But it has no approval step and no egress limits, and it feeds an issue that anyone can write straight into the prompt. GitHub token handling is also not locked down. Prefer running without a token, or with a fine-grained read-only token.
 
+## Safest setup
+
+SWE-agent runs every model command in a throwaway Docker container, keeps the model API key on the host, caps each run at $3 of model spend and records every step. It has no approval step and no egress limits, and it acts on issue text that anyone can write, so the safest setup keeps credentials minimal, feeds it trusted tasks and builds containment around the container.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| No token, or a read-only one | Leave `GITHUB_TOKEN` empty in the environment and in .env; when a private repository needs one, use a fine-grained read-only token for that repository alone ([sweagent/agent/problem_statement.py:151](https://github.com/SWE-agent/SWE-agent/blob/3ea751c087f32b16e039a2233dd6eefecef325d5/sweagent/agent/problem_statement.py#L151)) | GitHub itself limits what any run can reach to what you chose to grant (C1) |
+| Tasks you wrote | Point it at issues from you or your team, or at a task file of your own with `--problem_statement.path` ([sweagent/run/run_single.py:26](https://github.com/SWE-agent/SWE-agent/blob/3ea751c087f32b16e039a2233dd6eefecef325d5/sweagent/run/run_single.py#L26)) | The instructions the agent acts on come from people you trust (C5) |
+| The Docker sandbox | Keep the default Docker `deployment` rather than a local one ([sweagent/environment/swe_env.py:27-28](https://github.com/SWE-agent/SWE-agent/blob/3ea751c087f32b16e039a2233dd6eefecef325d5/sweagent/environment/swe_env.py#L27-L28)) | Model commands run in a fresh container that is removed after the run, away from your files and model key (C4) |
+| Patch-only results | Keep `open_pr` and `apply_patch_locally` at their default of off ([sweagent/run/run_single.py:59](https://github.com/SWE-agent/SWE-agent/blob/3ea751c087f32b16e039a2233dd6eefecef325d5/sweagent/run/run_single.py#L59); [sweagent/run/run_single.py:62](https://github.com/SWE-agent/SWE-agent/blob/3ea751c087f32b16e039a2233dd6eefecef325d5/sweagent/run/run_single.py#L62)) | Each run ends with a patch file you review before anything changes outside the container (C2) |
+| Spend and time limits | Keep `per_instance_cost_limit` at 3.0 or lower and the default `execution_timeout` and `total_execution_timeout`, all above 0 ([sweagent/agent/models.py:73-74](https://github.com/SWE-agent/SWE-agent/blob/3ea751c087f32b16e039a2233dd6eefecef325d5/sweagent/agent/models.py#L73-L74); [sweagent/tools/tools.py:139](https://github.com/SWE-agent/SWE-agent/blob/3ea751c087f32b16e039a2233dd6eefecef325d5/sweagent/tools/tools.py#L139); [sweagent/tools/tools.py:145](https://github.com/SWE-agent/SWE-agent/blob/3ea751c087f32b16e039a2233dd6eefecef325d5/sweagent/tools/tools.py#L145)) | Every run stops at a fixed model spend and command time (C10) |
+| A hardened container | Add dropped capabilities, no-new-privileges and memory and process limits to `docker_args` under `deployment` in your config ([config/benchmarks/250522_anthropic_filemap_simple_review.yaml:13-16](https://github.com/SWE-agent/SWE-agent/blob/3ea751c087f32b16e039a2233dd6eefecef325d5/config/benchmarks/250522_anthropic_filemap_simple_review.yaml#L13-L16)) | Commands inside the container run with fewer privileges and bounded resources (C4) |
+| Limited container egress | Run on a Docker host whose firewall or proxy lets containers reach only the package indexes and hosts the task needs | A narrow path for repository contents to leave a run (C5) |
+| A clean working directory | Start runs from a directory with no .env file you didn't write ([sweagent/utils/config.py:65-71](https://github.com/SWE-agent/SWE-agent/blob/3ea751c087f32b16e039a2233dd6eefecef325d5/sweagent/utils/config.py#L65-L71)) | The model endpoint and credentials come only from you (C6) |
+
+### Approving with confidence
+
+- There is no approval prompt, so the saved patch is your review point; read it in full before applying it.
+
+### Handling data
+
+- Trajectories and the trace, debug and info logs record every model input and command output unredacted; store them like the repository they cover.
+- With `open_pr` on, the trajectory is posted into the PR body, so keep it off for private code.
+
 ## Critical gaps
 - Untrusted GitHub issue text drives an unattended agent with open egress: exfiltration and irreversible actions need no human (C5-WORSTCASE). (ASI01, T6, LLM01; C5) — [sweagent/utils/github.py:103-107](https://github.com/SWE-agent/SWE-agent/blob/3ea751c087f32b16e039a2233dd6eefecef325d5/sweagent/utils/github.py#L103-L107); [config/default.yaml:14-16](https://github.com/SWE-agent/SWE-agent/blob/3ea751c087f32b16e039a2233dd6eefecef325d5/config/default.yaml#L14-L16)
 

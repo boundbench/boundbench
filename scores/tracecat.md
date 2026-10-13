@@ -24,6 +24,31 @@
 
 Tracecat is a workflow and agent platform that runs integrations against stored SOC and cloud credentials. Its control plane is solid (scope-based RBAC, per-preset tool allowlists, encrypted secrets, secret masking, a gateway that keeps model-provider keys out of the agent). The shipped default executes actions as plain subprocesses that inherit the worker environment, per-tool approval is opt-in and no built-in action asks for it, step limits are not enforced in the agent runtime, and nothing structurally limits a prompt-injected agent that holds both egress and response actions. Switching the executor to nsjail and flagging response actions for approval would change the picture most.
 
+## Safest setup
+
+Tracecat gives each agent only the actions its preset lists, starts new presets with none, encrypts stored secrets and masks them in output. Approval, sandboxing and an audit stream all exist but ship off, so the safest setup narrows the credentials, turns those mechanisms on and adds network containment around the executor.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Narrowly scoped integration credentials | Store only credentials scoped to what each preset needs, read-only where the task allows, with spending limits set at each provider | The integrations themselves refuse anything outside that grant, whatever the agent asks for (C1) |
+| Only the actions needed | Keep a new preset's empty `actions` list and add only the actions the task uses ([tracecat/agent/preset/schemas.py:296](https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/preset/schemas.py#L296)) | The agent can call only the tools you chose for it (C3) |
+| Per-call approval | In each preset, set `tool_approvals` to true for HTTP, response and other write actions ([tracecat/agent/preset/schemas.py:95](https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/preset/schemas.py#L95)) | A person sees the exact tool and arguments before each consequential call runs (C2) |
+| The nsjail executor | Set `TRACECAT__EXECUTOR_BACKEND=nsjail` and grant the executor the `SYS_ADMIN` capability the compose file notes ([tracecat/config.py:859-860](https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/config.py#L859-L860); [docker-compose.yml:222-224](https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/docker-compose.yml#L222-L224)) | Actions, scripts and extension code run jailed, with a minimal environment and no host fallback (C4) |
+| Database row-level security | Set `TRACECAT__RLS_MODE=enforce` ([tracecat/config.py:1388](https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/config.py#L1388); [tracecat/config.py:84](https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/config.py#L84)) | Workspace isolation is enforced by the database as well as by application queries (C6) |
+| Secret masking | Keep the default `TRACECAT__UNSAFE_DISABLE_SM_MASKING` unset ([tracecat/config.py:501-502](https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/config.py#L501-L502)) | Secret values stay masked in action output, errors and logs (C8) |
+| A limited network path | Run the executor where outbound traffic reaches only the integration and model hosts you use | Generic HTTP actions and action code reach only the destinations you allowed (C3) |
+| An external audit sink | Set the organization setting `audit_webhook_url` to a log store the workspace can't modify ([tracecat/audit/service.py:364](https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/audit/service.py#L364)) | A copy of control-plane events that outlives edits and deletions in the application database (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; the approver can change arguments, so check the arguments that will actually run.
+- Explicit sub-agents run outside the approval gate, so give them only read actions.
+- The builder assistant can change a preset's actions and approval flags; review presets after a builder session.
+
+### Handling data
+
+- Session transcripts keep tool arguments and results in the application database; store backups like the data the agent read.
+
 ## Critical gaps
 - The most powerful action paths (generic HTTP, response actions, sandboxed shell) are not gated by approval in the default configuration, and no built-in action ships flagged. (ASI02, ASI09; C2) — [tracecat/agent/tools.py:54](https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/tools.py#L54); [tracecat/agent/runtime/claude_code/runtime.py:1321](https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/runtime/claude_code/runtime.py#L1321)
 - The default direct executor runs actions in a subprocess that copies the executor environment, which holds the database URI, encryption key, service key and signing secret. (ASI05; C4) — [tracecat/executor/action_runner.py:435](https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/executor/action_runner.py#L435); [tracecat/executor/backends/direct.py:77](https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/executor/backends/direct.py#L77)

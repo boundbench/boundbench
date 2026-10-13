@@ -25,6 +25,31 @@ Controls where a risk surface exists: 3.45 / 9.0 (38%); 1 criterion scored SA (s
 
 Stagehand keeps the model on a short leash: each act() call lets it pick one or two clicks or keystrokes on elements that actually exist on the current page, it never writes code or chooses URLs directly, and secrets passed as variables stay out of the prompt. But there is no approval step, no limit on what a hostile page can steer those actions toward, and nothing scopes the logged-in browser sessions the README encourages you to keep. A malicious page can make act() type sensitive values into the wrong field and submit it without a human seeing it.
 
+## Safest setup
+
+Stagehand keeps the model on a short leash: each act() call picks one or two interactions with elements already on the page, and secret variables reach the model only as placeholders. There is no approval step and no limit on where a hostile page can steer those actions, so the safest setup narrows the accounts the browser holds, turns on the preview and domain policy Stagehand offers, and builds containment around the browser.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Dedicated low-privilege accounts | Sign the browser in only with accounts made for this agent, limited to the rights the task needs | Each website itself refuses anything those accounts can't do, whatever a page steers act() toward (C1) |
+| A fresh profile per run | Keep the default temporary profile: leave `userDataDir` unset and `preserveUserDataDir` off ([packages/sdk-ts/src/clientSchemas.ts:32-33](https://github.com/browserbase/stagehand/blob/0336409092b85beeba38ea3cd4953f45eb96ed6b/packages/sdk-ts/src/clientSchemas.ts#L32-L33)) | Every run starts signed out, and nothing a page stores carries into the next run (C1) |
+| Preview before acting | Call `observe()`, review the returned action, then run exactly that action with `act()` ([packages/sdk-ts/src/stagehand.ts:233](https://github.com/browserbase/stagehand/blob/0336409092b85beeba38ea3cd4953f45eb96ed6b/packages/sdk-ts/src/stagehand.ts#L233); [packages/sdk-ts/src/stagehand.ts:248](https://github.com/browserbase/stagehand/blob/0336409092b85beeba38ea3cd4953f45eb96ed6b/packages/sdk-ts/src/stagehand.ts#L248)) | You see the element, method and arguments before a click, fill or submission runs (C2) |
+| A domain allow list | `setDomainPolicy` on the browser context with `allowedDomains` set to the hosts the task uses ([packages/sdk-ts/src/browserContext.ts:78](https://github.com/browserbase/stagehand/blob/0336409092b85beeba38ea3cd4953f45eb96ed6b/packages/sdk-ts/src/browserContext.ts#L78); [packages/protocol/schemas.ts:350-355](https://github.com/browserbase/stagehand/blob/0336409092b85beeba38ea3cd4953f45eb96ed6b/packages/protocol/schemas.ts#L350-L355)) | Pages that act() opens by following links stay on the hosts you listed (C3) |
+| Chrome's own sandbox | Keep `chromiumSandbox` at its default and launch as a non-root user with no CI variable set ([packages/sdk-ts/src/clientSchemas.ts:36](https://github.com/browserbase/stagehand/blob/0336409092b85beeba38ea3cd4953f45eb96ed6b/packages/sdk-ts/src/clientSchemas.ts#L36)) | Website code stays inside Chrome's renderer sandbox (C4) |
+| Time limits per call | Pass `timeout: <ms>` on each act, observe and extract call, and set a spending limit on the model key at the provider ([packages/protocol/schemas.ts:1142](https://github.com/browserbase/stagehand/blob/0336409092b85beeba38ea3cd4953f45eb96ed6b/packages/protocol/schemas.ts#L1142); [packages/protocol/schemas.ts:1205](https://github.com/browserbase/stagehand/blob/0336409092b85beeba38ea3cd4953f45eb96ed6b/packages/protocol/schemas.ts#L1205); [packages/protocol/schemas.ts:1264](https://github.com/browserbase/stagehand/blob/0336409092b85beeba38ea3cd4953f45eb96ed6b/packages/protocol/schemas.ts#L1264)) | Every model-driven call ends within a time you chose, and a runaway loop stops at your budget (C10) |
+| Its own container or VM | Run the script and its browser in a container or VM whose network reaches only the hosts the task needs | An outer boundary around the signed-in browser and a narrow path for data to leave (C5) |
+| Traces to your collector | Set `telemetry` with a `traces` `endpoint` pointing at an OpenTelemetry collector you control ([packages/protocol/schemas.ts:1642](https://github.com/browserbase/stagehand/blob/0336409092b85beeba38ea3cd4953f45eb96ed6b/packages/protocol/schemas.ts#L1642); [packages/protocol/schemas.ts:1604-1612](https://github.com/browserbase/stagehand/blob/0336409092b85beeba38ea3cd4953f45eb96ed6b/packages/protocol/schemas.ts#L1604-L1612)) | A timestamped span for every act, observe, extract and page command (C9) |
+
+### Approving with confidence
+
+- Read each previewed action and approve it one at a time; clicks and submissions on signed-in sites can't be undone.
+- act() with a text instruction runs without a preview, so send submissions and purchases through observe() first.
+
+### Handling data
+
+- Logs and traces have no redaction filter; keep them in storage you control and treat them like the accounts the agent uses.
+- On Browserbase, server-side caching stores act results and variables unless you pass `cache: false`.
+
 ## Critical gaps
 - A page that hijacks act() can steer it to type secrets or page data into an attacker-chosen field and submit, or click irreversible actions, with no human in the loop. (ASI01, LLM01; C5). Evidence: [packages/extension/prompt.ts:186-189](https://github.com/browserbase/stagehand/blob/0336409092b85beeba38ea3cd4953f45eb96ed6b/packages/extension/prompt.ts#L186-L189); [packages/extension/services/actService.ts:473-485](https://github.com/browserbase/stagehand/blob/0336409092b85beeba38ea3cd4953f45eb96ed6b/packages/extension/services/actService.ts#L473-L485); [packages/extension/services/actService.ts:179-181](https://github.com/browserbase/stagehand/blob/0336409092b85beeba38ea3cd4953f45eb96ed6b/packages/extension/services/actService.ts#L179-L181)
 

@@ -24,6 +24,30 @@
 
 CopilotKit connects an agent to your app's UI and tools, and by default it adds almost no safety controls around them. Every tool the developer registers, in the browser or on the server, runs as soon as the model calls it; human-in-the-loop is a building block the developer has to wire into each action. The runtime endpoint has no built-in authentication and keeps all users' conversation history in one in-memory store. Deployers should put authentication and per-user checks in front of the runtime, build approvals into consequential tools, and set step and output limits before exposing an agent to untrusted content.
 
+## Safest setup
+
+CopilotKit runs no code on the server by default, keeps provider keys out of the model's reach, and adds no MCP servers or browser code features unless you configure them. Beyond that the defaults are thin: no authentication on the runtime endpoint, no approval step, no spend or time limit and no durable record. The safest setup adds authentication and approvals in your own code and builds containment around the runtime.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Give the runtime process only the model key and tool credentials this agent needs, each scoped or read-only with a spending limit set at the provider | Whatever the agent does, it reaches only the systems and spend you chose (C1) |
+| Authentication on the runtime | A `beforeRequestMiddleware` on `CopilotRuntime` that identifies the user and rejects requests without a valid session ([packages/runtime/src/v2/runtime/core/runtime.ts:179](https://github.com/CopilotKit/CopilotKit/blob/7f40d355a449f28adc527680fe81c2803df7b387/packages/runtime/src/v2/runtime/core/runtime.ts#L179); [packages/runtime/src/v2/runtime/core/runtime.ts:951](https://github.com/CopilotKit/CopilotKit/blob/7f40d355a449f28adc527680fe81c2803df7b387/packages/runtime/src/v2/runtime/core/runtime.ts#L951)) | Only your signed-in users can reach the agent and its conversation history (C1) |
+| Approval in consequential tools | Build each tool that changes state or sends data with `useHumanInTheLoop`, and perform the action from the approval UI itself ([packages/react-core/src/v2/hooks/use-human-in-the-loop.tsx:13](https://github.com/CopilotKit/CopilotKit/blob/7f40d355a449f28adc527680fe81c2803df7b387/packages/react-core/src/v2/hooks/use-human-in-the-loop.tsx#L13)) | A person sees the exact arguments and nothing happens until they approve (C2) |
+| A step limit | Set `maxSteps: <n>` on the `BuiltInAgent` to the smallest number the task needs ([packages/runtime/src/agent/index.ts:1040](https://github.com/CopilotKit/CopilotKit/blob/7f40d355a449f28adc527680fe81c2803df7b387/packages/runtime/src/agent/index.ts#L1040); [packages/runtime/src/agent/index.ts:1155](https://github.com/CopilotKit/CopilotKit/blob/7f40d355a449f28adc527680fe81c2803df7b387/packages/runtime/src/agent/index.ts#L1155)) | Each run stops after a fixed number of model steps (C10) |
+| Browser code features off | Keep the default with `mcpApps` and `openGenerativeUI` unset unless the app needs them, and then only with MCP servers you run ([packages/runtime/src/v2/runtime/core/runtime.ts:107-109](https://github.com/CopilotKit/CopilotKit/blob/7f40d355a449f28adc527680fe81c2803df7b387/packages/runtime/src/v2/runtime/core/runtime.ts#L107-L109)) | No server-supplied or model-written code runs in your users' browsers (C4) |
+| Telemetry off | Set `COPILOTKIT_TELEMETRY_DISABLED=true` in the runtime's environment ([packages/runtime/src/v1-deprecated/lib/telemetry-disclosure.ts:21](https://github.com/CopilotKit/CopilotKit/blob/7f40d355a449f28adc527680fe81c2803df7b387/packages/runtime/src/v1-deprecated/lib/telemetry-disclosure.ts#L21)) | The runtime sends no usage metadata to CopilotKit (C8) |
+| Its own container | Run the runtime in a container whose network reaches only the model provider and the backends your tools use | An outer boundary around server tools and a narrow path for data to leave (C5) |
+| A durable run record | Write each run's tool calls, results and requesting user to storage outside the runtime process | A record of what the agent did that survives restarts and names who asked (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; the approval UI should show the exact tool and arguments.
+- Server and MCP tools run as soon as the model calls them, so put the action that needs a person behind a human-in-the-loop tool.
+
+### Handling data
+
+- Thread history, including tool arguments and results, stays in the runtime's memory until eviction or restart; treat the process like the data it holds.
+
 ## Critical gaps
 - Nothing bounds a hijacked agent: untrusted tool and MCP results share context with private app data and with tools that act, and no tool is gated by default. (ASI01, LLM01; C5) — [packages/runtime/src/agent/index.ts:2105](https://github.com/CopilotKit/CopilotKit/blob/7f40d355a449f28adc527680fe81c2803df7b387/packages/runtime/src/agent/index.ts#L2105); [packages/core/src/core/run-handler.ts:1176](https://github.com/CopilotKit/CopilotKit/blob/7f40d355a449f28adc527680fe81c2803df7b387/packages/core/src/core/run-handler.ts#L1176)
 

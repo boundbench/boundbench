@@ -25,6 +25,31 @@ Controls where a risk surface exists: 2.30 / 9.0 (26%); 1 criterion scored SA (s
 
 Grafana's MCP server is carefully engineered around its credentials: the token never reaches the model, redirects cannot carry it elsewhere, and every tool is annotated so hosts can tell reads from writes. But it ships with write tools on, including a general-purpose Grafana API tool that takes any method and path and can run raw SQL through datasources, plus a plugin installer the model can drive. Nothing in the server marks untrusted log or dashboard content or records what tools did, so a prompt-injected session can read sensitive telemetry, send it out through a new contact point, and delete resources. Run it with --disable-write and a narrowly scoped, read-only service account unless writes are really needed.
 
+## Safest setup
+
+Grafana MCP Server keeps its token away from the model and on the Grafana host, and labels every tool as read-only or destructive. As shipped it turns on write tools, a general API tool and plugin installs, and records nothing, so the safest setup narrows the Grafana identity and turns on the read-only mode, tool selection and limits the server already includes.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A read-only service account | Give the service account the Viewer role, or a custom role covering only the folders and datasources the task needs | Grafana itself refuses writes, role changes and plugin installs, whatever the model asks for (C1) |
+| Read-only datasource users | Connect SQL datasources in Grafana with database users that can only read | Queries the model writes can read data but cannot change or drop it (C4) |
+| Read-only mode | `--disable-write` ([cmd/mcp-grafana/main.go:229](https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L229)) | The server registers no write tools, so content the model reads cannot steer it into changing or deleting Grafana resources (C5) |
+| Only the tools needed | `--disable-api` and `--disable-plugin`, or `--enabled-tools <list>` naming just the categories the task uses ([cmd/mcp-grafana/main.go:210](https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L210); [cmd/mcp-grafana/main.go:245-246](https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L245-L246)) | The model sees typed Grafana tools only, without the general API tool or plugin installs (C3) |
+| A Loki query guardrail | `--loki-guardrail-mode enforce` ([cmd/mcp-grafana/main.go:268](https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L268)) | Log queries that would scan too much data or too long a time range are rejected before they run (C10) |
+| Same-origin redirects | Keep the default `--allow-cross-origin-redirects` off ([cmd/mcp-grafana/main.go:259](https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L259)) | The token stays on the Grafana origin you configured (C8) |
+| A rotated token file | `GRAFANA_SERVICE_ACCOUNT_TOKEN_FILE` pointing at a token you rotate on a schedule ([mcpgrafana.go:43](https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/mcpgrafana.go#L43)) | A token that leaks stops working at the next rotation (C8) |
+| A tool-call trace | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` or `OTEL_EXPORTER_OTLP_ENDPOINT` set to a collector you control ([observability/logs.go:36-41](https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/observability/logs.go#L36-L41)) | A span for every tool call, with its name, session and outcome, kept off the host (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve write calls one at a time; every tool carries read-only and destructive hints your host can prompt on.
+- New contact points and plugin installs reach beyond this session, so approve them when you asked for that change.
+
+### Handling data
+
+- Anonymous, content-free usage statistics go to Grafana Labs by default; `--usage-stats=disabled` or `DO_NOT_TRACK=1` turns them off.
+- `--include-args-in-spans` adds tool arguments to trace spans, so leave it off where traces reach shared storage.
+
 ## Critical gaps
 - The default grafana_api_request tool can call Grafana's service-account and access-control endpoints with the server's own credential, letting the model mint tokens or change roles when the token is Admin (C1-SELFESC). (ASI03, T3; C1) — [tools/api.go:18-24](https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L18-L24); [tools/api.go:129](https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L129)
 - Default configuration lets a hijacked session both exfiltrate data (new webhook/email contact points) and take irreversible actions (DELETE on any API path, raw SQL) with no server-side gate (C5-WORSTCASE). (ASI01, LLM01, T6; C5) — [tools/alerting_routing.go:170-173](https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/alerting_routing.go#L170-L173); [tools/api.go:18-24](https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/tools/api.go#L18-L24)

@@ -24,6 +24,31 @@
 
 As shipped, Agent TARS gives the model an unrestricted shell, file tools, and a full browser on your own machine, with no approval step, no sandbox, and no separation between web content and your instructions. The dominant risk is goal hijack: a web page or file the agent reads can make it run commands, leak secrets from its environment, or act in logged-in websites, all unattended. Workspace configuration is also not integrity-protected, and the bundled browser's security settings are not locked down. A remote sandbox mode exists but is opt-in.
 
+## Safest setup
+
+Agent TARS keeps its web UI on this machine by default, caps every run at 1,000 model turns and records each tool call in a local database. Beyond that the defaults are thin: shell, file and browser tools run on your own machine as you, with no approval step, so the safest setup moves execution into the AIO sandbox and builds containment around the process.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, low-limit identity | Run it as a separate account or environment that holds only the model key this task needs, with a spending limit set at the provider | A hijacked run reaches only what you gave it, not your SSH keys, cloud credentials or other services (C1) |
+| The AIO sandbox | `aioSandbox: "<url>"` in your config file, pointing at a sandbox endpoint you run ([multimodal/agent-tars/interface/src/core.ts:176](https://github.com/bytedance/UI-TARS-desktop/blob/2ff41a9e515828c5bd5b276e493d73aa0bdf4a3a/multimodal/agent-tars/interface/src/core.ts#L176)) | Built-in shell, file and browser tools run off your host, away from your local files and credentials (C4) |
+| Reviewed, pinned MCP servers | Add only MCP servers you have read, with an exact package version in each launch command | Extension code is code you chose, and it can't change after you read it (C7) |
+| A loopback-only web UI | Keep the default `--host` of 127.0.0.1, and set `--auth-token <token>` if you ever bind it elsewhere ([multimodal/tarko/agent-cli/src/core/options.ts:21-38](https://github.com/bytedance/UI-TARS-desktop/blob/2ff41a9e515828c5bd5b276e493d73aa0bdf4a3a/multimodal/tarko/agent-cli/src/core/options.ts#L21-L38); [multimodal/tarko/shared-utils/src/server-host.ts:13](https://github.com/bytedance/UI-TARS-desktop/blob/2ff41a9e515828c5bd5b276e493d73aa0bdf4a3a/multimodal/tarko/shared-utils/src/server-host.ts#L13)) | Only you, on this machine, can drive the agent (C1) |
+| A lower iteration cap | Set `maxIterations: <n>` in your config file, well below the default 1000 ([multimodal/tarko/agent-interface/src/agent-options.ts:160](https://github.com/bytedance/UI-TARS-desktop/blob/2ff41a9e515828c5bd5b276e493d73aa0bdf4a3a/multimodal/tarko/agent-interface/src/agent-options.ts#L160); [multimodal/tarko/agent/src/agent/agent.ts:90](https://github.com/bytedance/UI-TARS-desktop/blob/2ff41a9e515828c5bd5b276e493d73aa0bdf4a3a/multimodal/tarko/agent/src/agent/agent.ts#L90)) | Every run ends after a number of model turns sized to the task (C10) |
+| A clean working directory | Start each run from a directory holding only the task's files, with no .env file, .tarko folder or other agent configuration you didn't write | Instructions, keys and settings come only from you, not from a repository you happen to run in (C6) |
+| Its own container or VM | Run the CLI in a container or VM whose network reaches only the model provider and the sites the task needs | An outer boundary around shell commands and the browser, and a narrow path for data to leave (C5) |
+| A copy of the session record | Copy the session database under ~/.agent-tars to storage the agent can't modify ([multimodal/agent-tars/cli/src/index.ts:42-43](https://github.com/bytedance/UI-TARS-desktop/blob/2ff41a9e515828c5bd5b276e493d73aa0bdf4a3a/multimodal/agent-tars/cli/src/index.ts#L42-L43)) | A record of every tool call and result that the agent's own shell can't rewrite (C9) |
+
+### Approving with confidence
+
+- Agent TARS has no approval prompt, so each tool call runs as soon as the model makes it; the sandbox and container steps above are what bound a run.
+- Stopping a run ends the loop between tool calls while a shell command already running keeps going, so stop the container to end everything at once.
+
+### Handling data
+
+- Session transcripts, with all tool output, are stored unencrypted under ~/.agent-tars; store them like the data the agent read.
+- Command output always prints to the console and `--debug` adds full tool arguments, so keep console output out of shared logs.
+
 ## Critical gaps
 - Model-written shell commands run directly on the host as the user, with the full environment and no approval or sandbox. (ASI05, T11; C4) — [packages/agent-infra/mcp-servers/commands/src/server.ts:143](https://github.com/bytedance/UI-TARS-desktop/blob/2ff41a9e515828c5bd5b276e493d73aa0bdf4a3a/packages/agent-infra/mcp-servers/commands/src/server.ts#L143); [multimodal/agent-tars/core/src/environments/local/index.ts:178](https://github.com/bytedance/UI-TARS-desktop/blob/2ff41a9e515828c5bd5b276e493d73aa0bdf4a3a/multimodal/agent-tars/core/src/environments/local/index.ts#L178)
 - A hijacked session can both exfiltrate (arbitrary browser navigation, shell network) and take irreversible actions with no human involved. (ASI01, LLM01; C5) — [packages/agent-infra/mcp-servers/browser/src/tools/navigate.ts:18](https://github.com/bytedance/UI-TARS-desktop/blob/2ff41a9e515828c5bd5b276e493d73aa0bdf4a3a/packages/agent-infra/mcp-servers/browser/src/tools/navigate.ts#L18); [packages/agent-infra/mcp-servers/commands/src/server.ts:143](https://github.com/bytedance/UI-TARS-desktop/blob/2ff41a9e515828c5bd5b276e493d73aa0bdf4a3a/packages/agent-infra/mcp-servers/commands/src/server.ts#L143)

@@ -25,6 +25,31 @@ Controls where a risk surface exists: 4.85 / 9.0 (54%); 1 criterion scored SA (s
 
 Metabase's built-in MCP server is carefully bounded for a tool server: every call is checked against OAuth scopes and the connecting user's own Metabase permissions, and a new connection gets only read and query access until the user ticks wider permissions on a consent screen. Once those are granted, the main risks are raw SQL running with the instance's shared warehouse account, where only a read-only hint stands in the way of writes, and scheduled deliveries to any email address. In the open-source build individual tool calls are not logged, and some write tools understate their risk in the hints clients use to decide what to confirm.
 
+## Safest setup
+
+Metabase's MCP server checks every call against the connecting user's own Metabase permissions and OAuth scopes, and a new connection gets only read and query access until the user grants more on a consent screen. The safest setup keeps that baseline, puts a read-only account under agent SQL, and adds a few layers around the instance.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A read-only warehouse account | Connect each database to Metabase with a warehouse account that can only read the tables agents need | The warehouse itself refuses writes from agent-written SQL, so safety rests on more than a read-only connection hint (C4) |
+| Baseline OAuth scopes | Connect clients over OAuth, not an API key or browser session, and keep the read and query permissions a new connection asks for ([src/metabase/mcp/paths.clj:64-72](https://github.com/metabase/metabase/blob/23c7a5d8f662e425dd304adc30a76465ff98859f/src/metabase/mcp/paths.clj#L64-L72)) | Writes, raw SQL and email deliveries stay behind a consent step the user completes per scope (C1) |
+| Shorter refresh tokens | Lower `oauth-server-refresh-token-ttl` from its 30-day default to `<seconds>` ([src/metabase/oauth_server/settings.clj:25-29](https://github.com/metabase/metabase/blob/23c7a5d8f662e425dd304adc30a76465ff98859f/src/metabase/oauth_server/settings.clj#L25-L29)) | An agent connection lapses sooner unless the user authorizes it again (C1) |
+| Structured queries only | Set `mcp-execute-sql-enabled` to false when agents don't need raw SQL ([src/metabase/agent_api/settings.clj:17-21](https://github.com/metabase/metabase/blob/23c7a5d8f662e425dd304adc30a76465ff98859f/src/metabase/agent_api/settings.clj#L17-L21)) | Agents query through Metabase's structured queries, with every argument checked against a schema (C3) |
+| An encryption key | Set `MB_ENCRYPTION_SECRET_KEY` for the Metabase instance ([src/metabase/util/encryption.clj:63](https://github.com/metabase/metabase/blob/23c7a5d8f662e425dd304adc30a76465ff98859f/src/metabase/util/encryption.clj#L63); [src/metabase/mcp/settings.clj:19](https://github.com/metabase/metabase/blob/23c7a5d8f662e425dd304adc30a76465ff98859f/src/metabase/mcp/settings.clj#L19)) | The MCP signing secret and other sensitive settings are encrypted at rest (C8) |
+| A review of agent schedules | After each session, check the alerts, subscriptions and transforms it created and keep only the ones you want | Work the agent scheduled ends with the session unless you chose to keep it (C10) |
+| Query history checks | Review Metabase's query-execution history, where each agent query is recorded with its user and agent context ([src/metabase/metabot/query_execution.clj:31-32](https://github.com/metabase/metabase/blob/23c7a5d8f662e425dd304adc30a76465ff98859f/src/metabase/metabot/query_execution.clj#L31-L32)) | A record of what agents read from your warehouse, for the open-source build that logs no per-call rows (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve write and delivery calls one at a time; some tools that archive, rewrite or email content are labelled non-destructive, so a client may not ask on its own.
+- Scheduled deliveries can go to any email address, so check the recipients before approving one.
+- Grant write, raw SQL and delivery permissions on the consent screen when a task needs them; a grant lasts as long as the token and its refreshes.
+
+### Handling data
+
+- Query handles keep each stored query with the user's prompt for `mcp-query-handle-ttl-hours`, 24 by default; lower it to keep less.
+- Anonymous usage tracking ships on through `anon-tracking-enabled`; set it to false to keep usage data in house.
+
 ## Critical gaps
 - None: no criterion is capped and no blast radius is at the worst level.
 

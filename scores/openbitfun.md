@@ -24,6 +24,30 @@
 
 OpenBitFun has a good permission engine, but it ships switched off: the default Full Access preset approves every tool call. Shell commands run on the host with no sandbox and with the user's full environment, and WebFetch can reach any URL. So a prompt-injected session can exfiltrate data and take irreversible actions with no human involved. Even after switching to Ask mode, project-scoped configuration is not integrity-protected, which affects approval.
 
+## Safest setup
+
+OpenBitFun includes a capable approval engine, but it ships in the Full Access preset, which allows every tool call, and shell commands run on the host with your full environment and no sandbox. The safest setup switches to the Ask preset, sets the limits that ship off, and builds containment around the app yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A minimal credential environment | Launch the app from an OS account or shell that holds only the credentials and tokens this work needs | Shell commands and MCP servers inherit only what you chose, not every secret in your session (C1) |
+| The Ask preset | Set `preset` to `ask` in the `tool_permissions` policy and keep `auto_approve_ask` off ([src/crates/contracts/product-domains/src/tool_permissions.rs:416-422](https://github.com/gcwing/openbitfun/blob/d82a63e71434ef6f96fbdbd9ac02c4bedee43e34/src/crates/contracts/product-domains/src/tool_permissions.rs#L416-L422); [src/crates/contracts/product-domains/src/tool_permissions.rs:227](https://github.com/gcwing/openbitfun/blob/d82a63e71434ef6f96fbdbd9ac02c4bedee43e34/src/crates/contracts/product-domains/src/tool_permissions.rs#L227); [src/crates/contracts/product-domains/src/tool_permissions.rs:235](https://github.com/gcwing/openbitfun/blob/d82a63e71434ef6f96fbdbd9ac02c4bedee43e34/src/crates/contracts/product-domains/src/tool_permissions.rs#L235); [src/web-ui/src/infrastructure/config/services/PermissionConfigService.ts:41](https://github.com/gcwing/openbitfun/blob/d82a63e71434ef6f96fbdbd9ac02c4bedee43e34/src/web-ui/src/infrastructure/config/services/PermissionConfigService.ts#L41)) | Shell commands, file writes and other non-read actions wait for a person, with the exact command or path shown (C2) |
+| Project hooks off | Keep the default `project_hooks_enabled: false` ([src/crates/contracts/config-contracts/src/types.rs:299-306](https://github.com/gcwing/openbitfun/blob/d82a63e71434ef6f96fbdbd9ac02c4bedee43e34/src/crates/contracts/config-contracts/src/types.rs#L299-L306)) | Hook commands from a checked-out repository stay inactive (C6) |
+| Round and time limits | Set `max_rounds` to `<n>` and `tool_execution_timeout_secs` to `<seconds>` in the AI settings ([src/crates/contracts/config-contracts/src/types.rs:1169](https://github.com/gcwing/openbitfun/blob/d82a63e71434ef6f96fbdbd9ac02c4bedee43e34/src/crates/contracts/config-contracts/src/types.rs#L1169); [src/crates/contracts/config-contracts/src/types.rs:1123](https://github.com/gcwing/openbitfun/blob/d82a63e71434ef6f96fbdbd9ac02c4bedee43e34/src/crates/contracts/config-contracts/src/types.rs#L1123)) | Each run stops after a set number of rounds and a stuck tool call ends on its own (C10) |
+| Pinned MCP servers | Point each MCP server you configure at an exact package version you have chosen | The extension code that runs with your environment stays the code you picked (C7) |
+| Its own container or VM | Run the app in a container or VM holding only the project, with outbound access limited to the model provider and hosts the task needs | An outer boundary around shell commands and a narrow path for data to leave (C4) |
+| Unfamiliar repositories contained | Open repositories you haven't reviewed only inside that container or VM | Whatever a repository brings with it stays inside the outer boundary (C6) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; an Always reply keeps covering that command or path in later calls.
+- In the Ask preset, web fetch, web search, sub-agent tasks and skills run without a prompt, so the container's network limit is what bounds them.
+
+### Handling data
+
+- Session transcripts and permission records live under ~/.openbitfun; store them like the projects they cover.
+- Provider API keys sit in plain text in the config file; keep that file readable only by you.
+
 ## Critical gaps
 - Approval is off by default (Full Access preset = allow everything). (ASI09, ASI02, T10; C2) — [src/crates/contracts/product-domains/src/tool_permissions.rs:185-191](https://github.com/gcwing/openbitfun/blob/d82a63e71434ef6f96fbdbd9ac02c4bedee43e34/src/crates/contracts/product-domains/src/tool_permissions.rs#L185-L191); [src/web-ui/src/infrastructure/config/services/PermissionConfigService.ts:9-12](https://github.com/gcwing/openbitfun/blob/d82a63e71434ef6f96fbdbd9ac02c4bedee43e34/src/web-ui/src/infrastructure/config/services/PermissionConfigService.ts#L9-L12)
 - Model-generated shell commands run directly on the host as the user with the full parent environment; there is no sandbox of any kind. (ASI05, T11; C4) — [src/crates/assembly/core/src/agentic/tools/implementations/exec_command/command.rs:845-850](https://github.com/gcwing/openbitfun/blob/d82a63e71434ef6f96fbdbd9ac02c4bedee43e34/src/crates/assembly/core/src/agentic/tools/implementations/exec_command/command.rs#L845-L850); [src/crates/services/terminal/src/exec.rs:1735-1746](https://github.com/gcwing/openbitfun/blob/d82a63e71434ef6f96fbdbd9ac02c4bedee43e34/src/crates/services/terminal/src/exec.rs#L1735-L1746); [src/crates/execution/tool-execution/src/shell_analysis/mod.rs:3](https://github.com/gcwing/openbitfun/blob/d82a63e71434ef6f96fbdbd9ac02c4bedee43e34/src/crates/execution/tool-execution/src/shell_analysis/mod.rs#L3)

@@ -24,6 +24,29 @@
 
 Swarms ships almost no safety controls on its tool path: no approval gate, no sandbox, no argument validation, and no restriction after reading untrusted content. Its autonomous mode gives the model a host shell with the full environment behind only a denylist that is not a strict boundary, plus file tools that accept any absolute path. Telemetry is on by default and sends tasks, outputs and agent configuration to a vendor endpoint, and secret handling and transport security are not locked down either.
 
+## Safest setup
+
+Swarms runs a single loop by default and turns on no MCP servers or persistent memory unless you add them, and its autonomous mode stops after fixed iteration counts. It has no approval step, no sandbox and telemetry on by default, so the safest setup narrows the tool set, turns telemetry off and builds the containment around the process yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Run the agent in an environment holding only the model key and tool credentials this agent needs, each scoped with a spending limit set at the provider | Whatever the agent or its subprocesses do, they reach only the systems and spend you chose (C1) |
+| Only the tools needed | Pass `selected_tools` a list naming only the tools the task needs, such as `read_file` and `list_directory` ([swarms/structs/agent.py:406](https://github.com/kyegomez/swarms/blob/a87cece8ba8c770faadbb8f5dde198d24f1dab5d/swarms/structs/agent.py#L406); [swarms/structs/agent.py:203](https://github.com/kyegomez/swarms/blob/a87cece8ba8c770faadbb8f5dde198d24f1dab5d/swarms/structs/agent.py#L203)) | In autonomous mode the model is offered only those tools, with shell and delete tools added only when you choose (C3) |
+| Tight loop budgets | Keep the default `max_loops=1`, and in autonomous mode lower `max_subtask_iterations` and `max_subtask_loops` for short tasks ([swarms/structs/agent.py:315](https://github.com/kyegomez/swarms/blob/a87cece8ba8c770faadbb8f5dde198d24f1dab5d/swarms/structs/agent.py#L315); [swarms/structs/agent.py:395-396](https://github.com/kyegomez/swarms/blob/a87cece8ba8c770faadbb8f5dde198d24f1dab5d/swarms/structs/agent.py#L395-L396)) | Every run ends after a fixed number of model turns (C10) |
+| Session-only memory | Keep the default `persistent_memory=False` ([swarms/structs/agent.py:408](https://github.com/kyegomez/swarms/blob/a87cece8ba8c770faadbb8f5dde198d24f1dab5d/swarms/structs/agent.py#L408)) | Each session starts fresh, so nothing one run reads is replayed as context in the next (C6) |
+| A clean working directory | Start agents from a directory where neither it nor any parent holds a .env file you didn't write | Model endpoints, keys and other settings come only from you (C6) |
+| Telemetry turned off | Set `SWARMS_TELEMETRY_ON=false` in the process environment ([swarms/telemetry/otel.py:63](https://github.com/kyegomez/swarms/blob/a87cece8ba8c770faadbb8f5dde198d24f1dab5d/swarms/telemetry/otel.py#L63); [swarms/telemetry/otel.py:42](https://github.com/kyegomez/swarms/blob/a87cece8ba8c770faadbb8f5dde198d24f1dab5d/swarms/telemetry/otel.py#L42)) | Tasks, outputs and agent configuration stay on your machine (C8) |
+| Its own container or VM | Run the agent in a container or VM with no host credentials and network access limited to the hosts the task needs | An outer boundary around shell commands, file tools and MCP servers, and a narrow path for data to leave (C4) |
+| A saved conversation | Set `autosave=True` on `Agent` ([swarms/structs/agent.py:329](https://github.com/kyegomez/swarms/blob/a87cece8ba8c770faadbb8f5dde198d24f1dab5d/swarms/structs/agent.py#L329)) | A record of each run's messages and tool output that outlives the process (C9) |
+
+### Approving with confidence
+
+- Swarms has no approval step, so read each MCP server's command before adding it and pin its version there; the framework runs it as given.
+
+### Handling data
+
+- Logs and saved conversations go under `WORKSPACE_DIR`, which the agent's file tools can reach; copy them to storage the agent can't modify and keep them like other sensitive logs.
+
 ## Critical gaps
 - Autonomous-mode run_bash executes model-written commands on the host with shell=True and the full environment, guarded only by a substring denylist. (ASI05, T11; C4) — [swarms/structs/autonomous_loop_utils.py:1114-1121](https://github.com/kyegomez/swarms/blob/a87cece8ba8c770faadbb8f5dde198d24f1dab5d/swarms/structs/autonomous_loop_utils.py#L1114-L1121); [swarms/structs/autonomous_loop_utils.py:991-995](https://github.com/kyegomez/swarms/blob/a87cece8ba8c770faadbb8f5dde198d24f1dab5d/swarms/structs/autonomous_loop_utils.py#L991-L995)
 - No authorization layer or scoped identity: a hijacked agent acts with the operator's full ambient authority. (ASI03, T3; C1) — [swarms/structs/autonomous_loop_utils.py:1113-1120](https://github.com/kyegomez/swarms/blob/a87cece8ba8c770faadbb8f5dde198d24f1dab5d/swarms/structs/autonomous_loop_utils.py#L1113-L1120); [swarms/tools/mcp_manager.py:1458](https://github.com/kyegomez/swarms/blob/a87cece8ba8c770faadbb8f5dde198d24f1dab5d/swarms/tools/mcp_manager.py#L1458)

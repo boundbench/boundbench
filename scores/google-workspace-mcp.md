@@ -25,6 +25,30 @@ Controls where a risk surface exists: 3.40 / 8.0 (42%); 2 criteria scored SA (su
 
 Run with no flags, this server gives the model write access to the user's whole Google Workspace account, including sending email, sharing files publicly and writing and running Apps Script. Local file and URL handling is well hardened, and it runs no code on the host. The dominant risk is prompt injection: emails and documents it reads come back as plain text beside its own instructions, and nothing in the server stops an injected instruction from leaking data or sending mail. Use --read-only or --permissions to cut its authority.
 
+## Safest setup
+
+Google Workspace MCP runs no code on your machine, keeps OAuth tokens out of what the model sees, and logs every tool call to a file by default. Run with no flags it asks Google for write access to the whole account and loads every tool, so the safest setup narrows the grant and the tool set with the modes the server already includes.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated Google account | Authorize an account that holds only the mail, files and calendars the task needs | Google itself keeps everything outside that account out of reach, whatever the model asks for (C1) |
+| Read-only mode | `--read-only`, or `WORKSPACE_MCP_READ_ONLY=true` ([main.py:503-507](https://github.com/taylorwilsdon/google_workspace_mcp/blob/3ada8badf7efe7f87c864ec58ceb07d01f0f49d9/main.py#L503-L507); [main.py:572](https://github.com/taylorwilsdon/google_workspace_mcp/blob/3ada8badf7efe7f87c864ec58ceb07d01f0f49d9/main.py#L572)) | Google grants only read scopes and every send, share and write tool is removed, so content the agent reads can't act for you (C5) |
+| Per-service permissions | When the task needs writes, `--permissions <service>:<level>` naming only those, or `WORKSPACE_MCP_PERMISSIONS` ([main.py:508-519](https://github.com/taylorwilsdon/google_workspace_mcp/blob/3ada8badf7efe7f87c864ec58ceb07d01f0f49d9/main.py#L508-L519); [main.py:585](https://github.com/taylorwilsdon/google_workspace_mcp/blob/3ada8badf7efe7f87c864ec58ceb07d01f0f49d9/main.py#L585)) | The OAuth grant covers just the chosen services and levels, and tools that need more are removed (C1) |
+| Only the tools needed | `--tools <service>` for just the services the task uses, and `--disabled-tools <name>` for any tool it can skip ([main.py:476-496](https://github.com/taylorwilsdon/google_workspace_mcp/blob/3ada8badf7efe7f87c864ec58ceb07d01f0f49d9/main.py#L476-L496)) | The model sees a smaller set of tools, with Apps Script and other services only where you chose them (C3) |
+| Host approval on writes | Set your MCP host to ask before every tool call not marked read-only | A person sees each send, share and delete before it reaches Google (C2) |
+| A download size cap | `WORKSPACE_MCP_MAX_FILE_BYTES=<n>` ([core/file_limits.py:30](https://github.com/taylorwilsdon/google_workspace_mcp/blob/3ada8badf7efe7f87c864ec58ceb07d01f0f49d9/core/file_limits.py#L30)) | File downloads stop at a size you choose (C10) |
+| The tool-call log | Keep the default file log, or point `WORKSPACE_MCP_LOG_DIR` at storage outside any workspace ([core/log_formatter.py:190-194](https://github.com/taylorwilsdon/google_workspace_mcp/blob/3ada8badf7efe7f87c864ec58ceb07d01f0f49d9/core/log_formatter.py#L190-L194)) | A line per tool call naming the tool, account and service (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; sent mail, public shares and calendar invites go out at once and can't be recalled.
+- `send_gmail_message` is not labelled destructive, so set the host to ask on every call not marked read-only.
+
+### Handling data
+
+- Stored OAuth credentials are long-lived refresh tokens in plain JSON files readable only by you; keep them like a password.
+- `WORKSPACE_MCP_LOG_LEVEL=DEBUG` writes user text to the log file, so keep the default `INFO` where logs are shared.
+
 ## Critical gaps
 - Default install requests write scopes across the user's entire Google Workspace account (mail send, full Drive, Apps Script execution), so any control failure exposes the whole account. (ASI03, T3, LLM06; C1) — [auth/scopes.py:338-340](https://github.com/taylorwilsdon/google_workspace_mcp/blob/3ada8badf7efe7f87c864ec58ceb07d01f0f49d9/auth/scopes.py#L338-L340); [auth/scopes.py:195-205](https://github.com/taylorwilsdon/google_workspace_mcp/blob/3ada8badf7efe7f87c864ec58ceb07d01f0f49d9/auth/scopes.py#L195-L205)
 - Untrusted email/document content, the user's private Workspace data, and send/share tools coexist in one default session with nothing in the server separating them. (ASI01, T6, LLM01; C5) — [gmail/gmail_tools.py:2005](https://github.com/taylorwilsdon/google_workspace_mcp/blob/3ada8badf7efe7f87c864ec58ceb07d01f0f49d9/gmail/gmail_tools.py#L2005); [gmail/gmail_tools.py:2527-2537](https://github.com/taylorwilsdon/google_workspace_mcp/blob/3ada8badf7efe7f87c864ec58ceb07d01f0f49d9/gmail/gmail_tools.py#L2527-L2537); [gdrive/drive_tools.py:2725-2736](https://github.com/taylorwilsdon/google_workspace_mcp/blob/3ada8badf7efe7f87c864ec58ceb07d01f0f49d9/gdrive/drive_tools.py#L2725-L2736)

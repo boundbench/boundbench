@@ -24,6 +24,31 @@
 
 Raven has an unusually careful permission gate, a parsed read-only shell allowlist, SSRF-hardened fetching and secret scrubbing, but its shipped defaults undercut them. By default an LLM reviewer, not a person, approves most actions, including pushes and installs; shell commands run on the host with no sandbox; and reading any file or fetching any URL needs no approval, so a prompt injection can leak local credentials unattended. Plugin loading from the working directory is also not gated by a trust decision.
 
+## Safest setup
+
+Raven ships a careful permission gate, a read-only shell allowlist, SSRF-checked fetching, secret scrubbing and a trace of every tool call. Its defaults lean on an LLM reviewer and run commands on the host, so the safest setup turns on the per-call approval, workspace limits and microVM sandbox Raven already includes, and adds containment around it.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, scoped account | Run Raven as its own OS user or VM whose home holds only the scoped, spend-limited keys this work needs | Credential files from your own account stay out of reach, whatever a session reads (C1) |
+| Per-call approval | `mode` set to `ask` under `permissions` in the config ([raven/config/schema.py:1288](https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L1288)) | A person approves each consequential call, pushes and installs included (C2) |
+| Approval for web fetches | Under `permissions`, map `web_fetch` and `browser_navigate` to `ask` in `tools` ([raven/config/schema.py:1289](https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L1289); [raven/config/schema.py:1296](https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L1296); [raven/agent/tools/web.py:922](https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/tools/web.py#L922); [raven/agent/tools/browser.py:262](https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/tools/browser.py#L262)) | With per-call approval on, each fetch or page load the model starts waits for a person first (C5) |
+| Workspace-only file tools | `restrictToWorkspace` set to `true` under `tools` ([raven/config/schema.py:1316](https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L1316)) | Built-in file tools read and write only inside the workspace (C3) |
+| Consent for Skill Hub installs | `autoInstall` set to `prompt` or `off` under `skillForge` ([raven/config/raven.py:855-857](https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/raven.py#L855-L857)) | Skill bundles reach your machine only when you choose them (C7) |
+| The microVM sandbox | `backend` set to `boxlite` under `sandbox` in `tools`, with `allowNet` set to `false` or a list of domains ([raven/config/schema.py:1318](https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L1318); [raven/sandbox/config.py:38](https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/config.py#L38); [raven/sandbox/config.py:44](https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/config.py#L44)) | Shell commands run in a separate VM with network reach you chose (C4) |
+| A trusted working directory | Start Raven only in directories whose contents you wrote or have reviewed | Plugins and project files that shape a session come only from sources you chose (C6) |
+| Tracing, kept off-box | Keep the default `enabled: true` under `tracing`, leave `RAVEN_TRACING` unset, and copy the traces to storage Raven can't write ([raven/config/raven.py:1353](https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/raven.py#L1353); [raven/tracing/config.py:63](https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/tracing/config.py#L63)) | A record of every tool call and its approval decision that the agent can't edit (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; long arguments are shortened in the prompt line, so look closely at long commands.
+- Requests from third-party ACP sub-agents are approved automatically, so add only sub-agents you would trust with your account.
+
+### Handling data
+
+- Traces under ~/.raven/traces hold the arguments and results of tool calls; store them like the data the agent read.
+- Long-term memory is written from conversations and reloaded every session; review and clear it after sessions that read untrusted content.
+
 ## Critical gaps
 - By default the agent can read any file the OS user can (including ~/.ssh and ~/.aws) without approval, so a hijacked session holds the user's whole account. (ASI03; C1) — [raven/permissions/rules.py:89](https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/permissions/rules.py#L89); [raven/config/schema.py:1316](https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L1316)
 - Model-driven shell commands execute directly on the host as the user by default (sandbox backend 'none'), with the home directory and network reachable. (ASI05; C4) — [raven/sandbox/config.py:38](https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/config.py#L38); [raven/sandbox/__init__.py:94-104](https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/__init__.py#L94-L104)

@@ -24,6 +24,26 @@
 
 Qwen-Agent is a capable framework with almost no safety primitives of its own. Every model-chosen tool call runs immediately with no approval step, argument checks are limited to JSON types, and document and web tools fetch any URL or read any local file. The Docker code interpreter is a real but unhardened boundary (root, full network, read-write mount), and an exported math agent runs code directly on the host. Treat any deployment that reads untrusted content as able to leak data and change files unattended.
 
+## Safest setup
+
+Qwen-Agent starts agents with no tools, stops each run after 20 model calls, and runs its code interpreter in a Docker container that receives none of your host's environment variables. Beyond that the defaults are thin: no approval step, no argument limits beyond JSON types, and no durable record, so the safest setup keeps the tool list short and builds the boundaries around the process yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Give the process only the model and search API keys this agent needs, each scoped where the provider allows and with a spending limit set at the provider | Whatever the agent does, it reaches only the accounts and spend you chose, not everything in your shell (C1) |
+| Only the tools needed | Keep the default `function_list=None` and list only the tools the task uses ([qwen_agent/agents/fncall_agent.py:31](https://github.com/QwenLM/Qwen-Agent/blob/31a4d36d123688581a9e9744427272b33ce940e0/qwen_agent/agents/fncall_agent.py#L31)) | The model can call only the tools you chose for this agent (C3) |
+| The Docker code interpreter | Run model-written code through `code_interpreter`, with `work_dir` in its config set to an empty directory kept for it ([qwen_agent/tools/code_interpreter.py:80](https://github.com/QwenLM/Qwen-Agent/blob/31a4d36d123688581a9e9744427272b33ce940e0/qwen_agent/tools/code_interpreter.py#L80); [qwen_agent/tools/code_interpreter.py:96-97](https://github.com/QwenLM/Qwen-Agent/blob/31a4d36d123688581a9e9744427272b33ce940e0/qwen_agent/tools/code_interpreter.py#L96-L97)) | Code runs in a container that sees only that directory, and the mount stays where you put it (C4) |
+| A clean working directory | Start the app from a directory with no .env file you didn't write, and point `QWEN_AGENT_DEFAULT_WORKSPACE` at a directory for this app alone ([qwen_agent/settings.py:27](https://github.com/QwenLM/Qwen-Agent/blob/31a4d36d123688581a9e9744427272b33ce940e0/qwen_agent/settings.py#L27)) | Settings come only from you, and the document cache holds only this app's content (C6) |
+| Pinned MCP servers | In `mcpServers`, name an exact package version for each server and pass only the `env` it needs ([qwen_agent/tools/mcp_manager.py:111](https://github.com/QwenLM/Qwen-Agent/blob/31a4d36d123688581a9e9744427272b33ce940e0/qwen_agent/tools/mcp_manager.py#L111); [qwen_agent/tools/mcp_manager.py:134-135](https://github.com/QwenLM/Qwen-Agent/blob/31a4d36d123688581a9e9744427272b33ce940e0/qwen_agent/tools/mcp_manager.py#L134-L135)) | Each server runs the code you chose, with only the credentials you gave it (C7) |
+| A model-call budget | Keep `QWEN_AGENT_MAX_LLM_CALL_PER_RUN` at its default of 20, or lower it for short tasks ([qwen_agent/settings.py:24](https://github.com/QwenLM/Qwen-Agent/blob/31a4d36d123688581a9e9744427272b33ce940e0/qwen_agent/settings.py#L24)) | Each agent loop ends after a fixed number of model calls (C10) |
+| Its own container or VM | Run the agent process in a container or VM whose network reaches only the hosts the task needs | An outer boundary around in-process tools and MCP servers, and a narrow path for data to leave (C5) |
+| A run record on disk | Save the message list each run returns, which holds every tool call and result, to storage the agent can't modify | A record of what the agent did that outlives the process (C9) |
+
+### Handling data
+
+- Leave `QWEN_AGENT_DEBUG` unset where logs are shared; it writes full model inputs unredacted.
+- Parsed documents stay cached in the workspace directory across sessions; deleting that directory clears them.
+
 ## Critical gaps
 - Untrusted web/document content, any local file readable by the process, and unrestricted egress combine in one unattended session with no gate. (ASI01, LLM01; C5) — [qwen_agent/utils/utils.py:192-200](https://github.com/QwenLM/Qwen-Agent/blob/31a4d36d123688581a9e9744427272b33ce940e0/qwen_agent/utils/utils.py#L192-L200); [qwen_agent/utils/utils.py:192-194](https://github.com/QwenLM/Qwen-Agent/blob/31a4d36d123688581a9e9744427272b33ce940e0/qwen_agent/utils/utils.py#L192-L194); [qwen_agent/agent.py:188-192](https://github.com/QwenLM/Qwen-Agent/blob/31a4d36d123688581a9e9744427272b33ce940e0/qwen_agent/agent.py#L188-L192)
 

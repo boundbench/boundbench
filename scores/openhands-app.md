@@ -24,6 +24,31 @@
 
 As shipped, Agent Canvas runs the OpenHands agent directly on your machine as you, with shell, file and browser tools, and no approval step (confirmation mode is off). The launcher passes the agent server your whole shell environment, and its handling of backend credentials is not locked down. A cloned repository's .openhands/hooks.json is attached to new conversations without a trust prompt. The opt-in Docker runtime and confirmation mode help, but the dominant risk is unattended, host-level execution after a prompt injection.
 
+## Safest setup
+
+As shipped, Agent Canvas runs the agent on your machine as you, with your whole shell environment, no sandbox and no approval step, and a repository's hooks load without asking. It does include a Docker runtime and confirmation mode you can turn on, so the safest setup turns those on and builds tight boundaries around the process yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, low-limit identity | Start Canvas from a shell or user account holding only the model key and narrowly scoped, short-lived tokens the task needs, with a spending limit set at the model provider | The agent and every process it starts reach only the systems and spend you chose, not everything your own account can (C1) |
+| The Docker conversation runtime | Launch with `OH_CONVERSATION_RUNTIME=docker agent-canvas` ([README.md:117](https://github.com/openhands/openhands/blob/a6bba78ffd5a8b31620770f52383b1a2c0477fcd/README.md#L117); [scripts/dev-safe.mjs:793](https://github.com/openhands/openhands/blob/a6bba78ffd5a8b31620770f52383b1a2c0477fcd/scripts/dev-safe.mjs#L793)) | Each conversation's commands and scripts run in a container instead of directly on your host (C4) |
+| Confirmation for every action | In the verification settings, turn on `confirmation_mode` and set `security_analyzer` to `pattern` ([src/services/settings.ts:13-14](https://github.com/openhands/openhands/blob/a6bba78ffd5a8b31620770f52383b1a2c0477fcd/src/services/settings.ts#L13-L14); [src/api/agent-server-adapter.ts:755-756](https://github.com/openhands/openhands/blob/a6bba78ffd5a8b31620770f52383b1a2c0477fcd/src/api/agent-server-adapter.ts#L755-L756)) | Agent actions wait for your approval rather than a model's risk call (C2) |
+| Reviewed, pinned extensions | Keep the default empty `mcp_config`, adding only MCP servers and plugins you have read, pinned to an exact version or ref ([src/services/settings.ts:28](https://github.com/openhands/openhands/blob/a6bba78ffd5a8b31620770f52383b1a2c0477fcd/src/services/settings.ts#L28)) | Third-party code joins the agent only when you choose it, at a version that can't change underneath you (C7) |
+| Reviewed workspaces | Open only repositories whose .openhands hooks file and skill files you have read | Commands and instructions that load with a conversation come only from content you trust (C6) |
+| A lower iteration cap | Set `max_iterations` to `<n>` in the conversation settings, well below the default 500 ([src/services/settings.ts:15](https://github.com/openhands/openhands/blob/a6bba78ffd5a8b31620770f52383b1a2c0477fcd/src/services/settings.ts#L15)) | Each conversation stops after a number of steps that fits the task (C10) |
+| Its own VM | Run Canvas in a VM or container whose network reaches only the model provider and the hosts the task needs | An outer boundary around Canvas, automations and extension processes, which stay on the host even with the Docker runtime, and a narrow path for data to leave (C5) |
+
+### Approving with confidence
+
+- Read each prompt and approve actions one at a time.
+- Child conversations the agent launches, and planning conversations, run without asking; check their threads as well.
+- Tick the plugin trust box only for sources you have read.
+
+### Handling data
+
+- Conversation records under ~/.openhands are writable by the agent; copy them elsewhere if you need a record that lasts.
+- Setting `DO_NOT_TRACK=1` keeps agent-server telemetry off; the install event is still sent.
+
 ## Critical gaps
 - By default all agent code runs on the host as the user with the launcher's full environment; there is no sandbox. (ASI05; C4) — [src/api/agent-server-adapter.ts:1155-1157](https://github.com/openhands/openhands/blob/a6bba78ffd5a8b31620770f52383b1a2c0477fcd/src/api/agent-server-adapter.ts#L1155-L1157); [scripts/dev-with-automation.mjs:670](https://github.com/openhands/openhands/blob/a6bba78ffd5a8b31620770f52383b1a2c0477fcd/scripts/dev-with-automation.mjs#L670); [README.md:66](https://github.com/openhands/openhands/blob/a6bba78ffd5a8b31620770f52383b1a2c0477fcd/README.md#L66)
 - With confirmation off and host execution, a prompt injection can exfiltrate data and take irreversible actions unattended. (ASI01; C5) — [src/api/agent-server-adapter.ts:741-742](https://github.com/openhands/openhands/blob/a6bba78ffd5a8b31620770f52383b1a2c0477fcd/src/api/agent-server-adapter.ts#L741-L742); [src/api/agent-server-adapter.ts:146](https://github.com/openhands/openhands/blob/a6bba78ffd5a8b31620770f52383b1a2c0477fcd/src/api/agent-server-adapter.ts#L146)

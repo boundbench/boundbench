@@ -24,6 +24,31 @@
 
 As shipped, QwenPaw runs shell commands on your machine as your user, with no sandbox and no approval prompt unless a built-in dangerous-command pattern fires, and it can fetch any web page, so content it reads can steer it into reading your files and sending them out. It has a substantial governance layer (approval cards showing the exact call, a policy engine that fails closed, an audit database and an OS sandbox), but the sandbox is off by default and the default approval level leaves the shell ungated. Turn on the sandbox, use the STRICT approval level and run it under a dedicated OS user.
 
+## Safest setup
+
+QwenPaw ships a real governance layer: approval cards that show the exact call, a policy engine that fails closed, an audit log of built-in tool decisions and an OS sandbox. As shipped, the sandbox is off and the default approval level lets most shell commands run unprompted, so the safest setup turns both on and adds an OS boundary of your own around the process.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated OS user | Run QwenPaw as its own OS user that holds only the files and API keys this agent's tasks need | Shell commands and plugins reach only what that account can, not your whole home directory and keys (C1) |
+| Strict approval | Set `approval_level` to `STRICT` for each agent ([src/qwenpaw/config/config.py:2400-2404](https://github.com/agentscope-ai/QwenPaw/blob/80e412da9b5505bcac5eec6add271d09fa144c60/src/qwenpaw/config/config.py#L2400-L2404)) | Shell commands join the calls that wait for your approval card, which shows the exact input (C2) |
+| The OS sandbox | Set `sandbox_enabled` to true in the `security` section of the global config ([src/qwenpaw/config/config.py:3027-3036](https://github.com/agentscope-ai/QwenPaw/blob/80e412da9b5505bcac5eec6add271d09fa144c60/src/qwenpaw/config/config.py#L3027-L3036)) | Shell commands write only inside the agent's workspace, on platforms that support the sandbox (C4) |
+| Only the tools needed | Switch off the shell, browser and web tools a task doesn't use, via each tool's `enabled` entry in `builtin_tools` ([src/qwenpaw/config/config.py:2668-2671](https://github.com/agentscope-ai/QwenPaw/blob/80e412da9b5505bcac5eec6add271d09fa144c60/src/qwenpaw/config/config.py#L2668-L2671); [src/qwenpaw/config/config.py:2840](https://github.com/agentscope-ai/QwenPaw/blob/80e412da9b5505bcac5eec6add271d09fa144c60/src/qwenpaw/config/config.py#L2840)) | A narrower set of tools for the model, so less of the machine is in reach (C3) |
+| Plugins you have read | Install only marketplace plugins and skills whose source you have read, at a version you keep | Code imported into the agent's own process is code you chose and checked (C7) |
+| Its own container or VM | Run QwenPaw in a container or VM whose network reaches only the model provider and the hosts its tasks need | An outer boundary around shell commands and a narrow path for data to leave (C5) |
+| Workspace checkpoints | Set `enabled` to true in the `[auto]` section of the workspace checkpoint config ([src/qwenpaw/checkpoints/policy.py:39-41](https://github.com/agentscope-ai/QwenPaw/blob/80e412da9b5505bcac5eec6add271d09fa144c60/src/qwenpaw/checkpoints/policy.py#L39-L41)) | Workspace files, including instruction and memory files, can be rolled back to an earlier state (C2) |
+| The audit log | Keep the default `audit_level` of `all` in the governance policy ([src/qwenpaw/governance/policy.py:657](https://github.com/agentscope-ai/QwenPaw/blob/80e412da9b5505bcac5eec6add271d09fa144c60/src/qwenpaw/governance/policy.py#L657)) | A timestamped record of every built-in tool decision, approvals and denials included (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; the card shows the exact tool input and target.
+- With a chat channel connected, anyone who can message the agent can also answer its approval prompts, so connect only channels whose members you trust.
+
+### Handling data
+
+- Keys added through QwenPaw's environment manager reach every shell command, so add only the keys this agent's tasks need.
+- A daily content-free usage ping is on by default; `QWENPAW_TELEMETRY_DISABLED=true` turns it off.
+
 ## Critical gaps
 - Shell commands run without approval in the default configuration unless a dangerous-command pattern or sensitive-path check fires. (ASI02, ASI09; C2). Evidence: [src/qwenpaw/governance/policy.py:839-866](https://github.com/agentscope-ai/QwenPaw/blob/80e412da9b5505bcac5eec6add271d09fa144c60/src/qwenpaw/governance/policy.py#L839-L866); [src/qwenpaw/governance/resource_governor.py:252-269](https://github.com/agentscope-ai/QwenPaw/blob/80e412da9b5505bcac5eec6add271d09fa144c60/src/qwenpaw/governance/resource_governor.py#L252-L269); [src/qwenpaw/config/config.py:3035-3041](https://github.com/agentscope-ai/QwenPaw/blob/80e412da9b5505bcac5eec6add271d09fa144c60/src/qwenpaw/config/config.py#L3035-L3041)
 - The approval level can be loosened at runtime from inside a session, without an operator-level change. (ASI09; C2). Evidence: [src/qwenpaw/governance/tool_adapter.py:62-76](https://github.com/agentscope-ai/QwenPaw/blob/80e412da9b5505bcac5eec6add271d09fa144c60/src/qwenpaw/governance/tool_adapter.py#L62-L76); [src/qwenpaw/governance/tool_adapter.py:314-326](https://github.com/agentscope-ai/QwenPaw/blob/80e412da9b5505bcac5eec6add271d09fa144c60/src/qwenpaw/governance/tool_adapter.py#L314-L326)

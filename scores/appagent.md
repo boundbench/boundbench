@@ -25,6 +25,29 @@ Controls where a risk surface exists: 1.07 / 9.0 (12%); 1 criterion scored SA (s
 
 AppAgent gives a vision LLM unsupervised control of a real Android phone: every round it reads whatever is on screen and taps, types or swipes with no human approval, so on-screen content from any app can steer it into sending messages or other irreversible actions in the user's logged-in accounts. Host-side handling of model-generated action arguments is also not strict. The only real limit is a 20-round cap; there is no sandbox, no argument validation, no redaction, and model-written UI documentation persists and is re-injected as trusted guidance in later runs.
 
+## Safest setup
+
+AppAgent has no approval step, sandbox or redaction, and its only built-in limit is a cap of 20 rounds per run. The safest setup keeps that cap, gives the agent a phone and a key that hold little, and puts the containment around the process yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated test phone | Connect an emulator or spare phone signed in only to the apps and accounts the task needs | Whatever the agent taps or types, it reaches only that device's apps and accounts, not your own phone (C1) |
+| A dedicated, low-limit key | Create a model API key used only by AppAgent, with a spending limit set at the provider | A lost or misused key costs little and can be revoked without touching anything else (C8) |
+| A round limit | Keep the default `MAX_ROUNDS: 20` and `REQUEST_INTERVAL: 10` in the config file, or lower the rounds for short tasks ([config.yaml:17](https://github.com/tencentqqgylab/appagent/blob/2c1900422caf6f9e94e96d5dd984b530e5a5fbf8/config.yaml#L17); [config.yaml:8](https://github.com/tencentqqgylab/appagent/blob/2c1900422caf6f9e94e96d5dd984b530e5a5fbf8/config.yaml#L8)) | Every run ends after a fixed number of spaced-out actions (C10) |
+| A person at the phone | Watch the phone screen through each run and press Ctrl-C to end any run that heads somewhere you did not intend | A person can stop the run between actions, since nothing asks before an action runs (C2) |
+| Reviewed app documentation | Read the files in the app's `auto_docs` and `demo_docs` folders before a deployment run and delete any you did not expect ([scripts/task_executor.py:49-50](https://github.com/tencentqqgylab/appagent/blob/2c1900422caf6f9e94e96d5dd984b530e5a5fbf8/scripts/task_executor.py#L49-L50)) | Only guidance you have read steers later runs (C6) |
+| Its own container or VM | Run AppAgent in a container or VM that holds only this checkout and its config, with network access limited to the model provider | The agent's host-side work cannot reach the rest of your computer's files, credentials or network (C4) |
+| A copied run record | After each run, copy the run's folder under `tasks` to storage the agent's user cannot write ([scripts/task_executor.py:46](https://github.com/tencentqqgylab/appagent/blob/2c1900422caf6f9e94e96d5dd984b530e5a5fbf8/scripts/task_executor.py#L46)) | A record of each model decision that the next run cannot alter (C9) |
+
+### Approving with confidence
+
+- Nothing asks before an action runs, so start each run only with a task you would be comfortable seeing done on that phone unattended.
+
+### Handling data
+
+- `config.yaml` holds the model key in plain text and takes precedence over environment variables; keep your copy out of version control and readable only by you.
+- Each run keeps full prompts, model responses and every screenshot, which may show private messages, and screenshots also go to the model provider; store run folders like the phone's own data.
+
 ## Critical gaps
 - The agent controls the user's entire phone and host account with no scoping or authorization check. (ASI03, T3; C1) — [scripts/config.py:6-9](https://github.com/tencentqqgylab/appagent/blob/2c1900422caf6f9e94e96d5dd984b530e5a5fbf8/scripts/config.py#L6-L9)
 - Untrusted on-screen content from any app can drive unattended exfiltration and irreversible phone actions; no approval exists. (ASI01, T6, LLM01; C5) — [scripts/task_executor.py:207](https://github.com/tencentqqgylab/appagent/blob/2c1900422caf6f9e94e96d5dd984b530e5a5fbf8/scripts/task_executor.py#L207); [scripts/task_executor.py:234-236](https://github.com/tencentqqgylab/appagent/blob/2c1900422caf6f9e94e96d5dd984b530e5a5fbf8/scripts/task_executor.py#L234-L236)

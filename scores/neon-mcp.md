@@ -25,6 +25,29 @@ Controls where a risk surface exists: 2.58 / 8.0 (32%); 2 criteria scored SA (su
 
 Neon MCP gives an AI client full write and delete authority over a user's whole Neon account by default: arbitrary SQL as the database owner, project and branch deletion, function deploys and auth changes. Read-only, category and project restrictions exist and are enforced in code, but they are opt-in, and credential handling in the OAuth flow is not strictly scoped. The server also routinely returns database passwords to the model. Use a readonly=true or projectId-scoped URL.
 
+## Safest setup
+
+Neon MCP labels every tool as read-only or destructive and runs no model-written code on its own host. As shipped, though, a session can change or delete anything in your Neon account, so the safest setup narrows the account it uses and turns on the read-only, project and category limits the server already offers.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A narrowly scoped Neon account | Connect with a Neon account or API key that reaches only the projects this task needs | Neon itself bounds what any session can touch to those projects (C1) |
+| Read-only mode | Add `readonly=true` to the MCP URL, and leave Allow writes unchecked on the consent page ([app/api/[transport]/route.ts:975](https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/app/api/[transport]/route.ts#L975); [mcp/utils/read-only.ts:8-12](https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/utils/read-only.ts#L8-L12)) | The server offers only read tools and runs SQL inside a read-only transaction (C5) |
+| One project only | Add `projectId=<id>` to the MCP URL ([mcp/utils/grant-context.ts:97](https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/utils/grant-context.ts#L97)) | Every tool is pinned to that one project (C1) |
+| Only the categories needed | Add `category=<name>` to the MCP URL for each tool category the task uses, such as `querying` and `schema` ([mcp/utils/grant-context.ts:83](https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/utils/grant-context.ts#L83); [mcp/utils/grant-context.ts:14-20](https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/utils/grant-context.ts#L14-L20)) | The model sees only the tools for that work, and other categories stay out of the session (C3) |
+| Working data, not production | Have the agent run SQL on a branch or copy of your data rather than your production branch | Owner-role SQL that goes wrong lands on data you can discard (C4) |
+| A client-side call log | Keep your MCP client's own record of each tool call with its arguments | A record of which SQL ran and on what, alongside the server's log of tool names (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; run_sql and run_sql_transaction carry both reads and writes, so read the SQL itself before approving.
+- Project and branch deletion, function deploys and auth changes have no preview on the server, so approve them when you mean that change.
+
+### Handling data
+
+- get_connection_string returns the database owner's password into the conversation; store transcripts like credentials and reset the password when the work is done.
+- The hosted server sends usage analytics tied to your account and error reports to its operator; tool arguments are not included in those events.
+
 ## Critical gaps
 - A hijacked session or stolen token has write and delete authority over the user's whole Neon account, including organizations and every database. (ASI03, T3; C1) — [lib/oauth/client.ts:116-129](https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/lib/oauth/client.ts#L116-L129); [lib/oauth/client.ts:208](https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/lib/oauth/client.ts#L208)
 - Worst case under prompt injection: a hijacked default session can exfiltrate data and secrets and run irreversible SQL and deletions with no server-side human step. (ASI01, LLM01, T6; C5) — [mcp/tools/tools.ts:92](https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L92); [mcp/tools/tools.ts:1181](https://github.com/neondatabase/mcp-server-neon/blob/00d82d4e5c925380fc077fe1932780035f564d8b/mcp/tools/tools.ts#L1181)

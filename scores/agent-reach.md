@@ -24,6 +24,28 @@
 
 Agent Reach connects a coding agent to the open internet by installing third-party CLIs and telling the agent which commands to run, and its own code is careful with stored secrets and its own inputs. But it adds no safeguards around what the agent then does: untrusted web content, the user's GitHub login and arbitrary URL fetches end up in one session, with no approval step, isolation or audit trail from Agent Reach. Most installed tools are unpinned, and the search tool also reads server definitions from the workspace. Treat it as giving the agent the internet with only the host agent's own prompts as protection.
 
+## Safest setup
+
+Agent Reach stores its own secrets carefully and keeps installs check-only until system changes are asked for. It adds no approval, isolation or record around the commands its skill hands the agent, so the safest setup narrows the logins the agent can use and builds the containment around it yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A read-only GitHub login | Sign gh in with a fine-grained token limited to the repositories the task reads, with read-only permissions | GitHub itself refuses writes to your account, whatever a fetched page asks the agent to do (C1) |
+| Installs you review first | Run the installer with `--dry-run` yourself, and add `--system` only after reading what it lists ([agent_reach/cli.py:91-101](https://github.com/Panniantong/Agent-Reach/blob/a19a171fa980a0785849596492e0af4db800c82f/agent_reach/cli.py#L91-L101)) | System packages and global tools change only when you have seen the list and chosen to go ahead (C2) |
+| Keys entered privately | Run the `configure` command yourself in a terminal and leave the value off, so it asks through a hidden prompt ([agent_reach/cli.py:108](https://github.com/Panniantong/Agent-Reach/blob/a19a171fa980a0785849596492e0af4db800c82f/agent_reach/cli.py#L108); [agent_reach/cli.py:1419](https://github.com/Panniantong/Agent-Reach/blob/a19a171fa980a0785849596492e0af4db800c82f/agent_reach/cli.py#L1419)) | Cookies and API keys reach the settings file without passing through the agent's chat or your shell history (C8) |
+| A clean working directory | Start sessions from a directory that holds no MCP server config you didn't write | The search command starts only the servers you defined yourself (C6) |
+| Its own container or VM | Run the host agent and the tools Agent Reach installs in a container or VM holding only this task's logins, with network access limited to the sites the task needs | An outer boundary around every command the skill runs, and a narrower path for data to leave (C4) |
+| Tool versions you chose | Install once inside that container from a version you reviewed, and update when you decide to | The third-party tools the agent runs stay the versions you checked (C7) |
+| Health checks on demand | Run `watch` by hand when you want a check, rather than as a daily scheduled job ([agent_reach/cli.py:183](https://github.com/Panniantong/Agent-Reach/blob/a19a171fa980a0785849596492e0af4db800c82f/agent_reach/cli.py#L183)) | Nothing keeps running after you end the session (C10) |
+
+### Approving with confidence
+
+- Read each prompt from the host agent and approve shell calls one at a time; gh commands that create or change something and curl calls to hosts you don't recognize are worth a closer look.
+
+### Handling data
+
+- `~/.agent-reach/config.yaml` keeps tokens and cookies in plain text, readable only by you; store it like other credentials.
+
 ## Critical gaps
 - The installer's only consent step is a --system flag the agent passes itself, and the skill's references list GitHub write commands with no gate. (ASI09, ASI02; C2). Evidence: [agent_reach/cli.py:270](https://github.com/Panniantong/Agent-Reach/blob/a19a171fa980a0785849596492e0af4db800c82f/agent_reach/cli.py#L270); [agent_reach/skill/references/dev.md:29](https://github.com/Panniantong/Agent-Reach/blob/a19a171fa980a0785849596492e0af4db800c82f/agent_reach/skill/references/dev.md#L29)
 - Every command the skill directs and every package the installer adds runs on the host as the user, with the full environment and network. (ASI05; C4). Evidence: [agent_reach/utils/process.py:16](https://github.com/Panniantong/Agent-Reach/blob/a19a171fa980a0785849596492e0af4db800c82f/agent_reach/utils/process.py#L16); [agent_reach/cli.py:1266](https://github.com/Panniantong/Agent-Reach/blob/a19a171fa980a0785849596492e0af4db800c82f/agent_reach/cli.py#L1266); [agent_reach/skill/references/web.md:35](https://github.com/Panniantong/Agent-Reach/blob/a19a171fa980a0785849596492e0af4db800c82f/agent_reach/skill/references/web.md#L35)

@@ -24,6 +24,31 @@
 
 Orkas ships a carefully built host-side approval layer: a structural risk classifier for shell commands, sensitive-path prompts, connector send/delete confirmations and fail-closed dialogs. But in the default mode, commands the classifier does not flag run unsandboxed as your OS user with full home-directory and network access. Script-based deletes and GET-style exfiltration (web_fetch, python requests.get) pass without a prompt. Protection of the approval-mode setting is not tamper-resistant.
 
+## Safest setup
+
+Orkas asks before risky shell commands, sensitive paths and connector sends and deletes, and keeps model keys out of the shell's environment. By default, though, commands run unsandboxed as your own user with your whole home directory and network, so the safest setup narrows the account, keys and network around the app and turns on its workspace-only mode.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Connect only the model keys and accounts the task needs, each scoped or read-only with a spending limit set at the provider | Whatever an agent does, it reaches only the accounts and spend you chose (C8) |
+| A dedicated account or VM | Run Orkas under its own OS account or VM that holds only the files the task needs | Shell commands and file tools reach that account's files, not your whole home directory (C1) |
+| Workspace-only mode | Choose Cautious (`workspace_approval`) under Local operation permissions in Settings ([src/main/features/permissions.ts:34](https://github.com/orkas-ai/orkas/blob/595358993d6c98e868030990fc9e3a1130c45191/src/main/features/permissions.ts#L34); [src/renderer/locales/en.json:1734](https://github.com/orkas-ai/orkas/blob/595358993d6c98e868030990fc9e3a1130c45191/src/renderer/locales/en.json#L1734)) | Agents work inside the active workspace, and on macOS shell commands get a write profile limited to it (C4) |
+| Approval dialogs | Keep a mode that confirms sensitive actions, the default `all_files_approval` or `workspace_approval` ([src/main/features/permissions.ts:34](https://github.com/orkas-ai/orkas/blob/595358993d6c98e868030990fc9e3a1130c45191/src/main/features/permissions.ts#L34); [src/main/features/permissions.ts:41](https://github.com/orkas-ai/orkas/blob/595358993d6c98e868030990fc9e3a1130c45191/src/main/features/permissions.ts#L41)) | A person decides on risky commands, sensitive paths and connector sends and deletes (C2) |
+| An outbound allowlist | Limit the machine's network to the model provider and the hosts the task needs | A narrow path for data to leave, whatever a hijacked agent fetches (C5) |
+| Read instruction files first | Open workspaces whose AGENTS.md files you have read | The instructions loaded into each session come only from you (C6) |
+| Extensions you have read | Add only MCP servers, skills and CLI agents you have reviewed, checking the command shown at install | Code that runs with your account's access is code you chose (C7) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; the dialog shows only the first 800 characters of a command, so ask for shorter commands when one is cut off.
+- Ordinary commands, inline scripts and web fetches can run without a dialog, so a quick look at the transcript during long tasks keeps you in control.
+- Background processes can keep running after a stop; check for them when a task ends.
+
+### Handling data
+
+- Session transcripts are plain JSONL with tool results unredacted; store the Orkas data directory like the data the agent read.
+- In the open-source build, stored keys and connector tokens are only obfuscated, so use keys you can revoke and rotate.
+
 ## Critical gaps
 - In the default mode, shell commands run unsandboxed as the OS user with full home-directory and network access. (ASI05, T11; C4) — [src/main/model/core-agent/local-tools.ts:3140](https://github.com/orkas-ai/orkas/blob/595358993d6c98e868030990fc9e3a1130c45191/src/main/model/core-agent/local-tools.ts#L3140); [src/core-agent/src/sandbox/executor.ts:346](https://github.com/orkas-ai/orkas/blob/595358993d6c98e868030990fc9e3a1130c45191/src/core-agent/src/sandbox/executor.ts#L346)
 - A hijacked agent can exfiltrate via web_fetch GET and delete or overwrite files via scripts outside the workspace with no human involved. (ASI01, LLM01, T6; C5) — [src/core-agent/src/tools/web-fetch.ts:460-468](https://github.com/orkas-ai/orkas/blob/595358993d6c98e868030990fc9e3a1130c45191/src/core-agent/src/tools/web-fetch.ts#L460-L468); [src/main/model/core-agent/bash-risk.ts:1068-1074](https://github.com/orkas-ai/orkas/blob/595358993d6c98e868030990fc9e3a1130c45191/src/main/model/core-agent/bash-risk.ts#L1068-L1074)

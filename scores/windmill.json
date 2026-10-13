@@ -36,6 +36,120 @@
     "external_communication": "yes"
   },
   "headline": "A Windmill AI agent step runs every tool call the model makes without human review, using the full workspace permissions of whoever the flow runs as and the author's long-lived service credentials. If content it reads (a webhook payload, an email, a web page, a tool result) carries injected instructions, it can leak data and act on connected systems unattended. Authorization checks, author-pinned tool inputs, SSRF checks on MCP servers and a working cancel path are real strengths, but in the shipped compose file tool code runs as root in a privileged worker with only process-namespace isolation, and the nsjail sandbox and token scoping are opt-in.",
+  "safe_setup": {
+    "intro": "Windmill checks every tool job against the runner's own permissions, lets authors pin tool inputs and records each tool call. Its defaults are weak for an agent: no approval step for tool calls, tool jobs carry the runner's full workspace authority, and the shipped worker runs privileged as root. The safest setup narrows every identity the agent touches, turns on the token scopes and sandbox Windmill offers, and builds containment around the workers.",
+    "steps": [
+      {
+        "setup": "Narrow downstream credentials",
+        "how": "Give the resources attached to agent tools credentials scoped to the task, read-only where possible, with limits set at each provider",
+        "gives_you": "The connected systems themselves refuse anything outside that grant, whatever the agent asks for",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A dedicated runner account",
+        "how": "Run agent flows as a non-admin user who can read only the folders, resources and secrets the agent needs",
+        "gives_you": "A hijacked agent holds that account's small slice of the workspace, not an admin's",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Scoped job tokens",
+        "how": "Set `job_token_scopes` on the agent step and on each tool to the API scopes it needs",
+        "gives_you": "Each tool job's Windmill token reaches only those APIs, and never more than its agent",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "backend/windmill-types/src/flows.rs",
+            "lines": "642",
+            "contains": "pub job_token_scopes: Option<Vec<String>>",
+            "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-types/src/flows.rs#L642"
+          },
+          {
+            "file": "backend/windmill-types/src/flows.rs",
+            "lines": "932",
+            "contains": "pub job_token_scopes: Option<Vec<String>>",
+            "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-types/src/flows.rs#L932"
+          }
+        ]
+      },
+      {
+        "setup": "Only the tools needed",
+        "how": "Attach only the tools the task uses, pin inputs that should stay fixed such as recipients and targets, and list MCP tools in `include_tools`",
+        "gives_you": "The model sees a small tool set and cannot change the values you fixed",
+        "criterion": "C3",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "backend/windmill-types/src/flows.rs",
+            "lines": "1016",
+            "contains": "pub include_tools: Vec<String>",
+            "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-types/src/flows.rs#L1016"
+          }
+        ]
+      },
+      {
+        "setup": "The nsjail sandbox",
+        "how": "`DISABLE_NSJAIL=false` on the workers that run agent tools",
+        "gives_you": "Tool jobs get a restricted filesystem, dropped capabilities and resource limits",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "backend/windmill-worker/src/worker.rs",
+            "lines": "370-373",
+            "contains": "std::env::var(\"DISABLE_NSJAIL\")",
+            "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/worker.rs#L370-L373"
+          }
+        ]
+      },
+      {
+        "setup": "Turn and time ceilings",
+        "how": "Keep `max_iterations` at its default of 10 or lower, and set `TIMEOUT` on the workers to the longest run you expect",
+        "gives_you": "Each agent run ends after a few turns and within the time you set, not seven days",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "backend/windmill-worker/src/ai_executor.rs",
+            "lines": "104",
+            "contains": "DEFAULT_MAX_AGENT_ITERATIONS: usize = 10",
+            "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L104"
+          },
+          {
+            "file": "backend/windmill-ai/src/types.rs",
+            "lines": "172",
+            "contains": "pub max_iterations: Option<usize>",
+            "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-ai/src/types.rs#L172"
+          },
+          {
+            "file": "backend/windmill-common/src/worker.rs",
+            "lines": "455",
+            "contains": "std::env::var(\"TIMEOUT\")",
+            "url": "https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/worker.rs#L455"
+          }
+        ]
+      },
+      {
+        "setup": "Isolated agent workers",
+        "how": "Run the workers that serve agent tools on their own host or VM, with outbound network limited to the hosts the tools need",
+        "gives_you": "An outer boundary around tool code running as root in a privileged worker, and a narrow path for data to leave",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Agent tool calls run without a prompt, so put a flow approval step after the agent step and read its result before later steps act on it."
+    ],
+    "handling": [
+      "Job results and stored conversation memory are not redacted; store and share them like the data the agent read.",
+      "Tool jobs can reach the instance's job records with the runner's permissions, so back them up to storage the workers cannot write."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

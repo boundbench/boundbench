@@ -24,6 +24,30 @@
 
 Pi runs every model-chosen shell command and file edit immediately, as you, on your machine, with your full environment and no sandbox, approval step, or run limits. A prompt injection in any file it reads can therefore exfiltrate credentials and take irreversible actions unattended. Its one real control is project trust, which keeps a repo's .pi settings, extensions and MCP servers from loading until you approve, but instruction files still load silently and the model can rewrite the trust store. The project's own docs say to run Pi inside a container or VM; do that.
 
+## Safest setup
+
+Pi runs every shell command and file edit straight away, as you, with no sandbox, approval step or run limits; its one built-in gate is the project trust prompt. The project's own docs recommend a container or VM, so the safest setup keeps the trust prompt on and builds the boundaries around Pi yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Only the keys it needs | Start Pi from a shell or container whose environment holds only the model provider key, with no cloud, SSH or GitHub credentials | Every command Pi runs reaches only that key, not everything your account can use (C1) |
+| A provider spending limit | Use a provider key with a spending limit set at the provider | A ceiling on what a runaway session can spend (C10) |
+| Read-only tools | `--tools read,grep,find,ls` for tasks that only need to read code ([packages/coding-agent/src/cli/args.ts:150](https://github.com/earendil-works/pi/blob/4c6fb7cfe8c538a668726f6f8b3554098c39faee/packages/coding-agent/src/cli/args.ts#L150); [packages/coding-agent/src/core/tools/index.ts:95](https://github.com/earendil-works/pi/blob/4c6fb7cfe8c538a668726f6f8b3554098c39faee/packages/coding-agent/src/core/tools/index.ts#L95)) | The model can look through the project but has no shell and no file writes (C3) |
+| The project trust prompt | Keep the default `defaultProjectTrust` of `"ask"`, and trust a project once you have read its `.pi` folder ([packages/coding-agent/src/core/settings-manager.ts:151](https://github.com/earendil-works/pi/blob/4c6fb7cfe8c538a668726f6f8b3554098c39faee/packages/coding-agent/src/core/settings-manager.ts#L151)) | A repository's settings, extensions and MCP servers load only after you approve them (C6) |
+| Its own container or VM | Run Pi in a container or VM that mounts only the project folder, with outbound access limited to the model provider and the hosts the task needs | An outer boundary around every command and edit, and a narrow path for data to leave (C4) |
+| Instruction files you have read | Check the AGENTS.md and CLAUDE.md files in the working folder and its parents before starting | The instructions Pi loads at startup come only from text you know (C6) |
+| Pinned, reviewed packages | Add only extensions and MCP servers you have read, each with an exact npm version or git commit | Code that runs inside Pi with your credentials stays the code you reviewed (C7) |
+
+### Approving with confidence
+
+- Pi has no approval step, so the container and the tool list above are what bound each command.
+
+### Handling data
+
+- Session transcripts under ~/.pi/agent/sessions keep every tool call and result unredacted; store them like the secrets the agent can read.
+- ~/.pi/agent/auth.json holds provider credentials in plain text, readable only by you; a container with its own home keeps it separate from your main account.
+- `enableInstallTelemetry: false` in global settings turns off the anonymous install ping.
+
 ## Critical gaps
 - The bash tool, active by default, runs model-chosen commands with no approval gate. (ASI02, ASI09; C2) — [packages/coding-agent/src/core/settings-manager.ts:215](https://github.com/earendil-works/pi/blob/4c6fb7cfe8c538a668726f6f8b3554098c39faee/packages/coding-agent/src/core/settings-manager.ts#L215); [packages/coding-agent/docs/security.md:3](https://github.com/earendil-works/pi/blob/4c6fb7cfe8c538a668726f6f8b3554098c39faee/packages/coding-agent/docs/security.md#L3)
 - A hijacked session can both exfiltrate secrets and take irreversible actions with no human involved (C5-WORSTCASE). (ASI01, LLM01; C5) — [packages/coding-agent/src/utils/shell.ts:138-149](https://github.com/earendil-works/pi/blob/4c6fb7cfe8c538a668726f6f8b3554098c39faee/packages/coding-agent/src/utils/shell.ts#L138-L149); [packages/coding-agent/src/core/tools/bash.ts:112-118](https://github.com/earendil-works/pi/blob/4c6fb7cfe8c538a668726f6f8b3554098c39faee/packages/coding-agent/src/core/tools/bash.ts#L112-L118)

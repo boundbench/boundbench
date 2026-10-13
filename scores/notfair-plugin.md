@@ -24,6 +24,31 @@
 
 NotFair gives a coding agent one OAuth connection that can change ad budgets, campaigns, WordPress sites and CRM records across ten platforms, and almost every safeguard it ships is instruction text for the model, not code. The one write script in the repo has a confirmation step the model skips with --yes. The setup flow collects CMS API keys and passwords through chat, and the CMS scripts trust .env files from the working directory. Install it only on a host whose own approval prompts you keep on for every MCP call.
 
+## Safest setup
+
+NotFair Plugin ships few protections of its own: it adds no approval step, sandbox or record for the ad, CMS and CRM changes it enables, and its bundled scripts run as you. The safest setup narrows the accounts it can reach, keeps your host's approval prompts on, and builds containment around it yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A narrowly scoped NotFair grant | Authorize the NotFair connection from an account that holds only the ad, analytics, CMS and CRM access the task needs, read-only where the platform allows | Each platform itself refuses anything outside that access, whatever the model asks for (C1) |
+| A Search Console-only identity | Sign gcloud in with an account whose only access is Search Console for the sites you analyse | The bundled scripts' Google token reaches Search Console data and nothing else in your cloud (C1) |
+| Host approval on every call | Keep your host's approval prompt on for every NotFair MCP tool call and every Bash command | A person decides on each budget, campaign, CRM and WordPress change before it happens (C2) |
+| The Strapi diff confirmation | Run the Strapi push script yourself in a terminal, without `--yes` ([seo/seo-analysis/scripts/push_strapi_seo.py:426](https://github.com/nowork-studio/notfair-plugin/blob/1a53d4e4da69a6060c24de42c23333fb48e927c4/seo/seo-analysis/scripts/push_strapi_seo.py#L426)) | You see the per-entry diff and answer the confirmation prompt yourself before anything is written (C2) |
+| Upgrades you choose | Set `update_check: false` in `~/.toprank/config.yaml` and run the upgrade skill yourself after reading the new version ([bin/notfair-update-check:43-44](https://github.com/nowork-studio/notfair-plugin/blob/1a53d4e4da69a6060c24de42c23333fb48e927c4/bin/notfair-update-check#L43-L44); [bin/notfair-config:13-14](https://github.com/nowork-studio/notfair-plugin/blob/1a53d4e4da69a6060c24de42c23333fb48e927c4/bin/notfair-config#L13-L14)) | New plugin code arrives only when you decide to take it (C7) |
+| A clean working directory | Start sessions from a directory with no .env, .env.local or .notfair.json file you didn't write | CMS endpoints, accounts and saved context come only from files you created (C6) |
+| Keys entered outside chat | Type CMS API keys and application passwords into .env.local in your own editor, and make the file readable only by you | Long-lived CMS keys stay out of the model's context and the host transcript (C8) |
+| Its own container or VM | Run the host and plugin in a container or VM that holds only the credentials this work needs | An outer boundary around the bundled scripts, which otherwise run with your home directory and cloud credentials (C4) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; check the account, the amount and the target before approving a budget, bid or campaign change.
+- A session-wide approval of Bash covers every command the skill runs, so approve commands individually during /setup-cms and upgrades.
+
+### Handling data
+
+- The plugin keeps no record of the changes it makes; keep your host's transcript and each platform's own change history for review.
+- Saved business context and change logs in the data directory are read back as trusted input in later sessions; review them before relying on them.
+
 ## Critical gaps
 - The plugin's only code-level write confirmation is skipped by a model-supplied --yes flag, and all MCP mutations rely on prompt text for approval. (ASI09, ASI02, T10; C2) — [seo/seo-analysis/scripts/push_strapi_seo.py:300-305](https://github.com/nowork-studio/notfair-plugin/blob/1a53d4e4da69a6060c24de42c23333fb48e927c4/seo/seo-analysis/scripts/push_strapi_seo.py#L300-L305); [seo/seo-analysis/scripts/push_strapi_seo.py:426](https://github.com/nowork-studio/notfair-plugin/blob/1a53d4e4da69a6060c24de42c23333fb48e927c4/seo/seo-analysis/scripts/push_strapi_seo.py#L426); [paid-ads/shared/operating-contract.md:10](https://github.com/nowork-studio/notfair-plugin/blob/1a53d4e4da69a6060c24de42c23333fb48e927c4/paid-ads/shared/operating-contract.md#L10)
 - Bundled scripts and pre-approved Bash run unsandboxed as the user with ambient gcloud credentials and full network. (ASI05, T11; C4) — [seo/setup-cms/SKILL.md:12-13](https://github.com/nowork-studio/notfair-plugin/blob/1a53d4e4da69a6060c24de42c23333fb48e927c4/seo/setup-cms/SKILL.md#L12-L13); [notfair-upgrade-skill/SKILL.md:9-10](https://github.com/nowork-studio/notfair-plugin/blob/1a53d4e4da69a6060c24de42c23333fb48e927c4/notfair-upgrade-skill/SKILL.md#L9-L10); [seo/seo-analysis/scripts/_gcloud.py:35-38](https://github.com/nowork-studio/notfair-plugin/blob/1a53d4e4da69a6060c24de42c23333fb48e927c4/seo/seo-analysis/scripts/_gcloud.py#L35-L38)

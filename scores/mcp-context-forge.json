@@ -36,6 +36,154 @@
     "external_communication": "yes"
   },
   "headline": "ContextForge puts real access control in front of the tools it federates: every call is authenticated, checked against RBAC and team visibility, schema-validated, SSRF-filtered, rate-limited and timed out, and stored upstream credentials are encrypted and never shown to the model. It is still a relay rather than a firewall: tool results and upstream tool descriptions reach clients untouched, any user can register a new upstream server that is shared with everyone by default, and a client-supplied X-Upstream-Authorization header is always forwarded as the upstream credential. The audit trail and every content guardrail plugin ship switched off, so out of the box you cannot reconstruct who ran which tool with which arguments.",
+  "safe_setup": {
+    "intro": "ContextForge requires authentication by default, checks tool calls against RBAC and team visibility, keeps stored upstream credentials encrypted and away from the model, and times out and rate-limits tool calls. As shipped, new servers are shared with every user, content filters and the audit trail are off, and upstream content reaches clients untouched, so the safest setup narrows the upstream credentials, keeps registrations within a team and turns on the filters and audit trail the gateway includes.",
+    "steps": [
+      {
+        "setup": "Narrow upstream credentials",
+        "how": "Register each upstream server with a token scoped at the provider to the systems and permissions its tools need, read-only where the task allows",
+        "gives_you": "The upstream system itself refuses anything outside that grant, whichever user or client makes the call",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A header-stripping proxy",
+        "how": "Put a reverse proxy in front of the gateway that removes `X-Upstream-Authorization` from client requests",
+        "gives_you": "Upstream servers receive only the credentials you stored for them",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Team-only registrations",
+        "how": "Set `ALLOW_PUBLIC_VISIBILITY=false` and register servers with `visibility` set to `team` or `private`",
+        "gives_you": "A server one user registers reaches only the team it was meant for",
+        "criterion": "C6",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": ".env.example",
+            "lines": "155",
+            "contains": "ALLOW_PUBLIC_VISIBILITY=true",
+            "url": "https://github.com/IBM/mcp-context-forge/blob/9bb9c2ac58af4cd126c05e8153f9025770646bd2/.env.example#L155"
+          },
+          {
+            "file": "mcpgateway/config.py",
+            "lines": "1102-1103",
+            "contains": "allow_public_visibility: bool = Field(",
+            "url": "https://github.com/IBM/mcp-context-forge/blob/9bb9c2ac58af4cd126c05e8153f9025770646bd2/mcpgateway/config.py#L1102-L1103"
+          },
+          {
+            "file": "mcpgateway/schemas.py",
+            "lines": "3317",
+            "contains": "visibility: Optional[Literal[\"private\", \"team\", \"public\"]]",
+            "url": "https://github.com/IBM/mcp-context-forge/blob/9bb9c2ac58af4cd126c05e8153f9025770646bd2/mcpgateway/schemas.py#L3317"
+          }
+        ]
+      },
+      {
+        "setup": "One virtual server per client",
+        "how": "Point each client at a virtual server whose `associated_tools` lists only the tools that client needs",
+        "gives_you": "Each client sees a short tool list, with write tools only where you chose them",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "mcpgateway/schemas.py",
+            "lines": "4669",
+            "contains": "associated_tools: Optional[List[str]]",
+            "url": "https://github.com/IBM/mcp-context-forge/blob/9bb9c2ac58af4cd126c05e8153f9025770646bd2/mcpgateway/schemas.py#L4669"
+          }
+        ]
+      },
+      {
+        "setup": "Content filter plugins",
+        "how": "Set `PLUGINS_ENABLED=true` and enable the deny-list, PII and moderation plugins you need in `plugins/config.yaml`",
+        "gives_you": "Tool arguments and results pass through detection filters before they reach the upstream or the client",
+        "criterion": "C5",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": ".env.example",
+            "lines": "3145-3148",
+            "contains": "PLUGINS_ENABLED=false",
+            "url": "https://github.com/IBM/mcp-context-forge/blob/9bb9c2ac58af4cd126c05e8153f9025770646bd2/.env.example#L3145-L3148"
+          },
+          {
+            "file": "plugins/config.yaml",
+            "lines": "1",
+            "contains": "plugins/config.yaml",
+            "url": "https://github.com/IBM/mcp-context-forge/blob/9bb9c2ac58af4cd126c05e8153f9025770646bd2/plugins/config.yaml#L1"
+          }
+        ]
+      },
+      {
+        "setup": "Forked jq workers",
+        "how": "Run on Linux and keep the default `JQ_FILTER_EXECUTION=subprocess`",
+        "gives_you": "Output filters run in a separate worker with a cleared environment and a time limit",
+        "criterion": "C4",
+        "source": "default",
+        "evidence": [
+          {
+            "file": ".env.example",
+            "lines": "2745",
+            "contains": "JQ_FILTER_EXECUTION=subprocess",
+            "url": "https://github.com/IBM/mcp-context-forge/blob/9bb9c2ac58af4cd126c05e8153f9025770646bd2/.env.example#L2745"
+          },
+          {
+            "file": "mcpgateway/config.py",
+            "lines": "2775-2776",
+            "contains": "default=\"subprocess\"",
+            "url": "https://github.com/IBM/mcp-context-forge/blob/9bb9c2ac58af4cd126c05e8153f9025770646bd2/mcpgateway/config.py#L2775-L2776"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the gateway as a dedicated user in a container or VM whose network reaches only your registered upstream hosts",
+        "gives_you": "An OS boundary around template and filter execution, and a narrow path for data to leave",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "The audit trail",
+        "how": "Set `AUDIT_TRAIL_ENABLED=true` and `SECURITY_LOGGING_ENABLED=true`",
+        "gives_you": "A database record of who changed what and of authentication and authorization failures",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": ".env.example",
+            "lines": "480-482",
+            "contains": "AUDIT_TRAIL_ENABLED=false",
+            "url": "https://github.com/IBM/mcp-context-forge/blob/9bb9c2ac58af4cd126c05e8153f9025770646bd2/.env.example#L480-L482"
+          },
+          {
+            "file": "mcpgateway/config.py",
+            "lines": "2379",
+            "contains": "audit_trail_enabled: bool = Field(default=False",
+            "url": "https://github.com/IBM/mcp-context-forge/blob/9bb9c2ac58af4cd126c05e8153f9025770646bd2/mcpgateway/config.py#L2379"
+          },
+          {
+            "file": "mcpgateway/config.py",
+            "lines": "2389",
+            "contains": "security_logging_enabled: bool = Field(default=False",
+            "url": "https://github.com/IBM/mcp-context-forge/blob/9bb9c2ac58af4cd126c05e8153f9025770646bd2/mcpgateway/config.py#L2389"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt in your MCP host and approve calls one at a time; REST tools usually carry no destructive hint, so a write can look like a read.",
+      "Configure an LLM provider for the built-in chat only when you want its agent to call gateway tools without per-call approval."
+    ],
+    "handling": [
+      "The JWT secret and credential encryption key in `.env` unlock every stored upstream credential; keep that file readable only by the gateway's user.",
+      "Payload logging and tracing are off by default; when you turn them on, store their output like the upstream data it covers."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

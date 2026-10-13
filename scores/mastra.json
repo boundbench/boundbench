@@ -36,6 +36,197 @@
     "external_communication": "yes"
   },
   "headline": "Mastra has a well-built human-approval gate and opt-in sandboxing, but almost none of it is on by default. Tools run without approval, the default LocalSandbox executes shell commands directly on the host, and nothing limits what an agent hijacked through a tool result can do. Deployers should enable requireToolApproval, use bubblewrap/Seatbelt or a remote sandbox, configure server auth, and add timeouts before exposing an agent to untrusted content.",
+  "safe_setup": {
+    "intro": "Mastra ships a well-built per-call approval gate, bubblewrap and Seatbelt sandboxing, run timeouts and tracing, but almost none of it is on by default. The safest setup turns those on, keeps the process's keys narrow, and puts containment around it.",
+    "steps": [
+      {
+        "setup": "Scoped, low-limit keys",
+        "how": "Give the process only the model and integration keys this agent needs, each scoped or read-only with a spending limit set at the provider",
+        "gives_you": "A hijacked agent reaches only the systems and spend you chose, since every tool runs with the process's credentials",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Server authentication",
+        "how": "Set `auth` in the `server` config before exposing the bundled server, with `mapUserToResourceId` on the provider",
+        "gives_you": "Only signed-in users reach your agents, with memory scoped to each user",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/core/src/mastra/index.ts",
+            "lines": "405",
+            "contains": "server?: ServerConfig;",
+            "url": "https://github.com/mastra-ai/mastra/blob/20c9a8cb991473e8644598ab8b1e5ee61cc6865b/packages/core/src/mastra/index.ts#L405"
+          },
+          {
+            "file": "packages/core/src/server/types.ts",
+            "lines": "388",
+            "contains": "auth?: MastraAuthConfig<any> | IMastraAuthProvider<any>;",
+            "url": "https://github.com/mastra-ai/mastra/blob/20c9a8cb991473e8644598ab8b1e5ee61cc6865b/packages/core/src/server/types.ts#L388"
+          },
+          {
+            "file": "packages/_internals/auth/src/provider/index.ts",
+            "lines": "22",
+            "contains": "mapUserToResourceId?(user: TUser)",
+            "url": "https://github.com/mastra-ai/mastra/blob/20c9a8cb991473e8644598ab8b1e5ee61cc6865b/packages/_internals/auth/src/provider/index.ts#L22"
+          }
+        ]
+      },
+      {
+        "setup": "Per-call approval",
+        "how": "Set `requireToolApproval: true` in the agent's `defaultOptions`, and `requireApproval: true` in the workspace `tools` config",
+        "gives_you": "Each tool call pauses until a person approves the exact tool and arguments",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/core/src/agent/types.ts",
+            "lines": "846",
+            "contains": "defaultOptions?: DynamicArgument<AgentExecutionOptions<TOutput>, TRequestContext>;",
+            "url": "https://github.com/mastra-ai/mastra/blob/20c9a8cb991473e8644598ab8b1e5ee61cc6865b/packages/core/src/agent/types.ts#L846"
+          },
+          {
+            "file": "packages/core/src/agent/agent.types.ts",
+            "lines": "722",
+            "contains": "requireToolApproval?: RequireToolApproval;",
+            "url": "https://github.com/mastra-ai/mastra/blob/20c9a8cb991473e8644598ab8b1e5ee61cc6865b/packages/core/src/agent/agent.types.ts#L722"
+          },
+          {
+            "file": "packages/core/src/workspace/workspace.ts",
+            "lines": "447",
+            "contains": "tools?: WorkspaceToolsConfig;",
+            "url": "https://github.com/mastra-ai/mastra/blob/20c9a8cb991473e8644598ab8b1e5ee61cc6865b/packages/core/src/workspace/workspace.ts#L447"
+          },
+          {
+            "file": "packages/core/src/workspace/tools/types.ts",
+            "lines": "346",
+            "contains": "requireApproval?: DynamicToolConfigValue<ToolConfigWithArgsContext>;",
+            "url": "https://github.com/mastra-ai/mastra/blob/20c9a8cb991473e8644598ab8b1e5ee61cc6865b/packages/core/src/workspace/tools/types.ts#L346"
+          }
+        ]
+      },
+      {
+        "setup": "Only the workspace tools needed",
+        "how": "Set `enabled: false` in the workspace `tools` config for each write, delete or shell tool the task doesn't use",
+        "gives_you": "The model sees a smaller set of tools, with write and shell access only where you chose it",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/core/src/workspace/workspace.ts",
+            "lines": "447",
+            "contains": "tools?: WorkspaceToolsConfig;",
+            "url": "https://github.com/mastra-ai/mastra/blob/20c9a8cb991473e8644598ab8b1e5ee61cc6865b/packages/core/src/workspace/workspace.ts#L447"
+          },
+          {
+            "file": "packages/core/src/workspace/tools/types.ts",
+            "lines": "103",
+            "contains": "enabled?: DynamicToolConfigValue;",
+            "url": "https://github.com/mastra-ai/mastra/blob/20c9a8cb991473e8644598ab8b1e5ee61cc6865b/packages/core/src/workspace/tools/types.ts#L103"
+          }
+        ]
+      },
+      {
+        "setup": "A sandboxed shell",
+        "how": "Create `LocalSandbox` with `isolation: 'bwrap'` on Linux or `isolation: 'seatbelt'` on macOS",
+        "gives_you": "Shell commands write only inside the workspace and have no network unless you allow it",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/core/src/workspace/sandbox/local-sandbox.ts",
+            "lines": "185",
+            "contains": "export class LocalSandbox",
+            "url": "https://github.com/mastra-ai/mastra/blob/20c9a8cb991473e8644598ab8b1e5ee61cc6865b/packages/core/src/workspace/sandbox/local-sandbox.ts#L185"
+          },
+          {
+            "file": "packages/core/src/workspace/sandbox/local-sandbox.ts",
+            "lines": "120-126",
+            "contains": "isolation?: IsolationBackend;",
+            "url": "https://github.com/mastra-ai/mastra/blob/20c9a8cb991473e8644598ab8b1e5ee61cc6865b/packages/core/src/workspace/sandbox/local-sandbox.ts#L120-L126"
+          },
+          {
+            "file": "packages/core/src/workspace/sandbox/native-sandbox/types.ts",
+            "lines": "13",
+            "contains": "'none' | 'seatbelt' | 'bwrap'",
+            "url": "https://github.com/mastra-ai/mastra/blob/20c9a8cb991473e8644598ab8b1e5ee61cc6865b/packages/core/src/workspace/sandbox/native-sandbox/types.ts#L13"
+          }
+        ]
+      },
+      {
+        "setup": "Time and step limits",
+        "how": "Set `totalMs` and `stepMs` under `timeout` in `modelSettings`, and a `maxSteps` default on every sub-agent",
+        "gives_you": "Each run ends at a deadline you set, and sub-agents keep the step budget you gave them",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/core/src/agent/agent.types.ts",
+            "lines": "674",
+            "contains": "modelSettings?: LoopOptions['modelSettings'];",
+            "url": "https://github.com/mastra-ai/mastra/blob/20c9a8cb991473e8644598ab8b1e5ee61cc6865b/packages/core/src/agent/agent.types.ts#L674"
+          },
+          {
+            "file": "packages/core/src/llm/model/model-settings.ts",
+            "lines": "89",
+            "contains": "timeout?: ModelTimeoutSettings;",
+            "url": "https://github.com/mastra-ai/mastra/blob/20c9a8cb991473e8644598ab8b1e5ee61cc6865b/packages/core/src/llm/model/model-settings.ts#L89"
+          },
+          {
+            "file": "packages/core/src/llm/model/model-settings.ts",
+            "lines": "17",
+            "contains": "totalMs?: number;",
+            "url": "https://github.com/mastra-ai/mastra/blob/20c9a8cb991473e8644598ab8b1e5ee61cc6865b/packages/core/src/llm/model/model-settings.ts#L17"
+          },
+          {
+            "file": "packages/core/src/llm/model/model-settings.ts",
+            "lines": "27",
+            "contains": "stepMs?: number;",
+            "url": "https://github.com/mastra-ai/mastra/blob/20c9a8cb991473e8644598ab8b1e5ee61cc6865b/packages/core/src/llm/model/model-settings.ts#L27"
+          },
+          {
+            "file": "packages/core/src/agent/agent.types.ts",
+            "lines": "625",
+            "contains": "maxSteps?: number;",
+            "url": "https://github.com/mastra-ai/mastra/blob/20c9a8cb991473e8644598ab8b1e5ee61cc6865b/packages/core/src/agent/agent.types.ts#L625"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the Mastra process in a container or VM whose network reaches only the hosts the task needs",
+        "gives_you": "An outer boundary around in-process tools and MCP servers, and a narrow path for data to leave",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Tool-call tracing",
+        "how": "Pass an `observability` instance with an exporter to the Mastra instance, sending spans to storage you keep",
+        "gives_you": "A structured record of every tool and MCP tool call, with run, thread and resource IDs",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/core/src/mastra/index.ts",
+            "lines": "387",
+            "contains": "observability?: ObservabilityEntrypoint;",
+            "url": "https://github.com/mastra-ai/mastra/blob/20c9a8cb991473e8644598ab8b1e5ee61cc6865b/packages/core/src/mastra/index.ts#L387"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; the prompt shows the exact tool name and arguments.",
+      "A per-tool or MCP server approval function decides in place of the agent-wide flag, so keep those functions as strict as the flag."
+    ],
+    "handling": [
+      "Traces redact fields such as password, token and apiKey by default, but plain logs are not redacted; store logs like the data the agent read.",
+      "Anonymous usage telemetry is on by default; set `MASTRA_TELEMETRY_DISABLED=true` to turn it off."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

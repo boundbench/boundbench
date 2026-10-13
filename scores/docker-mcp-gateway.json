@@ -36,6 +36,180 @@
     "external_communication": "yes"
   },
   "headline": "The gateway runs every MCP server in its own short-lived Docker container with only that server's own secrets, scrubs the environment, refuses risky host mounts, verifies signatures on Docker's official images, and scans tool traffic for secret patterns by default. It is still a relay, not a firewall: tool results reach the model as they are, containers get full network egress by default, the gateway's own management tools and the code-mode/mcp-exec wrappers carry no risk annotations, and nothing bounds how long a call may run. A hijacked client can read through one enabled server and act or exfiltrate through another without the gateway stopping it, and the model can save its own server configuration into persistent profiles.",
+  "safe_setup": {
+    "intro": "The gateway runs each MCP server in its own short-lived container with only that server's secrets, verifies signatures on Docker's official images and blocks secret patterns in tool traffic by default. It relays content between servers without marking it or asking anyone, and containers get open network access, so the safest setup narrows each server's credentials, trims what the model can reach and turns on network blocking.",
+    "steps": [
+      {
+        "setup": "Narrowly scoped server credentials",
+        "how": "Store a token for each enabled server that covers only the accounts and permissions the task needs, read-only where the task allows",
+        "gives_you": "Each service itself refuses anything outside that grant, whatever the model asks for",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Only the servers and tools needed",
+        "how": "`--servers <list>` and `--tools <list>` naming just what the task uses",
+        "gives_you": "The model sees fewer tools, with write tools only where you chose them",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "cmd/docker-mcp/commands/gateway.go",
+            "lines": "189",
+            "contains": "\"servers\"",
+            "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L189"
+          },
+          {
+            "file": "cmd/docker-mcp/commands/gateway.go",
+            "lines": "203",
+            "contains": "\"tools\"",
+            "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L203"
+          }
+        ]
+      },
+      {
+        "setup": "Fixed management tools",
+        "how": "`docker mcp feature disable dynamic-tools`, which `--servers` also does",
+        "gives_you": "The model can't add code-mode tools or save its own server configuration into profiles",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "cmd/docker-mcp/commands/feature.go",
+            "lines": "112",
+            "contains": "disable <feature-name>",
+            "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/feature.go#L112"
+          },
+          {
+            "file": "cmd/docker-mcp/commands/gateway.go",
+            "lines": "346",
+            "contains": "Features[\"dynamic-tools\"]",
+            "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L346"
+          },
+          {
+            "file": "cmd/docker-mcp/commands/gateway.go",
+            "lines": "175-178",
+            "contains": "options.DynamicTools = false",
+            "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L175-L178"
+          },
+          {
+            "file": "cmd/docker-mcp/commands/gateway.go",
+            "lines": "189",
+            "contains": "\"servers\"",
+            "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L189"
+          }
+        ]
+      },
+      {
+        "setup": "Network blocking",
+        "how": "`--block-network`",
+        "gives_you": "Each container reaches only the hosts its catalog entry declares, so credentials inside it have fewer places to go",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "cmd/docker-mcp/commands/gateway.go",
+            "lines": "214",
+            "contains": "\"block-network\"",
+            "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L214"
+          }
+        ]
+      },
+      {
+        "setup": "Secret blocking",
+        "how": "Keep the default `--block-secrets`",
+        "gives_you": "Tool calls whose arguments or results match secret patterns are blocked",
+        "criterion": "C8",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "cmd/docker-mcp/commands/gateway.go",
+            "lines": "57",
+            "contains": "BlockSecrets:     true",
+            "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L57"
+          },
+          {
+            "file": "cmd/docker-mcp/commands/gateway.go",
+            "lines": "213",
+            "contains": "\"block-secrets\"",
+            "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L213"
+          }
+        ]
+      },
+      {
+        "setup": "Signed official images",
+        "how": "Keep the default `--verify-signatures` and prefer Docker's official images",
+        "gives_you": "Servers run from digest-pinned images signed by Docker",
+        "criterion": "C7",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "cmd/docker-mcp/commands/gateway.go",
+            "lines": "59",
+            "contains": "VerifySignatures: true",
+            "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L59"
+          },
+          {
+            "file": "cmd/docker-mcp/commands/gateway.go",
+            "lines": "215",
+            "contains": "\"verify-signatures\"",
+            "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L215"
+          }
+        ]
+      },
+      {
+        "setup": "Per-container resource caps",
+        "how": "Keep the default `--cpus` and `--memory` limits of one CPU and 2 GB",
+        "gives_you": "A runaway server can't take over the host's CPU or memory",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "cmd/docker-mcp/commands/gateway.go",
+            "lines": "53-54",
+            "contains": "Cpus:             1",
+            "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L53-L54"
+          },
+          {
+            "file": "cmd/docker-mcp/commands/gateway.go",
+            "lines": "221-222",
+            "contains": "\"memory\"",
+            "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L221-L222"
+          }
+        ]
+      },
+      {
+        "setup": "A kept call log",
+        "how": "Keep the default `--log-calls` and have your client save the gateway's stderr",
+        "gives_you": "A record of each tool call's name, argument shape and duration that outlives the session",
+        "criterion": "C9",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "cmd/docker-mcp/commands/gateway.go",
+            "lines": "56",
+            "contains": "LogCalls:         true",
+            "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L56"
+          },
+          {
+            "file": "cmd/docker-mcp/commands/gateway.go",
+            "lines": "212",
+            "contains": "\"log-calls\"",
+            "url": "https://github.com/docker/mcp-gateway/blob/a34df45d4ec0e941a9853ad768c4f6cd818966b3/cmd/docker-mcp/commands/gateway.go#L212"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; an `mcp-exec` or `code-mode` approval covers any enabled tool behind it.",
+      "`mcp-config-set` and `mcp-create-profile` save configuration that later sessions load, so approve them when you asked for that change."
+    ],
+    "handling": [
+      "The call log is plain text on stderr with argument shapes only; calls made inside code-mode scripts are not in it.",
+      "Content-free usage telemetry (tool, server and client names) is always on."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

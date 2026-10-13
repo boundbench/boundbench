@@ -24,6 +24,30 @@
 
 Pydantic AI ships a minimal default (no tools) and some well-engineered primitives, such as a per-call human-approval gate, an SSRF-hardened web fetch tool and a 50-request run cap. But approval, isolation and telemetry are all opt-in. Registered tools run unattended in your process with all of its credentials, so if the agent reads attacker-controlled content it can leak data and act with no human involved. To change that, you have to mark consequential tools requires_approval and run code in a sandbox yourself.
 
+## Safest setup
+
+Pydantic AI starts every agent with no tools and caps each run at 50 model requests, and it ships a solid per-call approval gate, an opt-in remote sandbox and opt-in tracing. Registered tools run in your own process with all of its credentials and nothing is gated by default, so the safest setup narrows the credentials, turns on approval and the sandbox, and builds containment around the process.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Give the process only the model key and tool credentials this agent needs, each scoped or read-only with a spending limit set at the provider | Whatever the agent does, it reaches only the systems and spend you chose, not everything the process can (C1) |
+| Per-call approval | Set `requires_approval=True` on each consequential tool, or wrap a toolset with `approval_required()` ([pydantic_ai_slim/pydantic_ai/tools.py:375](https://github.com/pydantic/pydantic-ai/blob/66951321b89587235f432281eba909a30a585ffd/pydantic_ai_slim/pydantic_ai/tools.py#L375); [pydantic_ai_slim/pydantic_ai/toolsets/abstract.py:339](https://github.com/pydantic/pydantic-ai/blob/66951321b89587235f432281eba909a30a585ffd/pydantic_ai_slim/pydantic_ai/toolsets/abstract.py#L339)) | The run pauses and your application sees the exact tool and arguments before each gated call runs (C2) |
+| Only the tools needed | Keep the default empty `tools` and register only the tools and `toolsets` the task uses ([pydantic_ai_slim/pydantic_ai/agent/__init__.py:630-631](https://github.com/pydantic/pydantic-ai/blob/66951321b89587235f432281eba909a30a585ffd/pydantic_ai_slim/pydantic_ai/agent/__init__.py#L630-L631)) | The model can call only what this agent needs (C3) |
+| A remote sandbox | Run workspace commands in the harness `E2BSandbox` capability with `allow_internet_access=False` ([src/pydantic_ai_harness/pydantic_ai_harness/e2b_sandbox/_capability.py:18](https://github.com/pydantic/pydantic-ai/blob/66951321b89587235f432281eba909a30a585ffd/src/pydantic_ai_harness/pydantic_ai_harness/e2b_sandbox/_capability.py#L18); [src/pydantic_ai_harness/pydantic_ai_harness/e2b_sandbox/_capability.py:35](https://github.com/pydantic/pydantic-ai/blob/66951321b89587235f432281eba909a30a585ffd/src/pydantic_ai_harness/pydantic_ai_harness/e2b_sandbox/_capability.py#L35)) | Shell and file work runs in a remote VM with no host files and no outbound network (C4) |
+| Run limits and timeouts | Keep the default `request_limit` of 50, add `total_tokens_limit`, `cost_limit` and `tool_calls_limit`, and set `tool_timeout=<seconds>` on the agent ([pydantic_ai_slim/pydantic_ai/usage.py:480-490](https://github.com/pydantic/pydantic-ai/blob/66951321b89587235f432281eba909a30a585ffd/pydantic_ai_slim/pydantic_ai/usage.py#L480-L490); [pydantic_ai_slim/pydantic_ai/agent/__init__.py:635](https://github.com/pydantic/pydantic-ai/blob/66951321b89587235f432281eba909a30a585ffd/pydantic_ai_slim/pydantic_ai/agent/__init__.py#L635)) | Each run is bounded in requests, spend and tool calls, and slow tools stop waiting (C10) |
+| Its own container or VM | Run the application in a container or VM whose network reaches only the hosts the task needs | An outer boundary around in-process tools and a narrow path for data to leave (C5) |
+| Tool-call tracing | Call `instrument_all()` on `Agent` and export spans to a collector outside the agent's host ([pydantic_ai_slim/pydantic_ai/agent/__init__.py:1165](https://github.com/pydantic/pydantic-ai/blob/66951321b89587235f432281eba909a30a585ffd/pydantic_ai_slim/pydantic_ai/agent/__init__.py#L1165)) | A record of every run and tool call, MCP tools included, that outlives the process (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; the request shows the exact tool name and arguments.
+- Provider-run native tools such as code execution and web fetch don't pass through the gate, so enable them only where that is acceptable.
+
+### Handling data
+
+- Tracing records prompts, tool arguments and results by default; `InstrumentationSettings(include_content=False)` keeps them out of shared collectors.
+- Saved message history is replayed as trusted context, so keep it per user and session and clear it when a run read untrusted content.
+
 ## Critical gaps
 - A hijacked agent can exfiltrate data and run any registered state-changing tool unattended; tool approval is off by default and no egress control is tied to untrusted input. (ASI01, LLM01; C5) — [pydantic_ai_slim/pydantic_ai/tools.py:375](https://github.com/pydantic/pydantic-ai/blob/66951321b89587235f432281eba909a30a585ffd/pydantic_ai_slim/pydantic_ai/tools.py#L375); [pydantic_ai_slim/pydantic_ai/common_tools/web_fetch.py:557-560](https://github.com/pydantic/pydantic-ai/blob/66951321b89587235f432281eba909a30a585ffd/pydantic_ai_slim/pydantic_ai/common_tools/web_fetch.py#L557-L560)
 - The core library's only local execution backend runs commands as host subprocesses that, per its own docs, isolate nothing; the user's whole home directory and network are reachable. (ASI05; C4) — [pydantic_ai_slim/pydantic_ai/workspaces/local.py:103](https://github.com/pydantic/pydantic-ai/blob/66951321b89587235f432281eba909a30a585ffd/pydantic_ai_slim/pydantic_ai/workspaces/local.py#L103); [pydantic_ai_slim/pydantic_ai/capabilities/local_workspace.py:17](https://github.com/pydantic/pydantic-ai/blob/66951321b89587235f432281eba909a30a585ffd/pydantic_ai_slim/pydantic_ai/capabilities/local_workspace.py#L17)

@@ -36,6 +36,121 @@
     "external_communication": "opt_in"
   },
   "headline": "MS-Agent ships shell, Python and notebook execution on the host, and its Python tool runs model code inside the agent process itself, with no sandbox by default. The WebUI and TUI ask before most actions, but any project directory can switch that off through its own .ms_agent/config.yaml, permission_memory.json or hooks.json, with no workspace-trust prompt. The SDK and `ms-agent run` default to auto-approve. Treat opening an untrusted repository as running its code.",
+  "safe_setup": {
+    "intro": "MS-Agent's TUI and WebUI ask before most tool calls, give spawned shells, MCP servers and hooks an environment without API keys, and keep a session log outside the project. Model-written Python runs inside the agent process with no sandbox by default, and a project's own .ms_agent files can change approval and settings, so the safest setup turns on the Docker sandbox, opens only folders you trust and adds containment around the process.",
+    "steps": [
+      {
+        "setup": "Scoped, low-limit keys",
+        "how": "Give the process only the model and tool keys this task needs, each scoped where the provider allows and with a spending limit set at the provider",
+        "gives_you": "Whatever the agent runs reaches only the systems and spend you chose, not every credential in your shell",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Per-call approval",
+        "how": "Keep the default `--permission_mode` of `restricted` in the TUI and WebUI, and set `mode: restricted` under `permission:` in the config for ms-agent run and the SDK",
+        "gives_you": "A person decides on every shell, Python, write and other non-read tool call before it runs",
+        "criterion": "C2",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "ms_agent/cli/tui.py",
+            "lines": "47-49",
+            "contains": "default='restricted',",
+            "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/cli/tui.py#L47-L49"
+          },
+          {
+            "file": "webui/backend/app/schemas/project.py",
+            "lines": "43",
+            "contains": "permission_mode: PermissionMode = \"restricted\"",
+            "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/webui/backend/app/schemas/project.py#L43"
+          },
+          {
+            "file": "ms_agent/permission/config.py",
+            "lines": "203-204",
+            "contains": "_MODE_ALIASES = {'restricted': 'interactive'}",
+            "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/permission/config.py#L203-L204"
+          }
+        ]
+      },
+      {
+        "setup": "A reviewed project folder",
+        "how": "Open only project directories whose `.ms_agent/` folder, `AGENTS.md` and `.env` you wrote or have read",
+        "gives_you": "Approval settings, hooks, MCP servers and instructions come only from you",
+        "criterion": "C6",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Only the tools needed",
+        "how": "List only the tools the task needs in the `include` lists under `file_system` and `code_executor` in the agent config",
+        "gives_you": "The model sees write and code execution tools only when the task calls for them",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "ms_agent/agent/agent.yaml",
+            "lines": "80-101",
+            "contains": "file_system:",
+            "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/agent/agent.yaml#L80-L101"
+          }
+        ]
+      },
+      {
+        "setup": "The Docker sandbox",
+        "how": "Set `implementation: sandbox` under `code_executor`, with `network_enabled: false` in its `sandbox` block",
+        "gives_you": "Shell, Python and notebook code run in a container away from the agent's keys and your home directory, with no network",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "ms_agent/tools/tool_manager.py",
+            "lines": "199-208",
+            "contains": "implementation.lower() == 'sandbox'",
+            "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/tool_manager.py#L199-L208"
+          },
+          {
+            "file": "ms_agent/tools/code/code_executor.py",
+            "lines": "165-166",
+            "contains": "sandbox_cfg.get('network_enabled', True),",
+            "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/tools/code/code_executor.py#L165-L166"
+          }
+        ]
+      },
+      {
+        "setup": "Pre-task snapshots",
+        "how": "`enable_snapshots: true` in the agent config",
+        "gives_you": "A snapshot of the work directory before each task, to roll back to",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "ms_agent/agent/llm_agent.py",
+            "lines": "213-222",
+            "contains": "config, 'enable_snapshots', default=_MISSING_ENABLE_SNAPSHOTS)",
+            "url": "https://github.com/modelscope/ms-agent/blob/a56afcc73f0049ba822af9569fd413a2e90677eb/ms_agent/agent/llm_agent.py#L213-L222"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run MS-Agent in a container or VM with outbound access limited to the model provider and the hosts the task needs",
+        "gives_you": "An outer boundary around hooks, MCP servers and in-process code, and one place to stop everything the agent started",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; the TUI and CLI prompts shorten long arguments, so see a long script or command in full before approving it.",
+      "Prefer allow once over always: an always answer is saved as a rule for that project and covers every later matching call."
+    ],
+    "handling": [
+      "Session logs under ~/.ms_agent/projects hold every message and tool result unredacted; store them like the data the agent read.",
+      "Project memory in .ms_agent/memory is written without a prompt and loaded into later sessions, so read MEMORY.md before relying on it."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

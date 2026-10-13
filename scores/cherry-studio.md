@@ -24,6 +24,30 @@
 
 Cherry Studio ships a carefully engineered approval layer for its agents: a per-call card that shows the exact shell command, a central policy registry for its own tools, path-containment checks, and hard blocks on some destructive and global-install commands. Around that layer, the agent runs shell commands directly on the host with the user's full login environment and no sandbox, and tools run by sub-agents, scheduled tasks and chat-channel turns are allowed without asking. Web fetch, browser control (including running page scripts in a persistent browser profile) and task scheduling are auto-approved, so content the agent reads can drive data out and plant follow-up work. Workspace plugin folders and project settings files are loaded without a trust prompt.
 
+## Safest setup
+
+Cherry Studio shows a per-call approval card with the full shell command, asks before file tools leave the workspace, and blocks global package installs. Around that gate the defaults are thin: agent commands run on your host with your whole shell environment, and browser, fetch, sub-agent and scheduled work run without asking. The safest setup narrows the environment, trims each agent's tools and adds containment around the app.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A minimal launch environment | Start Cherry Studio from an OS account or shell profile that exports only the keys its agents and MCP servers need, each scoped or read-only at the provider | Agent commands and MCP servers inherit only the access you chose, not every credential in your shell (C1) |
+| Shell only where needed | Add `Bash` to an agent's `disabledTools` list for agents whose tasks need no shell ([src/shared/data/api/schemas/agents.ts:125-126](https://github.com/CherryHQ/cherry-studio/blob/50d69b685697a8c3a634bc8b4f19ce3978768423/src/shared/data/api/schemas/agents.ts#L125-L126); [src/shared/ai/claudecode/toolRegistry.ts:52-53](https://github.com/CherryHQ/cherry-studio/blob/50d69b685697a8c3a634bc8b4f19ce3978768423/src/shared/ai/claudecode/toolRegistry.ts#L52-L53)) | Agents that never need a shell have none for injected instructions to use (C3) |
+| Approval for file edits | Set the Cherry Assistant's `permission_mode` to `default` in place of the shipped `acceptEdits` ([src/shared/data/api/schemas/agents.ts:42](https://github.com/CherryHQ/cherry-studio/blob/50d69b685697a8c3a634bc8b4f19ce3978768423/src/shared/data/api/schemas/agents.ts#L42); [src/shared/data/api/schemas/agents.ts:53](https://github.com/CherryHQ/cherry-studio/blob/50d69b685697a8c3a634bc8b4f19ce3978768423/src/shared/data/api/schemas/agents.ts#L53)) | File edits wait on the approval card too, so you see each change before it lands (C2) |
+| Browser control off | Turn off `app.browser.agent_control.enabled` unless a task needs the agent to drive the browser ([src/shared/data/preference/preferenceSchemas.ts:607](https://github.com/CherryHQ/cherry-studio/blob/50d69b685697a8c3a634bc8b4f19ce3978768423/src/shared/data/preference/preferenceSchemas.ts#L607)) | Content the agent reads has no auto-approved browser, or signed-in sites, to act through (C5) |
+| Trusted workspace folders | Point agents only at folders whose .claude plugins and settings files you wrote or reviewed | Hooks, MCP servers and allow rules come only from you, not from a project you opened (C6) |
+| Pinned MCP servers | Add MCP servers with a fixed package version in the launch command, from sources you have reviewed | The server code that runs with your environment can't change between launches (C7) |
+| Its own VM or user account | Run Cherry Studio in a VM or a dedicated OS account with network access limited to the hosts you use | An outer boundary around agent commands and MCP servers, which otherwise run directly on your host (C4) |
+
+### Approving with confidence
+
+- Read each card and approve calls one at a time; the card shows the full shell command.
+- Work handed to a sub-agent, a scheduled task or a chat channel runs tools without a card, so keep tasks you want to review in the main conversation.
+- Pressing stop leaves scheduled tasks running; check the task list after a session that scheduled work.
+
+### Handling data
+
+- Provider keys sit unencrypted in the app's local database, and session transcripts keep tool inputs and results; protect the app data folder like other credentials.
+
 ## Critical gaps
 - Shell commands requested inside a sub-agent, or in scheduled and channel turns, are allowed without approval, so the most powerful action path can skip the gate. (ASI09, ASI02, T10; C2) — [src/main/ai/runtime/claudeCode/settingsBuilder.ts:548-557](https://github.com/CherryHQ/cherry-studio/blob/50d69b685697a8c3a634bc8b4f19ce3978768423/src/main/ai/runtime/claudeCode/settingsBuilder.ts#L548-L557); [src/shared/ai/claudecode/toolRegistry.ts:90-95](https://github.com/CherryHQ/cherry-studio/blob/50d69b685697a8c3a634bc8b4f19ce3978768423/src/shared/ai/claudecode/toolRegistry.ts#L90-L95)
 - Agent-run code executes on the host with no sandbox and the user's full login-shell environment. (ASI05, T11; C4) — [src/main/ai/runtime/claudeCode/environment.ts:179-181](https://github.com/CherryHQ/cherry-studio/blob/50d69b685697a8c3a634bc8b4f19ce3978768423/src/main/ai/runtime/claudeCode/environment.ts#L179-L181)

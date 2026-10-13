@@ -36,6 +36,129 @@
     "external_communication": "yes"
   },
   "headline": "RAGFlow lets anyone who can build an agent give it web, SQL, email, HTTP and MCP tools that run on every model decision with no human approval, while the same sessions read uploaded documents, web pages and messages from visitors of shared agent links. The strongest controls are a pinned-IP SSRF guard on the URL tools, a tenant-scoped tool binding, and code execution that stays off until an operator deploys a sandbox; nothing limits what a prompt-injected agent does with the tools it was given. Credentials are stored in plaintext and agent tool calls leave no durable audit record. Treat every agent that combines document or web input with email, HTTP or MCP write tools as exposed to whoever can get text into its context.",
+  "safe_setup": {
+    "intro": "RAGFlow starts every agent with no tools, checks the addresses its URL tools reach, and runs no model-written code until you deploy its sandbox. Beyond that the defaults are thin: no approval step, credentials stored in plaintext and no lasting record of tool calls, so the safest setup narrows each tool's credentials, keeps outside users on agents that only read, and contains the server's network.",
+    "steps": [
+      {
+        "setup": "Narrow tool credentials",
+        "how": "Give each tool its own scoped credential, such as a read-only database account limited to the needed tables and an SMTP account for one sender",
+        "gives_you": "Each service refuses anything outside its grant, whatever the agent asks for",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Accounts you create",
+        "how": "`ENABLE_REGISTER=0` in docker/.env",
+        "gives_you": "Only people you add can build agents and paste credentials into them",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "docker/.env",
+            "lines": "373",
+            "contains": "ENABLE_REGISTER=1",
+            "url": "https://github.com/infiniflow/ragflow/blob/2400ca8eb51432b1d304266d0de9ca232d9b53fa/docker/.env#L373"
+          },
+          {
+            "file": "internal/common/environments.go",
+            "lines": "227",
+            "contains": "EnvEnableRegister                    = \"ENABLE_REGISTER\"",
+            "url": "https://github.com/infiniflow/ragflow/blob/2400ca8eb51432b1d304266d0de9ca232d9b53fa/internal/common/environments.go#L227"
+          }
+        ]
+      },
+      {
+        "setup": "Tools per agent",
+        "how": "Give each agent node only the tools its task needs, starting from none",
+        "gives_you": "Each agent can call only the tools you chose for it",
+        "criterion": "C3",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "internal/agent/tool/registry.go",
+            "lines": "104-106",
+            "contains": "unsupported tool",
+            "url": "https://github.com/infiniflow/ragflow/blob/2400ca8eb51432b1d304266d0de9ca232d9b53fa/internal/agent/tool/registry.go#L104-L106"
+          }
+        ]
+      },
+      {
+        "setup": "Sandboxed code execution",
+        "how": "Keep `SANDBOX_PROVIDER_TYPE` at its default `self_managed` and turn code on only through the `sandbox` compose profile",
+        "gives_you": "Model-written code runs in a separate container with no network, never on the server itself",
+        "criterion": "C4",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "internal/agent/sandbox/manager.go",
+            "lines": "278-285",
+            "contains": "resolveProviderType reads SANDBOX_PROVIDER_TYPE",
+            "url": "https://github.com/infiniflow/ragflow/blob/2400ca8eb51432b1d304266d0de9ca232d9b53fa/internal/agent/sandbox/manager.go#L278-L285"
+          },
+          {
+            "file": "internal/agent/sandbox/provider.go",
+            "lines": "47",
+            "contains": "ProviderSelfManaged ProviderType = \"self_managed\"",
+            "url": "https://github.com/infiniflow/ragflow/blob/2400ca8eb51432b1d304266d0de9ca232d9b53fa/internal/agent/sandbox/provider.go#L47"
+          },
+          {
+            "file": "docker/.env",
+            "lines": "383",
+            "contains": "COMPOSE_PROFILES=${COMPOSE_PROFILES},sandbox",
+            "url": "https://github.com/infiniflow/ragflow/blob/2400ca8eb51432b1d304266d0de9ca232d9b53fa/docker/.env#L383"
+          }
+        ]
+      },
+      {
+        "setup": "A round limit",
+        "how": "Keep `max_rounds` at its default of 5, or lower it for short tasks",
+        "gives_you": "Each agent loop stops after a fixed number of tool rounds",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "internal/agent/component/agent.go",
+            "lines": "860-862",
+            "contains": "max_rounds = 5",
+            "url": "https://github.com/infiniflow/ragflow/blob/2400ca8eb51432b1d304266d0de9ca232d9b53fa/internal/agent/component/agent.go#L860-L862"
+          }
+        ]
+      },
+      {
+        "setup": "Read-only shared agents",
+        "how": "Offer shared links and chat-channel connectors only for agents whose tools retrieve, not send",
+        "gives_you": "Outside visitors reach your knowledge, never your email, HTTP or MCP write tools",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Reading apart from sending",
+        "how": "Keep agents that read documents, web pages or MCP results separate from agents that hold email, HTTP or MCP write tools",
+        "gives_you": "Text planted in what an agent reads cannot reach a tool that sends data out",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A limited outbound network",
+        "how": "Allow the RAGFlow server outbound access only to the model provider and the hosts your tools need",
+        "gives_you": "A narrow path for data to leave, whatever an agent is told to do",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Agents call their tools without a prompt; place a human-input step in the workflow wherever a person should review content before a later step runs."
+    ],
+    "handling": [
+      "Provider and tool credentials are kept unencrypted in the database; store database backups like the credentials themselves.",
+      "`LLM_DEBUG` logs full model requests and responses unredacted; keep it off outside debugging.",
+      "Tool calls are not kept after a run; collect server logs and conversation history where you need a record."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

@@ -36,6 +36,167 @@
     "external_communication": "opt_in"
   },
   "headline": "ADK starts every agent with no tools and no code execution, and it ships genuinely good building blocks: an exact-call confirmation flow, an SSRF-hardened web loader, a read-only-by-default BigQuery tool and a gVisor code executor. Almost none of them are on by default, though. Tools run without approval unless each one opts in, the local executors give model-written code the full environment with its keys, and nothing limits what an agent can do after reading a malicious page or MCP result. Developers who enable code execution or shell tools have to choose isolation and approval themselves.",
+  "safe_setup": {
+    "intro": "ADK starts every agent with no tools and no code execution, and it ships an exact-call approval flow, a read-only BigQuery default and a gVisor code executor. Almost none of these are on by default, so the safest setup narrows the identity, turns on approval and the sandbox, and builds containment around the process.",
+    "steps": [
+      {
+        "setup": "A narrowly scoped identity",
+        "how": "Run the agent under a service account or key that holds only the roles its tools need, read-only where the task allows",
+        "gives_you": "The provider itself refuses anything outside that grant, including calls from tools and model-written code",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Per-user OAuth, short scopes",
+        "how": "Set `client_id`, `client_secret` and a minimal `scopes` list on each Google toolset's credentials config",
+        "gives_you": "Google API tools act as the consenting user with only the scopes you listed",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/google/adk/tools/_google_credentials.py",
+            "lines": "85-89",
+            "contains": "scopes: Optional[List[str]] = None",
+            "url": "https://github.com/google/adk-python/blob/e94c2e726a269e0f04e2e4b202f5c131c80c20de/src/google/adk/tools/_google_credentials.py#L85-L89"
+          }
+        ]
+      },
+      {
+        "setup": "Per-call approval",
+        "how": "`require_confirmation=True` on every function tool and `McpToolset` that writes or sends data",
+        "gives_you": "A person approves each consequential call, and the call that runs is the one approved",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/google/adk/tools/function_tool.py",
+            "lines": "111",
+            "contains": "require_confirmation: Union[bool, Callable[..., bool]] = False",
+            "url": "https://github.com/google/adk-python/blob/e94c2e726a269e0f04e2e4b202f5c131c80c20de/src/google/adk/tools/function_tool.py#L111"
+          },
+          {
+            "file": "src/google/adk/tools/mcp_tool/mcp_toolset.py",
+            "lines": "161",
+            "contains": "require_confirmation: bool | Callable[..., bool] = False",
+            "url": "https://github.com/google/adk-python/blob/e94c2e726a269e0f04e2e4b202f5c131c80c20de/src/google/adk/tools/mcp_tool/mcp_toolset.py#L161"
+          }
+        ]
+      },
+      {
+        "setup": "Only the tools needed",
+        "how": "Start from the empty default `tools` list, add only what the task uses, and keep BigQuery `write_mode` at `WriteMode.BLOCKED`",
+        "gives_you": "Each agent can reach only the capabilities you chose, and BigQuery stays read-only",
+        "criterion": "C3",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "src/google/adk/agents/llm_agent.py",
+            "lines": "399",
+            "contains": "tools: list[ToolUnion] = Field(default_factory=list)",
+            "url": "https://github.com/google/adk-python/blob/e94c2e726a269e0f04e2e4b202f5c131c80c20de/src/google/adk/agents/llm_agent.py#L399"
+          },
+          {
+            "file": "src/google/adk/integrations/bigquery/config.py",
+            "lines": "60",
+            "contains": "write_mode: WriteMode = WriteMode.BLOCKED",
+            "url": "https://github.com/google/adk-python/blob/e94c2e726a269e0f04e2e4b202f5c131c80c20de/src/google/adk/integrations/bigquery/config.py#L60"
+          }
+        ]
+      },
+      {
+        "setup": "A gVisor code sandbox",
+        "how": "Set `code_executor` to a `GkeCodeExecutor`, keeping its default `executor_type` of `job`",
+        "gives_you": "Model-written code runs in a fresh, non-root gVisor pod away from your keys and files",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/google/adk/agents/llm_agent.py",
+            "lines": "484",
+            "contains": "code_executor: Optional[BaseCodeExecutor] = None",
+            "url": "https://github.com/google/adk-python/blob/e94c2e726a269e0f04e2e4b202f5c131c80c20de/src/google/adk/agents/llm_agent.py#L484"
+          },
+          {
+            "file": "src/google/adk/code_executors/gke_code_executor.py",
+            "lines": "53",
+            "contains": "class GkeCodeExecutor(BaseCodeExecutor):",
+            "url": "https://github.com/google/adk-python/blob/e94c2e726a269e0f04e2e4b202f5c131c80c20de/src/google/adk/code_executors/gke_code_executor.py#L53"
+          },
+          {
+            "file": "src/google/adk/code_executors/gke_code_executor.py",
+            "lines": "106",
+            "contains": "executor_type: Literal[\"job\", \"sandbox\"] = \"job\"",
+            "url": "https://github.com/google/adk-python/blob/e94c2e726a269e0f04e2e4b202f5c131c80c20de/src/google/adk/code_executors/gke_code_executor.py#L106"
+          }
+        ]
+      },
+      {
+        "setup": "Call and loop budgets",
+        "how": "Keep `max_llm_calls` at 500 or lower (or `ADK_MAX_LLM_CALLS`), and set `max_iterations` on every loop agent",
+        "gives_you": "Every run and every loop ends after a fixed number of steps",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "src/google/adk/agents/run_config.py",
+            "lines": "264",
+            "contains": "max_llm_calls: int = Field(",
+            "url": "https://github.com/google/adk-python/blob/e94c2e726a269e0f04e2e4b202f5c131c80c20de/src/google/adk/agents/run_config.py#L264"
+          },
+          {
+            "file": "src/google/adk/agents/run_config.py",
+            "lines": "43",
+            "contains": "ADK_MAX_LLM_CALLS",
+            "url": "https://github.com/google/adk-python/blob/e94c2e726a269e0f04e2e4b202f5c131c80c20de/src/google/adk/agents/run_config.py#L43"
+          },
+          {
+            "file": "src/google/adk/agents/loop_agent.py",
+            "lines": "84",
+            "contains": "max_iterations: Optional[int] = None",
+            "url": "https://github.com/google/adk-python/blob/e94c2e726a269e0f04e2e4b202f5c131c80c20de/src/google/adk/agents/loop_agent.py#L84"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the agent process in a container or VM whose network reaches only the hosts the task needs",
+        "gives_you": "An outer boundary around shell tools and MCP servers on the host, and a narrow path for data to leave",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A durable session record",
+        "how": "Use `DatabaseSessionService` with a `db_url` pointing outside the agent folder",
+        "gives_you": "Top-level tool calls, results and approvals outlive the process, stored away from the workspace",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/google/adk/sessions/database_session_service.py",
+            "lines": "310",
+            "contains": "class DatabaseSessionService(BaseSessionService):",
+            "url": "https://github.com/google/adk-python/blob/e94c2e726a269e0f04e2e4b202f5c131c80c20de/src/google/adk/sessions/database_session_service.py#L310"
+          },
+          {
+            "file": "src/google/adk/sessions/database_session_service.py",
+            "lines": "340",
+            "contains": "db_url: str | None = None",
+            "url": "https://github.com/google/adk-python/blob/e94c2e726a269e0f04e2e4b202f5c131c80c20de/src/google/adk/sessions/database_session_service.py#L340"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; the request shows the exact call, and only that call runs.",
+      "Code executors and the environment shell tool run without a prompt, so keep code on the sandbox and shell tools inside the container."
+    ],
+    "handling": [
+      "Spans capture message content by default; `ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS=false` keeps it out.",
+      "Session state can hold cached Google OAuth credentials; store the session database like other credentials."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

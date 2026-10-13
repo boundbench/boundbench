@@ -24,6 +24,30 @@
 
 MaxKB runs all agent and tool code under a dedicated low-privilege account with a cleared environment and a process and network blocking library, which is more care than most agent platforms take. But nothing an agent does needs a person's approval, every published agent gets an unauthenticated public chat link by default, and any agent with a tool also gets a shell with open internet access. The dominant risk is a hijacked public agent leaking knowledge-base data or acting through its tools unattended.
 
+## Safest setup
+
+MaxKB runs agent and tool code under a separate low-privilege account with a cleared environment, keeps long-term memory off, and caps each run's steps and each public client's daily requests. There is no approval step, chat links are public by default, and any agent with a tool also gets a shell with internet access, so the safest setup narrows credentials and access and puts containment around the platform.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit tool keys | Give each tool, MCP server and nested agent its own key, scoped to the task and read-only where possible, with a spending limit set at the provider | Whatever an agent is steered to do, the providers refuse anything outside those grants (C1) |
+| Your own admin password | Replace the documented default administrator password at first login | Only you can sign in to configure agents, tools and credentials (C1) |
+| Authenticated chat links | In each agent's public access settings, turn on Authentication, or switch public access off for agents meant for your team only ([apps/application/models/application_access_token.py:22](https://github.com/1Panel-dev/MaxKB/blob/2c7c8c9f2097f48c2bf3fee6bbb2a6f422bbbe43/apps/application/models/application_access_token.py#L22); [apps/application/models/application_access_token.py:30](https://github.com/1Panel-dev/MaxKB/blob/2c7c8c9f2097f48c2bf3fee6bbb2a6f422bbbe43/apps/application/models/application_access_token.py#L30)) | Only people you chose can drive the agent and the credentials behind its tools (C1) |
+| Tools only where needed | Attach tools, MCP servers, skills and nested agents only to agents whose task needs them, and answer from the knowledge base alone elsewhere | Agents without tools get no shell, file or sub-agent tools either (C3) |
+| The code sandbox | Keep the image default `MAXKB_SANDBOX=1` ([installer/Dockerfile-base:48](https://github.com/1Panel-dev/MaxKB/blob/2c7c8c9f2097f48c2bf3fee6bbb2a6f422bbbe43/installer/Dockerfile-base#L48); [apps/common/utils/tool_code.py:26](https://github.com/1Panel-dev/MaxKB/blob/2c7c8c9f2097f48c2bf3fee6bbb2a6f422bbbe43/apps/common/utils/tool_code.py#L26)) | Shell commands, tool code and MCP-served code run as the low-privilege sandbox account with a cleared environment (C4) |
+| Long-term memory off | Keep long-term memory switched off for agents that public or untrusted users chat with ([apps/application/models/application.py:109](https://github.com/1Panel-dev/MaxKB/blob/2c7c8c9f2097f48c2bf3fee6bbb2a6f422bbbe43/apps/application/models/application.py#L109)) | Nothing a chat user says is carried into that agent's system prompt in later sessions (C6) |
+| Tighter run limits | Lower `LANGCHAIN_GRAPH_RECURSION_LIMIT` and `SANDBOX_PYTHON_PROCESS_LIMIT_TIMEOUT_SECONDS`, set as environment variables with the `MAXKB_` prefix ([apps/application/flow/tools.py:473](https://github.com/1Panel-dev/MaxKB/blob/2c7c8c9f2097f48c2bf3fee6bbb2a6f422bbbe43/apps/application/flow/tools.py#L473); [apps/common/utils/tool_code.py:34](https://github.com/1Panel-dev/MaxKB/blob/2c7c8c9f2097f48c2bf3fee6bbb2a6f422bbbe43/apps/common/utils/tool_code.py#L34); [apps/maxkb/conf.py:221](https://github.com/1Panel-dev/MaxKB/blob/2c7c8c9f2097f48c2bf3fee6bbb2a6f422bbbe43/apps/maxkb/conf.py#L221)) | Each agent run takes fewer steps and tool code ends sooner than the default 100 steps and one hour (C10) |
+| Its own VM, limited egress | Run the MaxKB container on a VM or host of its own, with outbound network access limited to the model provider and the hosts its tools use | An outer boundary around the in-container sandbox and a narrow path for data to leave (C4) |
+
+### Approving with confidence
+
+- No tool call waits for a person, so the review happens while building: read a store tool's code before enabling it, and add MCP servers only from hosts you run or trust.
+
+### Handling data
+
+- Knowledge bases are retrieved for every user of an agent; fill those used by tool-holding agents from sources you control.
+- The image logs at `MAXKB_LOG_LEVEL=INFO`; keep that level, since debug logs are not redacted.
+
 ## Critical gaps
 - A hijacked agent can leak knowledge-base data and take irreversible actions through its tools with no person involved, and public-link users reach it without logging in. (ASI01, LLM01; C5). Evidence: [apps/application/models/application_access_token.py:22](https://github.com/1Panel-dev/MaxKB/blob/2c7c8c9f2097f48c2bf3fee6bbb2a6f422bbbe43/apps/application/models/application_access_token.py#L22); [apps/application/flow/tools.py:470](https://github.com/1Panel-dev/MaxKB/blob/2c7c8c9f2097f48c2bf3fee6bbb2a6f422bbbe43/apps/application/flow/tools.py#L470)
 - Secret material is not kept out of model-bound requests in the default agent flow. (ASI03, LLM02; C8). Evidence: [apps/application/flow/step_node/ai_chat_step_node/impl/base_chat_node.py:368](https://github.com/1Panel-dev/MaxKB/blob/2c7c8c9f2097f48c2bf3fee6bbb2a6f422bbbe43/apps/application/flow/step_node/ai_chat_step_node/impl/base_chat_node.py#L368)

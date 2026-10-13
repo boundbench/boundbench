@@ -25,6 +25,29 @@ Controls where a risk surface exists: 1.80 / 8.0 (22%); 2 criteria scored SA (su
 
 As shipped for IDE use, Toolbox hands the connected AI an execute_sql tool that runs any SQL against your database with the full privileges of the login you configure, with no read-only mode, timeout, row cap, or authorization check for the postgres source. Its safety depends almost entirely on the database role you give it and on your MCP host's approval prompts; the tool is correctly marked destructive so hosts can gate it. Tool calls are not recorded unless debug logging or telemetry export is enabled. Stronger controls (session-locked read-only mode, BigQuery write blocking, per-tool auth) exist for some sources but are opt-in.
 
+## Safest setup
+
+Toolbox marks `execute_sql` as destructive so your MCP host can ask before it runs, and keeps SQL and parameters out of its default logs. For the postgres source the server itself has no read-only mode, query timeout or call record, so the safest setup puts the limits in the database login and around the process.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A read-only database login | Put a dedicated Postgres login in `POSTGRES_USER` and `POSTGRES_PASSWORD` that holds only SELECT on the schemas the task needs ([internal/prebuiltconfigs/tools/postgres.yaml:21-22](https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L21-L22)) | Postgres itself refuses writes and DDL, whatever SQL the model sends (C1) |
+| Only the toolset needed | `--prebuilt=postgres/<toolset>`, choosing `health`, `view-config` or `replication` when the task only inspects the database ([cmd/internal/flags.go:62](https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/cmd/internal/flags.go#L62); [internal/prebuiltconfigs/tools/postgres.yaml:283](https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L283); [internal/prebuiltconfigs/tools/postgres.yaml:295](https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L295); [internal/prebuiltconfigs/tools/postgres.yaml:304](https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L304)) | The model sees only fixed, parameterised listing tools, with no free-form SQL tool (C3) |
+| Per-call approval | Keep the prebuilt definitions, which mark `execute_sql` destructive, in a host set to ask before each destructive call ([internal/prebuiltconfigs/tools/postgres.yaml:26](https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L26); [internal/tools/postgres/postgresexecutesql/postgresexecutesql.go:74](https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L74)) | A person reads each free-form SQL statement before it reaches the database (C2) |
+| An explicit tool config | Always start the server with `--prebuilt` or `--config <path>` ([cmd/internal/flags.go:62](https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/cmd/internal/flags.go#L62); [cmd/internal/flags.go:47](https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/cmd/internal/flags.go#L47)) | Tool definitions come only from you, never from a tools.yaml in the directory it starts in (C6) |
+| A statement timeout | Add a Postgres statement timeout to the connection through `POSTGRES_QUERY_PARAMS` ([internal/prebuiltconfigs/tools/postgres.yaml:23](https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L23)) | Every query ends after a time you choose (C10) |
+| A copy, not production | Point the server at a replica or staging copy of the database whenever the task allows | A wrongly approved statement can only change data you can rebuild (C2) |
+| A tool-call trace | `--telemetry-otlp <endpoint>` or `--telemetry-gcp` to export spans to a collector the agent can't reach ([cmd/internal/flags.go:35-37](https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/cmd/internal/flags.go#L35-L37)) | A record of which tool ran and when, kept outside the session (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve `execute_sql` calls one at a time; nothing in the server previews or undoes a statement.
+
+### Handling data
+
+- Keep the default `--log-level` of INFO where logs are shared; DEBUG writes full SQL and parameters unredacted.
+- Query results go to the model as they are, so treat the conversation like the data the login can read.
+
 ## Critical gaps
 - In the default postgres prebuilt, a hijacked session can both read sensitive data and run irreversible SQL (DROP/DELETE) through execute_sql with no server-side gate. (ASI01, ASI02, LLM01; C5) — [internal/tools/postgres/postgresexecutesql/postgresexecutesql.go:103](https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/tools/postgres/postgresexecutesql/postgresexecutesql.go#L103); [internal/prebuiltconfigs/tools/postgres.yaml:26-29](https://github.com/googleapis/mcp-toolbox/blob/a24e5e68567fa014a42fc6cc711faa82b964d4c0/internal/prebuiltconfigs/tools/postgres.yaml#L26-L29)
 

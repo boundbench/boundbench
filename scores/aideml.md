@@ -25,6 +25,29 @@ Controls where a risk surface exists: 1.88 / 9.0 (21%); 1 criterion scored SA (s
 
 As shipped, AIDE runs every Python script the model writes directly on your machine, as you, with your environment (including your LLM API keys) and open network access, and no human review. Dataset files are pasted into the model's system prompt, so a poisoned dataset can steer code that steals credentials or deletes files. Its only safeguards are a step count and a per-script timeout; the shipped Dockerfile is the main mitigation and is opt-in.
 
+## Safest setup
+
+AIDE ML has few protections of its own: each script the model writes runs right away on your machine, as you, with your environment and open network, and the only limits are a step count and a per-script timeout. The safest setup runs it in the shipped container with a dedicated low-limit key and builds the containment around it yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, low-limit key | Give the run its own LLM API key with a spending limit set at the provider, and no other credentials in its environment | Whatever a script reads from its environment is one key you can cap and revoke, not your whole account (C8) |
+| The shipped container | Build the repository's Dockerfile and run `aide` inside it, as the README's Docker section shows ([Dockerfile:52-55](https://github.com/wecoai/aideml/blob/60b3978ddf65b71f86eb7c64506965048a1398cf/Dockerfile#L52-L55)) | The agent and every script it runs work as a non-root user in a container, away from your home directory and host credentials (C4) |
+| A hardened, narrow container | Add capability drops, no-new-privileges and a read-only root to the run, mount only the dataset, workspace and log directories, and limit outbound network to your model provider | A script that goes wrong can reach only the files and hosts the task needs (C5) |
+| Datasets you trust | Point `data_dir` at data from sources you know, since files from it are previewed into the model's prompt ([aide/utils/config.yaml:2](https://github.com/wecoai/aideml/blob/60b3978ddf65b71f86eb7c64506965048a1398cf/aide/utils/config.yaml#L2)) | The instructions that shape each script come from you and your data, not from a stranger's file (C5) |
+| A fresh environment per run | Start each run from a freshly built image or virtual environment rather than a long-lived install | Nothing a script writes into the Python environment or package config carries into the next run (C6) |
+| Tight run limits | Keep `steps` under `agent` at 20 or lower and set `timeout` under `exec` to what one script needs ([aide/utils/config.yaml:34-36](https://github.com/wecoai/aideml/blob/60b3978ddf65b71f86eb7c64506965048a1398cf/aide/utils/config.yaml#L34-L36); [aide/utils/config.yaml:22-23](https://github.com/wecoai/aideml/blob/60b3978ddf65b71f86eb7c64506965048a1398cf/aide/utils/config.yaml#L22-L23)) | Each run ends after a fixed number of scripts, and each script stops when its time is up (C10) |
+| A run record kept safe | Keep the default per-run journal under `log_dir` and copy it after each run to storage the agent can't write ([aide/utils/config.yaml:10](https://github.com/wecoai/aideml/blob/60b3978ddf65b71f86eb7c64506965048a1398cf/aide/utils/config.yaml#L10)) | A record of every script and its output that later runs can't alter (C9) |
+
+### Approving with confidence
+
+- Each script runs as soon as it is written, with no review step; the container and key limits above form the boundary around every one.
+
+### Handling data
+
+- The run journal stores every script and its full output unredacted; store it like the data and keys the run could reach.
+- Keys pasted into the web UI sidebar reach executed scripts too; a dedicated low-limit key keeps that exposure small.
+
 ## Critical gaps
 - Arbitrary model-written Python runs with no approval gate in the default configuration (C2-POWERBYPASS). (ASI02, ASI09, T2; C2) — [aide/agent.py:391-394](https://github.com/wecoai/aideml/blob/60b3978ddf65b71f86eb7c64506965048a1398cf/aide/agent.py#L391-L394)
 - Generated code runs via exec() in a same-user child process with full builtins, inherited environment and network: no isolation. (ASI05, T11, LLM05; C4) — [aide/interpreter.py:143-156](https://github.com/wecoai/aideml/blob/60b3978ddf65b71f86eb7c64506965048a1398cf/aide/interpreter.py#L143-L156); [aide/interpreter.py:185-189](https://github.com/wecoai/aideml/blob/60b3978ddf65b71f86eb7c64506965048a1398cf/aide/interpreter.py#L185-L189)

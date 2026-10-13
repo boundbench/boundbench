@@ -36,6 +36,155 @@
     "external_communication": "yes"
   },
   "headline": "Sim has strong engineering below the agent layer: a V8-isolate code sandbox with a scrubbed environment, DNS-pinned SSRF protection on every tool request, credential authorization in code, and secret redaction before logs and the model. The agent layer has no human approval for tool calls, nothing limits what an agent does after reading untrusted content, and deployed chats are public by default while running with the owner's credentials. Model-written code receives every workspace secret along with open internet egress. As shipped by compose, server telemetry also exports logs, including tool error payloads, to the vendor.",
+  "safe_setup": {
+    "intro": "Sim already runs model-written JavaScript in a separate V8 isolate, checks every tool request against private and metadata addresses, and redacts secrets from logs and model input. The agent layer itself has no approval step and deployed chats start out public, so the safest setup narrows credentials, locks down chats and secrets, and turns on the limits Sim offers as settings.",
+    "steps": [
+      {
+        "setup": "Narrow connected accounts",
+        "how": "Connect only the integrations each workflow needs, using dedicated accounts that hold just the data and rights that workflow uses",
+        "gives_you": "The provider itself limits what a run can read or change, whoever started it",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Chat access control",
+        "how": "Set each deployed chat's `authType` to `sso`, `email` or `password` in place of `public`",
+        "gives_you": "Only people you chose can start runs that use the owner's credentials",
+        "criterion": "C5",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "apps/sim/lib/api/contracts/chats.ts",
+            "lines": "6",
+            "contains": "z.enum(['public', 'password', 'email', 'sso'])",
+            "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/api/contracts/chats.ts#L6"
+          }
+        ]
+      },
+      {
+        "setup": "Selected secrets only",
+        "how": "Set `secretScope` to `selected` and list just the needed names in `mountedSecrets` on each function block an agent can call",
+        "gives_you": "Model-written code sees only the secrets its task needs",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "apps/sim/blocks/blocks/function.ts",
+            "lines": "124",
+            "contains": "id: 'secretScope'",
+            "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/blocks/blocks/function.ts#L124"
+          },
+          {
+            "file": "apps/sim/blocks/blocks/function.ts",
+            "lines": "132",
+            "contains": "{ label: 'Selected secrets', id: 'selected' }",
+            "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/blocks/blocks/function.ts#L132"
+          },
+          {
+            "file": "apps/sim/blocks/blocks/function.ts",
+            "lines": "139",
+            "contains": "id: 'mountedSecrets'",
+            "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/blocks/blocks/function.ts#L139"
+          }
+        ]
+      },
+      {
+        "setup": "A Human review step",
+        "how": "Place a Human block before workflow steps that send, post or change records, and keep those actions as their own workflow blocks",
+        "gives_you": "A signed-in workspace member reviews the run before those steps go ahead",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "apps/sim/blocks/blocks/human_in_the_loop.ts",
+            "lines": "6",
+            "contains": "name: 'Human'",
+            "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/blocks/blocks/human_in_the_loop.ts#L6"
+          },
+          {
+            "file": "apps/sim/blocks/blocks/human_in_the_loop.ts",
+            "lines": "121",
+            "contains": "type: 'human_in_the_loop_v2'",
+            "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/blocks/blocks/human_in_the_loop.ts#L121"
+          }
+        ]
+      },
+      {
+        "setup": "Approved MCP domains",
+        "how": "Set `ALLOWED_MCP_DOMAINS` to the domains of the MCP servers you trust",
+        "gives_you": "Workspace members can add MCP servers only from those domains",
+        "criterion": "C7",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "apps/sim/lib/core/config/env.ts",
+            "lines": "290",
+            "contains": "ALLOWED_MCP_DOMAINS",
+            "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/core/config/env.ts#L290"
+          }
+        ]
+      },
+      {
+        "setup": "Run time limits",
+        "how": "Set `EXECUTION_TIMEOUT_FREE` and `EXECUTION_TIMEOUT_ASYNC_FREE` in the environment",
+        "gives_you": "Every self-hosted run ends after a fixed time",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "apps/sim/lib/core/config/env.ts",
+            "lines": "424",
+            "contains": "EXECUTION_TIMEOUT_FREE",
+            "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/core/config/env.ts#L424"
+          },
+          {
+            "file": "apps/sim/lib/core/config/env.ts",
+            "lines": "428",
+            "contains": "EXECUTION_TIMEOUT_ASYNC_FREE",
+            "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/core/config/env.ts#L428"
+          }
+        ]
+      },
+      {
+        "setup": "Server telemetry off",
+        "how": "Set `NEXT_TELEMETRY_DISABLED=1` in the compose environment, as the Helm chart does",
+        "gives_you": "Logs and traces, tool error payloads included, stay on your own servers",
+        "criterion": "C8",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "apps/sim/lib/core/config/env.ts",
+            "lines": "778",
+            "contains": "NEXT_TELEMETRY_DISABLED",
+            "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/apps/sim/lib/core/config/env.ts#L778"
+          },
+          {
+            "file": "helm/sim/values.yaml",
+            "lines": "352",
+            "contains": "NEXT_TELEMETRY_DISABLED: \"1\"",
+            "url": "https://github.com/simstudioai/sim/blob/165e117acd19207a89a30655836f257c70b5b4e9/helm/sim/values.yaml#L352"
+          }
+        ]
+      },
+      {
+        "setup": "Limited outbound network",
+        "how": "Run the Sim app container with outbound access limited to the model providers and services your workflows use",
+        "gives_you": "A narrow path for data to leave, around HTTP tools and model-written code alike",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "A Human block shows only the fields its author chose, so include the exact recipients, URLs or records the next step will act on.",
+      "Tool calls inside an Agent block run without a pause, so attach only the tools that step needs."
+    ],
+    "handling": [
+      "Run logs keep each tool call's arguments and results; give workspace access to people who may see that data.",
+      "Connected OAuth tokens are stored in the database, so protect the database and its backups like the accounts they reach."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

@@ -36,6 +36,129 @@
     "external_communication": "yes"
   },
   "headline": "Out of the box, OpenCode's default agent runs shell commands, edits files and fetches any URL without asking, on the host with no sandbox and with the full environment, so a prompt injection can both leak secrets and take irreversible actions unattended. Worse, opening it in a cloned repository silently loads that repo's opencode.json and .opencode directory, which can import and run custom tools and plugins in-process and launch MCP servers, with no trust prompt. A capable permission engine exists, but you have to configure it to ask.",
+  "safe_setup": {
+    "intro": "OpenCode ships a capable permission engine and git-based snapshots of file edits, but out of the box its default agent runs shell commands, edits and web fetches without asking, on the host with your full environment, and it loads a repository's own config and plugins without a trust prompt. The safest setup turns on the permission prompts and the project-config switch OpenCode already has, and puts the identity and sandbox boundaries around it yourself.",
+    "steps": [
+      {
+        "setup": "A minimal shell environment",
+        "how": "Launch OpenCode from a shell or account that holds only the model key and the credentials the task needs, with no cloud CLI sessions or SSH agent",
+        "gives_you": "Shell commands and MCP servers inherit only what you chose, not every login on your machine",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Ask before every tool",
+        "how": "Set `\"permission\": \"ask\"` in your global config file",
+        "gives_you": "A person sees each shell command, file diff, web fetch and MCP call before it runs",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/core/src/v1/config/config.ts",
+            "lines": "128",
+            "contains": "permission: Schema.optional(ConfigPermissionV1.Info)",
+            "url": "https://github.com/anomalyco/opencode/blob/907b3bc518fa48e90e8ec24dd327d13eee71c36c/packages/core/src/v1/config/config.ts#L128"
+          },
+          {
+            "file": "packages/core/src/v1/config/permission.ts",
+            "lines": "5",
+            "contains": "Schema.Literals([\"ask\", \"allow\", \"deny\"])",
+            "url": "https://github.com/anomalyco/opencode/blob/907b3bc518fa48e90e8ec24dd327d13eee71c36c/packages/core/src/v1/config/permission.ts#L5"
+          },
+          {
+            "file": "packages/core/src/v1/config/permission.ts",
+            "lines": "41",
+            "contains": "typeof input === \"string\" ? { \"*\": input } : input",
+            "url": "https://github.com/anomalyco/opencode/blob/907b3bc518fa48e90e8ec24dd327d13eee71c36c/packages/core/src/v1/config/permission.ts#L41"
+          }
+        ]
+      },
+      {
+        "setup": "Your config only",
+        "how": "Set `OPENCODE_DISABLE_PROJECT_CONFIG=1` in the environment that starts OpenCode",
+        "gives_you": "A repository's opencode.json, .opencode tools and plugins, and instruction files stay unloaded, so only your own settings apply",
+        "criterion": "C6",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/core/src/flag/flag.ts",
+            "lines": "54-55",
+            "contains": "truthy(\"OPENCODE_DISABLE_PROJECT_CONFIG\")",
+            "url": "https://github.com/anomalyco/opencode/blob/907b3bc518fa48e90e8ec24dd327d13eee71c36c/packages/core/src/flag/flag.ts#L54-L55"
+          }
+        ]
+      },
+      {
+        "setup": "Sharing switched off",
+        "how": "Set `OPENCODE_DISABLE_SHARE=1` in the environment",
+        "gives_you": "Session transcripts stay on your machine whatever any config file says",
+        "criterion": "C8",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/opencode/src/share/share-next.ts",
+            "lines": "23",
+            "contains": "process.env[\"OPENCODE_DISABLE_SHARE\"]",
+            "url": "https://github.com/anomalyco/opencode/blob/907b3bc518fa48e90e8ec24dd327d13eee71c36c/packages/opencode/src/share/share-next.ts#L23"
+          }
+        ]
+      },
+      {
+        "setup": "A step cap",
+        "how": "Set `steps` on the `build` agent under `agent` in your global config",
+        "gives_you": "The main agent loop ends after a fixed number of iterations",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/core/src/v1/config/agent.ts",
+            "lines": "34",
+            "contains": "steps: Schema.optional(PositiveInt)",
+            "url": "https://github.com/anomalyco/opencode/blob/907b3bc518fa48e90e8ec24dd327d13eee71c36c/packages/core/src/v1/config/agent.ts#L34"
+          },
+          {
+            "file": "packages/core/src/v1/config/config.ts",
+            "lines": "96-100",
+            "contains": "build: Schema.optional(ConfigAgentV1.Info)",
+            "url": "https://github.com/anomalyco/opencode/blob/907b3bc518fa48e90e8ec24dd327d13eee71c36c/packages/core/src/v1/config/config.ts#L96-L100"
+          }
+        ]
+      },
+      {
+        "setup": "File snapshots",
+        "how": "Keep the default `snapshot` setting on",
+        "gives_you": "File edits the agent makes can be reverted from snapshots stored outside the project",
+        "criterion": "C2",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "packages/core/src/v1/config/config.ts",
+            "lines": "52-54",
+            "contains": "snapshot: Schema.optional(Schema.Boolean)",
+            "url": "https://github.com/anomalyco/opencode/blob/907b3bc518fa48e90e8ec24dd327d13eee71c36c/packages/core/src/v1/config/config.ts#L52-L54"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run OpenCode in a container or VM that mounts only the project and reaches only the model provider and the hosts the task needs",
+        "gives_you": "An outer boundary around shell commands, MCP servers and plugins, and a narrow path for data to leave",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; an 'always' answer for a shell command covers every later command with the same prefix.",
+      "MCP tool prompts carry less detail than shell and edit prompts, so approve MCP calls only for servers you trust.",
+      "Plugins and custom tools you add yourself show a prompt only when their own code asks for one, so read them before installing."
+    ],
+    "handling": [
+      "Every tool call's input is stored in the session database in your data directory; store it like the code and data the agent read.",
+      "Provider keys sit in a plaintext auth.json readable only by you; treat it like any other credential file."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

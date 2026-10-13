@@ -36,6 +36,131 @@
     "external_communication": "no"
   },
   "headline": "Radar's MCP server gives an AI agent the full authority of your kubeconfig, with no authentication on the local /mcp endpoint and write tools on by default, including apply_resource, which creates any Kubernetes object, privileged pods among them. Risk labelling for agent hosts is good (accurate read-only and destructive hints, dry-run for apply and patch, a separate read-only endpoint), and Secret values are kept out of model context. The dominant risk is that a prompt-injected agent reading pod logs or annotations can deploy arbitrary workloads with cluster-admin reach. Point agents at /mcp-readonly unless you need writes.",
+  "safe_setup": {
+    "intro": "Radar labels every MCP tool as read-only or destructive, serves a separate read-only endpoint, keeps Secret values out of model context and listens only on localhost. As shipped, the default /mcp endpoint gives an agent your full kubeconfig identity and the write tools with no authentication, so the safest setup narrows the identity, points agents at the read-only endpoint and lets the cluster limit what gets created.",
+    "steps": [
+      {
+        "setup": "A read-only cluster identity",
+        "how": "Pass `--kubeconfig <path>` to a context bound to a read-only or namespace-scoped Kubernetes role",
+        "gives_you": "Kubernetes RBAC itself refuses anything outside that role, whatever the agent asks for",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "cmd/explorer/main.go",
+            "lines": "101",
+            "contains": "flag.String(\"kubeconfig\"",
+            "url": "https://github.com/skyhook-io/radar/blob/09719d88ba15c66b5b772b4c483b028c3c2f55ab/cmd/explorer/main.go#L101"
+          }
+        ]
+      },
+      {
+        "setup": "Cluster-enforced pod security",
+        "how": "Enforce Pod Security Admission at the restricted level, or an equivalent admission policy, on every namespace the identity can write",
+        "gives_you": "Workloads an agent creates cannot run privileged, share host namespaces or mount the host",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "The read-only endpoint",
+        "how": "Point your agent at `/mcp-readonly` instead of `/mcp`",
+        "gives_you": "Write tools are never listed, so cluster content the agent reads cannot lead to changes",
+        "criterion": "C5",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "internal/server/server.go",
+            "lines": "918",
+            "contains": "r.Mount(\"/mcp-readonly\"",
+            "url": "https://github.com/skyhook-io/radar/blob/09719d88ba15c66b5b772b4c483b028c3c2f55ab/internal/server/server.go#L918"
+          }
+        ]
+      },
+      {
+        "setup": "Signed-in shared installs",
+        "how": "For an in-cluster install, set `--auth-mode` to `oidc`, or to `proxy` behind an authenticating proxy",
+        "gives_you": "Writes run as the signed-in person, so Kubernetes RBAC checks each one against their own rights",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "cmd/explorer/main.go",
+            "lines": "163",
+            "contains": "flag.String(\"auth-mode\", \"none\"",
+            "url": "https://github.com/skyhook-io/radar/blob/09719d88ba15c66b5b772b4c483b028c3c2f55ab/cmd/explorer/main.go#L163"
+          }
+        ]
+      },
+      {
+        "setup": "A local-only listener",
+        "how": "Keep the default `--listen-address` of 127.0.0.1",
+        "gives_you": "Only processes on your own machine can reach the MCP endpoints",
+        "criterion": "C1",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "cmd/explorer/main.go",
+            "lines": "106",
+            "contains": "flag.String(\"listen-address\", server.DefaultListenAddress",
+            "url": "https://github.com/skyhook-io/radar/blob/09719d88ba15c66b5b772b4c483b028c3c2f55ab/cmd/explorer/main.go#L106"
+          },
+          {
+            "file": "internal/server/listen_address.go",
+            "lines": "15",
+            "contains": "DefaultListenAddress = \"127.0.0.1\"",
+            "url": "https://github.com/skyhook-io/radar/blob/09719d88ba15c66b5b772b4c483b028c3c2f55ab/internal/server/listen_address.go#L15"
+          }
+        ]
+      },
+      {
+        "setup": "Per-call approval in your host",
+        "how": "Set your agent host to ask before every tool marked `destructiveHint`",
+        "gives_you": "A person decides on each restart, scale, apply, patch, drain or rollback",
+        "criterion": "C2",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "internal/mcp/tools.go",
+            "lines": "69-72",
+            "contains": "DestructiveHint: boolPtr(true)",
+            "url": "https://github.com/skyhook-io/radar/blob/09719d88ba15c66b5b772b4c483b028c3c2f55ab/internal/mcp/tools.go#L69-L72"
+          }
+        ]
+      },
+      {
+        "setup": "Safeguarded investigations",
+        "how": "Run in-app investigations with Claude Code or Codex in the default `safeguarded` profile",
+        "gives_you": "The investigating CLI gets a scrubbed environment and only Radar's tools",
+        "criterion": "C7",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "internal/ai/agent.go",
+            "lines": "36",
+            "contains": "ExecutionProfileSafeguarded ExecutionProfile = \"safeguarded\"",
+            "url": "https://github.com/skyhook-io/radar/blob/09719d88ba15c66b5b772b4c483b028c3c2f55ab/internal/ai/agent.go#L36"
+          }
+        ]
+      },
+      {
+        "setup": "A kept tool-call log",
+        "how": "Capture Radar's standard output to a file the agent's identity cannot modify",
+        "gives_you": "A per-call record of tool, arguments and status that outlives the terminal",
+        "criterion": "C9",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve write calls one at a time; apply and patch offer a dry-run preview, while restart, scale, rollback, drain and CronJob actions have none.",
+      "On `/mcp`, diagnose with in_cluster creates short-lived probe pods and carries neither hint, so have your host also ask for tools not marked read-only."
+    ],
+    "handling": [
+      "The tool-call log prints full arguments, including manifests sent to apply_resource; store captured output like the Secrets it may hold.",
+      "In-app investigation transcripts are kept in ~/.radar/ai-runs.db for up to 30 days; `--ai-history=false` turns that off."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

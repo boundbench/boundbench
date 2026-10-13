@@ -24,6 +24,30 @@
 
 Dyad's agent edits your app's files and then installs, builds and runs that app directly on your computer under your own account and full environment, and those steps need no approval by default. Only a few actions ask first: adding a package, schema-changing SQL and MCP tool calls. File tools are well contained to the app folder and .env values are redacted before they reach the model, but nothing contains the code the agent writes once the app runs, so a hijacked session can do anything you can.
 
+## Safest setup
+
+Dyad keeps its file tools inside the app folder, redacts .env values before they reach the model, asks before schema-changing SQL and MCP tool calls, and ends each turn after 100 tool steps. By default, though, the code the agent writes runs on your computer under your own account with no approval, so the safest setup puts a prompt in front of every run and builds the outer boundary yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Connect only the integrations this app needs, with tokens scoped to that project and a spending limit on the model key | Whatever runs in the app reaches only the services and spend you chose (C1) |
+| Ask before running code | Under Build and Agent Permissions, set `restart_app`, `run_build`, `run_tests` and `run_type_checks` to `ask` (stored in `agentToolConsents`) ([src/lib/schemas.ts:412](https://github.com/dyad-sh/dyad/blob/701d9179b43773a9c654014975ebc699a32fd500/src/lib/schemas.ts#L412); [src/lib/schemas.ts:489](https://github.com/dyad-sh/dyad/blob/701d9179b43773a9c654014975ebc699a32fd500/src/lib/schemas.ts#L489); [src/pro/main/ipc/handlers/local_agent/tools/app_lifecycle.ts:42](https://github.com/dyad-sh/dyad/blob/701d9179b43773a9c654014975ebc699a32fd500/src/pro/main/ipc/handlers/local_agent/tools/app_lifecycle.ts#L42); [src/pro/main/ipc/handlers/local_agent/tools/run_build.ts:408](https://github.com/dyad-sh/dyad/blob/701d9179b43773a9c654014975ebc699a32fd500/src/pro/main/ipc/handlers/local_agent/tools/run_build.ts#L408); [src/pro/main/ipc/handlers/local_agent/tools/run_tests.ts:588](https://github.com/dyad-sh/dyad/blob/701d9179b43773a9c654014975ebc699a32fd500/src/pro/main/ipc/handlers/local_agent/tools/run_tests.ts#L588); [src/pro/main/ipc/handlers/local_agent/tools/run_type_checks.ts:156](https://github.com/dyad-sh/dyad/blob/701d9179b43773a9c654014975ebc699a32fd500/src/pro/main/ipc/handlers/local_agent/tools/run_type_checks.ts#L156)) | A person decides each time code the agent wrote is about to run on the machine (C2) |
+| Review every SQL query | Turn off Skip consent for non-schema SQL (`autoApproveNonSchemaSql`) ([src/main/settings.ts:81](https://github.com/dyad-sh/dyad/blob/701d9179b43773a9c654014975ebc699a32fd500/src/main/settings.ts#L81); [src/lib/schemas.ts:522](https://github.com/dyad-sh/dyad/blob/701d9179b43773a9c654014975ebc699a32fd500/src/lib/schemas.ts#L522)) | Every query against a connected database is shown to you before it runs (C2) |
+| The Docker runtime | Choose Docker (experimental) as the runtime mode (`runtimeMode2`) in settings ([src/lib/schemas.ts:159](https://github.com/dyad-sh/dyad/blob/701d9179b43773a9c654014975ebc699a32fd500/src/lib/schemas.ts#L159); [src/lib/schemas.ts:582](https://github.com/dyad-sh/dyad/blob/701d9179b43773a9c654014975ebc699a32fd500/src/lib/schemas.ts#L582)) | The app's dev server runs in a container without your host environment; builds still run on the host (C4) |
+| A step budget | Keep `maxToolCallSteps` at the default 100, or pick 25 or 50 for small tasks ([src/lib/schemas.ts:511](https://github.com/dyad-sh/dyad/blob/701d9179b43773a9c654014975ebc699a32fd500/src/lib/schemas.ts#L511); [src/constants/settings_constants.ts:2](https://github.com/dyad-sh/dyad/blob/701d9179b43773a9c654014975ebc699a32fd500/src/constants/settings_constants.ts#L2)) | Every turn ends after a fixed number of tool calls (C10) |
+| Project rules you have read | Read an imported app's AI_RULES.md before the first chat, and check its changes in the app's git history | Only rules you have read steer later sessions in that app (C6) |
+| Its own OS account or VM | Run Dyad in a separate OS account or VM that holds no other credentials, with outbound network limited to the hosts you use | Code that runs on the host reaches only that account's files, keys and network, not yours (C4) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; approving a restart or build runs everything the agent has changed in the app, so check the turn's changes first.
+- MCP prompts shorten long arguments; approve an MCP call when you can see what it will do.
+
+### Handling data
+
+- Chat transcripts, including tool arguments and results, are stored unencrypted in Dyad's local database; store and back them up like the code itself.
+- Build and app log output reaches the model unredacted, so keep secrets out of what the app prints.
+
 ## Critical gaps
 - Code the agent writes runs on the host with the user's full account and environment when the app starts or builds, with no approval by default. (ASI02, ASI09; C2). Evidence: [src/pro/main/ipc/handlers/local_agent/tools/app_lifecycle.ts:46](https://github.com/dyad-sh/dyad/blob/701d9179b43773a9c654014975ebc699a32fd500/src/pro/main/ipc/handlers/local_agent/tools/app_lifecycle.ts#L46); [src/pro/main/ipc/handlers/local_agent/tools/run_build.ts:416](https://github.com/dyad-sh/dyad/blob/701d9179b43773a9c654014975ebc699a32fd500/src/pro/main/ipc/handlers/local_agent/tools/run_build.ts#L416)
 - The app runtime, builds, tests and installs run unsandboxed on the host; only one scripting tool is sandboxed. (ASI05; C4). Evidence: [src/ipc/services/app_runtime_service.ts:889-897](https://github.com/dyad-sh/dyad/blob/701d9179b43773a9c654014975ebc699a32fd500/src/ipc/services/app_runtime_service.ts#L889-L897); [src/pro/main/ipc/handlers/local_agent/tools/run_build.ts:420](https://github.com/dyad-sh/dyad/blob/701d9179b43773a9c654014975ebc699a32fd500/src/pro/main/ipc/handlers/local_agent/tools/run_build.ts#L420)

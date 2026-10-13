@@ -36,6 +36,112 @@
     "external_communication": "opt_in"
   },
   "headline": "As shipped, smolagents runs model-written Python inside your own process with an interpreter its authors say is not a security boundary, and there is no approval step, no taint handling, and no credential scoping. A prompt injection in a fetched web page can read API keys held by tools and send them out through the bundled web tool. The remote sandboxes (E2B, Modal, Blaxel, Docker) are a real improvement but must be opted into. Importing the library also silently loads a .env file, and the bundled web UI's default exposure is not locked down.",
+  "safe_setup": {
+    "intro": "smolagents keeps its own footprint small: agents get only the tools you list, Hub code needs an explicit trust flag, and every run stops after 20 steps. Model-written code runs in your own Python process by default and there is no approval step, so the safest setup moves that code into a remote sandbox and builds the boundaries around the process yourself.",
+    "steps": [
+      {
+        "setup": "A dedicated, low-limit key",
+        "how": "Run the agent in an environment that holds only the model key and tool credentials this agent needs, each with a spending limit set at the provider",
+        "gives_you": "Whatever the agent does, it reaches only the systems and spend you gave it, not everything your shell can",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A remote sandbox",
+        "how": "`executor_type=\"e2b\"` on `CodeAgent`",
+        "gives_you": "Model-written code and your registered tools run in a remote ephemeral sandbox that never sees your host environment",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/smolagents/agents.py",
+            "lines": "1535",
+            "contains": "executor_type: Literal[\"local\", \"blaxel\", \"e2b\", \"modal\", \"docker\"] = \"local\"",
+            "url": "https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/src/smolagents/agents.py#L1535"
+          }
+        ]
+      },
+      {
+        "setup": "Reviewed, pinned Hub code",
+        "how": "Keep the default `trust_remote_code=False`; for a Hub tool you have read, set it to `True` and pin the commit with `revision`",
+        "gives_you": "Only code you have read runs inside your agent, and it can't change after you read it",
+        "criterion": "C7",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "src/smolagents/tools.py",
+            "lines": "521",
+            "contains": "trust_remote_code: bool = False",
+            "url": "https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/src/smolagents/tools.py#L521"
+          },
+          {
+            "file": "src/smolagents/tools.py",
+            "lines": "563",
+            "contains": "revision=kwargs.get(\"revision\")",
+            "url": "https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/src/smolagents/tools.py#L563"
+          }
+        ]
+      },
+      {
+        "setup": "A step budget",
+        "how": "Keep the default `max_steps=20`, or lower it for short tasks",
+        "gives_you": "Every top-level run ends after a fixed number of steps",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "src/smolagents/agents.py",
+            "lines": "300",
+            "contains": "max_steps: int = 20",
+            "url": "https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/src/smolagents/agents.py#L300"
+          }
+        ]
+      },
+      {
+        "setup": "A clean working directory",
+        "how": "Start agents from a directory that holds no .env file you didn't write",
+        "gives_you": "Settings such as the model endpoint and keys come only from you, not from a project you happen to run in",
+        "criterion": "C6",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A private web UI",
+        "how": "If you use the bundled web UI, serve it on a private network behind authentication you control",
+        "gives_you": "Only people you choose can send the agent instructions",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the agent process in a container or VM whose network reaches only the hosts the task needs",
+        "gives_you": "An outer boundary around the local executor and your registered tools, and a narrow path for data to leave",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A run record on disk",
+        "how": "Register a callback in `step_callbacks` that writes each step to storage the agent process can't modify",
+        "gives_you": "A record of every step and observation that outlives the process",
+        "criterion": "C9",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "src/smolagents/agents.py",
+            "lines": "304",
+            "contains": "step_callbacks:",
+            "url": "https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/src/smolagents/agents.py#L304"
+          }
+        ]
+      }
+    ],
+    "handling": [
+      "Steps and observations print to the console unredacted at the default `verbosity_level`, and DEBUG adds full model messages; treat console output and anything a step callback stores like the data the agent read."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

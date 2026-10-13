@@ -25,6 +25,29 @@ Controls where a risk surface exists: 2.12 / 7.0 (30%); 3 criteria scored SA (su
 
 Netdata's built-in MCP server is a small, mostly read-only surface: no code execution, memory or extensions. The weak point is access control: anonymous MCP access is open to any address by default, the only API key grants full administrator access across every node a Parent sees, and the authorization check does not hold on every path in the default configuration. Logs and process data reach the model unmarked and unredacted, and per-tool-call audit records exist only at debug level.
 
+## Safest setup
+
+Netdata's MCP server is a small, mostly read-only surface with no code execution, memory or extensions, and its API key file is readable only by the netdata user. As shipped, anonymous MCP access is open to any address that reaches the web port and the one API key is admin-equivalent, so the safest setup narrows who can connect and how far one connection reaches.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A trusted network only | Expose the Netdata web port only to trusted hosts, with a host firewall or a private network | Only machines you trust can open an MCP session at all, whatever Netdata's own settings say (C1) |
+| MCP from trusted addresses | Set `allow mcp from` in the web section of netdata.conf to localhost or your trusted networks ([src/daemon/config/netdata-conf-web.c:88](https://github.com/netdata/netdata/blob/4106699b00be39dddbf3e9416db250ec3a5a7c5c/src/daemon/config/netdata-conf-web.c#L88)) | MCP connections are accepted only from the addresses you list, separately from the dashboard (C1) |
+| Key-only MCP access | Set `bearer token protection` to yes in the web section of netdata.conf ([src/web/api/http_auth.c:413](https://github.com/netdata/netdata/blob/4106699b00be39dddbf3e9416db250ec3a5a7c5c/src/web/api/http_auth.c#L413)) | Every MCP request must carry the API key, so anonymous callers get no MCP access (C1) |
+| One node per client | Connect the AI client to a single Agent rather than a Parent wherever the task allows | A client session, or its key, reaches one node's logs and live data instead of every streamed child (C1) |
+| A privately held key | Keep `mcp_dev_preview_api_key` readable only by the netdata user, and give it to the stdio bridge through `ND_MCP_BEARER_TOKEN` ([src/web/api/mcp_auth.h:12](https://github.com/netdata/netdata/blob/4106699b00be39dddbf3e9416db250ec3a5a7c5c/src/web/api/mcp_auth.h#L12); [src/web/api/mcp_auth.c:32](https://github.com/netdata/netdata/blob/4106699b00be39dddbf3e9416db250ec3a5a7c5c/src/web/api/mcp_auth.c#L32); [src/web/mcp/bridges/stdio-golang/nd-mcp.go:113](https://github.com/netdata/netdata/blob/4106699b00be39dddbf3e9416db250ec3a5a7c5c/src/web/mcp/bridges/stdio-golang/nd-mcp.go#L113)) | The admin-equivalent key stays with you and out of configuration files others can read (C8) |
+| A session without outbound tools | Use Netdata's MCP in AI client sessions that have no tools that send data out | Log or alert text that steers the model has no channel to move what it reads (C5) |
+| A client-side call record | Turn on the AI client's own tool-call logging, stored where the model can't write | A per-call record of tool names and arguments, which the server's default logs don't keep (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; on `execute_function`, check the function name, since one annotation covers every function the node exposes.
+
+### Handling data
+
+- Logs, process command lines and connection tables reach the model provider unredacted; connect only nodes whose data you are content to share with that provider.
+- Anonymous telemetry is on by default and carries no content; `DISABLE_TELEMETRY` or a `.opt-out-from-anonymous-statistics` file turns it off.
+
 ## Critical gaps
 - The MCP server's per-request authorization check does not hold on every path in the default configuration. (ASI03, T3, LLM06; C1). Evidence: [src/nrpc/nrpc-calls.c:548](https://github.com/netdata/netdata/blob/4106699b00be39dddbf3e9416db250ec3a5a7c5c/src/nrpc/nrpc-calls.c#L548); [src/web/mcp/mcp-tools-execute-function.c:2037-2040](https://github.com/netdata/netdata/blob/4106699b00be39dddbf3e9416db250ec3a5a7c5c/src/web/mcp/mcp-tools-execute-function.c#L2037-L2040)
 

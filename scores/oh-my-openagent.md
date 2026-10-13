@@ -24,6 +24,29 @@
 
 OmO turns OpenCode into a multi-agent orchestrator, and in doing so it widens the host's defaults rather than narrowing them: web fetches and access outside the project are set to allowed, a second shell path through tmux is added, and nothing asks before shell commands run on the host with your full credentials. Opening it in a cloned repository also silently runs that repository's Claude Code hook commands and loads its MCP servers, with no trust prompt. Sub-agents are well bounded, but the main session has no step or spend limit.
 
+## Safest setup
+
+OmO keeps its sub-agents bounded in depth, concurrency and tool calls, but as shipped nothing asks before shell commands run, web fetches and out-of-project access are set to allowed, and a repository's hooks and MCP servers load on open. The safest setup adds ask rules and trims tools in config, and puts the real boundary outside the tool: a low-privilege account, reviewed repositories and a container or VM.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A low-privilege account | Run OpenCode from an account or environment holding only the model provider key and the scoped credentials the task needs | Shell and hook commands reach only what that account holds, not every login on your machine (C1) |
+| Ask rules for consequential tools | Set `bash`, `edit`, `webfetch` and `external_directory` to `ask` in OpenCode's `permission` block, or per agent under `agents` ([packages/omo-opencode/src/config/schema/internal/permission.ts:3-17](https://github.com/code-yeongyu/oh-my-openagent/blob/a8019016f47a9d814ebcc24bd921a561f065ee80/packages/omo-opencode/src/config/schema/internal/permission.ts#L3-L17); [packages/omo-opencode/src/config/schema/agent-overrides.ts:34](https://github.com/code-yeongyu/oh-my-openagent/blob/a8019016f47a9d814ebcc24bd921a561f065ee80/packages/omo-opencode/src/config/schema/agent-overrides.ts#L34); [packages/omo-opencode/src/config/schema/oh-my-opencode-config.ts:64](https://github.com/code-yeongyu/oh-my-openagent/blob/a8019016f47a9d814ebcc24bd921a561f065ee80/packages/omo-opencode/src/config/schema/oh-my-opencode-config.ts#L64)) | A person sees each shell command, edit and web request before it runs (C2) |
+| Only the tools needed | List `interactive_bash` and `look_at` in `disabled_tools` ([packages/omo-opencode/src/config/schema/oh-my-opencode-config.ts:48](https://github.com/code-yeongyu/oh-my-openagent/blob/a8019016f47a9d814ebcc24bd921a561f065ee80/packages/omo-opencode/src/config/schema/oh-my-opencode-config.ts#L48); [packages/omo-opencode/src/plugin/tool-registry.ts:61](https://github.com/code-yeongyu/oh-my-openagent/blob/a8019016f47a9d814ebcc24bd921a561f065ee80/packages/omo-opencode/src/plugin/tool-registry.ts#L61); [packages/omo-opencode/src/plugin/tool-registry-trimming.ts:11](https://github.com/code-yeongyu/oh-my-openagent/blob/a8019016f47a9d814ebcc24bd921a561f065ee80/packages/omo-opencode/src/plugin/tool-registry-trimming.ts#L11)) | One shell path instead of two, and file reads that go through OpenCode's own tools (C3) |
+| Reviewed repositories | Read a repository's .claude/settings.json, .claude/settings.local.json, .mcp.json and .omo/omo.jsonc before opening it with the plugin | Hook commands and MCP servers that load on open are ones you have chosen (C6) |
+| A fixed plugin version | Set `auto_update: false` and pin the plugin to a release in OpenCode's plugin list ([packages/omo-opencode/src/config/schema/oh-my-opencode-config.ts:70](https://github.com/code-yeongyu/oh-my-openagent/blob/a8019016f47a9d814ebcc24bd921a561f065ee80/packages/omo-opencode/src/config/schema/oh-my-opencode-config.ts#L70)) | Plugin code changes only when you decide to upgrade (C7) |
+| Its own container or VM | Run OpenCode in a container or VM holding only the workspace, with outbound access limited to the model provider and the hosts the task needs | An outer boundary around shell, hook and MCP processes, and a narrow path for data to leave (C4) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; the task-list continuation hook keeps the agent working without a new request from you.
+- The main session has no step or spend limit, so stay with long runs; /stop-continuation cancels running descendant tasks.
+
+### Handling data
+
+- The plugin's debug log is written unmasked to the system temp directory; on shared machines treat it like other sensitive logs.
+- Anonymous usage pings are on by default; `telemetry: false` in the plugin config or `OMO_DISABLE_POSTHOG=1` turns them off.
+
 ## Critical gaps
 - Hook commands and the interactive_bash tool run with the user's full ambient environment and credentials. (ASI03, T3; C1) — [packages/utils/src/command-executor/execute-hook-command.ts:94-107](https://github.com/code-yeongyu/oh-my-openagent/blob/a8019016f47a9d814ebcc24bd921a561f065ee80/packages/utils/src/command-executor/execute-hook-command.ts#L94-L107); [packages/omo-opencode/src/tools/interactive-bash/tools.ts:174-181](https://github.com/code-yeongyu/oh-my-openagent/blob/a8019016f47a9d814ebcc24bd921a561f065ee80/packages/omo-opencode/src/tools/interactive-bash/tools.ts#L174-L181)
 - Shell and interactive_bash run without human approval by default, and the plugin sets web fetches and out-of-project access to allowed. (ASI02, ASI09; C2) — [packages/omo-opencode/src/plugin-handlers/tool-config-handler.ts:156-161](https://github.com/code-yeongyu/oh-my-openagent/blob/a8019016f47a9d814ebcc24bd921a561f065ee80/packages/omo-opencode/src/plugin-handlers/tool-config-handler.ts#L156-L161); [packages/omo-opencode/src/tools/interactive-bash/tools.ts:174-181](https://github.com/code-yeongyu/oh-my-openagent/blob/a8019016f47a9d814ebcc24bd921a561f065ee80/packages/omo-opencode/src/tools/interactive-bash/tools.ts#L174-L181)

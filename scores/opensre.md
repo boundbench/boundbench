@@ -24,6 +24,31 @@
 
 As shipped, OpenSRE's interactive agent runs any shell command, GitHub CLI call or chat message the model chooses with no approval prompt, and the code labels this 'alpha mode: allow everything'. Commands execute directly on the host with the operator's full environment, so production cloud, cluster and GitHub credentials are in reach of anything a poisoned log line or alert can talk the model into. Telemetry also sends prompts and tool context to the vendor's analytics by default. Use the headless 'opensre ask' mode, which blocks writes unless explicitly allowed, or set /auto off and run with narrowly scoped, read-only credentials.
 
+## Safest setup
+
+As shipped, the OpenSRE REPL asks for no approval, runs shell commands on the host with your full credentials, and sends prompts and tool context to the vendor's analytics. It does record every tool call per session, and its headless `opensre ask` mode blocks write tools unless you allow them. The safest setup narrows credentials at the provider, turns on the approval and opt-out settings OpenSRE has, and contains the process yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Read-only identities | Run OpenSRE with a read-only cloud role, a read-only Kubernetes context and a read-only GitHub token | Your cloud, cluster and GitHub providers refuse writes, whatever the shell or an integration tool attempts (C1) |
+| Headless investigations | Use `opensre ask` for investigations, adding `--allowed-tool <name>` only for a tool the task needs ([surfaces/cli/commands/ask.py:96-99](https://github.com/Tracer-Cloud/opensre/blob/01ba24f1861965e40fa1213956cb86d254ab5373/surfaces/cli/commands/ask.py#L96-L99)) | Mutating, external and undeclared tools stay blocked unless you named them for that run (C2) |
+| Approval in the REPL | Start each REPL session with `/auto med`, or `/auto off` to ask before every tool, and keep the default `/trust off` ([surfaces/interactive_shell/command_registry/settings_cmds.py:204](https://github.com/Tracer-Cloud/opensre/blob/01ba24f1861965e40fa1213956cb86d254ab5373/surfaces/interactive_shell/command_registry/settings_cmds.py#L204); [surfaces/interactive_shell/command_registry/settings_cmds.py:219](https://github.com/Tracer-Cloud/opensre/blob/01ba24f1861965e40fa1213956cb86d254ab5373/surfaces/interactive_shell/command_registry/settings_cmds.py#L219); [surfaces/interactive_shell/session/terminal_session.py:81](https://github.com/Tracer-Cloud/opensre/blob/01ba24f1861965e40fa1213956cb86d254ab5373/surfaces/interactive_shell/session/terminal_session.py#L81)) | Shell commands and the REPL's own mutating actions wait for your approval (C2) |
+| Content-free telemetry | Set `OPENSRE_NO_TELEMETRY=1` in the environment ([infrastructure/analytics/provider.py:174](https://github.com/Tracer-Cloud/opensre/blob/01ba24f1861965e40fa1213956cb86d254ab5373/infrastructure/analytics/provider.py#L174)) | Prompts, responses and tool context stay out of the vendor's analytics (C8) |
+| Memory off | Set `OPENSRE_MEMORY_DISABLED=1` unless you need facts carried between sessions ([config/constants/memory.py:7](https://github.com/Tracer-Cloud/opensre/blob/01ba24f1861965e40fa1213956cb86d254ab5373/config/constants/memory.py#L7); [core/domain/memory/settings.py:14](https://github.com/Tracer-Cloud/opensre/blob/01ba24f1861965e40fa1213956cb86d254ab5373/core/domain/memory/settings.py#L14)) | Content read in one session can't steer tool use in later ones (C6) |
+| Its own container or VM | Run OpenSRE in a container or VM holding only its own credentials, with outbound access limited to the model provider and the systems you investigate | An outer boundary around model-written shell commands, which otherwise run as you on your host (C4) |
+| Pinned MCP servers | Configure each MCP server command with a fixed version you have reviewed, not a latest tag | The extension code that receives the agent's environment stays the code you chose (C7) |
+| An off-host session record | Copy the session files under ~/.opensre/sessions to storage the agent's user can't modify | A record of every tool call that the shell tool can't edit or delete (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; `/trust on` skips prompts even when `/auto` would ask.
+- REPL approval covers shell commands and the REPL's own actions; integration tools such as github_cli and Slack or Telegram sends run without a prompt, so give those integrations read-only or narrowly scoped credentials.
+
+### Handling data
+
+- Session records under ~/.opensre/sessions keep tool arguments and results unredacted; store them like the systems they cover.
+- Memories are plain markdown files under ~/.opensre/memory; read and delete any you didn't expect.
+
 ## Critical gaps
 - The default shell tool runs every command with the operator's full environment (cloud keys, tokens, kubeconfig) and no authorization layer, so a hijacked session holds production-level authority. (ASI03, T3; C1) — [tools/interactive_shell/shell/execution.py:137-146](https://github.com/Tracer-Cloud/opensre/blob/01ba24f1861965e40fa1213956cb86d254ab5373/tools/interactive_shell/shell/execution.py#L137-L146); [tools/interactive_shell/shell/execution.py:68-74](https://github.com/Tracer-Cloud/opensre/blob/01ba24f1861965e40fa1213956cb86d254ab5373/tools/interactive_shell/shell/execution.py#L68-L74)
 - In the default REPL (autonomy High) every shell command and every integration write runs without human approval; the code calls this 'Alpha mode: allow everything'. (ASI09, ASI02, T10; C2) — [tools/interactive_shell/shared/execution_policy.py:3](https://github.com/Tracer-Cloud/opensre/blob/01ba24f1861965e40fa1213956cb86d254ab5373/tools/interactive_shell/shared/execution_policy.py#L3); [config/constants/repl_autonomy.py:23](https://github.com/Tracer-Cloud/opensre/blob/01ba24f1861965e40fa1213956cb86d254ab5373/config/constants/repl_autonomy.py#L23); [tools/interactive_shell/shell/policy.py:41-46](https://github.com/Tracer-Cloud/opensre/blob/01ba24f1861965e40fa1213956cb86d254ab5373/tools/interactive_shell/shell/policy.py#L41-L46)

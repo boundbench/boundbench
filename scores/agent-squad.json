@@ -36,6 +36,134 @@
     "external_communication": "opt_in"
   },
   "headline": "Agent Squad is a routing and orchestration layer that adds almost no safety controls of its own: tools the developer registers run as soon as the model asks, with unvalidated arguments, the process's full AWS and API-key authority, and no approval, audit trail, or stop button. Untrusted tool, MCP, and retrieval output enters the prompt without separation, so a prompt injection can drive any registered tool. The framework's small own surface (no code execution, session-scoped in-memory history by default) is its main protection; StrandsAgent's default of loading tool code from the working directory is the sharpest default to change.",
+  "safe_setup": {
+    "intro": "Agent Squad keeps its own footprint small: it runs no model-written code, gives each agent only the tools registered to it, and caps every tool loop at a fixed number of rounds. It adds few controls beyond that, with no approval step, no durable record and the process's full AWS and API-key authority behind every tool, so the safest setup narrows that authority at the provider and builds the gates and containment around the process yourself.",
+    "steps": [
+      {
+        "setup": "A narrowly scoped identity",
+        "how": "Run the process under an IAM role and API keys scoped to the models and services this deployment uses, each with a spending limit set at the provider",
+        "gives_you": "AWS and the model providers refuse anything outside that grant, whatever an agent asks for",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Tools only from code",
+        "how": "`load_tools_from_directory=False` on each `StrandsAgent`",
+        "gives_you": "Only the tools you register in code become callable, whatever files sit in the working directory",
+        "criterion": "C6",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "python/src/agent_squad/agents/strands_agent.py",
+            "lines": "37",
+            "contains": "load_tools_from_directory: bool = True",
+            "url": "https://github.com/2fastlabs/agent-squad/blob/729d5f52869c8280f599a9fa5cf27fc1df445602/python/src/agent_squad/agents/strands_agent.py#L37"
+          },
+          {
+            "file": "python/src/agent_squad/agents/strands_agent.py",
+            "lines": "20",
+            "contains": "class StrandsAgent(Agent):",
+            "url": "https://github.com/2fastlabs/agent-squad/blob/729d5f52869c8280f599a9fa5cf27fc1df445602/python/src/agent_squad/agents/strands_agent.py#L20"
+          }
+        ]
+      },
+      {
+        "setup": "Tools per agent",
+        "how": "Give each agent a `tool_config` holding only the tools that agent's job needs",
+        "gives_you": "A query routed to one agent can reach only that agent's tools",
+        "criterion": "C3",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "python/src/agent_squad/agents/bedrock_llm_agent.py",
+            "lines": "32",
+            "contains": "tool_config: dict[str, Any] | AgentTools | None = None",
+            "url": "https://github.com/2fastlabs/agent-squad/blob/729d5f52869c8280f599a9fa5cf27fc1df445602/python/src/agent_squad/agents/bedrock_llm_agent.py#L32"
+          }
+        ]
+      },
+      {
+        "setup": "Confirmation inside consequential tools",
+        "how": "Build a step into each registered tool that writes, sends or invokes something, showing a person the exact arguments before it acts",
+        "gives_you": "A person decides on each consequential call before it runs",
+        "criterion": "C2",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A tool-round limit",
+        "how": "Keep each agent's default round cap, or set a lower `toolMaxRecursions` in its `tool_config`",
+        "gives_you": "Each agent's tool loop ends after a fixed number of rounds",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "python/src/agent_squad/agents/bedrock_llm_agent.py",
+            "lines": "104",
+            "contains": "self.default_max_recursions: int = 20",
+            "url": "https://github.com/2fastlabs/agent-squad/blob/729d5f52869c8280f599a9fa5cf27fc1df445602/python/src/agent_squad/agents/bedrock_llm_agent.py#L104"
+          },
+          {
+            "file": "python/src/agent_squad/agents/bedrock_llm_agent.py",
+            "lines": "194",
+            "contains": "return self.tool_config.get(\"toolMaxRecursions\", self.default_max_recursions)",
+            "url": "https://github.com/2fastlabs/agent-squad/blob/729d5f52869c8280f599a9fa5cf27fc1df445602/python/src/agent_squad/agents/bedrock_llm_agent.py#L194"
+          }
+        ]
+      },
+      {
+        "setup": "Pinned MCP servers",
+        "how": "Name an exact version of each MCP server in the command or URL you configure, and review it before upgrading",
+        "gives_you": "The tool code your agents run stays what you reviewed",
+        "criterion": "C7",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the process in a container or VM whose network reaches only the model provider and the hosts your tools need",
+        "gives_you": "An outer boundary around in-process tools and a narrow path for data to leave",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A tool-call record",
+        "how": "Pass `AgentTools` an `AgentToolCallbacks` subclass whose `on_tool_start` and `on_tool_end` write each call to storage the agent can't modify",
+        "gives_you": "A record of each AgentTools and MCP tool call that outlives the process",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "python/src/agent_squad/utils/tool.py",
+            "lines": "57-58",
+            "contains": "async def on_tool_start(",
+            "url": "https://github.com/2fastlabs/agent-squad/blob/729d5f52869c8280f599a9fa5cf27fc1df445602/python/src/agent_squad/utils/tool.py#L57-L58"
+          },
+          {
+            "file": "python/src/agent_squad/utils/tool.py",
+            "lines": "69",
+            "contains": "async def on_tool_end(",
+            "url": "https://github.com/2fastlabs/agent-squad/blob/729d5f52869c8280f599a9fa5cf27fc1df445602/python/src/agent_squad/utils/tool.py#L69"
+          },
+          {
+            "file": "python/src/agent_squad/utils/tool.py",
+            "lines": "234-236",
+            "contains": "self, tools: list[AgentTool], callbacks: Optional[AgentToolCallbacks] = None",
+            "url": "https://github.com/2fastlabs/agent-squad/blob/729d5f52869c8280f599a9fa5cf27fc1df445602/python/src/agent_squad/utils/tool.py#L234-L236"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Agent Squad shows no prompts of its own, so the confirmation step in each tool is where review happens; read each one and approve calls one at a time."
+    ],
+    "handling": [
+      "The `LOG_*` chat and classifier logging flags in `AgentSquadConfig` ship off; turning them on writes conversation content to your logs, so store those like the chats.",
+      "Tool-call records hold raw arguments and results; store them like the data the agents read."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

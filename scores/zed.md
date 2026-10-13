@@ -24,6 +24,32 @@
 
 Zed's built-in agent asks before every command, edit, fetch and MCP call by default, and runs terminal commands in a genuine OS sandbox with no network and writes confined to the project. The dominant risk is leakage rather than destruction: the chat view is not locked down against unattended data egress, and sandboxed commands still see your full environment and home directory. There are no step, time or spend limits on a turn.
 
+## Safest setup
+
+Zed's agent asks before every command, edit, fetch and MCP call by default, and runs terminal commands in an OS sandbox with no network and writes confined to the project. It still runs with your full environment, can read your home directory, and has no step, time or spend limit, so the safest setup keeps the shipped gates on and narrows what the agent can reach.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A credential-free shell | Launch Zed from an environment that exports no long-lived API keys or cloud tokens, adding only short-lived, scoped credentials a task needs | Commands and MCP servers the agent starts can only use the access you chose for this task (C1) |
+| Per-call approval | Keep the default `tool_permissions` `default` of `"confirm"` ([assets/settings/default.json:1241-1246](https://github.com/zed-industries/zed/blob/a84689073d296dfd39987bc7dd478e43ef76d83a/assets/settings/default.json#L1241-L1246)) | You see each command, edit, fetch and MCP call before it runs (C2) |
+| The Ask profile | Set `default_profile` to `"ask"` and switch to Write only for tasks that need edits ([assets/settings/default.json:1291](https://github.com/zed-industries/zed/blob/a84689073d296dfd39987bc7dd478e43ef76d83a/assets/settings/default.json#L1291); [assets/settings/default.json:1323](https://github.com/zed-industries/zed/blob/a84689073d296dfd39987bc7dd478e43ef76d83a/assets/settings/default.json#L1323)) | Read and search tasks run without the shell, delete or MCP tools (C3) |
+| The terminal sandbox | Keep the default `allow_unsandboxed` of false ([crates/settings_content/src/agent.rs:1036-1037](https://github.com/zed-industries/zed/blob/a84689073d296dfd39987bc7dd478e43ef76d83a/crates/settings_content/src/agent.rs#L1036-L1037)) | Agent commands run with no network and write only inside the project (C4) |
+| The private-files list | Keep the default `private_files` globs and add the paths of any other secrets in your projects ([assets/settings/default.json:500](https://github.com/zed-industries/zed/blob/a84689073d296dfd39987bc7dd478e43ef76d83a/assets/settings/default.json#L500)) | The agent's read and search tools skip those files (C8) |
+| Narrow extension capabilities | Replace the wildcard entries in `granted_extension_capabilities` with the commands, hosts and packages your extensions need ([assets/settings/default.json:2345-2349](https://github.com/zed-industries/zed/blob/a84689073d296dfd39987bc7dd478e43ef76d83a/assets/settings/default.json#L2345-L2349)) | Installed and auto-updated extensions can run and download only what you listed (C7) |
+| Reviewed project folders | Read a repository's AGENTS.md, .rules and .zed/settings.json before opening it with the agent, and trust the folder only when they look right | Instructions and MCP or language servers come only from files you have read (C6) |
+| Its own VM or container | Run Zed in a VM or dev container whose home directory holds no SSH keys or cloud credential files | An outer boundary around everything the agent and its MCP servers can read (C4) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; 'Always for <tool>' stops prompting for that tool from then on.
+- File edits are approved by path, so review each agent diff afterwards and reject hunks you don't want.
+- A request to leave the sandbox comes with a stated reason; approve it once rather than always.
+
+### Handling data
+
+- Saved threads in Zed's data directory keep tool calls and results unredacted; treat them like the projects they cover.
+- Usage metrics and crash reports are on by default; set `metrics` and `diagnostics` under `telemetry` to false to turn them off.
+
 ## Critical gaps
 - Sandboxed terminal commands inherit the user's full shell environment and can read the whole filesystem (including ~/.ssh and cloud credential files); only writes and network are restricted. (ASI05, T11, LLM05; C4) — [crates/acp_thread/src/terminal.rs:930-944](https://github.com/zed-industries/zed/blob/a84689073d296dfd39987bc7dd478e43ef76d83a/crates/acp_thread/src/terminal.rs#L930-L944); [crates/sandbox/src/macos_seatbelt.rs:231-234](https://github.com/zed-industries/zed/blob/a84689073d296dfd39987bc7dd478e43ef76d83a/crates/sandbox/src/macos_seatbelt.rs#L231-L234)
 - Every agent terminal command (sandboxed or not) and every MCP server inherits the user's full environment, so long-lived keys exported there are reachable by the model's commands. (ASI03, LLM02, T9; C8) — [crates/acp_thread/src/terminal.rs:930-944](https://github.com/zed-industries/zed/blob/a84689073d296dfd39987bc7dd478e43ef76d83a/crates/acp_thread/src/terminal.rs#L930-L944); [crates/context_server/src/transport/stdio_transport.rs:37](https://github.com/zed-industries/zed/blob/a84689073d296dfd39987bc7dd478e43ef76d83a/crates/context_server/src/transport/stdio_transport.rs#L37)

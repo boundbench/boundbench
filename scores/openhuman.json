@@ -36,6 +36,136 @@
     "external_communication": "opt_in"
   },
   "headline": "OpenHuman contains a lot of security machinery, including an approval gate, command classification, path containment, an OS jail for shell commands, a keychain-backed secret store and credential scrubbing. The policy that turns most of it on ships disabled. As shipped, the agent runs shell commands, writes files outside credential folders and reaches any public website without asking, so a prompt injection in a web page or email can leak data and change files unattended. Prompts and tool output are also shared with the vendor's tracing backend by default. Turn on the autonomy policy and switch off usage-data sharing before giving it real accounts.",
+  "safe_setup": {
+    "intro": "OpenHuman ships a keychain-backed secret store, credential scrubbing on tool results and an OS jail for shell commands, all on by default. Its approval gate and workspace containment ship off, so as installed it acts without asking. The safest setup turns that policy on, switches off usage-data sharing and puts the boundaries around the process yourself.",
+    "steps": [
+      {
+        "setup": "Its own OS account",
+        "how": "Run OpenHuman under a separate OS user whose home holds only the files the task needs",
+        "gives_you": "The agent works with that account's files, not everything in your own home directory",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Read-only connected apps",
+        "how": "Turn off the `write` scope for each connected app the task only reads from",
+        "gives_you": "The agent can read those accounts but not change them",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "crates/openhuman-core/src/integrations/composio/contract/scopes.rs",
+            "lines": "94-96",
+            "contains": "pub write: bool",
+            "url": "https://github.com/tinyhumansai/openhuman/blob/cbde5069dec828c117131ee75f9d2bbeb5bda02b/crates/openhuman-core/src/integrations/composio/contract/scopes.rs#L94-L96"
+          }
+        ]
+      },
+      {
+        "setup": "The supervised policy",
+        "how": "`enabled = true` in the `[autonomy]` section, keeping `level` at Supervised and `workspace_only` on",
+        "gives_you": "Shell, file-write and network calls are classified and wait for your approval, and file access stays in the working folder",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "crates/openhuman-core/src/config/schema/autonomy.rs",
+            "lines": "28-36",
+            "contains": "pub enabled: bool",
+            "url": "https://github.com/tinyhumansai/openhuman/blob/cbde5069dec828c117131ee75f9d2bbeb5bda02b/crates/openhuman-core/src/config/schema/autonomy.rs#L28-L36"
+          },
+          {
+            "file": "crates/openhuman-core/src/config/schema/types/config.rs",
+            "lines": "148",
+            "contains": "pub autonomy: AutonomyConfig",
+            "url": "https://github.com/tinyhumansai/openhuman/blob/cbde5069dec828c117131ee75f9d2bbeb5bda02b/crates/openhuman-core/src/config/schema/types/config.rs#L148"
+          }
+        ]
+      },
+      {
+        "setup": "Only the websites needed",
+        "how": "List just the hosts the task uses in `allowed_domains` (Settings, Search, Allowed websites)",
+        "gives_you": "Web fetches reach only the sites you chose, in place of every public site",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "crates/openhuman-core/src/config/schema/tools/http.rs",
+            "lines": "9-15",
+            "contains": "pub allowed_domains: Vec<String>",
+            "url": "https://github.com/tinyhumansai/openhuman/blob/cbde5069dec828c117131ee75f9d2bbeb5bda02b/crates/openhuman-core/src/config/schema/tools/http.rs#L9-L15"
+          }
+        ]
+      },
+      {
+        "setup": "The OS jail",
+        "how": "Leave `OPENHUMAN_SANDBOX` unset and keep the orchestrator's `sandbox_mode = \"sandboxed\"`",
+        "gives_you": "Shell and script commands write only inside the working folder and run without your secrets in their environment",
+        "criterion": "C4",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "crates/openhuman-core/src/sandbox/ops.rs",
+            "lines": "24-31",
+            "contains": "OPENHUMAN_SANDBOX",
+            "url": "https://github.com/tinyhumansai/openhuman/blob/cbde5069dec828c117131ee75f9d2bbeb5bda02b/crates/openhuman-core/src/sandbox/ops.rs#L24-L31"
+          },
+          {
+            "file": "crates/openhuman-core/src/agent/registry/agents/orchestrator/agent.toml",
+            "lines": "10",
+            "contains": "sandbox_mode = \"sandboxed\"",
+            "url": "https://github.com/tinyhumansai/openhuman/blob/cbde5069dec828c117131ee75f9d2bbeb5bda02b/crates/openhuman-core/src/agent/registry/agents/orchestrator/agent.toml#L10"
+          }
+        ]
+      },
+      {
+        "setup": "Usage-data sharing off",
+        "how": "`share_usage_data = false` in the `[observability]` section",
+        "gives_you": "Prompts, replies and tool input and output are no longer sent to the vendor's tracing backend",
+        "criterion": "C8",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "crates/openhuman-core/src/config/schema/observability.rs",
+            "lines": "20-28",
+            "contains": "pub share_usage_data: bool",
+            "url": "https://github.com/tinyhumansai/openhuman/blob/cbde5069dec828c117131ee75f9d2bbeb5bda02b/crates/openhuman-core/src/config/schema/observability.rs#L20-L28"
+          },
+          {
+            "file": "crates/openhuman-core/src/config/schema/types/config.rs",
+            "lines": "145",
+            "contains": "pub observability: ObservabilityConfig",
+            "url": "https://github.com/tinyhumansai/openhuman/blob/cbde5069dec828c117131ee75f9d2bbeb5bda02b/crates/openhuman-core/src/config/schema/types/config.rs#L145"
+          }
+        ]
+      },
+      {
+        "setup": "A clean working folder",
+        "how": "Start each session from a folder holding only the task's files, with no AGENTS.md or .env file you didn't write",
+        "gives_you": "Instructions and settings come only from you",
+        "criterion": "C6",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run OpenHuman on Linux or macOS inside a container or VM whose network reaches only the hosts the task needs",
+        "gives_you": "An outer boundary for scheduled jobs and MCP servers, which run outside the jail, and a narrow path for data to leave",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; the card masks recipients, message bodies and code, so approve a call when the conversation shows what it is for.",
+      "Connected-app sends and shell or file changes can't be undone once approved."
+    ],
+    "handling": [
+      "The run journal, approval records and shell audit log live in your OpenHuman directory; copy them somewhere the agent can't write when you need a lasting record.",
+      "Memory carries text from earlier turns into later sessions, including text from pages and messages the agent read."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

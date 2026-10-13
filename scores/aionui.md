@@ -24,6 +24,30 @@
 
 AionUi is the desktop front end and launcher. The agent runtime, including tool execution and enforcement of approvals, lives in the separate AionCore backend, which was not reviewed, so most controls cannot be credited here. What this repo does ship is risky: the backend and MCP servers inherit the user's full environment with no sandbox; a browser tool, on by default, runs an npm package fetched by npx inside a browser that keeps the user's sign-ins; chat output rendering is not locked down; and scheduled tasks always run in YOLO mode. The approval card does show the exact command, and the browser bridge is carefully limited to one webview.
 
+## Safest setup
+
+AionUi shows the exact command or raw tool input on each approval card, and its browser bridge drives only the side-panel webview. Beyond that this repository ships few controls of its own: agents and MCP servers run unsandboxed with your full environment, the browser tool is on by default, and scheduled tasks skip approval. The safest setup narrows what the app inherits and builds the containment around it yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A scrubbed environment | Launch AionUi from a shell that holds only the model keys this work needs, each scoped where the provider allows | Agents and MCP servers inherit only the credentials you chose, not everything in your shell (C1) |
+| Browser tool on demand | Switch off the built-in `aionui-browser` MCP server in the MCP settings and turn it on only for tasks that browse ([packages/desktop/src/common/config/constants.ts:48](https://github.com/iofficeai/aionui/blob/6744099b279b991c17e31c243f0920477bd31cb6/packages/desktop/src/common/config/constants.ts#L48); [packages/desktop/src/process/utils/runBackendMigrations.ts:186-192](https://github.com/iofficeai/aionui/blob/6744099b279b991c17e31c243f0920477bd31cb6/packages/desktop/src/process/utils/runBackendMigrations.ts#L186-L192)) | Agents read no web pages and fetch no browser package unless a task calls for it (C3) |
+| Few browser sign-ins | Keep the in-app browser signed in only to the sites a task needs, and sign out afterwards | The browser tool acts only in accounts you chose for this work (C1) |
+| An approving mode per chat | When starting each chat, pick a permission mode that asks before tool calls, since a new chat can reuse the last mode | A person sees each command before it runs (C2) |
+| Rules and skills you've read | Add only assistant rules and skills whose text you have read, and review the list from time to time | What steers later sessions comes from you (C6) |
+| Its own VM or account | Run AionUi in a VM or separate OS user account holding only the project's files, with outbound network limited to the hosts you use | An outer boundary around agent-run code, which otherwise runs with your own access (C4) |
+| Provider spending limits | Set a spending limit on each model provider account, and stop runaway work from the conversation's stop control | Runaway runs end at a ceiling you set (C10) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; the card shows the exact command or raw input, while its title is written by the agent.
+- Scheduled tasks always run in auto-approve mode, so schedule only work you would let run unattended.
+
+### Handling data
+
+- Release builds upload the last day's log files to Sentry once a day, with no setting to turn it off; keep long-lived secrets out of prompts and the environment.
+- Conversation records, tool calls included, sit in the app data directory that agent tools can reach; copy them elsewhere if you need a lasting record.
+
 ## Critical gaps
 - Agent backend and MCP processes run unsandboxed as the user with the full inherited environment, so executed code is host-equivalent and holds every credential in the environment. (ASI05, T11; C4) — [packages/web-host/src/backend-launcher.ts:230-236](https://github.com/iofficeai/aionui/blob/6744099b279b991c17e31c243f0920477bd31cb6/packages/web-host/src/backend-launcher.ts#L230-L236); [packages/web-host/src/backend-launcher.ts:692](https://github.com/iofficeai/aionui/blob/6744099b279b991c17e31c243f0920477bd31cb6/packages/web-host/src/backend-launcher.ts#L692); [packages/desktop/src/process/resources/builtinMcp/browserServer.ts:158-162](https://github.com/iofficeai/aionui/blob/6744099b279b991c17e31c243f0920477bd31cb6/packages/desktop/src/process/resources/builtinMcp/browserServer.ts#L158-L162)
 - The default-on browser MCP runs `npx -y chrome-devtools-mcp@0.16.0` without consent or an integrity check and gives the downloaded code the full inherited environment. (ASI04, T17, LLM03; C7) — [packages/desktop/src/process/resources/builtinMcp/browserServerPort.ts:105](https://github.com/iofficeai/aionui/blob/6744099b279b991c17e31c243f0920477bd31cb6/packages/desktop/src/process/resources/builtinMcp/browserServerPort.ts#L105); [packages/desktop/src/process/resources/builtinMcp/browserServer.ts:108](https://github.com/iofficeai/aionui/blob/6744099b279b991c17e31c243f0920477bd31cb6/packages/desktop/src/process/resources/builtinMcp/browserServer.ts#L108); [packages/desktop/src/process/resources/builtinMcp/browserServer.ts:158-162](https://github.com/iofficeai/aionui/blob/6744099b279b991c17e31c243f0920477bd31cb6/packages/desktop/src/process/resources/builtinMcp/browserServer.ts#L158-L162)

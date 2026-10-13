@@ -24,6 +24,32 @@
 
 MagenticLite runs its shell and browser inside a Quicksand virtual machine and refuses to start without it, so model-written code never touches your host directly. But the web-browsing agent clicks, types and submits on any site with no approval, and the shell approval classifier is not a strict boundary. The dominant risk is prompt injection from a web page: it can make the agent read your shared folders and send their contents out through the browser, or act in web accounts you've logged into, without asking you.
 
+## Safest setup
+
+Magentic-UI runs its shell, file tools and browser inside a Quicksand virtual machine, refuses to start without it, and shows you flagged shell commands and file writes before they run. The browser agent acts without approval, on an open network, with every login saved in its profile, so the safest setup narrows what that browser and the shared folders can reach and keeps the sandbox and approvals on.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Task-only web accounts | Sign the agent's browser in only to the accounts this task needs, using separate low-privilege accounts where the site allows | The websites themselves limit what browser actions can change, whatever the agent is asked to do (C1) |
+| Only the folders needed | Share only the specific project folders the task works on | Agent reads and writes stay inside files you chose for this task (C1) |
+| The Quicksand sandbox | Keep the default Quicksand `sandbox` setting ([src/magentic_ui/magentic_ui_config.py:207](https://github.com/microsoft/magentic-ui/blob/d3c9d13c39288257286a66daabf7c5b5fb72ee69/src/magentic_ui/magentic_ui_config.py#L207)) | Model-written commands and the browser run in a virtual machine that never sees your host environment (C4) |
+| Shell and file approvals | Keep the default `approval_policy` of `require_approval_untrusted` ([src/magentic_ui/magentic_ui_config.py:154](https://github.com/microsoft/magentic-ui/blob/d3c9d13c39288257286a66daabf7c5b5fb72ee69/src/magentic_ui/magentic_ui_config.py#L154); [src/magentic_ui/magentic_ui_config.py:61](https://github.com/microsoft/magentic-ui/blob/d3c9d13c39288257286a66daabf7c5b5fb72ee69/src/magentic_ui/magentic_ui_config.py#L61)) | You see the exact command or file change before each flagged call runs (C2) |
+| Only the agents needed | Set `agent_mode` to `omniagent_only` for tasks with no browsing, or `websurfer_only` for browsing with no shell ([src/magentic_ui/magentic_ui_config.py:210](https://github.com/microsoft/magentic-ui/blob/d3c9d13c39288257286a66daabf7c5b5fb72ee69/src/magentic_ui/magentic_ui_config.py#L210); [src/magentic_ui/magentic_ui_config.py:20-21](https://github.com/microsoft/magentic-ui/blob/d3c9d13c39288257286a66daabf7c5b5fb72ee69/src/magentic_ui/magentic_ui_config.py#L20-L21)) | Each task gets either the shell and files or the browser, not both together (C3) |
+| A settings file you wrote | Start from a directory without a `config.yaml` you didn't write, or pass your own with `--config <path>` ([src/magentic_ui/backend/cli.py:155](https://github.com/microsoft/magentic-ui/blob/d3c9d13c39288257286a66daabf7c5b5fb72ee69/src/magentic_ui/backend/cli.py#L155); [src/magentic_ui/backend/cli.py:66](https://github.com/microsoft/magentic-ui/blob/d3c9d13c39288257286a66daabf7c5b5fb72ee69/src/magentic_ui/backend/cli.py#L66)) | Sandbox and approval settings come only from you (C6) |
+| Round limits | Keep the default `max_rounds` of 100 for the orchestrator and the web surfer, or lower it for short tasks ([src/magentic_ui/magentic_ui_config.py:156](https://github.com/microsoft/magentic-ui/blob/d3c9d13c39288257286a66daabf7c5b5fb72ee69/src/magentic_ui/magentic_ui_config.py#L156); [src/magentic_ui/magentic_ui_config.py:171](https://github.com/microsoft/magentic-ui/blob/d3c9d13c39288257286a66daabf7c5b5fb72ee69/src/magentic_ui/magentic_ui_config.py#L171)) | The agents pause and ask you before continuing past a fixed number of steps (C10) |
+| A limited network | Run Magentic-UI on a machine or network whose outbound access reaches only the sites the task needs | An outer boundary on where the browser and shell can send data (C5) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; the session-wide auto-approve switch covers every later prompt in that session.
+- Package installs show the command but not what will run, so approve only the packages the task needs.
+- Browser actions run without a prompt; keep the live browser view in sight and press Stop if it heads somewhere unexpected.
+
+### Handling data
+
+- The local settings database keeps your model API key in plain text, and the event record keeps every tool call with its arguments; store both like other sensitive data.
+- The browser profile keeps cookies and logins across every session; sign out of sites once a task no longer needs them.
+
 ## Critical gaps
 - The web-browsing agent acts with no human approval: delegation is always auto-allowed and Fara's only check-in is a model-declared 'critical point'. (ASI09, ASI02; C2) — [src/magentic_ui/teams/omniagent/_omni_agent.py:1008](https://github.com/microsoft/magentic-ui/blob/d3c9d13c39288257286a66daabf7c5b5fb72ee69/src/magentic_ui/teams/omniagent/_omni_agent.py#L1008); [src/magentic_ui/agents/web_surfer/fara/_fara_web_surfer.py:524](https://github.com/microsoft/magentic-ui/blob/d3c9d13c39288257286a66daabf7c5b5fb72ee69/src/magentic_ui/agents/web_surfer/fara/_fara_web_surfer.py#L524)
 - Worst case under prompt injection: a malicious page can make the agent read shared files and send them out through the ungated browser agent, and take irreversible web actions, with no human involved. (ASI01, LLM01; C5) — [src/magentic_ui/teams/omniagent/_registry.py:132](https://github.com/microsoft/magentic-ui/blob/d3c9d13c39288257286a66daabf7c5b5fb72ee69/src/magentic_ui/teams/omniagent/_registry.py#L132); [src/magentic_ui/teams/omniagent/_omni_agent.py:1008](https://github.com/microsoft/magentic-ui/blob/d3c9d13c39288257286a66daabf7c5b5fb72ee69/src/magentic_ui/teams/omniagent/_omni_agent.py#L1008); [src/magentic_ui/agents/web_surfer/fara/_fara_web_surfer.py:568](https://github.com/microsoft/magentic-ui/blob/d3c9d13c39288257286a66daabf7c5b5fb72ee69/src/magentic_ui/agents/web_surfer/fara/_fara_web_surfer.py#L568)

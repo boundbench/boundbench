@@ -24,6 +24,30 @@
 
 career-ops is mostly prompts that steer your AI coding CLI, plus well-engineered scripts. The scripts include SSRF-hardened job scanners and an apply helper that never submits. There is no mail transport, and plugins are pinned to exact commits and hash-locked. Safety in the agent loop itself rests on the host CLI and on instructions in AGENTS.md: untrusted job postings share a session with your CV, your shell and the network, and nothing in code stops a hijacked session from leaking data or acting. The biggest risks are prompt injection from postings, model-written house rules and inbox items that re-execute in every session, and a documented batch runner that launches Claude with --dangerously-skip-permissions on the host.
 
+## Safest setup
+
+career-ops keeps its own scripts careful: job scanners stay on allowlisted hosts, plugins are off by default and hash-locked, and no script submits an application or sends email. The agent session itself has no gates or isolation of its own, so the safest setup leans on your AI CLI's permission prompts and builds containment around the session.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A separate, low-privilege account | Run your AI CLI for career-ops under a separate OS user or environment that holds only the model key it needs, with no git, cloud or SSH credentials | A hijacked session reaches only that key and your job-search files, not everything you can reach (C1) |
+| Its own container or VM | Run the AI CLI itself in a container or VM that mounts only the career-ops checkout, with outbound access limited to your model provider and the job sites you use | An outer boundary around the shell, scripts and browser automation, which otherwise run on your host as you (C4) |
+| Interactive, prompted sessions | Work in an interactive session of your AI CLI with its permission prompts on, in place of the batch runner | You see each shell command, file write and fetch before it runs, since batch workers skip those prompts by default (C2) |
+| Fenced unattended workers | For unattended runs, use the opt-in web UI with Claude, which gives each worker kind its own tool allowlist ([web/src/lib/claude-invocation.mjs:109-113](https://github.com/career-ops-hq/career-ops/blob/a156d4dfa18cbc3a10da6ebf2a3466ed57e681f8/web/src/lib/claude-invocation.mjs#L109-L113)) | PDF and research workers run with read-only tools, and the rest with a fixed tool list (C3) |
+| Plugins kept off | Keep the default of no plugins, and enable one yourself only after reading its code ([.env.example:41](https://github.com/career-ops-hq/career-ops/blob/a156d4dfa18cbc3a10da6ebf2a3466ed57e681f8/.env.example#L41)) | No third-party code runs inside career-ops with access to your environment (C7) |
+| Reviewed house rules | Keep the checkout in git and read the changes to modes/_custom.md and data/agent-inbox.md before each session | You catch a poisoned saved rule or queued request before the agent acts on it (C6) |
+| A record outside the workspace | Keep your AI CLI's session transcripts and a copy of status-log.tsv in storage the agent can't edit | A record of what ran that a hijacked session cannot rewrite (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve shell commands one at a time.
+- Run update apply and plugin enable yourself in a terminal; when the agent adds --confirm, the host prompt is your only check.
+
+### Handling data
+
+- The .env file holds your API keys in plaintext, readable by every script and the agent's shell; keep only the keys you use there.
+- Your CV and profile go to the model provider you choose; pick one whose data terms you accept.
+
 ## Critical gaps
 - The agent runs with the user's full ambient authority and passes the whole environment to subprocesses and plugins, so a hijacked session holds everything the user holds. (ASI03, T3; C1) — [plugins/_engine.mjs:476-478](https://github.com/career-ops-hq/career-ops/blob/a156d4dfa18cbc3a10da6ebf2a3466ed57e681f8/plugins/_engine.mjs#L476-L478); [batch/batch-runner.sh:1069](https://github.com/career-ops-hq/career-ops/blob/a156d4dfa18cbc3a10da6ebf2a3466ed57e681f8/batch/batch-runner.sh#L1069)
 - Self-update and plugin-enable consent is a --confirm CLI flag the agent can pass itself, so career-ops' own gates can be self-approved; the batch runner also defaults to --dangerously-skip-permissions. (ASI09, ASI02, T10; C2) — [update-system.mjs:3477](https://github.com/career-ops-hq/career-ops/blob/a156d4dfa18cbc3a10da6ebf2a3466ed57e681f8/update-system.mjs#L3477); [plugins.mjs:329](https://github.com/career-ops-hq/career-ops/blob/a156d4dfa18cbc3a10da6ebf2a3466ed57e681f8/plugins.mjs#L329); [batch/batch-runner.sh:1041](https://github.com/career-ops-hq/career-ops/blob/a156d4dfa18cbc3a10da6ebf2a3466ed57e681f8/batch/batch-runner.sh#L1041)

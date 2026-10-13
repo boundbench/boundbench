@@ -24,6 +24,31 @@
 
 As shipped, OpenOcta gives the model an unsandboxed shell running as the logged-in ops engineer, with every credential on the machine, and no approval step (the approval gate is opt-in and only covers the shell). The agent can rewrite its own security config, and access control on the local gateway is not locked down. Agent traces are exported by default to a third-party tracing service. Treat it as full control of the operator's infrastructure access.
 
+## Safest setup
+
+OpenOcta's defaults are weak: commands run on the host with every credential you hold, approval is off, and the agent can rewrite its own settings. It does cap each run at 50 iterations and 10 minutes and keeps a transcript of every session. The safest setup narrows credentials outside the app, turns on the few switches it offers, and puts a boundary around the whole app.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, read-only credentials | Run OpenOcta from a dedicated OS account that holds only the read-only or single-system credentials the task needs | Your cloud, cluster and database providers refuse anything outside that grant, whatever the agent runs (C1) |
+| Per-call shell approval | Set `enabled` to true in the `approvalQueue` block of `security` in openocta.json ([src/pkg/config/schema.go:56](https://github.com/openocta/openocta/blob/0c7dac2284211facdfc813166fe648d093153bb6/src/pkg/config/schema.go#L56); [src/pkg/config/schema.go:113](https://github.com/openocta/openocta/blob/0c7dac2284211facdfc813166fe648d093153bb6/src/pkg/config/schema.go#L113); [src/pkg/config/schema.go:154](https://github.com/openocta/openocta/blob/0c7dac2284211facdfc813166fe648d093153bb6/src/pkg/config/schema.go#L154)) | Each shell command waits for you, with its exact arguments shown, before it runs (C2) |
+| Browser tool off | Set `enabled` to false in the `browser` block when the task needs no web pages ([src/pkg/config/schema.go:30](https://github.com/openocta/openocta/blob/0c7dac2284211facdfc813166fe648d093153bb6/src/pkg/config/schema.go#L30); [src/pkg/config/schema.go:1150](https://github.com/openocta/openocta/blob/0c7dac2284211facdfc813166fe648d093153bb6/src/pkg/config/schema.go#L1150)) | Web content stays out of the agent's context, removing one route for injected instructions (C3) |
+| Local agent delegation off | Set `enabled` to false in the `localAgents` block ([src/pkg/config/schema.go:58](https://github.com/openocta/openocta/blob/0c7dac2284211facdfc813166fe648d093153bb6/src/pkg/config/schema.go#L58); [src/pkg/config/schema.go:92](https://github.com/openocta/openocta/blob/0c7dac2284211facdfc813166fe648d093153bb6/src/pkg/config/schema.go#L92)) | The agent can't hand work to the coding CLIs installed on your machine (C3) |
+| Trace export off | Add a `cozeloop` block with `enabled` set to false ([src/pkg/config/schema.go:57](https://github.com/openocta/openocta/blob/0c7dac2284211facdfc813166fe648d093153bb6/src/pkg/config/schema.go#L57); [src/pkg/config/schema.go:70](https://github.com/openocta/openocta/blob/0c7dac2284211facdfc813166fe648d093153bb6/src/pkg/config/schema.go#L70)) | Model inputs, outputs and tool calls stay on your machine (C8) |
+| A run time limit | Keep the 10-minute default, or set a shorter one with `OPENOCTA_AGENT_RUN_TIMEOUT=<duration>` ([src/pkg/agent/runtime/timeouts.go:16](https://github.com/openocta/openocta/blob/0c7dac2284211facdfc813166fe648d093153bb6/src/pkg/agent/runtime/timeouts.go#L16); [src/pkg/agent/runtime/timeouts.go:26](https://github.com/openocta/openocta/blob/0c7dac2284211facdfc813166fe648d093153bb6/src/pkg/agent/runtime/timeouts.go#L26)) | Every run stops after a fixed time, even when nobody is watching (C10) |
+| Its own VM | Run OpenOcta in a dedicated VM with outbound access limited to the model provider and the systems the task needs | An outer boundary around the shell, MCP servers and delegated agents, which otherwise run directly on your host (C4) |
+| A copy of each transcript | Copy the session transcripts under ~/.openocta/agents to storage the agent's account can't write | A record of tool calls and results that the agent's own shell can't edit afterwards (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve shell commands one at a time; file writes, MCP tools and the config tool run without a prompt.
+- The agent can change its own settings, so check openocta.json after each session to confirm the steps above are still in place.
+
+### Handling data
+
+- openocta.json holds model-provider keys in plaintext; keep it readable only by the account that runs OpenOcta.
+- Session transcripts hold every tool result unredacted; store them like the systems and data the agent read.
+
 ## Critical gaps
 - The agent can rewrite its own security configuration (approvals, command policy, MCP servers) through the default gateway_config tool. (ASI03, T3; C1) — [src/pkg/agent/tools/bridge.go:71](https://github.com/openocta/openocta/blob/0c7dac2284211facdfc813166fe648d093153bb6/src/pkg/agent/tools/bridge.go#L71); [src/pkg/agent/tools/gateway.go:22](https://github.com/openocta/openocta/blob/0c7dac2284211facdfc813166fe648d093153bb6/src/pkg/agent/tools/gateway.go#L22); [src/pkg/gateway/handlers/config.go:341](https://github.com/openocta/openocta/blob/0c7dac2284211facdfc813166fe648d093153bb6/src/pkg/gateway/handlers/config.go#L341)
 - Commands run with the operator's full ambient credentials, and the product is designed to act on servers, databases and cloud platforms. (ASI03, T3; C1) — [src/pkg/agent/eino/localbackend/shell_windows.go:30](https://github.com/openocta/openocta/blob/0c7dac2284211facdfc813166fe648d093153bb6/src/pkg/agent/eino/localbackend/shell_windows.go#L30); [README.md:41](https://github.com/openocta/openocta/blob/0c7dac2284211facdfc813166fe648d093153bb6/README.md#L41)

@@ -36,6 +36,88 @@
     "external_communication": "yes"
   },
   "headline": "Metorial's integrations give agents thousands of tools against real accounts (GitHub, Gmail, Slack, Kubernetes, databases) with the user's long-lived credentials and every tool exposed by default. The SDK validates argument types centrally and redacts secrets from HTTP traces well, but it leaves approval, scoping and authorization to the host platform, which is not in this repo, and several high-impact tools are mislabelled as non-destructive. The dominant risk is a hijacked agent running arbitrary SQL, sending mail or rewriting Kubernetes RBAC with no server-side check.",
+  "safe_setup": {
+    "intro": "Metorial's integrations check every tool call's arguments against a typed schema and keep credentials out of recorded HTTP traces. Approval, tool selection and authorization are left to the host, every tool ships enabled, and connected credentials carry account-level authority, so the safest setup narrows each credential at the service and builds containment around the process.",
+    "steps": [
+      {
+        "setup": "Narrowly scoped credentials",
+        "how": "Connect each integration with a token or account limited to the projects and permissions the task needs, read-only where the task allows",
+        "gives_you": "Each service itself refuses anything outside that grant, whatever the model asks for",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A namespaced Kubernetes account",
+        "how": "Connect Kubernetes with a service account bound to a namespaced Role that cannot create or change role bindings",
+        "gives_you": "The agent works inside the permissions you granted and cannot widen them",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A read-only database role",
+        "how": "Connect PostgreSQL as a role limited to SELECT on the schemas the task needs, or point it at a read replica",
+        "gives_you": "The database itself keeps model-written SQL from changing or dropping data",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Only the tools needed",
+        "how": "In the host, expose only the read tools the task uses and enable write, delete and raw-SQL tools per deployment",
+        "gives_you": "Write access stays something you add deliberately, per integration",
+        "criterion": "C3",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A query time limit",
+        "how": "Keep the default `queryTimeout` of 30000 ms in the PostgreSQL config, or lower it",
+        "gives_you": "Each database query ends after a fixed time",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "integrations/postgresql/src/config.ts",
+            "lines": "10",
+            "contains": "queryTimeout: z.number().default(30000)",
+            "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/config.ts#L10"
+          }
+        ]
+      },
+      {
+        "setup": "Limited outbound network",
+        "how": "Run the integration process with outbound access limited to the APIs of the services you connected",
+        "gives_you": "Data has fewer places to go, and tools that fetch URLs reach only those hosts",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A durable call log",
+        "how": "Pass `listeners` to `createLocalSlateTransport` that write each record to storage the agent cannot modify",
+        "gives_you": "A record of every tool call that outlives the process",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/client/src/transport.ts",
+            "lines": "30-34",
+            "contains": "listeners?: SlateLogListener[];",
+            "url": "https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/client/src/transport.ts#L30-L34"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; sent email, SQL changes and cluster role changes cannot be undone.",
+      "Several mutating tools are tagged non-destructive or carry no tag, so judge each call by its tool name and arguments rather than its tag."
+    ],
+    "handling": [
+      "Error log entries keep raw messages and stack traces without redaction; store them like other sensitive logs."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

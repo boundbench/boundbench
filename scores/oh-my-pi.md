@@ -24,6 +24,31 @@
 
 omp ships with tool approval set to 'yolo', so shell commands, file writes, code evaluation, browsing and sub-agents run without asking, on your machine with your full environment and no sandbox. A prompt injection in anything it reads can therefore leak credentials and take irreversible actions unattended. Starting omp inside a cloned repository also loads that repository's settings, hooks, extensions and MCP servers with no trust prompt. A capable per-call approval system exists: set tools.approvalMode to always-ask, and run omp in a container or VM.
 
+## Safest setup
+
+omp ships with every tool call auto-approved, no sandbox, your full environment in every shell, and project settings, hooks, extensions and MCP servers loaded from whatever directory you start it in. It does include a per-call approval system and several limits you can turn on, so the safest setup turns those on, keeps omp to checkouts you trust, and puts the outer boundary around it yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A scoped, low-limit identity | Run omp under an account or environment holding only the provider key and credentials this task needs, with a spending limit set at the provider | A hijacked session reaches only what you handed it, not every key and login in your shell (C1) |
+| Per-call approval | Set `tools.approvalMode` to `always-ask` in your user configuration ([packages/coding-agent/src/tools/settings.ts:312-315](https://github.com/can1357/oh-my-pi/blob/8aaf115b8e5f54e6bddeffa969e43e290a1efa01/packages/coding-agent/src/tools/settings.ts#L312-L315)) | Shell commands, file writes and other write or exec calls wait for a person before they run (C2) |
+| Trusted checkouts only | Start omp only in repositories whose .omp, .claude and MCP configuration you have read, and set `mcp.enableProjectConfig` to false in your user configuration ([packages/coding-agent/src/mcp/settings.ts:9-12](https://github.com/can1357/oh-my-pi/blob/8aaf115b8e5f54e6bddeffa969e43e290a1efa01/packages/coding-agent/src/mcp/settings.ts#L9-L12)) | Approval settings, hooks, extensions and MCP servers come from you rather than from a repository you cloned (C6) |
+| Only the tools needed | Set `bash.enabled` or `fetch.enabled` to false when the task has no use for them ([packages/coding-agent/src/exec/settings.ts:82-85](https://github.com/can1357/oh-my-pi/blob/8aaf115b8e5f54e6bddeffa969e43e290a1efa01/packages/coding-agent/src/exec/settings.ts#L82-L85); [packages/coding-agent/src/tools/settings.ts:700-703](https://github.com/can1357/oh-my-pi/blob/8aaf115b8e5f54e6bddeffa969e43e290a1efa01/packages/coding-agent/src/tools/settings.ts#L700-L703)) | The model has fewer general-purpose tools that reach the whole machine and network (C3) |
+| Checkpoints for rewind | Set `checkpoint.enabled` to true ([packages/coding-agent/src/tools/settings.ts:687-690](https://github.com/can1357/oh-my-pi/blob/8aaf115b8e5f54e6bddeffa969e43e290a1efa01/packages/coding-agent/src/tools/settings.ts#L687-L690)) | A way to rewind the session when a change goes wrong (C2) |
+| Credential redaction | Set `secrets.enabled` to true ([packages/coding-agent/src/secrets/settings.ts:13-16](https://github.com/can1357/oh-my-pi/blob/8aaf115b8e5f54e6bddeffa969e43e290a1efa01/packages/coding-agent/src/secrets/settings.ts#L13-L16)) | Configured secrets and credential-shaped tokens are hidden before messages go to the model provider (C8) |
+| Time limits | Set `tools.maxTimeout` and `task.maxRuntimeMs` to nonzero values ([packages/coding-agent/src/tools/settings.ts:870-873](https://github.com/can1357/oh-my-pi/blob/8aaf115b8e5f54e6bddeffa969e43e290a1efa01/packages/coding-agent/src/tools/settings.ts#L870-L873); [packages/coding-agent/src/task/settings.ts:291-294](https://github.com/can1357/oh-my-pi/blob/8aaf115b8e5f54e6bddeffa969e43e290a1efa01/packages/coding-agent/src/task/settings.ts#L291-L294)) | Every tool call and every sub-agent ends within a ceiling you chose (C10) |
+| Its own container or VM | Run omp in a container or VM holding only the project, with outbound access limited to the model provider and the hosts the task needs | An outer boundary around shell commands, code evaluation and MCP servers, which otherwise run on your host as you (C4) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; long commands are shortened in the prompt, so ask for a long command to be split when you can't see all of it.
+- Sub-agents run their own tool calls without prompts, so approve a sub-agent task only when you would approve everything it might do.
+- Add `bash.patterns` rules that prompt for or deny the commands you never want run unattended.
+
+### Handling data
+
+- Session transcripts in the agent directory hold every tool call and result, unredacted by default; store them like the data the agent read.
+
 ## Critical gaps
 - Tools run with the user's ambient identity and full environment, so a hijacked session can use every credential the user has. (ASI03, T3, LLM06; C1). Evidence: [packages/utils/src/procmgr.ts:43-55](https://github.com/can1357/oh-my-pi/blob/8aaf115b8e5f54e6bddeffa969e43e290a1efa01/packages/utils/src/procmgr.ts#L43-L55)
 - The default approval mode is yolo, so the bash tool runs without approval. (ASI09, ASI02, T10; C2). Evidence: [packages/coding-agent/src/tools/settings.ts:312-315](https://github.com/can1357/oh-my-pi/blob/8aaf115b8e5f54e6bddeffa969e43e290a1efa01/packages/coding-agent/src/tools/settings.ts#L312-L315); [packages/coding-agent/src/tools/approval.ts:255-272](https://github.com/can1357/oh-my-pi/blob/8aaf115b8e5f54e6bddeffa969e43e290a1efa01/packages/coding-agent/src/tools/approval.ts#L255-L272)

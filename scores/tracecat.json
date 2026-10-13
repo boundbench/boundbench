@@ -36,6 +36,137 @@
     "external_communication": "yes"
   },
   "headline": "Tracecat is a workflow and agent platform that runs integrations against stored SOC and cloud credentials. Its control plane is solid (scope-based RBAC, per-preset tool allowlists, encrypted secrets, secret masking, a gateway that keeps model-provider keys out of the agent). The shipped default executes actions as plain subprocesses that inherit the worker environment, per-tool approval is opt-in and no built-in action asks for it, step limits are not enforced in the agent runtime, and nothing structurally limits a prompt-injected agent that holds both egress and response actions. Switching the executor to nsjail and flagging response actions for approval would change the picture most.",
+  "safe_setup": {
+    "intro": "Tracecat gives each agent only the actions its preset lists, starts new presets with none, encrypts stored secrets and masks them in output. Approval, sandboxing and an audit stream all exist but ship off, so the safest setup narrows the credentials, turns those mechanisms on and adds network containment around the executor.",
+    "steps": [
+      {
+        "setup": "Narrowly scoped integration credentials",
+        "how": "Store only credentials scoped to what each preset needs, read-only where the task allows, with spending limits set at each provider",
+        "gives_you": "The integrations themselves refuse anything outside that grant, whatever the agent asks for",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Only the actions needed",
+        "how": "Keep a new preset's empty `actions` list and add only the actions the task uses",
+        "gives_you": "The agent can call only the tools you chose for it",
+        "criterion": "C3",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "tracecat/agent/preset/schemas.py",
+            "lines": "296",
+            "contains": "actions: list[str] = Field(default_factory=list)",
+            "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/preset/schemas.py#L296"
+          }
+        ]
+      },
+      {
+        "setup": "Per-call approval",
+        "how": "In each preset, set `tool_approvals` to true for HTTP, response and other write actions",
+        "gives_you": "A person sees the exact tool and arguments before each consequential call runs",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "tracecat/agent/preset/schemas.py",
+            "lines": "95",
+            "contains": "tool_approvals: dict[str, bool] | None = Field(default=None)",
+            "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/agent/preset/schemas.py#L95"
+          }
+        ]
+      },
+      {
+        "setup": "The nsjail executor",
+        "how": "Set `TRACECAT__EXECUTOR_BACKEND=nsjail` and grant the executor the `SYS_ADMIN` capability the compose file notes",
+        "gives_you": "Actions, scripts and extension code run jailed, with a minimal environment and no host fallback",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "tracecat/config.py",
+            "lines": "859-860",
+            "contains": "TRACECAT__EXECUTOR_BACKEND",
+            "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/config.py#L859-L860"
+          },
+          {
+            "file": "docker-compose.yml",
+            "lines": "222-224",
+            "contains": "SYS_ADMIN",
+            "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/docker-compose.yml#L222-L224"
+          }
+        ]
+      },
+      {
+        "setup": "Database row-level security",
+        "how": "Set `TRACECAT__RLS_MODE=enforce`",
+        "gives_you": "Workspace isolation is enforced by the database as well as by application queries",
+        "criterion": "C6",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "tracecat/config.py",
+            "lines": "1388",
+            "contains": "TRACECAT__RLS_MODE",
+            "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/config.py#L1388"
+          },
+          {
+            "file": "tracecat/config.py",
+            "lines": "84",
+            "contains": "ENFORCE = \"enforce\"",
+            "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/config.py#L84"
+          }
+        ]
+      },
+      {
+        "setup": "Secret masking",
+        "how": "Keep the default `TRACECAT__UNSAFE_DISABLE_SM_MASKING` unset",
+        "gives_you": "Secret values stay masked in action output, errors and logs",
+        "criterion": "C8",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "tracecat/config.py",
+            "lines": "501-502",
+            "contains": "TRACECAT__UNSAFE_DISABLE_SM_MASKING",
+            "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/config.py#L501-L502"
+          }
+        ]
+      },
+      {
+        "setup": "A limited network path",
+        "how": "Run the executor where outbound traffic reaches only the integration and model hosts you use",
+        "gives_you": "Generic HTTP actions and action code reach only the destinations you allowed",
+        "criterion": "C3",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "An external audit sink",
+        "how": "Set the organization setting `audit_webhook_url` to a log store the workspace can't modify",
+        "gives_you": "A copy of control-plane events that outlives edits and deletions in the application database",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "tracecat/audit/service.py",
+            "lines": "364",
+            "contains": "audit_webhook_url",
+            "url": "https://github.com/TracecatHQ/tracecat/blob/77ed0abaf3fe59c4afba4142a7d7787a0af7d8fe/tracecat/audit/service.py#L364"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; the approver can change arguments, so check the arguments that will actually run.",
+      "Explicit sub-agents run outside the approval gate, so give them only read actions.",
+      "The builder assistant can change a preset's actions and approval flags; review presets after a builder session."
+    ],
+    "handling": [
+      "Session transcripts keep tool arguments and results in the application database; store backups like the data the agent read."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

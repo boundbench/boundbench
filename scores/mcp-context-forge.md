@@ -24,6 +24,31 @@
 
 ContextForge puts real access control in front of the tools it federates: every call is authenticated, checked against RBAC and team visibility, schema-validated, SSRF-filtered, rate-limited and timed out, and stored upstream credentials are encrypted and never shown to the model. It is still a relay rather than a firewall: tool results and upstream tool descriptions reach clients untouched, any user can register a new upstream server that is shared with everyone by default, and a client-supplied X-Upstream-Authorization header is always forwarded as the upstream credential. The audit trail and every content guardrail plugin ship switched off, so out of the box you cannot reconstruct who ran which tool with which arguments.
 
+## Safest setup
+
+ContextForge requires authentication by default, checks tool calls against RBAC and team visibility, keeps stored upstream credentials encrypted and away from the model, and times out and rate-limits tool calls. As shipped, new servers are shared with every user, content filters and the audit trail are off, and upstream content reaches clients untouched, so the safest setup narrows the upstream credentials, keeps registrations within a team and turns on the filters and audit trail the gateway includes.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Narrow upstream credentials | Register each upstream server with a token scoped at the provider to the systems and permissions its tools need, read-only where the task allows | The upstream system itself refuses anything outside that grant, whichever user or client makes the call (C1) |
+| A header-stripping proxy | Put a reverse proxy in front of the gateway that removes `X-Upstream-Authorization` from client requests | Upstream servers receive only the credentials you stored for them (C1) |
+| Team-only registrations | Set `ALLOW_PUBLIC_VISIBILITY=false` and register servers with `visibility` set to `team` or `private` ([.env.example:155](https://github.com/IBM/mcp-context-forge/blob/9bb9c2ac58af4cd126c05e8153f9025770646bd2/.env.example#L155); [mcpgateway/config.py:1102-1103](https://github.com/IBM/mcp-context-forge/blob/9bb9c2ac58af4cd126c05e8153f9025770646bd2/mcpgateway/config.py#L1102-L1103); [mcpgateway/schemas.py:3317](https://github.com/IBM/mcp-context-forge/blob/9bb9c2ac58af4cd126c05e8153f9025770646bd2/mcpgateway/schemas.py#L3317)) | A server one user registers reaches only the team it was meant for (C6) |
+| One virtual server per client | Point each client at a virtual server whose `associated_tools` lists only the tools that client needs ([mcpgateway/schemas.py:4669](https://github.com/IBM/mcp-context-forge/blob/9bb9c2ac58af4cd126c05e8153f9025770646bd2/mcpgateway/schemas.py#L4669)) | Each client sees a short tool list, with write tools only where you chose them (C3) |
+| Content filter plugins | Set `PLUGINS_ENABLED=true` and enable the deny-list, PII and moderation plugins you need in `plugins/config.yaml` ([.env.example:3145-3148](https://github.com/IBM/mcp-context-forge/blob/9bb9c2ac58af4cd126c05e8153f9025770646bd2/.env.example#L3145-L3148); [plugins/config.yaml:1](https://github.com/IBM/mcp-context-forge/blob/9bb9c2ac58af4cd126c05e8153f9025770646bd2/plugins/config.yaml#L1)) | Tool arguments and results pass through detection filters before they reach the upstream or the client (C5) |
+| Forked jq workers | Run on Linux and keep the default `JQ_FILTER_EXECUTION=subprocess` ([.env.example:2745](https://github.com/IBM/mcp-context-forge/blob/9bb9c2ac58af4cd126c05e8153f9025770646bd2/.env.example#L2745); [mcpgateway/config.py:2775-2776](https://github.com/IBM/mcp-context-forge/blob/9bb9c2ac58af4cd126c05e8153f9025770646bd2/mcpgateway/config.py#L2775-L2776)) | Output filters run in a separate worker with a cleared environment and a time limit (C4) |
+| Its own container or VM | Run the gateway as a dedicated user in a container or VM whose network reaches only your registered upstream hosts | An OS boundary around template and filter execution, and a narrow path for data to leave (C4) |
+| The audit trail | Set `AUDIT_TRAIL_ENABLED=true` and `SECURITY_LOGGING_ENABLED=true` ([.env.example:480-482](https://github.com/IBM/mcp-context-forge/blob/9bb9c2ac58af4cd126c05e8153f9025770646bd2/.env.example#L480-L482); [mcpgateway/config.py:2379](https://github.com/IBM/mcp-context-forge/blob/9bb9c2ac58af4cd126c05e8153f9025770646bd2/mcpgateway/config.py#L2379); [mcpgateway/config.py:2389](https://github.com/IBM/mcp-context-forge/blob/9bb9c2ac58af4cd126c05e8153f9025770646bd2/mcpgateway/config.py#L2389)) | A database record of who changed what and of authentication and authorization failures (C9) |
+
+### Approving with confidence
+
+- Read each prompt in your MCP host and approve calls one at a time; REST tools usually carry no destructive hint, so a write can look like a read.
+- Configure an LLM provider for the built-in chat only when you want its agent to call gateway tools without per-call approval.
+
+### Handling data
+
+- The JWT secret and credential encryption key in `.env` unlock every stored upstream credential; keep that file readable only by the gateway's user.
+- Payload logging and tracing are off by default; when you turn them on, store their output like the upstream data it covers.
+
 ## Critical gaps
 - Client-supplied X-Upstream-Authorization is always forwarded upstream as the Authorization header (MCP token passthrough); other upstream credential forwarding is not strictly scoped. (ASI03, T3, T9; C1) — [mcpgateway/utils/passthrough_headers.py:247-260](https://github.com/IBM/mcp-context-forge/blob/9bb9c2ac58af4cd126c05e8153f9025770646bd2/mcpgateway/utils/passthrough_headers.py#L247-L260)
 - An escape from the in-process Jinja2 template sandbox lands in the gateway process that holds the JWT secret, the credential encryption key and every stored upstream credential. (ASI05, T11; C4) — [mcpgateway/services/prompt_service.py:100](https://github.com/IBM/mcp-context-forge/blob/9bb9c2ac58af4cd126c05e8153f9025770646bd2/mcpgateway/services/prompt_service.py#L100); [mcpgateway/config.py:679](https://github.com/IBM/mcp-context-forge/blob/9bb9c2ac58af4cd126c05e8153f9025770646bd2/mcpgateway/config.py#L679)

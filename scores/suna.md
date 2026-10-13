@@ -24,6 +24,31 @@
 
 Kortix runs every session in a remote sandbox and has unusually sophisticated building blocks — server-side connector credentials, hash-bound human approvals, network-enforced secret handles, and an agents-as-principals permission model. But the starter project ships the default agent with every grant set to 'all', tool permission 'allow' and connector approvals off, so a prompt-injected session can read plaintext secrets, act in every connected app and push to the default branch with no human involved. The change-request governance guard is also not tamper-resistant.
 
+## Safest setup
+
+Kortix runs every session in a remote sandbox, keeps connector credentials on the server and records actions in an audit log. The starter project gives its default agent every grant, no approval step and open network access, so the safest setup narrows those grants, turns on the approval and secret-handle options Kortix already has, and limits the sandbox network yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Narrowly scoped app accounts | Connect each app with an account or token limited to the data and actions this project needs, read-only where the task allows | The app provider itself refuses anything outside that access, whatever a session asks for (C1) |
+| A narrowed agent grant | On the `kortix` agent in kortix.yaml, replace `all` for `connectors`, `secrets` and `kortix_permissions` with lists of what the project uses, leaving out `project.gitops.merge` and `project.gitops.ref.any` ([packages/starter/templates/base/kortix.yaml:90-93](https://github.com/kortix-ai/suna/blob/52b9ec976258e15c61b7a92166615bd518afa92e/packages/starter/templates/base/kortix.yaml#L90-L93); [packages/manifest-schema/src/constants.ts:256-257](https://github.com/kortix-ai/suna/blob/52b9ec976258e15c61b7a92166615bd518afa92e/packages/manifest-schema/src/constants.ts#L256-L257)) | Each session reaches only the apps, secrets and project actions you listed, and its pushes stay on its own branch (C1) |
+| Connector approvals | Set the project's connector policy mode to `risk` ([apps/api/src/connectors/policy.ts:22](https://github.com/kortix-ai/suna/blob/52b9ec976258e15c61b7a92166615bd518afa92e/apps/api/src/connectors/policy.ts#L22)) | A signed-in person approves each connector write, bound to its exact arguments (C2) |
+| Network-enforced secrets | Store each secret with `egress` delivery, listing the HTTPS hosts that use it ([apps/api/src/secrets/strategy.ts:30](https://github.com/kortix-ai/suna/blob/52b9ec976258e15c61b7a92166615bd518afa92e/apps/api/src/secrets/strategy.ts#L30)) | The sandbox holds only a handle, and the real value reaches only the hosts you listed (C8) |
+| A blocking spend budget | Add an LLM gateway budget for the project with a `limit_usd` and the default `block` action ([packages/db/src/schema/kortix.ts:3670-3672](https://github.com/kortix-ai/suna/blob/52b9ec976258e15c61b7a92166615bd518afa92e/packages/db/src/schema/kortix.ts#L3670-L3672)) | Model spend stops at a ceiling you set for each period (C10) |
+| Marketplace off when unused | Turn the `marketplace` feature flag off for projects that don't install community items ([apps/api/src/feature-flags/registry.ts:124](https://github.com/kortix-ai/suna/blob/52b9ec976258e15c61b7a92166615bd518afa92e/apps/api/src/feature-flags/registry.ts#L124)) | Community items stop reaching the project through one-click installs (C7) |
+| A sandbox egress allowlist | Configure the sandbox provider's network policy so session sandboxes reach only the hosts your tasks need | A narrow path for data to leave, whatever runs inside the sandbox (C4) |
+| Reviewed shared configuration | Read changes to agent prompts, skills, memory and harness config before they reach the default branch | Instructions that every later session loads come only from changes a person has read (C6) |
+
+### Approving with confidence
+
+- Read each prompt and approve connector calls one at a time; the argument preview is shortened and redacted, so approve calls whose purpose you recognise.
+- The approval covers connector calls only; shell commands and direct network requests from the sandbox are bounded by the grant and network steps above.
+
+### Handling data
+
+- Secrets on the default environment-variable delivery are readable by every process in the session sandbox, extensions included; treat sandbox output like the secrets it can hold.
+- Audit rows are written asynchronously and the oldest can be dropped under load; keep provider-side logs for the apps you connect as well.
+
 ## Critical gaps
 - The sandbox shell runs with OpenCode permission 'allow' and connector policy defaults to allow_all, so no consequential action crosses an approval gate. (ASI09, ASI02, T10; C2) — [packages/starter/templates/base/harnesses/opencode/opencode.jsonc:11](https://github.com/kortix-ai/suna/blob/52b9ec976258e15c61b7a92166615bd518afa92e/packages/starter/templates/base/harnesses/opencode/opencode.jsonc#L11); [apps/api/src/connectors/db-deps.ts:890](https://github.com/kortix-ai/suna/blob/52b9ec976258e15c61b7a92166615bd518afa92e/apps/api/src/connectors/db-deps.ts#L890)
 - A hijacked default session combines untrusted web/connector content, plaintext secrets and open egress plus irreversible actions with no human in the loop. (ASI01, LLM01, T6; C5) — [packages/starter/templates/base/harnesses/opencode/tools/scrape_webpage.ts:31](https://github.com/kortix-ai/suna/blob/52b9ec976258e15c61b7a92166615bd518afa92e/packages/starter/templates/base/harnesses/opencode/tools/scrape_webpage.ts#L31); [packages/starter/templates/base/kortix.yaml:92](https://github.com/kortix-ai/suna/blob/52b9ec976258e15c61b7a92166615bd518afa92e/packages/starter/templates/base/kortix.yaml#L92); [apps/api/src/secrets/strategy.ts:537](https://github.com/kortix-ai/suna/blob/52b9ec976258e15c61b7a92166615bd518afa92e/apps/api/src/secrets/strategy.ts#L537)

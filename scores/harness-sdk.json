@@ -36,6 +36,154 @@
     "external_communication": "yes"
   },
   "headline": "The default harness agent gets a host shell, unrestricted file writes, web fetching and sub-agents, all running on your machine with your full environment and AWS credentials, and every tool call runs without approval. Good controls exist (a per-call approval gate that covers sub-agents and programmatic tool calls, a Docker sandbox option, turn and token budgets), but all are opt-in. The dominant risk is prompt injection from a web page or repository file turning into credential theft or destructive commands with no human in the loop.",
+  "safe_setup": {
+    "intro": "The Strands harness ships with good controls you can turn on: a per-call approval gate that also covers sub-agents and programmatic tool calls, a Docker sandbox option, and turn and token budgets. As shipped, all of them are off and the agent runs a host shell with your full environment and credentials, so the safest setup turns them on and puts the boundaries around the process yourself.",
+    "steps": [
+      {
+        "setup": "A dedicated, scoped identity",
+        "how": "Run the agent with its own AWS role limited to the Bedrock models it uses, and an environment holding only the keys this task needs",
+        "gives_you": "Whatever the agent does, it reaches only the systems you granted, not everything your account and shell can",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Per-call approval",
+        "how": "`interventions=\"ask\"` on `create_harness`",
+        "gives_you": "A person sees the exact tool name and arguments before each call runs, sub-agent calls included",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "harness-py/src/strands_harness/agent.py",
+            "lines": "238",
+            "contains": "def create_harness(",
+            "url": "https://github.com/strands-agents/harness-sdk/blob/8ba04f70af542e41aadbc2eb8093b1a07df5ec96/harness-py/src/strands_harness/agent.py#L238"
+          },
+          {
+            "file": "harness-py/src/strands_harness/agent.py",
+            "lines": "254",
+            "contains": "interventions: InterventionsOption = None",
+            "url": "https://github.com/strands-agents/harness-sdk/blob/8ba04f70af542e41aadbc2eb8093b1a07df5ec96/harness-py/src/strands_harness/agent.py#L254"
+          },
+          {
+            "file": "harness-py/src/strands_harness/interventions.py",
+            "lines": "55",
+            "contains": "if text == \"ask\":",
+            "url": "https://github.com/strands-agents/harness-sdk/blob/8ba04f70af542e41aadbc2eb8093b1a07df5ec96/harness-py/src/strands_harness/interventions.py#L55"
+          }
+        ]
+      },
+      {
+        "setup": "A Docker sandbox",
+        "how": "Pass `sandbox=DockerSandbox(\"<container>\", user=\"<user>\")` with a non-root container you start with only the workspace mounted",
+        "gives_you": "Shell, file tools and web fetches run inside that container instead of on your host",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "strands-py/src/strands/agent/agent.py",
+            "lines": "229",
+            "contains": "sandbox: Sandbox | None = None",
+            "url": "https://github.com/strands-agents/harness-sdk/blob/8ba04f70af542e41aadbc2eb8093b1a07df5ec96/strands-py/src/strands/agent/agent.py#L229"
+          },
+          {
+            "file": "strands-py/src/strands/sandbox/docker.py",
+            "lines": "27",
+            "contains": "def __init__(self, container: str, *, working_dir: str | None = None, user: str | None = None)",
+            "url": "https://github.com/strands-agents/harness-sdk/blob/8ba04f70af542e41aadbc2eb8093b1a07df5ec96/strands-py/src/strands/sandbox/docker.py#L27"
+          }
+        ]
+      },
+      {
+        "setup": "Only the tools needed",
+        "how": "`builtin_tools=[<names>]` listing just the built-in tools the task uses",
+        "gives_you": "The model can call only the tools you chose, with shell and write access only where the task needs them",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "harness-py/src/strands_harness/agent.py",
+            "lines": "246",
+            "contains": "builtin_tools: Sequence[BuiltinToolName] | BuiltinToolsConfig | None = None",
+            "url": "https://github.com/strands-agents/harness-sdk/blob/8ba04f70af542e41aadbc2eb8093b1a07df5ec96/harness-py/src/strands_harness/agent.py#L246"
+          }
+        ]
+      },
+      {
+        "setup": "Turn and token budgets",
+        "how": "Pass `limits={\"turns\": <n>, \"total_tokens\": <n>}` on each invocation",
+        "gives_you": "Each run stops after a fixed number of turns and a fixed token spend",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "strands-py/src/strands/agent/agent.py",
+            "lines": "854",
+            "contains": "limits: Limits | None = None",
+            "url": "https://github.com/strands-agents/harness-sdk/blob/8ba04f70af542e41aadbc2eb8093b1a07df5ec96/strands-py/src/strands/agent/agent.py#L854"
+          },
+          {
+            "file": "strands-py/src/strands/types/agent.py",
+            "lines": "174-176",
+            "contains": "turns: int",
+            "url": "https://github.com/strands-agents/harness-sdk/blob/8ba04f70af542e41aadbc2eb8093b1a07df5ec96/strands-py/src/strands/types/agent.py#L174-L176"
+          }
+        ]
+      },
+      {
+        "setup": "A clean working directory",
+        "how": "Start the agent from a directory whose `./.agent/skills`, `./.agent/memory` and AGENTS.md hold only files you wrote",
+        "gives_you": "Skills, memory and instructions come only from you, not from a repository you happen to run in",
+        "criterion": "C7",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "harness-py/src/strands_harness/defaults.py",
+            "lines": "37",
+            "contains": "DEFAULT_SKILLS_DIR = \"./.agent/skills\"",
+            "url": "https://github.com/strands-agents/harness-sdk/blob/8ba04f70af542e41aadbc2eb8093b1a07df5ec96/harness-py/src/strands_harness/defaults.py#L37"
+          },
+          {
+            "file": "harness-py/src/strands_harness/defaults.py",
+            "lines": "39",
+            "contains": "DEFAULT_MEMORY_DIR = \"./.agent/memory\"",
+            "url": "https://github.com/strands-agents/harness-sdk/blob/8ba04f70af542e41aadbc2eb8093b1a07df5ec96/harness-py/src/strands_harness/defaults.py#L39"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the whole agent process in a container or VM with outbound access limited to the hosts the task needs",
+        "gives_you": "An outer boundary around MCP servers and anything else the sandbox doesn't cover, and a narrow path for data to leave",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Exported traces",
+        "how": "Set `OTEL_TRACES_EXPORTER=<exporter>` and send spans to a collector outside the workspace",
+        "gives_you": "A record of each tool call with its arguments and results that the agent's own tools can't change",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "harness-py/src/strands_harness/telemetry.py",
+            "lines": "25",
+            "contains": "TRACES_EXPORTER_ENV_VAR = \"OTEL_TRACES_EXPORTER\"",
+            "url": "https://github.com/strands-agents/harness-sdk/blob/8ba04f70af542e41aadbc2eb8093b1a07df5ec96/harness-py/src/strands_harness/telemetry.py#L25"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; allowlist rules match tool names, not the commands inside a shell call, so read the full command before approving it."
+    ],
+    "handling": [
+      "Session transcripts in `./.agent/sessions` and memory in `./.agent/memory` are plaintext in the working directory; keep them out of commits and shared folders.",
+      "Exported traces carry prompts and tool data unredacted unless you opt into redaction; send them only to a collector you trust with that data."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

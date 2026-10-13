@@ -36,6 +36,128 @@
     "external_communication": "opt_in"
   },
   "headline": "HolmesGPT's shell gate is better than most: commands are parsed, only a read-only allowlist runs without approval, and anything else waits for the user. But the CLI runs with the user's full kubeconfig and cloud credentials on the host with no sandbox, and its auto-allowed commands can read Kubernetes secrets, raw kubeconfig credentials and local credential files while the default web-fetch tool can reach any public host. The dominant risk is unattended credential exfiltration after prompt injection through logs, events or web pages; destructive changes still need a human, but the approval screen truncates long commands.",
+  "safe_setup": {
+    "intro": "HolmesGPT ships a parser-based shell gate that is on by default: only a read-only command list runs on its own, and anything else waits for your approval. The CLI otherwise runs with your full kubeconfig, cloud logins and environment on the host, with no sandbox, so the safest setup narrows the identity it runs as and builds containment around it.",
+    "steps": [
+      {
+        "setup": "A read-only cluster identity",
+        "how": "Run it with a kubeconfig context and cloud login that can only read, and that cannot read Secrets",
+        "gives_you": "The cluster and cloud provider themselves refuse writes and secret reads, whatever the model asks for",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Per-call shell approval",
+        "how": "Run interactively, without `--bash-always-allow`",
+        "gives_you": "A person decides on every shell command outside the read-only list",
+        "criterion": "C2",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "holmes/main.py",
+            "lines": "257-261",
+            "contains": "--bash-always-allow",
+            "url": "https://github.com/HolmesGPT/holmesgpt/blob/8e0fa1ddaaba590d9e38e0db57fee8974e97da10/holmes/main.py#L257-L261"
+          }
+        ]
+      },
+      {
+        "setup": "Approval for extension tools",
+        "how": "Set `approval_required_tools` on each MCP server and custom toolset you add, `'*'` for all its tools",
+        "gives_you": "Extension tools wait for your approval like shell commands do",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "holmes/core/tools.py",
+            "lines": "805-808",
+            "contains": "approval_required_tools",
+            "url": "https://github.com/HolmesGPT/holmesgpt/blob/8e0fa1ddaaba590d9e38e0db57fee8974e97da10/holmes/core/tools.py#L805-L808"
+          }
+        ]
+      },
+      {
+        "setup": "Web fetch switched off",
+        "how": "Under `toolsets:` in ~/.holmes/config.yaml, set `internet` to `enabled: false` unless the task needs web pages",
+        "gives_you": "No unattended requests to public hosts, which closes the main path for data to leave",
+        "criterion": "C5",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "holmes/config.py",
+            "lines": "163",
+            "contains": "toolsets:",
+            "url": "https://github.com/HolmesGPT/holmesgpt/blob/8e0fa1ddaaba590d9e38e0db57fee8974e97da10/holmes/config.py#L163"
+          },
+          {
+            "file": "holmes/plugins/toolsets/internet/internet.py",
+            "lines": "389",
+            "contains": "name=\"internet\"",
+            "url": "https://github.com/HolmesGPT/holmesgpt/blob/8e0fa1ddaaba590d9e38e0db57fee8974e97da10/holmes/plugins/toolsets/internet/internet.py#L389"
+          },
+          {
+            "file": "holmes/core/tools.py",
+            "lines": "782",
+            "contains": "enabled: bool",
+            "url": "https://github.com/HolmesGPT/holmesgpt/blob/8e0fa1ddaaba590d9e38e0db57fee8974e97da10/holmes/core/tools.py#L782"
+          }
+        ]
+      },
+      {
+        "setup": "A step budget",
+        "how": "Keep the default `--max-steps` of 100, or lower it for short questions",
+        "gives_you": "Every question ends after a fixed number of model steps",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "holmes/main.py",
+            "lines": "107-110",
+            "contains": "--max-steps",
+            "url": "https://github.com/HolmesGPT/holmesgpt/blob/8e0fa1ddaaba590d9e38e0db57fee8974e97da10/holmes/main.py#L107-L110"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the CLI in a container or VM holding only the credentials it needs, with outbound access limited to the model provider and your cluster",
+        "gives_you": "An outer boundary around shell and toolset commands, which otherwise run on your host with your home directory and network",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "OpenTelemetry tracing",
+        "how": "Set `OTEL_EXPORTER_OTLP_ENDPOINT` to a collector you control, or pass `--trace otel`",
+        "gives_you": "A span for every tool call, with its command and result status, kept off the host",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "holmes/core/tracing.py",
+            "lines": "398",
+            "contains": "OTEL_EXPORTER_OTLP_ENDPOINT",
+            "url": "https://github.com/HolmesGPT/holmesgpt/blob/8e0fa1ddaaba590d9e38e0db57fee8974e97da10/holmes/core/tracing.py#L398"
+          },
+          {
+            "file": "holmes/main.py",
+            "lines": "241-245",
+            "contains": "--trace",
+            "url": "https://github.com/HolmesGPT/holmesgpt/blob/8e0fa1ddaaba590d9e38e0db57fee8974e97da10/holmes/main.py#L241-L245"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve commands one at a time; the approval panel shows the first 200 characters, so ask for a shorter command when one runs longer.",
+      "An 'always approve' answer is saved in ~/.holmes with no expiry; choose narrow prefixes and review the saved list from time to time."
+    ],
+    "handling": [
+      "Tool output, including anything a command prints, goes to the model provider unredacted; treat the session like the data it reads.",
+      "Trace spans carry each command; store them like other operational logs."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

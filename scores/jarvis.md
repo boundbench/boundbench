@@ -25,6 +25,24 @@ Controls where a risk surface exists: 0.90 / 8.0 (11%); 2 criteria scored SA (su
 
 HuggingGPT as shipped runs every request on the operator's OpenAI and Hugging Face credentials, and its default network exposure, credential handling, file handling and web client are not locked down. The model's plan runs without approval and fetches any URL it chooses. Treat it as research demo code: run it only on localhost, with throwaway keys.
 
+## Safest setup
+
+HuggingGPT is research demo code: there is no approval step, sign-in or spending limit to turn on, and its defaults are not locked down. The safest setup keeps it on your own machine with throwaway, low-limit keys, runs inference remotely, and builds containment around the server.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Dedicated, low-limit keys | Use an OpenAI project key with a spending limit set at OpenAI and a read-only Hugging Face token, both used for nothing else | Whatever a run does, it reaches only throwaway credentials and spend you capped yourself (C1) |
+| Reachable only by you | Run the server on localhost, on a machine whose firewall keeps its ports private to you | Only you can start runs on your keys (C1) |
+| Remote inference only | Set `inference_mode: huggingface` in your config, as the shipped lite config does ([hugginggpt/server/configs/config.default.yaml:15](https://github.com/microsoft/JARVIS/blob/7624cf388b47334ff8a0868e7d862dde18cfda86/hugginggpt/server/configs/config.default.yaml#L15); [hugginggpt/server/configs/config.lite.yaml:10](https://github.com/microsoft/JARVIS/blob/7624cf388b47334ff8a0868e7d862dde18cfda86/hugginggpt/server/configs/config.lite.yaml#L10)) | No local model server runs, so no unpinned model files load next to your keys (C7) |
+| Keys in the environment | Put the keys in `OPENAI_API_KEY` and `HUGGINGFACE_ACCESS_TOKEN` and leave the config placeholders as shipped ([hugginggpt/server/awesome_chat.py:107](https://github.com/microsoft/JARVIS/blob/7624cf388b47334ff8a0868e7d862dde18cfda86/hugginggpt/server/awesome_chat.py#L107); [hugginggpt/server/awesome_chat.py:161](https://github.com/microsoft/JARVIS/blob/7624cf388b47334ff8a0868e7d862dde18cfda86/hugginggpt/server/awesome_chat.py#L161); [hugginggpt/server/configs/config.default.yaml:2](https://github.com/microsoft/JARVIS/blob/7624cf388b47334ff8a0868e7d862dde18cfda86/hugginggpt/server/configs/config.default.yaml#L2)) | Your keys stay out of the repository-tracked config file (C8) |
+| Its own container or VM | Run the server in a container or VM whose network reaches only OpenAI, Hugging Face and the media hosts you use | Server-side fetches reach only hosts you chose, never your internal network or cloud metadata (C3) |
+| A separate model server | If you need local models, run the model server in its own container with a config copy that holds no API keys | Third-party model files load away from your credentials (C7) |
+| Logs kept elsewhere | Copy the `logs/` folder to storage the server can't modify as each run finishes ([hugginggpt/server/configs/config.default.yaml:12](https://github.com/microsoft/JARVIS/blob/7624cf388b47334ff8a0868e7d862dde18cfda86/hugginggpt/server/configs/config.default.yaml#L12)) | A record of each request and task plan that the server process can't rewrite (C9) |
+
+### Handling data
+
+- `logs/debug.log` records every prompt and model response at full detail by default; store it like the data users send.
+
 ## Critical gaps
 - The server forwards client-supplied API keys to the downstream LLM API (token passthrough). (ASI03; C1) — [hugginggpt/server/awesome_chat.py:1054-1056](https://github.com/microsoft/JARVIS/blob/7624cf388b47334ff8a0868e7d862dde18cfda86/hugginggpt/server/awesome_chat.py#L1054-L1056)
 - A hijacked run can exfiltrate unattended via server-side URL fetches and has further unattended egress paths. (ASI01, LLM01; C5) — [hugginggpt/server/awesome_chat.py:515](https://github.com/microsoft/JARVIS/blob/7624cf388b47334ff8a0868e7d862dde18cfda86/hugginggpt/server/awesome_chat.py#L515)

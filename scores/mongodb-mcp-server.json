@@ -36,6 +36,155 @@
     "external_communication": "no"
   },
   "headline": "A carefully engineered server with real safety features (read-only mode, blocked server-side JavaScript, untrusted-data wrapping, secret redaction, read caps, and confirmations for drop and delete tools), but most of them are partial or opt-in. As shipped, writes are enabled, update-many and insert-many need no confirmation, the confirmation gate does not cover every path, and the connect tool accepts any host. Prompt-injected text in the database can therefore both copy data to an attacker's server and irreversibly change data with no human involved. Run it with --readOnly and a least-privilege database user.",
+  "safe_setup": {
+    "intro": "MongoDB MCP Server blocks server-side JavaScript, wraps database content as untrusted data, redacts secrets in its logs, caps reads, and keeps Atlas tools off until you add Atlas API credentials. As shipped, write tools are on and the model can open connections of its own, so the safest setup starts from a read-only database user, turns on read-only mode and keeps the server on the one deployment you configure.",
+    "steps": [
+      {
+        "setup": "A read-only database user",
+        "how": "Put a connection string in `MDB_MCP_CONNECTION_STRING` for a database user with a read role on only the databases the task needs",
+        "gives_you": "MongoDB itself refuses writes and other databases, whatever the model asks for",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "packages/cli/src/config/parseUserConfig.ts",
+            "lines": "21",
+            "contains": "envPrefix: \"MDB_MCP_\"",
+            "url": "https://github.com/mongodb-js/mongodb-mcp-server/blob/b5c4bb42e743a2d4c4fc950d1e236ce9c31c6f6d/packages/cli/src/config/parseUserConfig.ts#L21"
+          },
+          {
+            "file": "packages/cli/src/config/userConfig.ts",
+            "lines": "49",
+            "contains": "connectionString: z",
+            "url": "https://github.com/mongodb-js/mongodb-mcp-server/blob/b5c4bb42e743a2d4c4fc950d1e236ce9c31c6f6d/packages/cli/src/config/userConfig.ts#L49"
+          }
+        ]
+      },
+      {
+        "setup": "Read-only mode",
+        "how": "`--readOnly` or `MDB_MCP_READ_ONLY=true`",
+        "gives_you": "Create, update and delete tools are never registered, so nothing the model reads can change your data",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/cli/src/config/userConfig.ts",
+            "lines": "110-112",
+            "contains": "readOnly: z",
+            "url": "https://github.com/mongodb-js/mongodb-mcp-server/blob/b5c4bb42e743a2d4c4fc950d1e236ce9c31c6f6d/packages/cli/src/config/userConfig.ts#L110-L112"
+          },
+          {
+            "file": "README.md",
+            "lines": "455",
+            "contains": "`MDB_MCP_READ_ONLY` / `--readOnly`",
+            "url": "https://github.com/mongodb-js/mongodb-mcp-server/blob/b5c4bb42e743a2d4c4fc950d1e236ce9c31c6f6d/README.md#L455"
+          }
+        ]
+      },
+      {
+        "setup": "One configured deployment",
+        "how": "Add `connect` to `disabledTools` (`MDB_MCP_DISABLED_TOOLS`) alongside the startup connection string",
+        "gives_you": "The model works only on the deployment and credential you chose",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/cli/src/config/userConfig.ts",
+            "lines": "82-84",
+            "contains": "disabledTools: z",
+            "url": "https://github.com/mongodb-js/mongodb-mcp-server/blob/b5c4bb42e743a2d4c4fc950d1e236ce9c31c6f6d/packages/cli/src/config/userConfig.ts#L82-L84"
+          },
+          {
+            "file": "README.md",
+            "lines": "424",
+            "contains": "`MDB_MCP_DISABLED_TOOLS` / `--disabledTools`",
+            "url": "https://github.com/mongodb-js/mongodb-mcp-server/blob/b5c4bb42e743a2d4c4fc950d1e236ce9c31c6f6d/README.md#L424"
+          },
+          {
+            "file": "packages/tools-mongodb/src/tools/connect/connect.ts",
+            "lines": "25",
+            "contains": "static toolName = \"connect\";",
+            "url": "https://github.com/mongodb-js/mongodb-mcp-server/blob/b5c4bb42e743a2d4c4fc950d1e236ce9c31c6f6d/packages/tools-mongodb/src/tools/connect/connect.ts#L25"
+          }
+        ]
+      },
+      {
+        "setup": "Wider write confirmations",
+        "how": "When writes are on, keep the default `confirmationRequiredTools` list and add update-many, insert-many, rename-collection and create-index to it",
+        "gives_you": "Bulk writes join the drop and delete tools in the confirmation step",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/cli/src/config/userConfig.ts",
+            "lines": "87-98",
+            "contains": "confirmationRequiredTools: z",
+            "url": "https://github.com/mongodb-js/mongodb-mcp-server/blob/b5c4bb42e743a2d4c4fc950d1e236ce9c31c6f6d/packages/cli/src/config/userConfig.ts#L87-L98"
+          }
+        ]
+      },
+      {
+        "setup": "Server-side JavaScript blocked",
+        "how": "Keep the default `disableServerSideJs` set to `true`",
+        "gives_you": "Queries and pipelines can't run JavaScript inside the database",
+        "criterion": "C4",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "packages/cli/src/config/userConfig.ts",
+            "lines": "135-137",
+            "contains": "disableServerSideJs: z",
+            "url": "https://github.com/mongodb-js/mongodb-mcp-server/blob/b5c4bb42e743a2d4c4fc950d1e236ce9c31c6f6d/packages/cli/src/config/userConfig.ts#L135-L137"
+          }
+        ]
+      },
+      {
+        "setup": "Untrusted-data wrapping",
+        "how": "Keep the default `disableUntrustedDataWarning` set to `false`",
+        "gives_you": "Database content reaches the model marked as data, with a warning against following it",
+        "criterion": "C5",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "packages/cli/src/config/userConfig.ts",
+            "lines": "128-130",
+            "contains": "disableUntrustedDataWarning: z",
+            "url": "https://github.com/mongodb-js/mongodb-mcp-server/blob/b5c4bb42e743a2d4c4fc950d1e236ce9c31c6f6d/packages/cli/src/config/userConfig.ts#L128-L130"
+          }
+        ]
+      },
+      {
+        "setup": "A query time limit",
+        "how": "Set `maxTimeMS` to `<ms>`",
+        "gives_you": "Reads stop on the database after a set time instead of running unbounded",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/cli/src/config/userConfig.ts",
+            "lines": "274-282",
+            "contains": "maxTimeMS: z.coerce",
+            "url": "https://github.com/mongodb-js/mongodb-mcp-server/blob/b5c4bb42e743a2d4c4fc950d1e236ce9c31c6f6d/packages/cli/src/config/userConfig.ts#L274-L282"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the server in a container or VM whose network reaches only your database hosts",
+        "gives_you": "Data stays on hosts you chose, even if text in the database steers the model",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; a write's filter decides how many documents it changes, so read the filter before approving."
+    ],
+    "handling": [
+      "The disk log in ~/.mongodb/mongodb-mcp/.app-logs keeps tool names and request IDs for 30 days, not arguments; keep it as the record of what ran.",
+      "Anonymous, content-free usage telemetry is on by default; `telemetry` set to `disabled`, or DO_NOT_TRACK in the environment, turns it off."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

@@ -36,6 +36,155 @@
     "external_communication": "yes"
   },
   "headline": "As shipped, an n8n AI agent runs every tool call it decides on without human review, using the workflow author's long-lived, broadly scoped credentials. If someone gets instructions into what the agent reads (an email, a chat message, a web page), it can leak data and send, post or write on their behalf. n8n has good opt-in controls, including per-tool human approval that shows the exact call, SSRF protection and an isolated runner container, but none are on by default. Code tasks run as the same OS user that holds the credential encryption key.",
+  "safe_setup": {
+    "intro": "n8n keeps credentials out of the model's reach, gives each agent only the tools its author connects, leaves Execute Command off and saves a record of every tool call. As shipped, agent tool calls run without review on broad, long-lived credentials, so the safest setup narrows those credentials and turns on the approval, network, extension and runner controls n8n already includes.",
+    "steps": [
+      {
+        "setup": "Narrowly scoped credentials",
+        "how": "Connect each tool with an account or OAuth grant limited to the scopes that tool needs, read-only where the task allows",
+        "gives_you": "The connected service itself refuses anything outside that grant, whatever the agent asks for",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Human review per tool",
+        "how": "Connect every send, write and HTTP tool to the agent through a Human review node",
+        "gives_you": "A person sees the exact tool and parameters before each of those calls runs",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/workflow/src/node-helpers.ts",
+            "lines": "2012-2015",
+            "contains": "HitlTool",
+            "url": "https://github.com/n8n-io/n8n/blob/ea9f451076722a6784e0f9d78af4410952be9a99/packages/workflow/src/node-helpers.ts#L2012-L2015"
+          }
+        ]
+      },
+      {
+        "setup": "Per-credential domain limits",
+        "how": "Set Allowed HTTP Request Domains to Specific Domains on each credential, listing only that service's domains",
+        "gives_you": "Each credential can only be sent to the service it belongs to",
+        "criterion": "C8",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/workflow/src/credential-domain-restrictions.ts",
+            "lines": "16-17",
+            "contains": "Allowed HTTP Request Domains",
+            "url": "https://github.com/n8n-io/n8n/blob/ea9f451076722a6784e0f9d78af4410952be9a99/packages/workflow/src/credential-domain-restrictions.ts#L16-L17"
+          }
+        ]
+      },
+      {
+        "setup": "SSRF protection",
+        "how": "`N8N_SSRF_PROTECTION_ENABLED=true`",
+        "gives_you": "HTTP tools are kept away from internal and private network addresses",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/@n8n/config/src/configs/ssrf-protection.config.ts",
+            "lines": "91-92",
+            "contains": "N8N_SSRF_PROTECTION_ENABLED",
+            "url": "https://github.com/n8n-io/n8n/blob/ea9f451076722a6784e0f9d78af4410952be9a99/packages/@n8n/config/src/configs/ssrf-protection.config.ts#L91-L92"
+          }
+        ]
+      },
+      {
+        "setup": "Verified community nodes only",
+        "how": "`N8N_UNVERIFIED_PACKAGES_ENABLED=false`, or `N8N_COMMUNITY_PACKAGES_ENABLED=false` when no community nodes are needed",
+        "gives_you": "Only n8n-vetted, checksum-verified third-party code loads next to your credentials",
+        "criterion": "C7",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/cli/src/modules/community-packages/community-packages.config.ts",
+            "lines": "12-13",
+            "contains": "N8N_COMMUNITY_PACKAGES_ENABLED",
+            "url": "https://github.com/n8n-io/n8n/blob/ea9f451076722a6784e0f9d78af4410952be9a99/packages/cli/src/modules/community-packages/community-packages.config.ts#L12-L13"
+          },
+          {
+            "file": "packages/cli/src/modules/community-packages/community-packages.config.ts",
+            "lines": "24-25",
+            "contains": "N8N_UNVERIFIED_PACKAGES_ENABLED",
+            "url": "https://github.com/n8n-io/n8n/blob/ea9f451076722a6784e0f9d78af4410952be9a99/packages/cli/src/modules/community-packages/community-packages.config.ts#L24-L25"
+          }
+        ]
+      },
+      {
+        "setup": "Time and concurrency limits",
+        "how": "Set `EXECUTIONS_TIMEOUT=<seconds>` and `N8N_CONCURRENCY_PRODUCTION_LIMIT=<n>`, and keep each agent's Max Iterations at 10 or lower",
+        "gives_you": "Every run ends within a set time, and repeated triggers can only run a bounded number at once",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/@n8n/config/src/configs/executions.config.ts",
+            "lines": "98-99",
+            "contains": "EXECUTIONS_TIMEOUT",
+            "url": "https://github.com/n8n-io/n8n/blob/ea9f451076722a6784e0f9d78af4410952be9a99/packages/@n8n/config/src/configs/executions.config.ts#L98-L99"
+          },
+          {
+            "file": "packages/@n8n/config/src/configs/executions.config.ts",
+            "lines": "25-26",
+            "contains": "N8N_CONCURRENCY_PRODUCTION_LIMIT",
+            "url": "https://github.com/n8n-io/n8n/blob/ea9f451076722a6784e0f9d78af4410952be9a99/packages/@n8n/config/src/configs/executions.config.ts#L25-L26"
+          },
+          {
+            "file": "packages/@n8n/nodes-langchain/nodes/agents/Agent/agents/ToolsAgent/options.ts",
+            "lines": "21-25",
+            "contains": "default: 10",
+            "url": "https://github.com/n8n-io/n8n/blob/ea9f451076722a6784e0f9d78af4410952be9a99/packages/@n8n/nodes-langchain/nodes/agents/Agent/agents/ToolsAgent/options.ts#L21-L25"
+          }
+        ]
+      },
+      {
+        "setup": "An external runner container",
+        "how": "`N8N_RUNNERS_MODE=external` with the n8nio/runners image, keeping the default `N8N_RUNNERS_INSECURE_MODE=false`",
+        "gives_you": "Code node and Code tool code runs in a separate container without n8n's encryption key or credential database",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/@n8n/config/src/configs/runners.config.ts",
+            "lines": "16-17",
+            "contains": "N8N_RUNNERS_MODE",
+            "url": "https://github.com/n8n-io/n8n/blob/ea9f451076722a6784e0f9d78af4410952be9a99/packages/@n8n/config/src/configs/runners.config.ts#L16-L17"
+          },
+          {
+            "file": "packages/@n8n/config/src/configs/runners.config.ts",
+            "lines": "89-90",
+            "contains": "N8N_RUNNERS_INSECURE_MODE",
+            "url": "https://github.com/n8n-io/n8n/blob/ea9f451076722a6784e0f9d78af4410952be9a99/packages/@n8n/config/src/configs/runners.config.ts#L89-L90"
+          }
+        ]
+      },
+      {
+        "setup": "Saved execution records",
+        "how": "Keep the default `EXECUTIONS_DATA_SAVE_ON_SUCCESS=all` and `EXECUTIONS_DATA_SAVE_ON_ERROR=all`, and set `EXECUTIONS_DATA_SAVE_ON_PROGRESS=true`",
+        "gives_you": "A record of every tool call, its inputs and outputs, saved as each step finishes",
+        "criterion": "C9",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "packages/@n8n/config/src/configs/executions.config.ts",
+            "lines": "144-153",
+            "contains": "EXECUTIONS_DATA_SAVE_ON_PROGRESS",
+            "url": "https://github.com/n8n-io/n8n/blob/ea9f451076722a6784e0f9d78af4410952be9a99/packages/@n8n/config/src/configs/executions.config.ts#L144-L153"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each review message and approve calls one at a time; tools not connected through a Human review node still run without asking.",
+      "Keep the default review message, which shows the exact tool name and parameters the call will run with."
+    ],
+    "handling": [
+      "Execution records hold full prompts and tool inputs and outputs unredacted by default; store and prune them like the data the agent reads."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

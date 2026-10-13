@@ -25,6 +25,31 @@ Controls where a risk surface exists: 1.05 / 9.0 (12%); 1 criterion scored SA (s
 
 Keep's AI incident chat can call methods on connected providers with no approval step and no allowlist, and the provider-invocation endpoint it uses is not locked down, which widens its reach. Alert text from monitoring tools goes into the same session, so a prompt injection in an alert could act on Kubernetes or ticketing systems and reach stored integration secrets. The default compose file also disables authentication and enables telemetry. Treat the AI features as unsafe to enable on a deployment with real integrations until the invoke endpoint is restricted and chat actions are gated.
 
+## Safest setup
+
+Keep ships with its AI features off until you add a model key, and its backend checks each caller's role when sign-in is on. The shipped compose file turns sign-in off, and the incident chat has no approval step or limits of its own, so the safest setup turns on sign-in and narrow roles and puts most of the protection around Keep yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Least-privilege integration credentials | Give each connected integration a credential scoped at the provider to read-only or to the actions you need, such as a read-only Kubernetes service account | Each connected system itself refuses anything outside that grant, whatever Keep or its assistant asks for (C1) |
+| Sign-in turned on | Set `AUTH_TYPE` to `DB` or to your identity provider, such as `KEYCLOAK` or `OKTA`, on both the frontend and backend ([keep/identitymanager/identitymanagerfactory.py:21-27](https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/identitymanager/identitymanagerfactory.py#L21-L27); [keep/identitymanager/identitymanagerfactory.py:55-57](https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/identitymanager/identitymanagerfactory.py#L55-L57)) | Every request comes from a signed-in user whose role the backend checks (C1) |
+| Read-only roles for most users | Give people who triage incidents the `noc` role and keep `admin` for those who manage providers ([keep/identitymanager/rbac.py:20-24](https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/identitymanager/rbac.py#L20-L24); [keep/identitymanager/rbac.py:55-58](https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/identitymanager/rbac.py#L55-L58)) | Most sessions, and the chat acting in them, can read but not change provider setup or call provider methods (C1) |
+| AI chat off with live integrations | Leave `OPENAI_API_KEY` and `OPEN_AI_API_KEY` unset on deployments connected to production systems ([keep-ui/shared/lib/server/getConfig.ts:76-77](https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/shared/lib/server/getConfig.ts#L76-L77)) | Alert text from monitoring tools never reaches a model that can act on your connected systems (C5) |
+| A managed secret store | Set `SECRET_MANAGER_TYPE` to `VAULT`, `AWS`, `GCP` or `K8S` in place of the default `FILE` ([keep/secretmanager/secretmanagerfactory.py:8-14](https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/secretmanager/secretmanagerfactory.py#L8-L14); [keep/secretmanager/secretmanagerfactory.py:26](https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/secretmanager/secretmanagerfactory.py#L26)) | Integration credentials live in your secret manager rather than as plaintext files in the state directory (C8) |
+| Telemetry turned off | Set `POSTHOG_DISABLED=true` on both containers and `SENTRY_DISABLED=true` on the frontend ([keep/api/core/posthog.py:17](https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/api/core/posthog.py#L17); [keep-ui/shared/lib/server/getConfig.ts:72-74](https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/shared/lib/server/getConfig.ts#L72-L74)) | Usage events and user emails stay inside your deployment (C8) |
+| A private, egress-limited network | Run the Keep containers on a private network whose outbound access reaches only the model provider and the integrations you connect | An outer boundary around code the server runs and a narrow path for data to leave (C4) |
+| Logs kept outside Keep | Ship the backend container's logs to a log store outside the Keep containers | A record of provider calls that code running inside Keep can't alter (C9) |
+
+### Approving with confidence
+
+- The workflow builder shows each proposed step; read each one and accept steps one at a time.
+- Incident chat actions run as soon as the model calls them, so review the enrichments a chat session added to an incident before later sessions rely on them.
+
+### Handling data
+
+- With the default file store, the state directory holds integration credentials in plaintext; store and back it up like a password vault.
+- Chat history, including tool results, stays in the browser; clear it on shared machines.
+
 ## Critical gaps
 - The AI chat's invokeProviderMethod runs provider methods with no approval, and the invocation endpoint is not locked down. (ASI02, ASI09; C2) — [keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx:215-220](https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L215-L220)
 - A hijacked chat can read secrets and exfiltrate them or take irreversible actions without a human, because untrusted alert text shares the session with ungated provider calls. (ASI01, LLM01; C5) — [keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx:143-146](https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L143-L146); [keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx:215-220](https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/app/(keep)/incidents/[id]/chat/incident-chat.tsx#L215-L220); [keep/providers/http_provider/http_provider.py:37-39](https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/providers/http_provider/http_provider.py#L37-L39)

@@ -36,6 +36,133 @@
     "external_communication": "yes"
   },
   "headline": "Shannon is an offensive-security agent: by design it runs model-chosen shell commands and real exploits against a live target with no human approval step. Everything runs inside a throwaway non-root Docker container with the scanned repo mounted read-only, which contains the damage to the host, but the container keeps the model provider key in the environment that every model-run shell inherits, has the default seccomp profile switched off, no resource limits, and shares a network with an unauthenticated Temporal server and a writable mount of every scan workspace. Scope limits (target URL, rules of engagement) are prompt text, not code; the only code-enforced restriction is an optional path deny list, and the repo being scanned can add its own instruction files to the agents without any trust decision; other repository-supplied resources are not integrity-protected either. Use it only against disposable, authorized, non-production targets, ideally inside a throwaway VM, as its own documentation advises.",
+  "safe_setup": {
+    "intro": "Shannon runs every scan in a throwaway non-root Docker container with the scanned repo mounted read-only, and its stop command ends in-flight work. There is no approval step and scope limits are prompt text only, so the safest setup rests on a limited key, a disposable target and containment you build around the run.",
+    "steps": [
+      {
+        "setup": "A dedicated, spend-limited key",
+        "how": "Give scans their own model provider API key with a spending limit set at the provider",
+        "gives_you": "A leaked or runaway key can only spend what you allowed, whatever happens inside the container",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "An authorized, disposable target",
+        "how": "Point `-u` only at a non-production target you are authorized to test and can restore from a snapshot",
+        "gives_you": "Changes made by live exploits land on a system you can reset",
+        "criterion": "C2",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "apps/cli/src/index.ts",
+            "lines": "197",
+            "contains": "url: ['-u', '--url']",
+            "url": "https://github.com/KeygraphHQ/shannon/blob/a14c7944d87b30ed7bfecd4bad06562e24002b01/apps/cli/src/index.ts#L197"
+          }
+        ]
+      },
+      {
+        "setup": "One provider key only",
+        "how": "Keep the default with `SHANNON_USE_PI_AUTH` unset",
+        "gives_you": "Only the selected provider's key enters the container, not your host pi credential file",
+        "criterion": "C1",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "apps/cli/src/env.ts",
+            "lines": "59",
+            "contains": "SHANNON_USE_PI_AUTH",
+            "url": "https://github.com/KeygraphHQ/shannon/blob/a14c7944d87b30ed7bfecd4bad06562e24002b01/apps/cli/src/env.ts#L59"
+          }
+        ]
+      },
+      {
+        "setup": "Analysis-only mode",
+        "how": "`exploit: \"false\"` in the file passed with `--config`, when findings without proof are enough",
+        "gives_you": "The exploitation phase and its live attacks are skipped",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "apps/worker/configs/config-schema.json",
+            "lines": "141-144",
+            "contains": "\"exploit\"",
+            "url": "https://github.com/KeygraphHQ/shannon/blob/a14c7944d87b30ed7bfecd4bad06562e24002b01/apps/worker/configs/config-schema.json#L141-L144"
+          },
+          {
+            "file": "apps/cli/src/index.ts",
+            "lines": "199",
+            "contains": "config: ['-c', '--config']",
+            "url": "https://github.com/KeygraphHQ/shannon/blob/a14c7944d87b30ed7bfecd4bad06562e24002b01/apps/cli/src/index.ts#L199"
+          }
+        ]
+      },
+      {
+        "setup": "Path deny rules",
+        "how": "List paths to leave alone as `code_path` entries under `avoid` in the `rules` block of the config file",
+        "gives_you": "File tools and recognised shell file commands skip the paths you list",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "apps/worker/configs/config-schema.json",
+            "lines": "105-109",
+            "contains": "\"avoid\"",
+            "url": "https://github.com/KeygraphHQ/shannon/blob/a14c7944d87b30ed7bfecd4bad06562e24002b01/apps/worker/configs/config-schema.json#L105-L109"
+          },
+          {
+            "file": "apps/worker/configs/config-schema.json",
+            "lines": "216",
+            "contains": "\"code_path\"",
+            "url": "https://github.com/KeygraphHQ/shannon/blob/a14c7944d87b30ed7bfecd4bad06562e24002b01/apps/worker/configs/config-schema.json#L216"
+          }
+        ]
+      },
+      {
+        "setup": "A reviewed repository copy",
+        "how": "Point `-r` at a copy holding no AGENTS.md, CLAUDE.md, .pi/SYSTEM.md or other agent configuration you didn't write",
+        "gives_you": "Instructions reach the agents only from Shannon and from you",
+        "criterion": "C6",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "apps/cli/src/index.ts",
+            "lines": "198",
+            "contains": "repo: ['-r', '--repo']",
+            "url": "https://github.com/KeygraphHQ/shannon/blob/a14c7944d87b30ed7bfecd4bad06562e24002b01/apps/cli/src/index.ts#L198"
+          }
+        ]
+      },
+      {
+        "setup": "A throwaway VM",
+        "how": "Run the CLI and Docker inside a dedicated VM whose network reaches only the target and the model provider",
+        "gives_you": "An outer boundary around the unhardened container and a narrow path for data to leave",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A watched run",
+        "how": "Follow each scan and end it with `stop` when it goes off course",
+        "gives_you": "The workflow is cancelled and the container stopped, so no command keeps running",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "apps/cli/src/index.ts",
+            "lines": "107",
+            "contains": "stop [<workspace>]",
+            "url": "https://github.com/KeygraphHQ/shannon/blob/a14c7944d87b30ed7bfecd4bad06562e24002b01/apps/cli/src/index.ts#L107"
+          }
+        ]
+      }
+    ],
+    "handling": [
+      "workflow.log records every tool call's full arguments without redaction; store it like the credentials and target data it may hold.",
+      "An authenticated-scan config places target passwords and TOTP secrets in the agents' prompts, so use a dedicated test account."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

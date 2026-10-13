@@ -36,6 +36,94 @@
     "external_communication": "yes"
   },
   "headline": "Coroot's MCP server gives AI agents read access to production logs, traces and metrics, checked on every call against the connecting user's Coroot role, plus one write: resolving alerts. The tools are narrow, carry accurate risk hints, cap their output size and run no code. The main weaknesses are what the data contains and what isn't recorded: logs and traces reach the agent's model unredacted and unmarked as untrusted, and apart from alert resolutions nothing records what an agent read. AI root-cause analysis is off by default; once enabled it sends telemetry to Coroot Cloud and posts model-written analyses to notification channels without review.",
+  "safe_setup": {
+    "intro": "Coroot's MCP server checks the connecting user's role on every call, keeps its backend credentials on the server, caps the size of every result and runs no code, and AI root-cause analysis stays off until you add a Coroot Cloud API key. It keeps no record of what an agent read and passes telemetry through as collected, so the safest setup connects each agent with a read-only account and adds limits and logging around the server.",
+    "steps": [
+      {
+        "setup": "A Viewer account per agent",
+        "how": "Define one service account per agent under `serviceAccounts` in the config file, with `role: Viewer` and its own entry in `apiKeys`",
+        "gives_you": "Coroot's per-call role check keeps the agent to the read-only tools, whatever the model asks for",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "config/config.go",
+            "lines": "197-203",
+            "contains": "ServiceAccounts        []ServiceAccount `yaml:\"serviceAccounts\"`",
+            "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/config/config.go#L197-L203"
+          },
+          {
+            "file": "rbac/role.go",
+            "lines": "10",
+            "contains": "RoleViewer RoleName = \"Viewer\"",
+            "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/rbac/role.go#L10"
+          }
+        ]
+      },
+      {
+        "setup": "Keys that end with the task",
+        "how": "Remove an agent's API key from its service account as soon as that agent no longer needs access",
+        "gives_you": "A lost or forgotten key stops reaching your telemetry",
+        "criterion": "C8",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "AI analysis kept off",
+        "how": "Leave the Coroot Cloud API key unset in settings unless you want AI root-cause analysis",
+        "gives_you": "Traces and events stay in your deployment, and no model-written analysis reaches your notification channels",
+        "criterion": "C8",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "api/cloud.go",
+            "lines": "15",
+            "contains": "ApiKey                     string `json:\"api_key\"`",
+            "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/cloud.go#L15"
+          }
+        ]
+      },
+      {
+        "setup": "Usage statistics off",
+        "how": "`--disable-usage-statistics`, or `DISABLE_USAGE_STATISTICS=true` in the environment",
+        "gives_you": "Per-tool MCP call counts stay inside your deployment",
+        "criterion": "C8",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "config/flags.go",
+            "lines": "30",
+            "contains": "kingpin.Flag(\"disable-usage-statistics\", \"Disable usage statistics\").Envar(\"DISABLE_USAGE_STATISTICS\")",
+            "url": "https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/config/flags.go#L30"
+          }
+        ]
+      },
+      {
+        "setup": "Rate limits at a proxy",
+        "how": "Put a reverse proxy in front of `/mcp` that limits requests per client",
+        "gives_you": "A runaway agent can't keep sending expensive queries to your metrics and log backends",
+        "criterion": "C10",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A tool-call log",
+        "how": "Turn on tool-call logging in the agent or MCP client that connects to Coroot, stored where the agent can't edit it",
+        "gives_you": "A record of what each agent read and with which arguments, which Coroot itself keeps only for alert resolutions",
+        "criterion": "C9",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve `resolve_alerts` calls one at a time; each sends resolution notices to Slack or PagerDuty that can't be recalled.",
+      "Check the list of alerts in a resolve call before approving it, since one call can cover any number of alerts."
+    ],
+    "handling": [
+      "Tool results carry log bodies and trace attributes unredacted; store agent transcripts and client logs like the production logs they came from.",
+      "With AI root-cause analysis on, traces and Kubernetes events go to Coroot Cloud as collected."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

@@ -36,6 +36,179 @@
     "external_communication": "yes"
   },
   "headline": "Paperclip ships serious governance machinery (a default-deny tool gateway with human review, per-request authorization with a responsible user, encrypted secrets, a structured activity log, budgets and opt-in Bubblewrap confinement), but almost none of it constrains the agents in the default setup. Out of the box it launches Claude Code and Codex on your machine with their permission prompts and sandboxes turned off, as your OS user, with no budget or timeout, and its default local mode treats every loopback request as the administrator. The dominant risk is a single hijacked or confused agent acting with your full local authority; turn on authenticated mode, per-agent confinement, budgets and timeouts before letting agents run unattended.",
+  "safe_setup": {
+    "intro": "Paperclip ships a default-deny tool gateway with human review, per-agent API identities, encrypted secrets and a structured activity log. Its defaults leave the coding agents unconfined, unprompted and unlimited on your machine, so the safest setup turns on the sign-in, confinement, trust and budget settings Paperclip already includes and puts its own boundary around the server.",
+    "steps": [
+      {
+        "setup": "A dedicated, scoped OS user",
+        "how": "Run the server as its own OS user, started with only the model keys and scoped, read-only-where-possible tokens the agents need",
+        "gives_you": "Agent processes inherit only the credentials you chose, and the providers refuse anything outside those scopes",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Authenticated mode",
+        "how": "`deploymentMode: \"authenticated\"` in the server config, or `PAPERCLIP_DEPLOYMENT_MODE=authenticated`",
+        "gives_you": "Control-plane requests need a signed-in principal, so reviews and installs stay with the people you authorize",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/shared/src/config-schema.ts",
+            "lines": "49",
+            "contains": "deploymentMode: z.enum(DEPLOYMENT_MODES).default(\"local_trusted\")",
+            "url": "https://github.com/paperclipai/paperclip/blob/1c07b5903b1b11139b1e1ce052a3cd4885865d90/packages/shared/src/config-schema.ts#L49"
+          },
+          {
+            "file": "packages/shared/src/constants.ts",
+            "lines": "4",
+            "contains": "\"authenticated\"",
+            "url": "https://github.com/paperclipai/paperclip/blob/1c07b5903b1b11139b1e1ce052a3cd4885865d90/packages/shared/src/constants.ts#L4"
+          },
+          {
+            "file": "server/src/config-file.ts",
+            "lines": "53",
+            "contains": "PAPERCLIP_DEPLOYMENT_MODE",
+            "url": "https://github.com/paperclipai/paperclip/blob/1c07b5903b1b11139b1e1ce052a3cd4885865d90/server/src/config-file.ts#L53"
+          }
+        ]
+      },
+      {
+        "setup": "CLI permission checks on",
+        "how": "Set `dangerouslySkipPermissions: false` on Claude agents and `dangerouslyBypassApprovalsAndSandbox: false` on Codex agents",
+        "gives_you": "The coding CLIs keep their own permission checks and sandbox for shell and file actions",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/adapters/claude-local/src/index.ts",
+            "lines": "70",
+            "contains": "dangerouslySkipPermissions (boolean, optional, default true)",
+            "url": "https://github.com/paperclipai/paperclip/blob/1c07b5903b1b11139b1e1ce052a3cd4885865d90/packages/adapters/claude-local/src/index.ts#L70"
+          },
+          {
+            "file": "packages/adapters/codex-local/src/index.ts",
+            "lines": "145",
+            "contains": "dangerouslyBypassApprovalsAndSandbox (boolean, optional)",
+            "url": "https://github.com/paperclipai/paperclip/blob/1c07b5903b1b11139b1e1ce052a3cd4885865d90/packages/adapters/codex-local/src/index.ts#L145"
+          }
+        ]
+      },
+      {
+        "setup": "Board approval for hiring",
+        "how": "Turn on `requireBoardApprovalForNewAgents` for each company",
+        "gives_you": "A person decides before any new agent joins the company",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/shared/src/validators/company.ts",
+            "lines": "39",
+            "contains": "requireBoardApprovalForNewAgents: z.boolean().optional()",
+            "url": "https://github.com/paperclipai/paperclip/blob/1c07b5903b1b11139b1e1ce052a3cd4885865d90/packages/shared/src/validators/company.ts#L39"
+          }
+        ]
+      },
+      {
+        "setup": "Bubblewrap confinement",
+        "how": "On Linux, set `engine: \"cli\"`, `filesystemScope: \"workspace\"` and `networkScope: \"allowlist\"` with a `networkAllowlist` of the provider hosts",
+        "gives_you": "Each agent sees only its workspace and reaches only the hosts you listed, and the run refuses to start without Bubblewrap",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/adapters/claude-local/src/index.ts",
+            "lines": "62",
+            "contains": "engine (string, optional)",
+            "url": "https://github.com/paperclipai/paperclip/blob/1c07b5903b1b11139b1e1ce052a3cd4885865d90/packages/adapters/claude-local/src/index.ts#L62"
+          },
+          {
+            "file": "packages/adapters/claude-local/src/index.ts",
+            "lines": "76",
+            "contains": "filesystemScope (string, optional)",
+            "url": "https://github.com/paperclipai/paperclip/blob/1c07b5903b1b11139b1e1ce052a3cd4885865d90/packages/adapters/claude-local/src/index.ts#L76"
+          },
+          {
+            "file": "packages/adapters/claude-local/src/index.ts",
+            "lines": "79-80",
+            "contains": "networkAllowlist (string[], optional)",
+            "url": "https://github.com/paperclipai/paperclip/blob/1c07b5903b1b11139b1e1ce052a3cd4885865d90/packages/adapters/claude-local/src/index.ts#L79-L80"
+          }
+        ]
+      },
+      {
+        "setup": "The low-trust preset",
+        "how": "`trustPreset: \"low_trust_review\"` on agents that read content you didn't write",
+        "gives_you": "Those runs use an isolated workspace, and their raw output stays out of higher-trust agents' context",
+        "criterion": "C5",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/shared/src/validators/agent.ts",
+            "lines": "21",
+            "contains": "trustPreset: trustPresetSchema.optional()",
+            "url": "https://github.com/paperclipai/paperclip/blob/1c07b5903b1b11139b1e1ce052a3cd4885865d90/packages/shared/src/validators/agent.ts#L21"
+          },
+          {
+            "file": "packages/shared/src/trust-policy.ts",
+            "lines": "1",
+            "contains": "\"low_trust_review\"",
+            "url": "https://github.com/paperclipai/paperclip/blob/1c07b5903b1b11139b1e1ce052a3cd4885865d90/packages/shared/src/trust-policy.ts#L1"
+          }
+        ]
+      },
+      {
+        "setup": "Budgets and timeouts",
+        "how": "Set `budgetMonthlyCents` on each company and agent, and `timeoutSec` and `maxTurnsPerRun` in each agent's adapter config",
+        "gives_you": "Runaway work pauses at a spend ceiling, and every run ends after a fixed time and number of turns",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/shared/src/validators/company.ts",
+            "lines": "27",
+            "contains": "budgetMonthlyCents",
+            "url": "https://github.com/paperclipai/paperclip/blob/1c07b5903b1b11139b1e1ce052a3cd4885865d90/packages/shared/src/validators/company.ts#L27"
+          },
+          {
+            "file": "packages/shared/src/validators/agent.ts",
+            "lines": "101",
+            "contains": "budgetMonthlyCents",
+            "url": "https://github.com/paperclipai/paperclip/blob/1c07b5903b1b11139b1e1ce052a3cd4885865d90/packages/shared/src/validators/agent.ts#L101"
+          },
+          {
+            "file": "packages/adapters/claude-local/src/index.ts",
+            "lines": "90",
+            "contains": "timeoutSec (number, optional)",
+            "url": "https://github.com/paperclipai/paperclip/blob/1c07b5903b1b11139b1e1ce052a3cd4885865d90/packages/adapters/claude-local/src/index.ts#L90"
+          },
+          {
+            "file": "packages/adapters/claude-local/src/index.ts",
+            "lines": "69",
+            "contains": "maxTurnsPerRun (number, optional)",
+            "url": "https://github.com/paperclipai/paperclip/blob/1c07b5903b1b11139b1e1ce052a3cd4885865d90/packages/adapters/claude-local/src/index.ts#L69"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the whole Paperclip server in a container or VM with outbound access limited to the hosts the agents need",
+        "gives_you": "An outer boundary around every agent process and the instance's own data, including adapters that Bubblewrap doesn't cover",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Read each gateway review prompt and approve calls one at a time.",
+      "Install plugins and adapter packages at a version you have reviewed, since npm installs take the latest version unless you name one."
+    ],
+    "handling": [
+      "Secrets bound to an agent reach its process as environment variables; bind only the ones each agent needs.",
+      "Anonymous telemetry is on by default and carries no prompts or tool output; `PAPERCLIP_TELEMETRY_DISABLED=1` turns it off."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

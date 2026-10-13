@@ -25,6 +25,24 @@ Controls where a risk surface exists: 2.23 / 6.0 (37%); 4 criteria scored SA (su
 
 AI Town's agents have a tiny action surface: the model never calls tools or runs code, and everything it produces is in-game chat text or a memory summary, which is why four criteria score as structurally absent. The real risks sit around the agents rather than in them: authentication is not configured by default, so anonymous visitors share one player identity and can plant persistent memories that every other user's conversations will draw on, and the public backend functions do not enforce access control on every path. Every LLM prompt and response is also logged in full, and there is no overall spend cap.
 
+## Safest setup
+
+AI Town's characters never call tools or run code, and the default local Ollama setup holds no API key. Beyond that the defaults are thin: anyone who reaches the app joins as the same anonymous player, and there is no overall spend limit. The safest setup keeps the game private, caps spend at the provider and keeps the built-in expiry and idle stop on.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A capped provider key | When you use a hosted model, give AI Town its own key with a spending limit set at the provider | The provider stops the bill at a level you chose, however long the world runs (C10) |
+| A private audience | Host the frontend and backend where only people you trust can reach them, such as a private network or an access proxy | Only people you chose can chat with the characters and shape their shared memories (C1) |
+| A local model | Keep the default Ollama provider by leaving `OPENAI_API_KEY`, `TOGETHER_API_KEY` and `LLM_API_URL` unset ([convex/util/llm.ts:48](https://github.com/a16z-infra/ai-town/blob/8e05997f2409275669c8344b84a51692e83f3f33/convex/util/llm.ts#L48); [convex/util/llm.ts:61](https://github.com/a16z-infra/ai-town/blob/8e05997f2409275669c8344b84a51692e83f3f33/convex/util/llm.ts#L61); [convex/util/llm.ts:75](https://github.com/a16z-infra/ai-town/blob/8e05997f2409275669c8344b84a51692e83f3f33/convex/util/llm.ts#L75)) | There is no provider key to protect and no per-call bill (C8) |
+| The idle stop | Keep the `stop inactive worlds` cron with the default `IDLE_WORLD_TIMEOUT` of five minutes ([convex/constants.ts:4](https://github.com/a16z-infra/ai-town/blob/8e05997f2409275669c8344b84a51692e83f3f33/convex/constants.ts#L4); [convex/crons.ts:10-14](https://github.com/a16z-infra/ai-town/blob/8e05997f2409275669c8344b84a51692e83f3f33/convex/crons.ts#L10-L14)) | A world nobody is watching stops making model calls (C10) |
+| Two-week memory expiry | Keep the daily `vacuum old entries` job with the default `VACUUM_MAX_AGE` ([convex/constants.ts:62](https://github.com/a16z-infra/ai-town/blob/8e05997f2409275669c8344b84a51692e83f3f33/convex/constants.ts#L62); [convex/crons.ts:18](https://github.com/a16z-infra/ai-town/blob/8e05997f2409275669c8344b84a51692e83f3f33/convex/crons.ts#L18)) | Memories older than two weeks stop reaching the characters' prompts (C6) |
+| A platform-level pause | Pause the deployment from the Convex dashboard when everything must stop | Every function stops at once, scheduled work included (C10) |
+
+### Handling data
+
+- The Convex logs hold every model prompt and reply in full, player chat and memories included; limit who can read them as you would the chat itself.
+- The input history is deleted after two weeks; export it first if you need a longer record.
+
 ## Critical gaps
 - None: no criterion is capped and no blast radius is at the worst level.
 

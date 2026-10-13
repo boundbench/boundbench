@@ -24,6 +24,30 @@
 
 Robusta's in-cluster runner holds an admin-equivalent service account and exposes an unauthenticated HTTP endpoint (/api/trigger) that runs any registered action, including arbitrary bash in a privileged hostPID pod on any node and arbitrary kubectl commands. Any pod that can reach the runner service can therefore get node root and read the output back, and the chart ships no NetworkPolicy or approval step to stop it. The Robusta relay path is properly signed, and the AI component (HolmesGPT) is off by default and lives in a separate service, but the default runner is unsafe as shipped unless the operator locks down network access and RBAC.
 
+## Safest setup
+
+Robusta checks signatures on requests that arrive through its relay, loads no third-party playbooks by default, and ships its AI component turned off. The default chart gives the runner a cluster-wide, admin-equivalent role, an in-cluster API that any pod can reach, and no approval step, so the safest setup narrows the role with the chart's own options and builds network and pod-security boundaries around the runner.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A namespace-scoped role | `namespaceScoped: true` in the runner's `rbac` Helm values ([helm/robusta/values.yaml:760-772](https://github.com/robusta-dev/robusta/blob/e6b2b563a9c0f78a2c1bfa4c1f1aac60266f390c/helm/robusta/values.yaml#L760-L772)) | Kubernetes itself keeps the runner inside its own namespace, whatever an action asks for (C1) |
+| A read-only cluster role | List only read rules in the runner's `overrideClusterRoles` Helm value ([helm/robusta/values.yaml:757-759](https://github.com/robusta-dev/robusta/blob/e6b2b563a9c0f78a2c1bfa4c1f1aac60266f390c/helm/robusta/values.yaml#L757-L759)) | Cluster-wide write verbs exist only where you add them on purpose (C1) |
+| A network policy | Add a NetworkPolicy that lets only Alertmanager and kubewatch reach the runner service | Only the components that feed it alerts and events can trigger actions (C5) |
+| Baseline pod security | Set the Robusta namespace's Pod Security admission level to baseline or stricter | The cluster admits no privileged or host-namespace pods there, so pods the runner spawns can't take over a node (C4) |
+| Built-in playbooks only | Keep the default empty `playbookRepos` ([helm/robusta/values.yaml:10](https://github.com/robusta-dev/robusta/blob/e6b2b563a9c0f78a2c1bfa4c1f1aac60266f390c/helm/robusta/values.yaml#L10)) | Only code shipped with Robusta runs inside the runner process (C7) |
+| Playbook rate limits | Set `rate_limit: <seconds>` on each playbook trigger that accepts it ([src/robusta/core/triggers/pod_crash_loop_trigger.py:12-17](https://github.com/robusta-dev/robusta/blob/e6b2b563a9c0f78a2c1bfa4c1f1aac60266f390c/src/robusta/core/triggers/pod_crash_loop_trigger.py#L12-L17)) | Automatic actions fire at most once per interval for the same trigger (C10) |
+| Logs kept off-cluster | Ship the runner's container logs to a log store outside the cluster that the runner can't write to | A record of errors and logged actions that outlives the runner and its namespace (C9) |
+
+### Approving with confidence
+
+- There is no approval step, so send Slack action buttons only to channels whose members may take those actions; a click runs the action at once.
+
+### Handling data
+
+- `signing_key` authorizes any action through the relay; keep it in a Secret and handle it like a cluster-admin credential.
+- `TRACE_INCOMING_REQUESTS` logs raw incoming requests; keep it off where runner logs are shared.
+- Basic telemetry (counts and a hashed account ID) is on by default; `ENABLE_TELEMETRY=false` in `runner.additional_env_vars` turns it off.
+
 ## Critical gaps
 - Unauthenticated /api/trigger runs any action, including privileged node bash, and returns its output to the caller. (ASI01, ASI02, LLM01; C5) — [src/robusta/runner/web.py:142-159](https://github.com/robusta-dev/robusta/blob/e6b2b563a9c0f78a2c1bfa4c1f1aac60266f390c/src/robusta/runner/web.py#L142-L159); [src/robusta/core/playbooks/playbooks_event_handler_impl.py:111-114](https://github.com/robusta-dev/robusta/blob/e6b2b563a9c0f78a2c1bfa4c1f1aac60266f390c/src/robusta/core/playbooks/playbooks_event_handler_impl.py#L111-L114); [src/robusta/integrations/kubernetes/custom_models.py:262-273](https://github.com/robusta-dev/robusta/blob/e6b2b563a9c0f78a2c1bfa4c1f1aac60266f390c/src/robusta/integrations/kubernetes/custom_models.py#L262-L273)
 - The default node command-execution path creates privileged, hostPID pods with SYS_ADMIN (C4-HOSTROOT), giving host-equivalent reach. (ASI05, T11; C4) — [src/robusta/integrations/kubernetes/custom_models.py:262-273](https://github.com/robusta-dev/robusta/blob/e6b2b563a9c0f78a2c1bfa4c1f1aac60266f390c/src/robusta/integrations/kubernetes/custom_models.py#L262-L273); [src/robusta/integrations/kubernetes/custom_models.py:263](https://github.com/robusta-dev/robusta/blob/e6b2b563a9c0f78a2c1bfa4c1f1aac60266f390c/src/robusta/integrations/kubernetes/custom_models.py#L263)

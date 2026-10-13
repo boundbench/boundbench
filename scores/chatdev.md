@@ -24,6 +24,30 @@
 
 ChatDev 2.0 runs agent-written code, package installs and MCP servers directly on the host, with the provider API key in every subprocess and no approval step. The backend's default network exposure is not locked down. Only the file tools are meaningfully scoped. Run it only on an isolated machine or container, bound to localhost.
 
+## Safest setup
+
+ChatDev's file tools keep their paths inside the session workspace, each agent node gets only the tools its workflow lists, and every tool call is recorded. Beyond that the defaults are weak: agent-written code, package installs and MCP servers run on the host with your provider key and no approval step. The safest setup narrows each workflow's tools and builds containment around the whole backend.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, low-limit key | Give the backend its own provider key with a spending limit set at the provider, and keep other credentials out of its environment | Code the agents run can reach only that key and its budget, not your other accounts (C8) |
+| Reachable only by you | Run the backend and console bound to localhost on a machine only you use | Other machines on your network can't reach the server (C1) |
+| Tools per agent node | List in each agent node's `tooling` only the tools its task needs, leaving out the code-running and delete tools where the task allows ([entity/configs/node/agent.py:332](https://github.com/openbmb/chatdev/blob/4fb2db0ea90375ce1059f44fe03ffbd191a7a169/entity/configs/node/agent.py#L332)) | Agents work through the workspace-scoped file tools rather than running code on the host (C3) |
+| MCP servers without your keys | Set `inherit_env: false` on each local MCP server, pass only what it needs in `env`, and pin the version in its `command` ([entity/configs/node/tooling.py:427-431](https://github.com/openbmb/chatdev/blob/4fb2db0ea90375ce1059f44fe03ffbd191a7a169/entity/configs/node/tooling.py#L427-L431)) | Each MCP server runs the release you chose and never sees your provider key (C7) |
+| Memory left off | Keep the default empty `memories` list on agent nodes ([entity/configs/node/agent.py:334](https://github.com/openbmb/chatdev/blob/4fb2db0ea90375ce1059f44fe03ffbd191a7a169/entity/configs/node/agent.py#L334)) | Each run starts clean, with nothing carried over from earlier runs (C6) |
+| Tighter run limits | Set `tool_loop_limit: <n>` in each agent node's `params`, and keep python nodes at the default `timeout_seconds: 60` or lower ([runtime/node/executor/agent_executor.py:1061-1069](https://github.com/openbmb/chatdev/blob/4fb2db0ea90375ce1059f44fe03ffbd191a7a169/runtime/node/executor/agent_executor.py#L1061-L1069); [entity/configs/node/agent.py:329](https://github.com/openbmb/chatdev/blob/4fb2db0ea90375ce1059f44fe03ffbd191a7a169/entity/configs/node/agent.py#L329); [entity/configs/node/python_runner.py:27](https://github.com/openbmb/chatdev/blob/4fb2db0ea90375ce1059f44fe03ffbd191a7a169/entity/configs/node/python_runner.py#L27)) | Each agent stops after fewer tool rounds and each python node ends on time (C10) |
+| The container deployment | Run the backend through the shipped Docker Compose setup, which runs it as the non-root `appuser` ([Dockerfile:56-57](https://github.com/openbmb/chatdev/blob/4fb2db0ea90375ce1059f44fe03ffbd191a7a169/Dockerfile#L56-L57)) | Agent-written code, package installs and MCP servers run inside a container rather than on your host (C4) |
+| Its own VM | Run the whole deployment in a VM or disposable machine that holds no other files or keys, with outbound network limited to the model provider and the hosts the task needs | An outer boundary around everything the agents run, and a narrow path for data to leave (C5) |
+
+### Approving with confidence
+
+- There is no per-call approval; human nodes and `call_user` ask for input but don't hold back tool calls, so pick workflows whose tools you are comfortable running unattended.
+
+### Handling data
+
+- `execution_logs.json` in the session directory keeps every tool's arguments and results unredacted and is written only after a successful run; store it like the data the agents read.
+- The web console streams the same unredacted tool output, so view it only where others can't see it.
+
 ## Critical gaps
 - Every code-execution path (execute_code, uv_run, python nodes, MCP stdio) runs as an unsandboxed host subprocess that inherits os.environ, including the provider API key loaded from .env. (ASI05, T11; C4) — [functions/function_calling/code_executor.py:38-47](https://github.com/openbmb/chatdev/blob/4fb2db0ea90375ce1059f44fe03ffbd191a7a169/functions/function_calling/code_executor.py#L38-L47); [functions/function_calling/uv_related.py:159-170](https://github.com/openbmb/chatdev/blob/4fb2db0ea90375ce1059f44fe03ffbd191a7a169/functions/function_calling/uv_related.py#L159-L170); [runtime/node/executor/python_executor.py:127-143](https://github.com/openbmb/chatdev/blob/4fb2db0ea90375ce1059f44fe03ffbd191a7a169/runtime/node/executor/python_executor.py#L127-L143); [utils/env_loader.py:17-28](https://github.com/openbmb/chatdev/blob/4fb2db0ea90375ce1059f44fe03ffbd191a7a169/utils/env_loader.py#L17-L28)
 - Content from web pages, files or MCP results can hijack an agent into exfiltrating the provider key and running irreversible host commands with no human in the loop. (ASI01, LLM01, T6; C5) — [functions/function_calling/web.py:129-168](https://github.com/openbmb/chatdev/blob/4fb2db0ea90375ce1059f44fe03ffbd191a7a169/functions/function_calling/web.py#L129-L168); [functions/function_calling/code_executor.py:38-47](https://github.com/openbmb/chatdev/blob/4fb2db0ea90375ce1059f44fe03ffbd191a7a169/functions/function_calling/code_executor.py#L38-L47); [utils/env_loader.py:17-28](https://github.com/openbmb/chatdev/blob/4fb2db0ea90375ce1059f44fe03ffbd191a7a169/utils/env_loader.py#L17-L28)

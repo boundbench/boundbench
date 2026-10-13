@@ -36,6 +36,135 @@
     "external_communication": "opt_in"
   },
   "headline": "Out of the box Deep Agents is fairly contained: files live in an in-memory virtual filesystem and the execute tool does nothing until a developer picks an execution backend. Everything protective beyond that is opt-in: human approval, path permission rules, remote sandboxes and persistence all need explicit configuration, and the core package's own shell backend runs commands directly on the host. The dominant risk is prompt injection through tool results driving the developer's tools with no approval step, plus profile plugins from any installed package running inside the agent process.",
+  "safe_setup": {
+    "intro": "Deep Agents starts contained: files live in an in-memory virtual filesystem and nothing executes until you choose an execution backend. Approval, path rules, sandboxing and durable records are all opt-in, and every tool runs with the host process's credentials, so the safest setup turns those mechanisms on and builds the boundaries around the process yourself.",
+    "steps": [
+      {
+        "setup": "Scoped, low-limit keys",
+        "how": "Run the process with only the keys its tools need, each scoped or read-only with a spending limit set at the provider",
+        "gives_you": "A hijacked agent reaches only the systems and spend you chose, not everything your shell can",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Per-call approval",
+        "how": "Pass `interrupt_on` naming every tool that writes, sends or runs code",
+        "gives_you": "A person approves, edits or rejects each of those calls before it runs, in declarative sub-agents too",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "libs/deepagents/deepagents/graph.py",
+            "lines": "283",
+            "contains": "interrupt_on: dict[str, bool | InterruptOnConfig] | None = None",
+            "url": "https://github.com/langchain-ai/deepagents/blob/44bd956bf8ca86c7cf0831132d69d38e06dd1573/libs/deepagents/deepagents/graph.py#L283"
+          }
+        ]
+      },
+      {
+        "setup": "Path permission rules",
+        "how": "Pass `permissions` as `FilesystemPermission` rules with `mode` set to deny or interrupt for paths the task needn't change, memory files included",
+        "gives_you": "File writes stay inside the paths you chose, and memory changes wait for you",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "libs/deepagents/deepagents/graph.py",
+            "lines": "281",
+            "contains": "permissions: list[FilesystemPermission] | None = None",
+            "url": "https://github.com/langchain-ai/deepagents/blob/44bd956bf8ca86c7cf0831132d69d38e06dd1573/libs/deepagents/deepagents/graph.py#L281"
+          },
+          {
+            "file": "libs/deepagents/deepagents/middleware/filesystem.py",
+            "lines": "366-371",
+            "contains": "mode: Literal[\"allow\", \"deny\", \"interrupt\"] = \"allow\"",
+            "url": "https://github.com/langchain-ai/deepagents/blob/44bd956bf8ca86c7cf0831132d69d38e06dd1573/libs/deepagents/deepagents/middleware/filesystem.py#L366-L371"
+          }
+        ]
+      },
+      {
+        "setup": "A remote sandbox",
+        "how": "Keep the default in-memory `backend`, or for code execution pass a remote sandbox such as `DaytonaSandbox` or `ModalSandbox`",
+        "gives_you": "Model-written commands and file operations run in a provider sandbox, away from your host and its keys",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "libs/deepagents/deepagents/graph.py",
+            "lines": "282",
+            "contains": "backend: BackendProtocol | None = None",
+            "url": "https://github.com/langchain-ai/deepagents/blob/44bd956bf8ca86c7cf0831132d69d38e06dd1573/libs/deepagents/deepagents/graph.py#L282"
+          },
+          {
+            "file": "libs/partners/daytona/langchain_daytona/sandbox.py",
+            "lines": "23",
+            "contains": "class DaytonaSandbox(BaseSandbox)",
+            "url": "https://github.com/langchain-ai/deepagents/blob/44bd956bf8ca86c7cf0831132d69d38e06dd1573/libs/partners/daytona/langchain_daytona/sandbox.py#L23"
+          },
+          {
+            "file": "libs/partners/modal/langchain_modal/sandbox.py",
+            "lines": "16",
+            "contains": "class ModalSandbox(BaseSandbox)",
+            "url": "https://github.com/langchain-ai/deepagents/blob/44bd956bf8ca86c7cf0831132d69d38e06dd1573/libs/partners/modal/langchain_modal/sandbox.py#L16"
+          }
+        ]
+      },
+      {
+        "setup": "A tighter step limit",
+        "how": "Set `recursion_limit` to <n> in each run's config, sized to the task",
+        "gives_you": "A runaway loop stops after the number of steps you chose",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "libs/deepagents/deepagents/graph.py",
+            "lines": "995",
+            "contains": "\"recursion_limit\": 9_999",
+            "url": "https://github.com/langchain-ai/deepagents/blob/44bd956bf8ca86c7cf0831132d69d38e06dd1573/libs/deepagents/deepagents/graph.py#L995"
+          }
+        ]
+      },
+      {
+        "setup": "A dedicated, reviewed environment",
+        "how": "Run the agent from its own virtual environment holding only packages you have reviewed, pinned by version and hash",
+        "gives_you": "Only code you chose loads as a profile plugin inside the agent process",
+        "criterion": "C7",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the agent process in a container or VM whose network reaches only the hosts the task needs",
+        "gives_you": "An outer boundary around in-process tools and a narrow path for data to leave",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A durable run record",
+        "how": "Pass a database-backed `checkpointer`, or turn on LangSmith tracing",
+        "gives_you": "Tool calls and results survive the process, so a run can be reconstructed",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "libs/deepagents/deepagents/graph.py",
+            "lines": "287",
+            "contains": "checkpointer: Checkpointer | None = None",
+            "url": "https://github.com/langchain-ai/deepagents/blob/44bd956bf8ca86c7cf0831132d69d38e06dd1573/libs/deepagents/deepagents/graph.py#L287"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; only tools named in `interrupt_on` or matched by interrupt rules pause.",
+      "Compiled and remote async sub-agents don't inherit `interrupt_on`; configure approval inside each of them."
+    ],
+    "handling": [
+      "Tool results and shell output reach the model unredacted, and tracing uploads them to LangSmith; treat traces and checkpoints like the data the agent read."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

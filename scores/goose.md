@@ -24,6 +24,30 @@
 
 goose ships in Auto mode, which runs every shell command, file write and extension call without asking, directly on the host with the user's full environment and credentials. A per-call Approve mode exists but is opt-in, and its enforcement does not cover every path. The most serious issue is that plugins committed to a repository's .agents/plugins folder are auto-enabled, so opening goose in a cloned repo can launch that repo's MCP servers and hook scripts with no prompt. Run it in a disposable VM or container and switch to Approve mode before pointing it at untrusted code.
 
+## Safest setup
+
+goose keeps provider keys in the OS keychain, records every session to a local database, and caps each run at a fixed number of turns. As shipped it runs every shell command and file write without asking, directly on your machine with your full credentials, so the safest setup turns on per-call approval and builds the boundaries around goose yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A separate, narrow identity | Run goose as its own OS user, or in an environment holding only the keys and logins this task needs, read-only where the provider allows | Whatever a command does, it reaches only the accounts and access you chose, not everything your shell is logged into (C1) |
+| Reviewed project files | Before starting goose in a cloned repository, read its `.agents/plugins` folder, `.goosehints` and `AGENTS.md`, or start in a directory without them | Plugins, hooks and instructions that load with the project are ones you have read (C6) |
+| Per-call approval | `GOOSE_MODE=approve` in the environment, or `GOOSE_MODE: approve` in the config file ([crates/goose/src/config/base.rs:1263](https://github.com/aaif-goose/goose/blob/591edd47cf2cfea4957d720c607cf2a4def8673d/crates/goose/src/config/base.rs#L1263); [crates/goose-provider-types/src/goose_mode.rs:27](https://github.com/aaif-goose/goose/blob/591edd47cf2cfea4957d720c607cf2a4def8673d/crates/goose-provider-types/src/goose_mode.rs#L27)) | You see the exact tool and arguments before each call runs (C2) |
+| Only the extensions needed | In `goose configure`, use Toggle Extensions to keep on only the extensions the task uses ([crates/goose-cli/src/commands/configure.rs:444-445](https://github.com/aaif-goose/goose/blob/591edd47cf2cfea4957d720c607cf2a4def8673d/crates/goose-cli/src/commands/configure.rs#L444-L445)) | The model is offered fewer tools, with shell and write access only where you chose them (C3) |
+| The injection scanner | `SECURITY_PROMPT_ENABLED: true` in the config file ([crates/goose/src/security/mod.rs:71](https://github.com/aaif-goose/goose/blob/591edd47cf2cfea4957d720c607cf2a4def8673d/crates/goose/src/security/mod.rs#L71)) | Tool calls that look like a prompt injection pause for your decision (C5) |
+| A lower turn cap | `GOOSE_MAX_TURNS: <n>` in the config file, below the default 1000 ([crates/goose/src/agents/agent.rs:86](https://github.com/aaif-goose/goose/blob/591edd47cf2cfea4957d720c607cf2a4def8673d/crates/goose/src/agents/agent.rs#L86); [crates/goose/src/agents/agent.rs:1655](https://github.com/aaif-goose/goose/blob/591edd47cf2cfea4957d720c607cf2a4def8673d/crates/goose/src/agents/agent.rs#L1655)) | Each run stops after a number of turns that fits the task (C10) |
+| Its own container or VM | Run goose itself in a disposable container or VM with outbound access limited to your model provider and the hosts the task needs | An outer boundary around model-written commands, extensions and hooks, and a narrow path for data to leave (C4) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; Always Allow covers every later call to that tool, the whole shell included.
+- Approve mode does not cover every path, so keep the container or VM in place as well.
+
+### Handling data
+
+- The session database and the CLI's request logs keep tool arguments, results and model requests unredacted; store them like the data goose read.
+- Stopping a session ends the shell but not processes it started in the background, so check for leftovers after a stop.
+
 ## Critical gaps
 - Plugins under the working directory's .agents/plugins are auto-enabled, and their hook commands (including SessionStart) and MCP servers run on the host with no trust prompt. (ASI06, ASI04; C6) — [crates/goose/src/plugins/discovery.rs:182](https://github.com/aaif-goose/goose/blob/591edd47cf2cfea4957d720c607cf2a4def8673d/crates/goose/src/plugins/discovery.rs#L182); [crates/goose/src/plugins/discovery.rs:138](https://github.com/aaif-goose/goose/blob/591edd47cf2cfea4957d720c607cf2a4def8673d/crates/goose/src/plugins/discovery.rs#L138); [crates/goose/src/agents/agent.rs:458-461](https://github.com/aaif-goose/goose/blob/591edd47cf2cfea4957d720c607cf2a4def8673d/crates/goose/src/agents/agent.rs#L458-L461); [crates/goose/src/hooks/mod.rs:1126-1130](https://github.com/aaif-goose/goose/blob/591edd47cf2cfea4957d720c607cf2a4def8673d/crates/goose/src/hooks/mod.rs#L1126-L1130)
 - A cloned repo's plugin MCP servers and hooks are launched by default without user consent. (ASI04; C7) — [crates/goose-cli/src/session/builder.rs:594-597](https://github.com/aaif-goose/goose/blob/591edd47cf2cfea4957d720c607cf2a4def8673d/crates/goose-cli/src/session/builder.rs#L594-L597); [crates/goose/src/plugins/discovery.rs:138](https://github.com/aaif-goose/goose/blob/591edd47cf2cfea4957d720c607cf2a4def8673d/crates/goose/src/plugins/discovery.rs#L138); [crates/goose/src/agents/extension_manager/stdio.rs:33-34](https://github.com/aaif-goose/goose/blob/591edd47cf2cfea4957d720c607cf2a4def8673d/crates/goose/src/agents/extension_manager/stdio.rs#L33-L34)

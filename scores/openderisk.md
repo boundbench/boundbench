@@ -24,6 +24,26 @@
 
 As shipped, OpenDerisk's default agent runs model-written shell commands directly on the server host, with the server's full environment and API keys, and no tool call ever asks a human. The web server's default network exposure and authentication are not locked down, and anyone who controls a web page or file the agent reads can drive a host shell. Its 'local sandbox' is a working directory, not an isolation boundary, and the approval and authorization modules in the codebase are not wired into the execution path.
 
+## Safest setup
+
+OpenDerisk records every agent message and tool call in its database and caps each run at 300 rounds. Beyond that the defaults are weak and there is little to turn on: the default agent runs model-written shell commands on the server host with the server's keys, and no tool call asks for approval. The safest setup builds the boundaries around the server yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Give the server a model key with a spending limit and a storage key limited to its own bucket | Anything that reads the server's environment reaches only that spend and that bucket (C8) |
+| Access for trusted users only | Run the web server on a private network or behind a proxy that signs users in | Only people you trust can start agent runs, which drive a host shell (C5) |
+| Its own container or VM | Run the server in a container or VM holding no files or credentials beyond this deployment's | Model-written commands and package installs reach only that box, not your other systems (C4) |
+| Limited outbound network | Allow outbound traffic only to the model provider, the storage endpoint and the hosts your tasks need | Data the agent reads has a narrow path to leave, and web fetches stay off internal addresses (C5) |
+| A read-only skill directory | Make the directory set in `skill_dir` read-only to the server's user, and update skills from outside the server ([configs/derisk-proxy-aliyun.toml:110](https://github.com/derisk-ai/OpenDerisk/blob/5b0e729e3854c2f0310285bf4901fe8c7866e757/configs/derisk-proxy-aliyun.toml#L110)) | Every session loads only skills you wrote or reviewed (C6) |
+| Reviewed skill repositories | Keep only skill repositories you control in the skill directory, tracking a branch you review | Each sandbox start pulls only skill changes you approved (C7) |
+| A record off the host | Ship the SQLite database at `path` and the trace file under `TRACE_FILE_DIR` to storage the server's user can't modify ([configs/derisk-proxy-aliyun.toml:17](https://github.com/derisk-ai/OpenDerisk/blob/5b0e729e3854c2f0310285bf4901fe8c7866e757/configs/derisk-proxy-aliyun.toml#L17); [configs/derisk-proxy-aliyun.toml:20](https://github.com/derisk-ai/OpenDerisk/blob/5b0e729e3854c2f0310285bf4901fe8c7866e757/configs/derisk-proxy-aliyun.toml#L20)) | A record of every tool call that the agent's shell can't edit or delete (C9) |
+| Stop at the container | End runaway work by stopping or restarting the container, alongside stopping the chat | Subprocesses and background servers the agent started end with the run (C10) |
+
+### Handling data
+
+- At the default `log_level = "INFO"` every shell command and model output is logged unredacted; store the server logs like the keys the agent can read.
+- The message database and trace file hold full tool calls and results; keep their copies as restricted as the data the agent works on.
+
 ## Critical gaps
 - No tool call in the default agent waits for approval: the approval branch depends on a flag no caller sets, so the host shell runs ungated. (ASI09, ASI02, T10; C2) — [packages/derisk-core/src/derisk/agent/expand/actions/tool_action.py:319](https://github.com/derisk-ai/OpenDerisk/blob/5b0e729e3854c2f0310285bf4901fe8c7866e757/packages/derisk-core/src/derisk/agent/expand/actions/tool_action.py#L319); [packages/derisk-core/src/derisk/agent/tools/builtin/sandbox/shell_exec.py:257](https://github.com/derisk-ai/OpenDerisk/blob/5b0e729e3854c2f0310285bf4901fe8c7866e757/packages/derisk-core/src/derisk/agent/tools/builtin/sandbox/shell_exec.py#L257)
 - The default 'local' sandbox runs model-written shell commands as host subprocesses with the server's full environment. (ASI05, T11, LLM05; C4) — [packages/derisk-ext/src/derisk_ext/sandbox/local/shell_client.py:103-107](https://github.com/derisk-ai/OpenDerisk/blob/5b0e729e3854c2f0310285bf4901fe8c7866e757/packages/derisk-ext/src/derisk_ext/sandbox/local/shell_client.py#L103-L107); [configs/derisk-proxy-aliyun.toml:104](https://github.com/derisk-ai/OpenDerisk/blob/5b0e729e3854c2f0310285bf4901fe8c7866e757/configs/derisk-proxy-aliyun.toml#L104)

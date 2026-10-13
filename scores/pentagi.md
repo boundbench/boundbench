@@ -24,6 +24,32 @@
 
 PentAGI runs LLM-driven agents that execute arbitrary shell commands, with no human approval step, inside per-flow Docker containers that have unrestricted network access. The container boundary is the main protection: workers get no secrets and no Docker socket by default, every tool call is logged before it runs, and commands have timeouts and iteration caps. Nothing limits what injected web or target content can make the agent do, the model picks the container image, and answer/guide/code memory is shared across all users. Raising the score would start with an approval or target-scope gate, non-root hardened workers with egress limits, and per-user memory isolation.
 
+## Safest setup
+
+PentAGI runs every agent command inside a per-flow Docker container that holds no secrets and no Docker socket, and it logs each tool call before it runs. There is no approval step and nothing in the tool limits which hosts the shell reaches, so the safest setup draws the target scope and spend limits outside PentAGI and fixes the sandbox image yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Network reach limited to scope | Put the host behind a firewall that lets worker containers reach only the in-scope targets | The network itself keeps commands on the systems you are engaged to test, whatever the model decides (C3) |
+| A spending limit | Use model keys dedicated to PentAGI, each with a spending limit set at the provider | A ceiling on model spend for every flow, delegated agents included (C10) |
+| One instance per client | Run a separate PentAGI instance, with its own database, for each client or team | Answers, guides and code that one engagement stores are retrieved only by agents working for that client (C6) |
+| Named tester accounts | Give each tester their own account and keep the admin login for setup only | Only the people you chose can start flows, and each flow belongs to a named user (C1) |
+| A fixed, pinned sandbox image | Set `DOCKER_IMAGE_SELECTION_MODE` to `fixed`, with `DOCKER_DEFAULT_IMAGE_FOR_PENTEST` and `DOCKER_DEFAULT_IMAGE` pinned to digests you have reviewed ([backend/pkg/config/config.go:73](https://github.com/vxcontrol/pentagi/blob/55a063ecb307e8786cb8b068655e1d80e96cad7b/backend/pkg/config/config.go#L73); [backend/pkg/providers/image_selection.go:13](https://github.com/vxcontrol/pentagi/blob/55a063ecb307e8786cb8b068655e1d80e96cad7b/backend/pkg/providers/image_selection.go#L13); [backend/pkg/config/config.go:66-67](https://github.com/vxcontrol/pentagi/blob/55a063ecb307e8786cb8b068655e1d80e96cad7b/backend/pkg/config/config.go#L66-L67)) | Every flow runs an image you chose and checked, never one the model named (C7) |
+| No Docker or network admin | Keep `DOCKER_INSIDE` and `DOCKER_NET_ADMIN` at their code default `false`, also in your `.env` ([backend/pkg/config/config.go:36-37](https://github.com/vxcontrol/pentagi/blob/55a063ecb307e8786cb8b068655e1d80e96cad7b/backend/pkg/config/config.go#L36-L37); [.env.example:344-345](https://github.com/vxcontrol/pentagi/blob/55a063ecb307e8786cb8b068655e1d80e96cad7b/.env.example#L344-L345)) | Workers get no Docker access and no extra network capability, so the container stays the boundary (C4) |
+| Worker ports on one interface | Set `DOCKER_PUBLIC_IP` to the one host address that should receive connections to workers ([backend/pkg/config/config.go:63](https://github.com/vxcontrol/pentagi/blob/55a063ecb307e8786cb8b068655e1d80e96cad7b/backend/pkg/config/config.go#L63)) | Ports that workers publish listen only where you chose, not on every interface of the host (C4) |
+| Tight run limits | Lower `TERMINAL_TOOL_TIMEOUT` to what your tools need and keep `MAX_GENERAL_AGENT_TOOL_CALLS` and `MAX_LIMITED_AGENT_TOOL_CALLS` at 100 and 20 or lower ([backend/pkg/config/config.go:76](https://github.com/vxcontrol/pentagi/blob/55a063ecb307e8786cb8b068655e1d80e96cad7b/backend/pkg/config/config.go#L76); [backend/pkg/config/config.go:316-317](https://github.com/vxcontrol/pentagi/blob/55a063ecb307e8786cb8b068655e1d80e96cad7b/backend/pkg/config/config.go#L316-L317)) | Each command and each agent chain ends after a bounded time and number of calls (C10) |
+
+### Approving with confidence
+
+- PentAGI has no per-call approval; follow each running flow's terminal log and stop the flow when it reaches beyond scope.
+- Stopping a flow ends the commands that flow started; check the worker for commands the assistant launched, which keep running.
+
+### Handling data
+
+- The database keeps every tool call's arguments and terminal output unredacted; protect it and its backups like engagement data.
+- Provider keys sit in a plaintext `.env`; keep it readable only by the account that runs PentAGI.
+- A status report with no engagement content goes out every 3 hours; `UPDATE_CHECK_INTERVAL=0` turns it off.
+
 ## Critical gaps
 - No approval gate exists for any tool call, including arbitrary shell execution; prompts state actions need no confirmation. (ASI09, ASI02, T10; C2) — [backend/pkg/tools/terminal.go:196-205](https://github.com/vxcontrol/pentagi/blob/55a063ecb307e8786cb8b068655e1d80e96cad7b/backend/pkg/tools/terminal.go#L196-L205); [backend/pkg/templates/prompts/primary_agent.tmpl:9](https://github.com/vxcontrol/pentagi/blob/55a063ecb307e8786cb8b068655e1d80e96cad7b/backend/pkg/templates/prompts/primary_agent.tmpl#L9)
 - Untrusted web, scraper and target content flows into an agent that has an ungated shell with unrestricted egress and no injection controls. (ASI01, LLM01, T6; C5) — [backend/pkg/tools/terminal.go:196-205](https://github.com/vxcontrol/pentagi/blob/55a063ecb307e8786cb8b068655e1d80e96cad7b/backend/pkg/tools/terminal.go#L196-L205); [backend/pkg/templates/prompts/primary_agent.tmpl:9](https://github.com/vxcontrol/pentagi/blob/55a063ecb307e8786cb8b068655e1d80e96cad7b/backend/pkg/templates/prompts/primary_agent.tmpl#L9)

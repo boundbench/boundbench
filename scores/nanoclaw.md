@@ -24,6 +24,33 @@
 
 NanoClaw runs each agent in a hardened, non-root Docker container that never holds real API keys, and every change to its own configuration, packages, roles or MCP servers waits for an admin's exact-command approval. Inside that container, though, the agent runs Claude Code with all permission prompts off and open internet access by default, so a prompt injection from a web page or another chat member can read the agent's files and memory and send them anywhere, or use any service you connected to the gateway, with no human in the loop. Turn on NANOCLAW_EGRESS_LOCKDOWN and configure approval policies in your gateway before connecting email or code-hosting accounts.
 
+## Safest setup
+
+NanoClaw runs each agent in a hardened, non-root Docker container that never holds real API keys, and holds every change to the agent's own packages, MCP servers, roles and wiring for an admin's approval. Inside that container the agent works with permission prompts off and open internet access by default, so the safest setup narrows what you connect, adds approval in the credential gateway and turns on egress lockdown.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit credentials | Connect only the services this agent needs in the credential gateway, each with a read-only or narrowly scoped token and a spending limit set at the provider | Whatever the agent does, it reaches only the systems and spend you chose (C1) |
+| Gateway approval policies | Configure the credential gateway to hold requests to every connected service beyond the model provider for your approval | A person decides on each credentialed request before it leaves, including requests made from the agent's shell (C2) |
+| Trusted chat members | Wire each agent to a direct chat or to groups whose members you trust with your connected services | Only people you chose can direct an agent that acts with your credentials (C1) |
+| Approval for unknown senders | Keep the default `unknownSenderPolicy: 'request_approval'` for direct and group chats ([src/channels/channel-registry.ts:177](https://github.com/nanocoai/nanoclaw/blob/17bf7c4fb255e3d29def72de767f2627b17f7bc0/src/channels/channel-registry.ts#L177); [src/channels/channel-registry.ts:182](https://github.com/nanocoai/nanoclaw/blob/17bf7c4fb255e3d29def72de767f2627b17f7bc0/src/channels/channel-registry.ts#L182)) | Messages from people you haven't admitted wait for an admin before they reach the agent (C5) |
+| Egress lockdown | Set `NANOCLAW_EGRESS_LOCKDOWN=true` in the .env file or the environment ([src/config.ts:106](https://github.com/nanocoai/nanoclaw/blob/17bf7c4fb255e3d29def72de767f2627b17f7bc0/src/config.ts#L106)) | All agent traffic goes through the credential gateway, where your policies apply, instead of straight to the internet (C5) |
+| Only the mounts needed | Leave `~/.config/nanoclaw/mount-allowlist.json` absent, or list in it only the folders the agent needs ([src/modules/mount-security/index.ts:7](https://github.com/nanocoai/nanoclaw/blob/17bf7c4fb255e3d29def72de767f2627b17f7bc0/src/modules/mount-security/index.ts#L7)) | The agent sees its own session and group folders and no other host folders (C3) |
+| CPU and memory limits | Set `CONTAINER_CPU_LIMIT=<n>` and `CONTAINER_MEMORY_LIMIT=<size>` alongside the default `CONTAINER_PIDS_LIMIT` ([src/config.ts:94-95](https://github.com/nanocoai/nanoclaw/blob/17bf7c4fb255e3d29def72de767f2627b17f7bc0/src/config.ts#L94-L95); [src/config.ts:102](https://github.com/nanocoai/nanoclaw/blob/17bf7c4fb255e3d29def72de767f2627b17f7bc0/src/config.ts#L102)) | Each agent container stays within a fixed share of your machine (C4) |
+| A transcript copy off-host | Copy each session transcript to storage the agent can't write, such as a host backup outside its mounts | A record of every tool call that the agent can't later edit (C9) |
+
+### Approving with confidence
+
+- Admin cards show the exact command and arguments; read each one and approve requests one at a time.
+- Approved packages and MCP servers are taken by name with no version pin, so approve ones you know.
+- Gateway approval cards show method, host and path but not the request body.
+
+### Handling data
+
+- The agent's memory files and session transcript sit in folders it can write; read the memory now and then for instructions you didn't give.
+- Recurring scheduled tasks keep running after a conversation ends; review the agent's tasks and stop the ones you don't need.
+- Setup sends anonymous diagnostics by default; `NANOCLAW_NO_DIAGNOSTICS=1` turns them off.
+
 ## Critical gaps
 - The agent runs Claude Code with bypassPermissions, so Bash, file writes, web requests and credentialed API calls never cross a NanoClaw approval gate. (ASI02, ASI09, T10; C2) — [container/agent-runner/src/providers/claude-config.ts:99-101](https://github.com/nanocoai/nanoclaw/blob/17bf7c4fb255e3d29def72de767f2627b17f7bc0/container/agent-runner/src/providers/claude-config.ts#L99-L101); [container/agent-runner/src/providers/claude-config.ts:54-71](https://github.com/nanocoai/nanoclaw/blob/17bf7c4fb255e3d29def72de767f2627b17f7bc0/container/agent-runner/src/providers/claude-config.ts#L54-L71)
 - Egress lockdown is off by default, so a hijacked agent can exfiltrate its files, memory and history to any host and take irreversible actions unattended. (ASI01, LLM01, T6; C5) — [src/drivers/index.ts:80-86](https://github.com/nanocoai/nanoclaw/blob/17bf7c4fb255e3d29def72de767f2627b17f7bc0/src/drivers/index.ts#L80-L86); [src/egress-lockdown.ts:63](https://github.com/nanocoai/nanoclaw/blob/17bf7c4fb255e3d29def72de767f2627b17f7bc0/src/egress-lockdown.ts#L63); [container/agent-runner/src/providers/claude-config.ts:99-101](https://github.com/nanocoai/nanoclaw/blob/17bf7c4fb255e3d29def72de767f2627b17f7bc0/container/agent-runner/src/providers/claude-config.ts#L99-L101)

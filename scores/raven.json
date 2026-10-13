@@ -36,6 +36,161 @@
     "external_communication": "yes"
   },
   "headline": "Raven has an unusually careful permission gate, a parsed read-only shell allowlist, SSRF-hardened fetching and secret scrubbing, but its shipped defaults undercut them. By default an LLM reviewer, not a person, approves most actions, including pushes and installs; shell commands run on the host with no sandbox; and reading any file or fetching any URL needs no approval, so a prompt injection can leak local credentials unattended. Plugin loading from the working directory is also not gated by a trust decision.",
+  "safe_setup": {
+    "intro": "Raven ships a careful permission gate, a read-only shell allowlist, SSRF-checked fetching, secret scrubbing and a trace of every tool call. Its defaults lean on an LLM reviewer and run commands on the host, so the safest setup turns on the per-call approval, workspace limits and microVM sandbox Raven already includes, and adds containment around it.",
+    "steps": [
+      {
+        "setup": "A dedicated, scoped account",
+        "how": "Run Raven as its own OS user or VM whose home holds only the scoped, spend-limited keys this work needs",
+        "gives_you": "Credential files from your own account stay out of reach, whatever a session reads",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Per-call approval",
+        "how": "`mode` set to `ask` under `permissions` in the config",
+        "gives_you": "A person approves each consequential call, pushes and installs included",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "raven/config/schema.py",
+            "lines": "1288",
+            "contains": "mode: Literal[\"ask\", \"smart\", \"full\"] = \"smart\"",
+            "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L1288"
+          }
+        ]
+      },
+      {
+        "setup": "Approval for web fetches",
+        "how": "Under `permissions`, map `web_fetch` and `browser_navigate` to `ask` in `tools`",
+        "gives_you": "With per-call approval on, each fetch or page load the model starts waits for a person first",
+        "criterion": "C5",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "raven/config/schema.py",
+            "lines": "1289",
+            "contains": "tools: dict[str, str | dict[str, str]]",
+            "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L1289"
+          },
+          {
+            "file": "raven/config/schema.py",
+            "lines": "1296",
+            "contains": "tiers = {\"allow\", \"ask\", \"deny\"}",
+            "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L1296"
+          },
+          {
+            "file": "raven/agent/tools/web.py",
+            "lines": "922",
+            "contains": "name = \"web_fetch\"",
+            "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/tools/web.py#L922"
+          },
+          {
+            "file": "raven/agent/tools/browser.py",
+            "lines": "262",
+            "contains": "return \"browser_navigate\"",
+            "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/agent/tools/browser.py#L262"
+          }
+        ]
+      },
+      {
+        "setup": "Workspace-only file tools",
+        "how": "`restrictToWorkspace` set to `true` under `tools`",
+        "gives_you": "Built-in file tools read and write only inside the workspace",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "raven/config/schema.py",
+            "lines": "1316",
+            "contains": "restrict_to_workspace: bool = False",
+            "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L1316"
+          }
+        ]
+      },
+      {
+        "setup": "Consent for Skill Hub installs",
+        "how": "`autoInstall` set to `prompt` or `off` under `skillForge`",
+        "gives_you": "Skill bundles reach your machine only when you choose them",
+        "criterion": "C7",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "raven/config/raven.py",
+            "lines": "855-857",
+            "contains": "auto_install: Literal[\"auto\", \"prompt\", \"off\"] = \"auto\"",
+            "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/raven.py#L855-L857"
+          }
+        ]
+      },
+      {
+        "setup": "The microVM sandbox",
+        "how": "`backend` set to `boxlite` under `sandbox` in `tools`, with `allowNet` set to `false` or a list of domains",
+        "gives_you": "Shell commands run in a separate VM with network reach you chose",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "raven/config/schema.py",
+            "lines": "1318",
+            "contains": "sandbox: SandboxConfig = Field(default_factory=SandboxConfig)",
+            "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/schema.py#L1318"
+          },
+          {
+            "file": "raven/sandbox/config.py",
+            "lines": "38",
+            "contains": "backend: Literal[\"none\", \"auto\", \"boxlite\"] = \"none\"",
+            "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/config.py#L38"
+          },
+          {
+            "file": "raven/sandbox/config.py",
+            "lines": "44",
+            "contains": "allow_net: bool | list[str] = True",
+            "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/sandbox/config.py#L44"
+          }
+        ]
+      },
+      {
+        "setup": "A trusted working directory",
+        "how": "Start Raven only in directories whose contents you wrote or have reviewed",
+        "gives_you": "Plugins and project files that shape a session come only from sources you chose",
+        "criterion": "C6",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Tracing, kept off-box",
+        "how": "Keep the default `enabled: true` under `tracing`, leave `RAVEN_TRACING` unset, and copy the traces to storage Raven can't write",
+        "gives_you": "A record of every tool call and its approval decision that the agent can't edit",
+        "criterion": "C9",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "raven/config/raven.py",
+            "lines": "1353",
+            "contains": "enabled: bool = True",
+            "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/config/raven.py#L1353"
+          },
+          {
+            "file": "raven/tracing/config.py",
+            "lines": "63",
+            "contains": "RAVEN_TRACING",
+            "url": "https://github.com/evermind-ai/raven/blob/3632e6040c7038a60ec418ce39ccae185c72c19f/raven/tracing/config.py#L63"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; long arguments are shortened in the prompt line, so look closely at long commands.",
+      "Requests from third-party ACP sub-agents are approved automatically, so add only sub-agents you would trust with your account."
+    ],
+    "handling": [
+      "Traces under ~/.raven/traces hold the arguments and results of tool calls; store them like the data the agent read.",
+      "Long-term memory is written from conversations and reloaded every session; review and clear it after sessions that read untrusted content."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

@@ -24,6 +24,25 @@
 
 TaskWeaver runs every piece of model-written Python immediately, with no human approval, so its safety rests almost entirely on the per-session Docker container it uses by default. That container keeps host credentials out and fails closed when Docker is missing, but it is unhardened, has full network egress and no resource limits. A prompt injection in data or tool output can therefore exfiltrate the user's files or call external APIs unattended.
 
+## Safest setup
+
+TaskWeaver runs model-written code in a per-session Docker container by default, keeps host credentials out of it, and refuses to start when Docker is missing. There is no approval step and the container has open network access, so the safest setup keeps container mode, narrows what the session holds and builds the network boundary around it yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Dedicated, low-limit keys | Give the LLM and each plugin config its own key, scoped to the task and with a spending limit set at the provider | Any key the session can reach opens only the systems and spend you chose for it (C8) |
+| Container mode | Keep the default `kernel_mode` of `container` under `execution_service` ([taskweaver/module/execution_service.py:13-21](https://github.com/microsoft/taskweaver/blob/d44ddef23f90059fb17999d3095db4240e98f955/taskweaver/module/execution_service.py#L13-L21)) | Model-written code runs in a container without your host environment or API keys (C4) |
+| Code verification | Set `code_interpreter.code_verification_on` to `true` and keep `allowed_modules` to what the task needs ([taskweaver/code_interpreter/code_interpreter/code_interpreter.py:31-32](https://github.com/microsoft/taskweaver/blob/d44ddef23f90059fb17999d3095db4240e98f955/taskweaver/code_interpreter/code_interpreter/code_interpreter.py#L31-L32); [website/docs/configurations/overview.md:21](https://github.com/microsoft/taskweaver/blob/d44ddef23f90059fb17999d3095db4240e98f955/website/docs/configurations/overview.md#L21)) | Generated code is checked against a module allowlist before it reaches the container (C4) |
+| Only plugins you have read | Set `enabled: true` only in the YAML of plugins whose code you have read, and `false` in the rest ([project/plugins/klarna_search.yaml:2](https://github.com/microsoft/taskweaver/blob/d44ddef23f90059fb17999d3095db4240e98f955/project/plugins/klarna_search.yaml#L2)) | The shared kernel loads only plugin code and credentials you chose for this task (C7) |
+| A pinned executor image | Pull the executor image once and set `custom_image` under `execution_service` to it by digest ([taskweaver/module/execution_service.py:31-33](https://github.com/microsoft/taskweaver/blob/d44ddef23f90059fb17999d3095db4240e98f955/taskweaver/module/execution_service.py#L31-L33)) | Every session runs the same container image you checked, not whatever the registry holds today (C7) |
+| Experience kept off | Keep the default `use_experience` of `false` for `planner` and `code_generator` ([taskweaver/role/role.py:50-53](https://github.com/microsoft/taskweaver/blob/d44ddef23f90059fb17999d3095db4240e98f955/taskweaver/role/role.py#L50-L53); [website/docs/customization/experience/experience.md:26](https://github.com/microsoft/taskweaver/blob/d44ddef23f90059fb17999d3095db4240e98f955/website/docs/customization/experience/experience.md#L26)) | What one session reads stays in that session and never shapes later prompts (C6) |
+| An explicit project directory | Start TaskWeaver with `--project <dir>` pointing at a project you set up ([taskweaver/cli/cli.py:17-18](https://github.com/microsoft/taskweaver/blob/d44ddef23f90059fb17999d3095db4240e98f955/taskweaver/cli/cli.py#L17-L18)) | Config, plugins and examples come only from the directory you named (C6) |
+| A firewalled host or VM | Run TaskWeaver on a host or VM whose firewall lets containers reach only the hosts the task needs and keeps other machines off its ports | Data the session reads has a narrow path out, even with no approval step (C5) |
+
+### Handling data
+
+- Each LLM prompt is saved as JSON in the session directory and the kernel writes a DEBUG log, both unredacted; store them like the data the session read.
+
 ## Critical gaps
 - A hijacked TaskWeaver session can read the user's data files and send them anywhere, or call arbitrary external APIs, with no human in the loop: model code executes immediately in a container with full network egress. (ASI01, LLM01, T6; C5) — [taskweaver/code_interpreter/code_interpreter/code_interpreter.py:267-272](https://github.com/microsoft/taskweaver/blob/d44ddef23f90059fb17999d3095db4240e98f955/taskweaver/code_interpreter/code_interpreter/code_interpreter.py#L267-L272); [taskweaver/ces/environment.py:257-279](https://github.com/microsoft/taskweaver/blob/d44ddef23f90059fb17999d3095db4240e98f955/taskweaver/ces/environment.py#L257-L279); [taskweaver/planner/planner.py:169-176](https://github.com/microsoft/taskweaver/blob/d44ddef23f90059fb17999d3095db4240e98f955/taskweaver/planner/planner.py#L169-L176)
 

@@ -36,6 +36,123 @@
     "external_communication": "yes"
   },
   "headline": "Dify as shipped runs model-chosen tool calls, including an Agent V2 shell with public internet access and the agent's secret environment variables, with no human approval anywhere. Service-to-service authentication in the default deployment is not locked down, and the shared shell sandbox can reach the agent backend. Credential storage, SSRF filtering, and audit records are solid; harden service credentials and isolate the shell before exposing published apps to untrusted users.",
+  "safe_setup": {
+    "intro": "Dify keeps model-written code out of its API process, encrypts stored credentials, filters private addresses on tool traffic and records every tool call in its database. As shipped it runs an Agent V2 shell with internet access and the agent's secrets, with no approval step anywhere, so the safest setup narrows the credentials, moves or turns off that shell and puts containment around the stack.",
+    "steps": [
+      {
+        "setup": "Scoped, low-limit keys",
+        "how": "Give each workspace only the provider and tool credentials its apps need, scoped or read-only with a spending limit set at the provider",
+        "gives_you": "Every app and end user reaches only the systems and spend you chose, since they all act with these stored keys",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Shell only where needed",
+        "how": "Set `AGENT_SHELL_ENABLED=false` on the API for deployments whose agents don't need a shell",
+        "gives_you": "Agent V2 runs without the unapproved script runner and its internet access",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "api/configs/extra/agent_backend_config.py",
+            "lines": "65-71",
+            "contains": "AGENT_SHELL_ENABLED: bool = Field(",
+            "url": "https://github.com/langgenius/dify/blob/8222397ea989a15c305ee60d2e4b867883638f37/api/configs/extra/agent_backend_config.py#L65-L71"
+          }
+        ]
+      },
+      {
+        "setup": "A remote shell sandbox",
+        "how": "`DIFY_AGENT_RUNTIME_BACKEND=e2b` with your E2B key, as in the shipped E2B compose override",
+        "gives_you": "Shell jobs run in remote per-binding sandboxes in place of one container shared by every workspace",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "docker/.env.example",
+            "lines": "270",
+            "contains": "DIFY_AGENT_RUNTIME_BACKEND=local",
+            "url": "https://github.com/langgenius/dify/blob/8222397ea989a15c305ee60d2e4b867883638f37/docker/.env.example#L270"
+          },
+          {
+            "file": "docker/docker-compose.e2b.yaml",
+            "lines": "28",
+            "contains": "DIFY_AGENT_RUNTIME_BACKEND: e2b",
+            "url": "https://github.com/langgenius/dify/blob/8222397ea989a15c305ee60d2e4b867883638f37/docker/docker-compose.e2b.yaml#L28"
+          }
+        ]
+      },
+      {
+        "setup": "Admin-only plugin installs",
+        "how": "Set the workspace plugin install permission to `admins`",
+        "gives_you": "Third-party plugins enter the workspace only by an admin's decision",
+        "criterion": "C7",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "api/models/account.py",
+            "lines": "292-294",
+            "contains": "ADMINS = \"admins\"",
+            "url": "https://github.com/langgenius/dify/blob/8222397ea989a15c305ee60d2e4b867883638f37/api/models/account.py#L292-L294"
+          }
+        ]
+      },
+      {
+        "setup": "Signed plugins only",
+        "how": "Keep the default `FORCE_VERIFYING_SIGNATURE` of `true` on the plugin daemon",
+        "gives_you": "The plugin daemon installs only signature-verified plugins",
+        "criterion": "C7",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "docker/docker-compose-template.yaml",
+            "lines": "599",
+            "contains": "FORCE_VERIFYING_SIGNATURE: ${FORCE_VERIFYING_SIGNATURE:-true}",
+            "url": "https://github.com/langgenius/dify/blob/8222397ea989a15c305ee60d2e4b867883638f37/docker/docker-compose-template.yaml#L599"
+          }
+        ]
+      },
+      {
+        "setup": "Concurrency and time limits",
+        "how": "Set `APP_MAX_ACTIVE_REQUESTS=<n>` and lower `WORKFLOW_MAX_EXECUTION_TIME` to what your workflows need",
+        "gives_you": "Each app runs a bounded number of requests at once, and each workflow ends at a time you chose",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "docker/envs/core-services/shared.env.example",
+            "lines": "123",
+            "contains": "APP_MAX_ACTIVE_REQUESTS=0",
+            "url": "https://github.com/langgenius/dify/blob/8222397ea989a15c305ee60d2e4b867883638f37/docker/envs/core-services/shared.env.example#L123"
+          },
+          {
+            "file": "docker/envs/core-services/shared.env.example",
+            "lines": "233",
+            "contains": "WORKFLOW_MAX_EXECUTION_TIME=3600",
+            "url": "https://github.com/langgenius/dify/blob/8222397ea989a15c305ee60d2e4b867883638f37/docker/envs/core-services/shared.env.example#L233"
+          }
+        ]
+      },
+      {
+        "setup": "A private network, narrow egress",
+        "how": "Run the stack on a private network for trusted users, with the agent sandbox's outbound proxy limited to the hosts your tasks need",
+        "gives_you": "Fewer untrusted people reach your agents, and a narrow path for data to leave",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Dify has no per-call approval; place a Human Input node before consequential steps in a workflow so a person reviews them first.",
+      "Before publishing an Agent V2 app, review the agent configuration changes made during build sessions, since they reach every user once published."
+    ],
+    "handling": [
+      "Shell output shown to the agent is redacted only for the callback token unless you add patterns to `DIFY_AGENT_SHELL_REDACT_PATTERNS`.",
+      "Tool calls are stored in the database with their inputs and outputs; protect it like the data your agents read.",
+      "Anonymous, content-free usage telemetry is on by default; `DISABLE_TELEMETRY=true` turns it off."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

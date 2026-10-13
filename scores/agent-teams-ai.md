@@ -24,6 +24,32 @@
 
 Agent Teams AI launches every teammate with Claude's permission prompts bypassed by default, and its terminal automation auto-accepts the runtime's 'trust this folder' and bypass-permissions warnings. Agents run unsandboxed as the user with the full shell environment, so a single prompt injection in a repo, web page or peer message can exfiltrate credentials and push or delete with no human involved. A real per-call approval sheet exists, but it is opt-in and still pre-allows file writes through a project settings file.
 
+## Safest setup
+
+Agent Teams AI keeps the provider keys it manages in the OS keychain, redacts its crash reports, and includes a real per-call approval sheet. As shipped, teams launch with auto-approve on and every agent runs unsandboxed with your full environment, so the safest setup turns approval on and builds the boundaries around the app yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Give the app provider keys with a spending limit set at the provider, and repository tokens scoped to the repositories the team works on, read-only where the task allows | The provider and the code host enforce what any teammate can spend and reach, whatever it is asked to do (C8) |
+| A dedicated OS account | Run the app from an OS account that holds only the credentials this work needs, with no personal cloud, SSH or git logins in its shell | Teammates inherit a small environment, so a hijacked agent reaches only what that account holds (C1) |
+| Per-call approval | Untick `Auto-approve all tools` each time you create or launch a team ([src/features/localization/renderer/locales/en/team.json:2690](https://github.com/777genius/agent-teams-ai/blob/f8d3434cac84e658640318c65d56de7cc944af0c/src/features/localization/renderer/locales/en/team.json#L2690)) | Each tool request waits in an approval sheet that shows the exact command or input and a diff (C2) |
+| Repositories you have read | Launch teams only in repositories whose Claude and Codex settings, hooks and project MCP servers you have read | The project settings the app trusts on your behalf come only from sources you have checked (C6) |
+| Separate teammate worktrees | Tick `Worktree for all teammates` in the members editor ([src/features/localization/renderer/locales/en/team.json:1990](https://github.com/777genius/agent-teams-ai/blob/f8d3434cac84e658640318c65d56de7cc944af0c/src/features/localization/renderer/locales/en/team.json#L1990)) | Each teammate's file edits land in its own git checkout, apart from your main working tree (C4) |
+| Capped scheduled runs | Run unattended work as a schedule with `Max turns` and `Max budget (USD)` set ([src/features/localization/renderer/locales/en/team.json:1537-1538](https://github.com/777genius/agent-teams-ai/blob/f8d3434cac84e658640318c65d56de7cc944af0c/src/features/localization/renderer/locales/en/team.json#L1537-L1538)) | Runs nobody is watching stop at a turn count and a dollar ceiling (C10) |
+| Its own VM | Run the app in a VM whose network reaches only the model providers and the hosts the task needs | An outer boundary around agents' shell commands and MCP servers, and a narrow path for data to leave (C4) |
+| Transcripts kept elsewhere | Copy the session transcripts under ~/.claude/projects to storage the agents can't write to | A record of every teammate's tool calls that outlives the session and stays as it was written (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; the allow-all button switches the whole team to auto-approve.
+- File edits pass without a prompt even in approval mode, so check them in the review panel, where each hunk or file can be reverted.
+- Leave the safe-command auto-allow off; it matches commands by prefix and covers npm, npx, git and node -e.
+
+### Handling data
+
+- Session transcripts and per-teammate stdout and stderr logs are not redacted; store them like the secrets in your environment.
+- Crash reporting is on by default and redacted first; untick Send anonymous telemetry under Settings, Privacy to turn it off.
+
 ## Critical gaps
 - Teammates run with the user's full environment and shell credentials and no scoped identity, so a hijacked agent holds the user's entire account. (ASI03, T3; C1) — [src/main/utils/cliEnv.ts:40-43](https://github.com/777genius/agent-teams-ai/blob/f8d3434cac84e658640318c65d56de7cc944af0c/src/main/utils/cliEnv.ts#L40-L43); [src/main/services/team/provisioning/TeamProvisioningLaunchTeamFlow.ts:517-519](https://github.com/777genius/agent-teams-ai/blob/f8d3434cac84e658640318c65d56de7cc944af0c/src/main/services/team/provisioning/TeamProvisioningLaunchTeamFlow.ts#L517-L519)
 - Model-written shell commands run on the host as the user with no sandbox and the full credential-bearing environment. (ASI05, T11; C4) — searched `rg -n -i 'seccomp|landlock|sandbox-exec|bwrap|firejail|--sandbox'` in `src/main` → 0 hits (No OS sandbox, container, or seccomp/landlock wrapper around any runtime the app spawns.); [src/main/utils/cliEnv.ts:40-43](https://github.com/777genius/agent-teams-ai/blob/f8d3434cac84e658640318c65d56de7cc944af0c/src/main/utils/cliEnv.ts#L40-L43)

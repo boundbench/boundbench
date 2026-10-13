@@ -25,6 +25,29 @@ Controls where a risk surface exists: 3.65 / 7.0 (52%); 3 criteria scored SA (su
 
 Coroot's MCP server gives AI agents read access to production logs, traces and metrics, checked on every call against the connecting user's Coroot role, plus one write: resolving alerts. The tools are narrow, carry accurate risk hints, cap their output size and run no code. The main weaknesses are what the data contains and what isn't recorded: logs and traces reach the agent's model unredacted and unmarked as untrusted, and apart from alert resolutions nothing records what an agent read. AI root-cause analysis is off by default; once enabled it sends telemetry to Coroot Cloud and posts model-written analyses to notification channels without review.
 
+## Safest setup
+
+Coroot's MCP server checks the connecting user's role on every call, keeps its backend credentials on the server, caps the size of every result and runs no code, and AI root-cause analysis stays off until you add a Coroot Cloud API key. It keeps no record of what an agent read and passes telemetry through as collected, so the safest setup connects each agent with a read-only account and adds limits and logging around the server.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A Viewer account per agent | Define one service account per agent under `serviceAccounts` in the config file, with `role: Viewer` and its own entry in `apiKeys` ([config/config.go:197-203](https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/config/config.go#L197-L203); [rbac/role.go:10](https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/rbac/role.go#L10)) | Coroot's per-call role check keeps the agent to the read-only tools, whatever the model asks for (C1) |
+| Keys that end with the task | Remove an agent's API key from its service account as soon as that agent no longer needs access | A lost or forgotten key stops reaching your telemetry (C8) |
+| AI analysis kept off | Leave the Coroot Cloud API key unset in settings unless you want AI root-cause analysis ([api/cloud.go:15](https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/cloud.go#L15)) | Traces and events stay in your deployment, and no model-written analysis reaches your notification channels (C8) |
+| Usage statistics off | `--disable-usage-statistics`, or `DISABLE_USAGE_STATISTICS=true` in the environment ([config/flags.go:30](https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/config/flags.go#L30)) | Per-tool MCP call counts stay inside your deployment (C8) |
+| Rate limits at a proxy | Put a reverse proxy in front of `/mcp` that limits requests per client | A runaway agent can't keep sending expensive queries to your metrics and log backends (C10) |
+| A tool-call log | Turn on tool-call logging in the agent or MCP client that connects to Coroot, stored where the agent can't edit it | A record of what each agent read and with which arguments, which Coroot itself keeps only for alert resolutions (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve `resolve_alerts` calls one at a time; each sends resolution notices to Slack or PagerDuty that can't be recalled.
+- Check the list of alerts in a resolve call before approving it, since one call can cover any number of alerts.
+
+### Handling data
+
+- Tool results carry log bodies and trace attributes unredacted; store agent transcripts and client logs like the production logs they came from.
+- With AI root-cause analysis on, traces and Kubernetes events go to Coroot Cloud as collected.
+
 ## Critical gaps
 - Apart from alert resolutions, MCP tool calls leave no record: what an agent read, with which arguments and through which client, cannot be reconstructed. (T8, ASI10; C9). Evidence: [api/mcp.go:137-143](https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L137-L143)
 - Log bodies and trace data are returned to the agent's model with no redaction of secrets or personal data. (LLM02, ASI03; C8). Evidence: [api/mcp.go:1651](https://github.com/coroot/coroot/blob/cc7c1bf75be9c3d08c751d3d4f9942cf8c81e855/api/mcp.go#L1651)

@@ -24,6 +24,32 @@
 
 Codex CLI runs every model-issued shell command inside a real OS sandbox (Seatbelt on macOS, bubblewrap+seccomp on Linux) that blocks network and confines writes to the project, and anything that needs to leave the sandbox goes to you with the exact command shown. The dominant risk is what sits inside that sandbox: every command inherits your full environment, including API keys and cloud tokens, and can read your whole disk (~/.ssh, ~/.codex/auth.json), so one approved network command or a trusted repo whose .codex/config.toml switches off approvals is enough to leak them. There are no turn, time or spend limits by default.
 
+## Safest setup
+
+Codex CLI runs every model-issued command in an OS sandbox with network off and writes kept to the project, and asks you, with the exact command on screen, before anything leaves it. Inside that sandbox commands see your full environment and can read your whole disk, so the safest setup strips credentials from that environment and keeps the machine itself free of secrets the task doesn't need.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, short-lived credentials | Start Codex from a shell holding only the keys this project needs, each scoped to one project or short-lived | Whatever a command reads, it reaches only the access you chose, not your whole account (C1) |
+| A scrubbed command environment | Set `inherit = "core"` and `ignore_default_excludes = false` under `[shell_environment_policy]` in your own config.toml ([codex-rs/config/src/config_toml.rs:211](https://github.com/openai/codex/blob/b741e480e203f037ca726bc2a76d99a8e8668e66/codex-rs/config/src/config_toml.rs#L211); [codex-rs/config/src/shell_environment_policy.rs:16-18](https://github.com/openai/codex/blob/b741e480e203f037ca726bc2a76d99a8e8668e66/codex-rs/config/src/shell_environment_policy.rs#L16-L18); [codex-rs/protocol/src/config_types.rs:205-210](https://github.com/openai/codex/blob/b741e480e203f037ca726bc2a76d99a8e8668e66/codex-rs/protocol/src/config_types.rs#L205-L210)) | Commands run without your API keys, cloud tokens and other KEY, SECRET or TOKEN variables (C8) |
+| The OS sandbox, network off | Keep the default `sandbox_mode` of `workspace-write`, with `network_access` left off ([codex-rs/config/src/config_toml.rs:224](https://github.com/openai/codex/blob/b741e480e203f037ca726bc2a76d99a8e8668e66/codex-rs/config/src/config_toml.rs#L224); [codex-rs/protocol/src/config_types.rs:109](https://github.com/openai/codex/blob/b741e480e203f037ca726bc2a76d99a8e8668e66/codex-rs/protocol/src/config_types.rs#L109); [codex-rs/config/src/types.rs:1114](https://github.com/openai/codex/blob/b741e480e203f037ca726bc2a76d99a8e8668e66/codex-rs/config/src/types.rs#L1114)) | Commands change only project files and /tmp, and reach the network only after you approve (C4) |
+| Per-call approval by you | Keep the default `approval_policy` and `approvals_reviewer`, and run without `--dangerously-bypass-approvals-and-sandbox` ([codex-rs/config/src/config_toml.rs:195](https://github.com/openai/codex/blob/b741e480e203f037ca726bc2a76d99a8e8668e66/codex-rs/config/src/config_toml.rs#L195); [codex-rs/config/src/config_toml.rs:200](https://github.com/openai/codex/blob/b741e480e203f037ca726bc2a76d99a8e8668e66/codex-rs/config/src/config_toml.rs#L200); [codex-rs/utils/cli/src/shared_options.rs:55](https://github.com/openai/codex/blob/b741e480e203f037ca726bc2a76d99a8e8668e66/codex-rs/utils/cli/src/shared_options.rs#L55)) | You see the exact command before anything leaves the sandbox (C2) |
+| Folder trust after reading | Choose "Trust and continue" once you have read the repository's .codex/config.toml, .codex/rules and AGENTS.md | Approval, sandbox and MCP settings come only from files you have seen (C2) |
+| Reviewed instruction files | Check the git diff of AGENTS.md before starting each new session | Instructions that carry over between sessions are ones you have read (C6) |
+| Its own container or VM | Run Codex in a container or VM that holds only this project and the credentials it needs | Commands that can read the whole disk find no SSH keys, cloud logins or other projects (C4) |
+| Stopped background terminals | Run `/stop` (alias `/clean`) after interrupting a turn ([codex-rs/tui/src/slash_command.rs:76](https://github.com/openai/codex/blob/b741e480e203f037ca726bc2a76d99a8e8668e66/codex-rs/tui/src/slash_command.rs#L76)) | Commands the agent left running end along with the turn (C10) |
+
+### Approving with confidence
+
+- Read each prompt and approve commands one at a time; a "don't ask again" answer saves a prefix rule, and later commands with that prefix run outside the sandbox.
+- A command asking for network access can send anything it has read, so check where it is going before approving.
+- MCP tools their server marks read-only run without a prompt, so add only MCP servers you trust.
+
+### Handling data
+
+- Session transcripts under ~/.codex/sessions keep every tool call and its output unredacted; store them like the project's secrets.
+- Usage analytics are on by default; `enabled = false` under `[analytics]` in your config.toml turns them off.
+
 ## Critical gaps
 - Sandboxed commands inherit the full parent environment (credentials included) and can read the whole filesystem, so a hijacked command can harvest secrets even though writes and network are blocked. (ASI05, ASI03, T11, LLM02; C4) — [codex-rs/protocol/src/config_types.rs:261-266](https://github.com/openai/codex/blob/b741e480e203f037ca726bc2a76d99a8e8668e66/codex-rs/protocol/src/config_types.rs#L261-L266); [codex-rs/config/src/shell_environment_policy.rs:135-136](https://github.com/openai/codex/blob/b741e480e203f037ca726bc2a76d99a8e8668e66/codex-rs/config/src/shell_environment_policy.rs#L135-L136); [codex-rs/protocol/src/permissions.rs:824-836](https://github.com/openai/codex/blob/b741e480e203f037ca726bc2a76d99a8e8668e66/codex-rs/protocol/src/permissions.rs#L824-L836)
 

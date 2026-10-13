@@ -24,6 +24,31 @@
 
 UFO controls the Windows desktop as the logged-in user with no sandbox, and its keyboard and mouse tools can type anything into any window, including a PowerShell window. The command-line and Linux tools are tightly allowlisted, but the GUI path goes around them. The human confirmation prompt is well built yet only appears when the model decides to ask, and Galaxy's orchestrator auto-confirms, so prompt injection from on-screen content can leak data and send or delete things unattended.
 
+## Safest setup
+
+UFO keeps memory and third-party extensions off by default, bounds every session with a step limit, and ships a confirmation prompt that is on by default. It still acts as the signed-in desktop user with no sandbox, and the prompt appears only when the model asks for it, so the safest setup gives UFO its own account and machine and builds the boundaries around it yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated Windows account | Run each device agent under its own low-privilege Windows account, signed in only to the apps and accounts the task needs | A hijacked session reaches only that account's files and sign-ins, not your own (C1) |
+| A dedicated, low-limit model key | Put a model key used only by UFO, with a spending limit set at the provider, in `API_KEY` ([config/ufo/agents.yaml.template:10](https://github.com/microsoft/ufo/blob/a795552d976c4c019d7c2f778a0effb5cef7de6b/config/ufo/agents.yaml.template#L10)) | A leaked or overused key reaches one budget you can revoke on its own (C8) |
+| The confirmation prompt | Keep the default `SAFE_GUARD: True` in config/ufo/system.yaml ([config/ufo/system.yaml:27](https://github.com/microsoft/ufo/blob/a795552d976c4c019d7c2f778a0effb5cef7de6b/config/ufo/system.yaml#L27)) | When the model flags a sensitive action, a person sees the exact call and arguments before it runs (C2) |
+| Only the executors needed | In config/ufo/mcp.yaml, drop `CommandLineExecutor` from each agent's `action` list when the task doesn't launch apps ([config/ufo/mcp.yaml:23](https://github.com/microsoft/ufo/blob/a795552d976c4c019d7c2f778a0effb5cef7de6b/config/ufo/mcp.yaml#L23); [config/ufo/mcp.yaml:28](https://github.com/microsoft/ufo/blob/a795552d976c4c019d7c2f778a0effb5cef7de6b/config/ufo/mcp.yaml#L28); [config/ufo/mcp.yaml:45](https://github.com/microsoft/ufo/blob/a795552d976c4c019d7c2f778a0effb5cef7de6b/config/ufo/mcp.yaml#L45)) | Each agent has fewer ways to act on the desktop (C3) |
+| Memory left off | Keep the defaults `RAG_EXPERIENCE: False`, `RAG_DEMONSTRATION: False` and `SAVE_EXPERIENCE: "always_not"`, or use `"ask"` when you want experience saved ([config/ufo/rag.yaml:14](https://github.com/microsoft/ufo/blob/a795552d976c4c019d7c2f778a0effb5cef7de6b/config/ufo/rag.yaml#L14); [config/ufo/rag.yaml:19](https://github.com/microsoft/ufo/blob/a795552d976c4c019d7c2f778a0effb5cef7de6b/config/ufo/rag.yaml#L19); [config/ufo/system.yaml:76](https://github.com/microsoft/ufo/blob/a795552d976c4c019d7c2f778a0effb5cef7de6b/config/ufo/system.yaml#L76)) | Nothing from one run is written back into later runs without your review (C6) |
+| Step limits | Keep `MAX_STEP: 50` in config/ufo/system.yaml and `MAX_STEP: 15` in config/galaxy/constellation.yaml, or lower them for short tasks ([config/ufo/system.yaml:15](https://github.com/microsoft/ufo/blob/a795552d976c4c019d7c2f778a0effb5cef7de6b/config/ufo/system.yaml#L15); [config/galaxy/constellation.yaml:9](https://github.com/microsoft/ufo/blob/a795552d976c4c019d7c2f778a0effb5cef7de6b/config/galaxy/constellation.yaml#L9)) | Every session ends after a fixed number of steps (C10) |
+| Its own VM or Windows Sandbox | Run each device agent in a VM or Windows Sandbox with network access limited to the model provider and the hosts the task needs | An outer boundary around everything the agent types or launches, and a narrow path for data to leave (C4) |
+| Logs kept outside | Copy each session's logs/ folder to storage the agent's account can't write | A step-by-step record of the run that the desktop agent can't alter (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; the prompt appears only when the model flags an action, so watch sessions that can send or delete.
+- The prompt covers AppAgent actions the model flags; Galaxy's orchestrator and the HostAgent go ahead without asking.
+
+### Handling data
+
+- Session logs hold full prompts and screenshots without redaction at the default `LOG_LEVEL: "DEBUG"`; store them like the desktop data they show.
+- Model keys sit in plain text in config/ufo/agents.yaml or the environment; keep that file readable only by you.
+
 ## Critical gaps
 - The agent acts with the desktop user's full session and every signed-in account; nothing narrows its authority. (ASI03, T3; C1) — [ufo/client/mcp/local_servers/ui_mcp_server.py:472](https://github.com/microsoft/ufo/blob/a795552d976c4c019d7c2f778a0effb5cef7de6b/ufo/client/mcp/local_servers/ui_mcp_server.py#L472); [ufo/client/mcp/local_servers/ui_mcp_server.py:201](https://github.com/microsoft/ufo/blob/a795552d976c4c019d7c2f778a0effb5cef7de6b/ufo/client/mcp/local_servers/ui_mcp_server.py#L201)
 - Human confirmation only triggers when the model labels an action CONFIRM; HostAgent confirmation is a no-op and Galaxy auto-confirms, so the most powerful actions bypass the gate. (ASI09, ASI02, T10; C2) — [ufo/agents/processors/strategies/app_agent_processing_strategy.py:1361-1363](https://github.com/microsoft/ufo/blob/a795552d976c4c019d7c2f778a0effb5cef7de6b/ufo/agents/processors/strategies/app_agent_processing_strategy.py#L1361-L1363); [ufo/agents/agent/host_agent.py:365-369](https://github.com/microsoft/ufo/blob/a795552d976c4c019d7c2f778a0effb5cef7de6b/ufo/agents/agent/host_agent.py#L365-L369); [galaxy/agents/constellation_agent.py:524-526](https://github.com/microsoft/ufo/blob/a795552d976c4c019d7c2f778a0effb5cef7de6b/galaxy/agents/constellation_agent.py#L524-L526)

@@ -1,11 +1,11 @@
 ---
-name: "boundbench"
-description: "BoundBench: produce a defense-in-depth score for an AI agent, agent framework, coding agent, or MCP/tool server from its source code: 0.0-10.0 across 10 OWASP-Agentic-aligned criteria (1.0 each, graded on strength, coverage, defaults, and blast radius) that credit the safeguards built into the agent. Every rating is anchored to verifiable file:line evidence at a pinned commit and rendered as a markdown report and a website-ready JSON entry. Use this skill whenever the user mentions BoundBench, asks to score or benchmark a repo with BoundBench, asks to audit, score, rate, or review the security, safety, safeguards, guardrails, or trust boundary of an agent or MCP server repo, asks whether an agent is safe or secure or how well it is protected, wants an OWASP LLM or agentic (ASI Top 10) review of a codebase, or says 'run the benchmark' on a repo, even if they don't say 'score'. Static source review only: it never runs the target."
+name: "safetycard"
+description: "SafetyCard: produce a defense-in-depth score for an AI agent, agent framework, coding agent, or MCP/tool server from its source code: 0.0-10.0 across 10 OWASP-Agentic-aligned criteria (1.0 each, graded on strength, coverage, defaults, and blast radius) that credit the safeguards built into the agent. Every rating is anchored to verifiable file:line evidence at a pinned commit and rendered as a markdown report and a website-ready JSON entry. Use this skill whenever the user mentions SafetyCard, asks to score or benchmark a repo with SafetyCard, asks to audit, score, rate, or review the security, safety, safeguards, guardrails, or trust boundary of an agent or MCP server repo, asks whether an agent is safe or secure or how well it is protected, wants an OWASP LLM or agentic (ASI Top 10) review of a codebase, or says 'run the benchmark' on a repo, even if they don't say 'score'. Static source review only: it never runs the target."
 metadata:
-  version: "0.9.0"
+  version: "0.9.1"
 ---
 
-# BoundBench: Agent Defense-in-Depth Score
+# SafetyCard: Agent Defense-in-Depth Score
 
 Score how well an AI agent's *own code* contains harm: what it can do with the authority it holds, what stops it doing the wrong thing, and how bad things get when those controls fail. The output is a 0.0–10.0 score made of 10 criteria worth 1.0 each, with evidence for every rating.
 
@@ -54,13 +54,23 @@ Go back over the scorecard twice, once in each direction:
 - **Match the anchor text literally.** For every parameter, reread the anchor for its level and the level above, and confirm the code meets each element of the one you chose. Anchors often name a case explicitly ("ambient-only design", "no unsandboxed fallback") that's easy to miss.
 Then rerun the script and log every change in `reaudit_log`.
 
-### 6. Render the outputs
+### 6. Write the safest setup
+Add `safe_setup` to the scorecard: an operator-facing view of the same review that says how to run the agent most safely (`references/output-format.md` has the fields). It is not a new review and it never changes a score. Write it after the re-audit, when the levels are final:
+1. **Every step traces to a finding already in the scorecard:** a level, its "to reach the next level" gap, an opt-in alternative mechanism, or a limitation. Give each step the `criterion` it comes from. No advice the review doesn't support.
+2. **Order by protection.** First the step that holds even if the tool's own controls fail, usually least privilege the provider enforces (a read-only cloud role, a scoped token, a GitHub App). Then the tool's own gates. Then containment and logging.
+3. **Positive language throughout.** Describe the safest setup, not a list of prohibitions; `gives_you` says what the step protects. Never phrase approval advice as "approve everything"; say "read each prompt and approve calls one at a time".
+4. **Exact names only.** Look up every flag, config key and env var in the clone at the pinned commit, write it in backticks, and cite where it is defined (`default` and `opt_in` steps need evidence with `contains`). Never use a name from another version; if you can't confirm a name, describe the setting without one.
+5. **Follow step 8.** No defect details: the wording stays at posture level, and evidence cites the setting, never a defective line.
+6. **Don't estimate a score for the safe setup.** It isn't computed.
+7. **If the tool has no opt-in mechanisms and weak defaults, say so plainly** in `intro`, and make the steps mostly `operator` containment (a container or VM, a scoped identity, an egress allowlist).
+
+### 7. Render the outputs
 ```bash
 python3 scripts/score.py scorecard.json --repo <clone> --entry entry.json --report report.md
 ```
-The script must exit cleanly with `--repo`; fix the scorecard until it does. Deliver `entry.json` (the website record), `report.md` and `scorecard.json`, and end your reply with the step 7 section if it found anything.
+The script must exit cleanly with `--repo`; fix the scorecard until it does. Deliver `entry.json` (the website record), `report.md` and `scorecard.json`, and end your reply with the step 8 section if it found anything.
 
-### 7. Keep undisclosed defects out of the score outputs
+### 8. Keep undisclosed defects out of the score outputs
 The report and entry are meant to be published, so they describe **posture**, not exploitable bugs nobody has disclosed yet. Do this while writing the scorecard, not as an edit afterwards. A **defect claim** is a statement that specific code has an exploitable flaw:
 1. a bypass of a control the project ships (sandbox, allowlist, path containment, approval, SSRF guard, auth, read-only mode, a risk hint that defeats a gate)
 2. injection or unsafe handling of attacker-reachable input (`eval`, shell, SQL, path traversal, unsafe deserialization)

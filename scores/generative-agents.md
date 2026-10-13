@@ -25,6 +25,24 @@ Controls where a risk surface exists: 2.40 / 8.0 (30%); 2 criteria scored SA (su
 
 Generative Agents is a research simulation, not a tool-using agent: its LLM-driven characters can only walk around a fixed map, talk to each other and remember things, so most of its safety comes from having almost nothing dangerous to do. It ships no controls of its own. The main risk is in the local web frontend, whose handling of model-written text and of requests is not hardened. Memory is written by the model without checks and carries into every forked run.
 
+## Safest setup
+
+Generative Agents gives its characters no tools: they walk a fixed map, talk and remember, and each run stops after the step count you type. Beyond that it ships few controls of its own, so the safest setup narrows the key and puts the boundaries around the local frontend and the simulation files yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, low-limit key | Put a key from its own OpenAI project, with a spending limit set at OpenAI, in `openai_api_key` ([README.md:18](https://github.com/joonspk-research/generative_agents/blob/fe05a71d3e4ed7d10bf68aa4eda6dd995ec070f4/README.md#L18)) | Whatever the simulation does, it reaches only that project's quota and spend (C1) |
+| Short runs | Type a small `run <step-count>` and extend the simulation with further runs ([README.md:64](https://github.com/joonspk-research/generative_agents/blob/fe05a71d3e4ed7d10bf68aa4eda6dd995ec070f4/README.md#L64); [reverie/backend_server/reverie.py:464-467](https://github.com/joonspk-research/generative_agents/blob/fe05a71d3e4ed7d10bf68aa4eda6dd995ec070f4/reverie/backend_server/reverie.py#L464-L467)) | Each run ends after a number of steps you chose, keeping model spend in view (C10) |
+| Quiet console output | Set `debug = False` in your `utils.py` ([README.md:15](https://github.com/joonspk-research/generative_agents/blob/fe05a71d3e4ed7d10bf68aa4eda6dd995ec070f4/README.md#L15); [README.md:32](https://github.com/joonspk-research/generative_agents/blob/fe05a71d3e4ed7d10bf68aa4eda6dd995ec070f4/README.md#L32)) | Full prompts and model replies stay out of the console and any logs it feeds (C8) |
+| A local, short-lived frontend | Start `python manage.py runserver` on its default local address and stop it when no simulation is running ([README.md:45](https://github.com/joonspk-research/generative_agents/blob/fe05a71d3e4ed7d10bf68aa4eda6dd995ec070f4/README.md#L45)) | The simulation's local web server is reachable only from this machine, and only while you use it (C1) |
+| A separate browser profile | Open the simulator and replay pages in a browser profile with no other sign-ins | Model-written text shown on those pages has nothing else in your browser to reach (C4) |
+| A reviewed base simulation | Fork each run from a base simulation you have checked, and keep that base folder unchanged | Memories carried into a run come from a state you trust, and you can always return to it (C6) |
+| A saved run record | End runs with `fin` and copy the simulation folder to storage outside the project ([reverie/backend_server/reverie.py:439](https://github.com/joonspk-research/generative_agents/blob/fe05a71d3e4ed7d10bf68aa4eda6dd995ec070f4/reverie/backend_server/reverie.py#L439)) | The per-step record of each agent's actions and chat outlives the session and the local server (C9) |
+
+### Handling data
+
+- The simulation folder holds every agent's chats and memories; treat copies like the data you seeded the run with.
+
 ## Critical gaps
 - None: no criterion is capped and no blast radius is at the worst level.
 

@@ -24,6 +24,31 @@
 
 Desktop Commander hands the connected AI a full shell and file access on your machine as you, with no sandbox and whole-filesystem access by default. Its folder list and command blocklist are guardrails its own security policy says can be bypassed, and the model can switch them off itself with set_config_value. The dominant risk is prompt injection: a web page or file the model reads can lead to secrets being read and sent out, or data being deleted, with nothing in the server to stop it. Run it in the shipped Docker setup with only the folders you need if the AI should not reach the rest of your machine.
 
+## Safest setup
+
+Desktop Commander gives the model a full shell and file access as you, with no sandbox and the whole filesystem open by default, and the model can change its own folder list and blocklist. Its strongest protection is the Docker install it ships, so the safest setup runs it there with only the folders the task needs and builds the rest of the boundary around it.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated OS user | Run your MCP client and the server under an OS account whose home and environment hold only the keys this task needs | Commands the model runs reach only the files and credentials you placed in that account (C1) |
+| The Docker install | Use the shipped Docker installer, answer `y` to customize folders and mount only the project folders the task needs ([install-docker.sh:137](https://github.com/wonderwhy-er/DesktopCommanderMCP/blob/c774c3b505de990219637ecdc9a830c8772fae9d/install-docker.sh#L137); [install-docker.sh:241-267](https://github.com/wonderwhy-er/DesktopCommanderMCP/blob/c774c3b505de990219637ecdc9a830c8772fae9d/install-docker.sh#L241-L267)) | Every shell command, Node script and file tool runs inside a container that sees only those folders (C4) |
+| Per-call approval | Keep your MCP client asking before each call to a tool marked destructive, `set_config_value` included | A person sees each shell command, file change and settings change before it runs (C2) |
+| Only the needed folders | List the project folders in `allowedDirectories` in the config file ([src/config-field-definitions.ts:16-20](https://github.com/wonderwhy-er/DesktopCommanderMCP/blob/c774c3b505de990219637ecdc9a830c8772fae9d/src/config-field-definitions.ts#L16-L20)) | The file tools read and edit only inside those folders (C3) |
+| The default blocklist | Keep the default `blockedCommands` list, adding commands the task never needs ([src/config-field-definitions.ts:11-15](https://github.com/wonderwhy-er/DesktopCommanderMCP/blob/c774c3b505de990219637ecdc9a830c8772fae9d/src/config-field-definitions.ts#L11-L15)) | A guardrail against common destructive commands run by mistake (C3) |
+| Telemetry off | `telemetryEnabled: false` in the config file ([src/config-field-definitions.ts:26-30](https://github.com/wonderwhy-er/DesktopCommanderMCP/blob/c774c3b505de990219637ecdc9a830c8772fae9d/src/config-field-definitions.ts#L26-L30)) | Usage data stays on your machine (C8) |
+| Limited outbound network | Give the container outbound access only to the hosts the task needs, with CPU and memory limits | A narrow path for data to leave and a bound on runaway work (C5) |
+| A log copy out of reach | Copy the logs in `~/.claude-server-commander` to storage the server can't write ([src/config.ts:6](https://github.com/wonderwhy-er/DesktopCommanderMCP/blob/c774c3b505de990219637ecdc9a830c8772fae9d/src/config.ts#L6)) | A record of every tool call that survives edits made from inside a session (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; a shell approval runs that command with everything the server can reach.
+- A `set_config_value` call changes the server's own folder list and blocklist, so approve it when it matches a change you asked for.
+- A command that times out keeps running in the background; check for leftover processes when a session ends.
+
+### Handling data
+
+- `~/.claude-server-commander` keeps every tool call's arguments and outputs up to 4 KB in plain text; store it like the data the agent read.
+
 ## Critical gaps
 - The model can rewrite its own permission scope (allowed folders, command blocklist) through the set_config_value tool, with no server-side gate. (ASI03; C1) — [src/tools/config.ts:247](https://github.com/wonderwhy-er/DesktopCommanderMCP/blob/c774c3b505de990219637ecdc9a830c8772fae9d/src/tools/config.ts#L247); [src/config-field-definitions.ts:11-20](https://github.com/wonderwhy-er/DesktopCommanderMCP/blob/c774c3b505de990219637ecdc9a830c8772fae9d/src/config-field-definitions.ts#L11-L20)
 - The server acts with the user's full ambient authority by default: empty allowed-folders list means the whole filesystem, and shells inherit the full environment. (ASI03; C1) — [src/config-manager.ts:188](https://github.com/wonderwhy-er/DesktopCommanderMCP/blob/c774c3b505de990219637ecdc9a830c8772fae9d/src/config-manager.ts#L188); [src/terminal-manager.ts:207-212](https://github.com/wonderwhy-er/DesktopCommanderMCP/blob/c774c3b505de990219637ecdc9a830c8772fae9d/src/terminal-manager.ts#L207-L212)

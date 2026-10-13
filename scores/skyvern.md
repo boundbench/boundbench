@@ -24,6 +24,31 @@
 
 Skyvern drives a real browser through arbitrary websites using stored logins, and as shipped nothing stands between a prompt-injected page and the agent's actions: there is no human approval, navigation can go to any public site, and credential release on the default engine is not a complete boundary. Workflow code blocks are on by default and run in the server process behind only an AST filter. The codebase contains a sophisticated origin firewall, egress monitor and credential site-binding, but in this open-source build the firewall cannot be enrolled and the site-binding does not cover every path. Secrets are kept out of the model's context via placeholders, which is a real strength.
 
+## Safest setup
+
+Skyvern keeps stored secrets out of the model's view with placeholders, stops each task after 10 steps, and records every action with screenshots. As shipped there is no human approval, navigation reaches any public site and workflow code runs inside the server process, so the safest setup narrows the logins, turns on the gates Skyvern offers and puts containment around the server.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Dedicated, low-privilege logins | Bind only the credentials each workflow needs, using site accounts limited to what that task does | Each website itself limits what a misled run can do with the login it holds (C1) |
+| A go/no-go checkpoint | Add a `human_interaction` block before steps that submit, pay or change accounts ([skyvern/schemas/workflows.py:517](https://github.com/Skyvern-AI/skyvern/blob/19bf399835a029b70a9fcec6dcea347a1c40c033/skyvern/schemas/workflows.py#L517); [skyvern/forge/sdk/workflow/models/block.py:14648](https://github.com/Skyvern-AI/skyvern/blob/19bf399835a029b70a9fcec6dcea347a1c40c033/skyvern/forge/sdk/workflow/models/block.py#L14648)) | A person decides whether the workflow continues past that point (C2) |
+| Code blocks off | `CODE_BLOCK_MODE=disabled` in the server's environment or .env file ([skyvern/config.py:865](https://github.com/Skyvern-AI/skyvern/blob/19bf399835a029b70a9fcec6dcea347a1c40c033/skyvern/config.py#L865); [skyvern/config.py:77-80](https://github.com/Skyvern-AI/skyvern/blob/19bf399835a029b70a9fcec6dcea347a1c40c033/skyvern/config.py#L77-L80)) | Code blocks, including planner-written ones, stop running inside the process that holds your keys and vault (C4) |
+| Extraction-only tasks | Leave `navigation_goal` empty for tasks that only read a page ([skyvern/forge/agent.py:4667](https://github.com/Skyvern-AI/skyvern/blob/19bf399835a029b70a9fcec6dcea347a1c40c033/skyvern/forge/agent.py#L4667)) | The agent receives only the extract action, with no clicks, typing or navigation (C3) |
+| A short step budget | Keep the default `MAX_STEPS_PER_RUN` of 10, or lower it for short tasks ([skyvern/config.py:176](https://github.com/Skyvern-AI/skyvern/blob/19bf399835a029b70a9fcec6dcea347a1c40c033/skyvern/config.py#L176)) | Every task ends after a fixed number of steps (C10) |
+| Telemetry off | `SKYVERN_TELEMETRY=false` in the server's environment or .env file ([skyvern/config.py:383](https://github.com/Skyvern-AI/skyvern/blob/19bf399835a029b70a9fcec6dcea347a1c40c033/skyvern/config.py#L383)) | Task URLs and usage events stay on your machine (C8) |
+| A private API port | Firewall the server's port so only your own machine or private network can reach it | Only clients you chose can reach the API and UI, alongside the API key it already requires (C1) |
+| Its own container or VM | Run the server and its browser in a container or VM with outbound access limited to the sites and model provider the task needs | An outer boundary around in-process code and a narrower path for data to leave (C5) |
+
+### Approving with confidence
+
+- The checkpoint shows only the instructions the workflow author wrote, so write them to describe the exact step that follows.
+
+### Handling data
+
+- Each run stores screenshots, page HTML and model prompts and responses in the database; store it like the sites the agent logs into.
+- The local credential vault's key file sits beside the vault; keep both on storage only the server's account can read.
+- Opt-in saved browser profiles and code mode carry cookies and generated scripts into later runs; keep the default fresh profile and agent mode for runs that read untrusted sites.
+
 ## Critical gaps
 - Default runs combine untrusted web content, stored credentials and unrestricted navigation/form submission with no human gate (C5-WORSTCASE). (ASI01, LLM01, T6; C5) — [skyvern/webeye/actions/handler.py:11351-11354](https://github.com/Skyvern-AI/skyvern/blob/19bf399835a029b70a9fcec6dcea347a1c40c033/skyvern/webeye/actions/handler.py#L11351-L11354)
 - Code blocks are enabled by default and exec() Python in the API server process behind only an AST denylist; the OSS build has no isolated runner. (ASI05, T11, LLM05; C4) — [skyvern/forge/sdk/workflow/models/block.py:6834-6849](https://github.com/Skyvern-AI/skyvern/blob/19bf399835a029b70a9fcec6dcea347a1c40c033/skyvern/forge/sdk/workflow/models/block.py#L6834-L6849); [skyvern/config.py:865](https://github.com/Skyvern-AI/skyvern/blob/19bf399835a029b70a9fcec6dcea347a1c40c033/skyvern/config.py#L865); [skyvern/forge/agent_functions.py:1296-1305](https://github.com/Skyvern-AI/skyvern/blob/19bf399835a029b70a9fcec6dcea347a1c40c033/skyvern/forge/agent_functions.py#L1296-L1305)

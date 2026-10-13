@@ -24,6 +24,30 @@
 
 Webcmd gives an AI agent a real browser logged into the user's accounts and lets it run any program against any site, while its skill pre-approves every webcmd command in the host agent. Browser programs run in a QuickJS sandbox, but the bridge to Playwright is not a complete boundary. External-CLI passthrough and plugins run arbitrary unpinned code on the host. A prompt injection in any page can leak data and act on the user's accounts with no human in the loop.
 
+## Safest setup
+
+Webcmd caps each browser run at 30 seconds and 128 MB by default, uses separate cookie jars per profile, and keeps site memory in a local git repository you can roll back. Its shipped skill pre-approves every webcmd command and nothing records actions by default, so the safest setup narrows the logged-in profile, brings back per-call approval, turns on tracing and puts the tool in its own container.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A task-only browser profile | Create a profile with `profile create`, log it in only to the sites the task needs, and select it with `--profile <name>` ([src/cli.ts:1963](https://github.com/agentrhq/webcmd/blob/9d8ea440fd3d86ddadf53e66b6f27db6134b0312/src/cli.ts#L1963); [src/cli.ts:2046-2047](https://github.com/agentrhq/webcmd/blob/9d8ea440fd3d86ddadf53e66b6f27db6134b0312/src/cli.ts#L2046-L2047); [src/root-command-surface.ts:5](https://github.com/agentrhq/webcmd/blob/9d8ea440fd3d86ddadf53e66b6f27db6134b0312/src/root-command-surface.ts#L5)) | The agent acts only with the accounts in that profile, not every site you use (C1) |
+| Per-call approval | Remove `Bash(webcmd:*)` from `allowed-tools` in the installed webcmd-browser skill ([skills/webcmd-browser/SKILL.md:4](https://github.com/agentrhq/webcmd/blob/9d8ea440fd3d86ddadf53e66b6f27db6134b0312/skills/webcmd-browser/SKILL.md#L4)) | The host agent asks you before each browser run, plugin install and passthrough command (C2) |
+| CLIs you installed yourself | Install the external CLIs and plugins the task needs yourself, at versions you have reviewed, before the agent starts | The agent's first call to a CLI runs the copy you chose, with nothing fetched at that moment (C7) |
+| No cloud seed lookup | `WEBCMD_GLOBAL_MEMORY=off` in the environment ([src/site-memory/seed-client.ts:19](https://github.com/agentrhq/webcmd/blob/9d8ea440fd3d86ddadf53e66b6f27db6134b0312/src/site-memory/seed-client.ts#L19)) | The sites you visit stay on your machine, and site memory holds only what your own runs wrote (C8) |
+| Its own container or VM | Run webcmd and its host agent in a container or VM that holds no gh, docker or cloud credentials, with outbound access limited to the sites the task needs | Passthrough commands, plugins and the browser reach only what that machine holds, with a narrow path for data to leave (C4) |
+| A trace of each command | `--trace on` on each browser command ([src/command-surface.ts:476](https://github.com/agentrhq/webcmd/blob/9d8ea440fd3d86ddadf53e66b6f27db6134b0312/src/command-surface.ts#L476)) | A JSONL record of the actions, network and console events of each browser command (C9) |
+| Reviewed site memory | Check the git history of the site-memory repository under your home directory and roll back changes you didn't expect | The notes that guide later runs stay ones you have seen (C6) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; a browser run approval covers every action its program takes, so read the program first.
+- Posts, messages and purchases can't be undone, so approve them when you have seen the page and the amounts.
+- A timeout well above the default 30 seconds, an external CLI registration or a plugin install is worth a closer look.
+
+### Handling data
+
+- Trace files and site memory are stored under ~/.webcmd; keep them like your browsing history.
+
 ## Critical gaps
 - A hijacked agent acts with every account logged into the browser profile and, via external-CLI passthrough, the user's gh/docker credentials. (ASI03; C1) — [skills/webcmd-browser/SKILL.md:67](https://github.com/agentrhq/webcmd/blob/9d8ea440fd3d86ddadf53e66b6f27db6134b0312/skills/webcmd-browser/SKILL.md#L67); [src/external.ts:219](https://github.com/agentrhq/webcmd/blob/9d8ea440fd3d86ddadf53e66b6f27db6134b0312/src/external.ts#L219)
 - The shipped skill pre-approves every 'webcmd' command, so browser runs, plugin installs, and passthrough to registered binaries skip the host agent's approval prompt. (ASI02, ASI09; C2) — [skills/webcmd-browser/SKILL.md:4](https://github.com/agentrhq/webcmd/blob/9d8ea440fd3d86ddadf53e66b6f27db6134b0312/skills/webcmd-browser/SKILL.md#L4); [src/cli.ts:2188](https://github.com/agentrhq/webcmd/blob/9d8ea440fd3d86ddadf53e66b6f27db6134b0312/src/cli.ts#L2188)

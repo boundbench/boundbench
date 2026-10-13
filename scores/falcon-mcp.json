@@ -36,6 +36,115 @@
     "external_communication": "yes"
   },
   "headline": "Falcon MCP gives an AI host broad access to a CrowdStrike tenant: it can search hosts, detections and logs and, by default, also change policies, IOCs, host groups and exclusions, run read-only RTR commands on endpoints, and execute workflows. The server's own safeguards are accurate risk labels on tools and an opt-in read-only mode; it has no approval gate, no audit log of tool calls, and no marking of untrusted content. Run it with --read-only, a least-privilege API client, and a host that asks for approval on state-changing tools.",
+  "safe_setup": {
+    "intro": "Falcon MCP labels its tools accurately as read-only or state-changing and includes a read-only mode, but as shipped every write, delete and workflow tool is registered, and it has no approval step or call log of its own. The safest setup narrows the Falcon API client, turns on read-only mode and tool selection, and relies on your host for approvals.",
+    "steps": [
+      {
+        "setup": "A least-privilege API client",
+        "how": "Create a Falcon API client with only the read scopes the task needs, and leave `FALCON_MEMBER_CID` unset unless you work across child tenants",
+        "gives_you": "Falcon itself refuses anything outside those scopes, whatever the model asks for",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "falcon_mcp/server.py",
+            "lines": "625-626",
+            "contains": "FALCON_MEMBER_CID",
+            "url": "https://github.com/CrowdStrike/falcon-mcp/blob/9bc0efeb92e38ca0667e5a18847a7cbf09dcd206/falcon_mcp/server.py#L625-L626"
+          }
+        ]
+      },
+      {
+        "setup": "Read-only mode",
+        "how": "`--read-only` or `FALCON_MCP_READ_ONLY=true`",
+        "gives_you": "Only tools labelled read-only are registered, so nothing the agent reads can change tenant state",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "falcon_mcp/server.py",
+            "lines": "649-653",
+            "contains": "FALCON_MCP_READ_ONLY",
+            "url": "https://github.com/CrowdStrike/falcon-mcp/blob/9bc0efeb92e38ca0667e5a18847a7cbf09dcd206/falcon_mcp/server.py#L649-L653"
+          }
+        ]
+      },
+      {
+        "setup": "Only the tools needed",
+        "how": "`--modules <list>` or `--tools <list>` naming just what the task uses, with `--exclude-tools <list>` for any others",
+        "gives_you": "The model sees a smaller tool set, limited to the Falcon data the task needs",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "falcon_mcp/server.py",
+            "lines": "561-567",
+            "contains": "--modules",
+            "url": "https://github.com/CrowdStrike/falcon-mcp/blob/9bc0efeb92e38ca0667e5a18847a7cbf09dcd206/falcon_mcp/server.py#L561-L567"
+          },
+          {
+            "file": "falcon_mcp/server.py",
+            "lines": "656-659",
+            "contains": "--tools",
+            "url": "https://github.com/CrowdStrike/falcon-mcp/blob/9bc0efeb92e38ca0667e5a18847a7cbf09dcd206/falcon_mcp/server.py#L656-L659"
+          },
+          {
+            "file": "falcon_mcp/server.py",
+            "lines": "667-670",
+            "contains": "--exclude-tools",
+            "url": "https://github.com/CrowdStrike/falcon-mcp/blob/9bc0efeb92e38ca0667e5a18847a7cbf09dcd206/falcon_mcp/server.py#L667-L670"
+          }
+        ]
+      },
+      {
+        "setup": "Local stdio transport",
+        "how": "Keep the default `--transport` of stdio",
+        "gives_you": "Only the local host that launched the server can call its tools",
+        "criterion": "C1",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "falcon_mcp/server.py",
+            "lines": "550-554",
+            "contains": "--transport",
+            "url": "https://github.com/CrowdStrike/falcon-mcp/blob/9bc0efeb92e38ca0667e5a18847a7cbf09dcd206/falcon_mcp/server.py#L550-L554"
+          }
+        ]
+      },
+      {
+        "setup": "Approval in your host",
+        "how": "Configure your MCP host to ask before any tool not marked read-only runs",
+        "gives_you": "A person decides on each state-changing call, using the server's accurate risk labels",
+        "criterion": "C2",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Settings only from you",
+        "how": "Pass credentials and switches through the process environment or flags, with no .env file you didn't write where the package is installed or run",
+        "gives_you": "The Falcon endpoint, credentials and read-only mode come only from your own configuration",
+        "criterion": "C6",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A dedicated API client",
+        "how": "Give this server its own Falcon API client, used by nothing else",
+        "gives_you": "Falcon's own audit trail attributes every call from this server, which keeps no call log itself",
+        "criterion": "C9",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve state-changing calls one at a time; deletes, quarantine actions, RTR commands and workflow runs are hard to undo.",
+      "Bulk tools act on every ID or filter match they are given, so check the list or filter before approving."
+    ],
+    "handling": [
+      "`--debug` logs request parameters and bodies unredacted to stderr; leave it off where output lands in shared logs.",
+      "RTR file reads bring endpoint file contents into the model's context; treat that context like the endpoints it came from."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

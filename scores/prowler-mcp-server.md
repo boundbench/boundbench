@@ -25,6 +25,27 @@ Controls where a risk surface exists: 1.73 / 7.0 (25%); 3 criteria scored SA (su
 
 The server is a thin, well-typed wrapper over the Prowler API with careful error masking, but it ships every read and write tool at once, with no risk annotations, no read-only mode, no confirmation or dry-run, and almost no record of what was called. A hijacked model can delete providers, replace the mutelist (hiding findings), change user roles, and create export integrations that send scan data to a destination it names. The cloud credentials used to onboard providers also pass through the model as plain tool arguments. Safety rests almost entirely on the host's approval step and the permissions of the Prowler API key.
 
+## Safest setup
+
+Prowler MCP Server masks internal errors from the model and keeps fixed limits on page sizes and timeouts. It also registers every read and write tool at once, with no read-only mode, no confirmation step and no risk labels, and there is nothing to turn on inside the server. The safest setup narrows the Prowler key and puts tool selection and approval in your MCP host.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A least-privilege Prowler key | Set `PROWLER_API_KEY` to a key whose Prowler role grants only what the task needs, read-only where it allows and with no user or role management ([mcp_server/prowler_mcp_server/prowler_app/utils/auth.py:30](https://github.com/prowler-cloud/prowler/blob/383a9bf9032c503c6e920d9f94f7712d046d3a7b/mcp_server/prowler_mcp_server/prowler_app/utils/auth.py#L30)) | The Prowler API itself refuses deletions, role changes and integration writes outside that role (C1) |
+| Credentials entered in Prowler | Connect cloud providers and integrations in the Prowler app directly, outside the agent | Cloud keys and integration tokens stay out of the model and the host's transcripts (C8) |
+| Only the tools needed | In your MCP host, enable just the Prowler tools the task uses, such as the read and search tools | The model sees no delete, role or integration tools it has no use for (C3) |
+| Per-call approval | Set your MCP host to ask before every Prowler tool call | A person decides on each deletion, role change, mutelist write and new integration before it runs (C2) |
+| A kept server log | Send the server's standard log stream to storage the agent can't modify ([mcp_server/prowler_mcp_server/lib/logger.py:4](https://github.com/prowler-cloud/prowler/blob/383a9bf9032c503c6e920d9f94f7712d046d3a7b/mcp_server/prowler_mcp_server/lib/logger.py#L4)) | A lasting record of failed calls and of the write tools that log (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; no tool is marked read-only or destructive, so the tool name and arguments are the only cue.
+- Deleting a provider or the mutelist can't be undone, and a new export integration sends scan data to the destination in its arguments, so check those closely.
+
+### Handling data
+
+- The server log keeps upstream error bodies without redaction; store it like other sensitive logs.
+
 ## Critical gaps
 - set_user_role can reassign any user's role, including the role of the key the server runs as, with no restriction or logging in the server. (ASI03, T3; C1) — [mcp_server/prowler_mcp_server/prowler_app/tools/roles.py:128](https://github.com/prowler-cloud/prowler/blob/383a9bf9032c503c6e920d9f94f7712d046d3a7b/mcp_server/prowler_mcp_server/prowler_app/tools/roles.py#L128); [mcp_server/prowler_mcp_server/prowler_app/tools/roles.py:190](https://github.com/prowler-cloud/prowler/blob/383a9bf9032c503c6e920d9f94f7712d046d3a7b/mcp_server/prowler_mcp_server/prowler_app/tools/roles.py#L190)
 - A hijacked model could combine tenant data reads with deletions, mutelist replacement and export integrations to an arbitrary bucket, with no server-side approval or egress control. (ASI01, LLM01; C5) — [mcp_server/prowler_mcp_server/prowler_app/tools/integrations.py:161](https://github.com/prowler-cloud/prowler/blob/383a9bf9032c503c6e920d9f94f7712d046d3a7b/mcp_server/prowler_mcp_server/prowler_app/tools/integrations.py#L161); [mcp_server/prowler_mcp_server/prowler_app/tools/providers.py:296](https://github.com/prowler-cloud/prowler/blob/383a9bf9032c503c6e920d9f94f7712d046d3a7b/mcp_server/prowler_mcp_server/prowler_app/tools/providers.py#L296); [mcp_server/prowler_mcp_server/prowler_app/tools/muting.py:183](https://github.com/prowler-cloud/prowler/blob/383a9bf9032c503c6e920d9f94f7712d046d3a7b/mcp_server/prowler_mcp_server/prowler_app/tools/muting.py#L183)

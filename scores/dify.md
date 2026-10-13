@@ -24,6 +24,31 @@
 
 Dify as shipped runs model-chosen tool calls, including an Agent V2 shell with public internet access and the agent's secret environment variables, with no human approval anywhere. Service-to-service authentication in the default deployment is not locked down, and the shared shell sandbox can reach the agent backend. Credential storage, SSRF filtering, and audit records are solid; harden service credentials and isolate the shell before exposing published apps to untrusted users.
 
+## Safest setup
+
+Dify keeps model-written code out of its API process, encrypts stored credentials, filters private addresses on tool traffic and records every tool call in its database. As shipped it runs an Agent V2 shell with internet access and the agent's secrets, with no approval step anywhere, so the safest setup narrows the credentials, moves or turns off that shell and puts containment around the stack.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Give each workspace only the provider and tool credentials its apps need, scoped or read-only with a spending limit set at the provider | Every app and end user reaches only the systems and spend you chose, since they all act with these stored keys (C1) |
+| Shell only where needed | Set `AGENT_SHELL_ENABLED=false` on the API for deployments whose agents don't need a shell ([api/configs/extra/agent_backend_config.py:65-71](https://github.com/langgenius/dify/blob/8222397ea989a15c305ee60d2e4b867883638f37/api/configs/extra/agent_backend_config.py#L65-L71)) | Agent V2 runs without the unapproved script runner and its internet access (C2) |
+| A remote shell sandbox | `DIFY_AGENT_RUNTIME_BACKEND=e2b` with your E2B key, as in the shipped E2B compose override ([docker/.env.example:270](https://github.com/langgenius/dify/blob/8222397ea989a15c305ee60d2e4b867883638f37/docker/.env.example#L270); [docker/docker-compose.e2b.yaml:28](https://github.com/langgenius/dify/blob/8222397ea989a15c305ee60d2e4b867883638f37/docker/docker-compose.e2b.yaml#L28)) | Shell jobs run in remote per-binding sandboxes in place of one container shared by every workspace (C4) |
+| Admin-only plugin installs | Set the workspace plugin install permission to `admins` ([api/models/account.py:292-294](https://github.com/langgenius/dify/blob/8222397ea989a15c305ee60d2e4b867883638f37/api/models/account.py#L292-L294)) | Third-party plugins enter the workspace only by an admin's decision (C7) |
+| Signed plugins only | Keep the default `FORCE_VERIFYING_SIGNATURE` of `true` on the plugin daemon ([docker/docker-compose-template.yaml:599](https://github.com/langgenius/dify/blob/8222397ea989a15c305ee60d2e4b867883638f37/docker/docker-compose-template.yaml#L599)) | The plugin daemon installs only signature-verified plugins (C7) |
+| Concurrency and time limits | Set `APP_MAX_ACTIVE_REQUESTS=<n>` and lower `WORKFLOW_MAX_EXECUTION_TIME` to what your workflows need ([docker/envs/core-services/shared.env.example:123](https://github.com/langgenius/dify/blob/8222397ea989a15c305ee60d2e4b867883638f37/docker/envs/core-services/shared.env.example#L123); [docker/envs/core-services/shared.env.example:233](https://github.com/langgenius/dify/blob/8222397ea989a15c305ee60d2e4b867883638f37/docker/envs/core-services/shared.env.example#L233)) | Each app runs a bounded number of requests at once, and each workflow ends at a time you chose (C10) |
+| A private network, narrow egress | Run the stack on a private network for trusted users, with the agent sandbox's outbound proxy limited to the hosts your tasks need | Fewer untrusted people reach your agents, and a narrow path for data to leave (C5) |
+
+### Approving with confidence
+
+- Dify has no per-call approval; place a Human Input node before consequential steps in a workflow so a person reviews them first.
+- Before publishing an Agent V2 app, review the agent configuration changes made during build sessions, since they reach every user once published.
+
+### Handling data
+
+- Shell output shown to the agent is redacted only for the callback token unless you add patterns to `DIFY_AGENT_SHELL_REDACT_PATTERNS`.
+- Tool calls are stored in the database with their inputs and outputs; protect it like the data your agents read.
+- Anonymous, content-free usage telemetry is on by default; `DISABLE_TELEMETRY=true` turns it off.
+
 ## Critical gaps
 - The Agent V2 shell runs arbitrary model-written scripts with no approval and is enabled by default. (ASI02, ASI09, T2; C2) — [dify-agent/src/dify_agent/layers/shell/layer.py:261](https://github.com/langgenius/dify/blob/8222397ea989a15c305ee60d2e4b867883638f37/dify-agent/src/dify_agent/layers/shell/layer.py#L261); [api/configs/extra/agent_backend_config.py:65-71](https://github.com/langgenius/dify/blob/8222397ea989a15c305ee60d2e4b867883638f37/api/configs/extra/agent_backend_config.py#L65-L71)
 - The shared local shell sandbox holds secret env vars, has public egress, and has a direct network route to the agent backend control plane. (ASI05, T11; C4) — [api/core/workflow/nodes/agent_v2/runtime_request_builder.py:1078-1081](https://github.com/langgenius/dify/blob/8222397ea989a15c305ee60d2e4b867883638f37/api/core/workflow/nodes/agent_v2/runtime_request_builder.py#L1078-L1081); [docker/ssrf_proxy/squid-agent.conf.template:18-22](https://github.com/langgenius/dify/blob/8222397ea989a15c305ee60d2e4b867883638f37/docker/ssrf_proxy/squid-agent.conf.template#L18-L22); [docker/docker-compose-template.yaml:1304-1311](https://github.com/langgenius/dify/blob/8222397ea989a15c305ee60d2e4b867883638f37/docker/docker-compose-template.yaml#L1304-L1311)

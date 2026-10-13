@@ -25,6 +25,25 @@ Controls where a risk surface exists: 3.05 / 6.0 (51%); 4 criteria scored SA (su
 
 A small, fixed research pipeline: the local model only writes search queries and summaries, and the code decides everything else, so there is no code execution, no file access, no messaging and, by default, no credentials. The main exposure is web content: pages go to the model with only cosmetic tags, can steer later search queries, and the full-page downloader fetches any result URL without address restrictions. There is no audit trail of its own, no secret redaction, and no time or cost budget beyond a three-loop cap.
 
+## Safest setup
+
+Local Deep Researcher runs a fixed search-and-summarise loop with no code execution, file writes or messaging, and by default it holds no credentials. Web pages reach the model as they are and page downloads can go to any host, so the safest setup keeps the keyless defaults, narrows what it downloads and limits its network around it.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A capped search key | If you use Tavily or Perplexity, give the researcher its own key with a spending limit set at the provider | A stray or stolen key can only spend what you allowed on one search service (C1) |
+| Keyless search, pinned | Keep `SEARCH_API` at the default `duckduckgo`, set in the environment ([src/ollama_deep_researcher/configuration.py:34-35](https://github.com/langchain-ai/local-deep-researcher/blob/ba505ffc3d7e897bc48b6169fa2cb1ec859dd38d/src/ollama_deep_researcher/configuration.py#L34-L35); [.env.example:2](https://github.com/langchain-ai/local-deep-researcher/blob/ba505ffc3d7e897bc48b6169fa2cb1ec859dd38d/.env.example#L2)) | The researcher holds no external credential, and run settings can't switch it to a paid provider (C1) |
+| Snippets-only search | Set `FETCH_FULL_PAGE` to `False` in the environment ([src/ollama_deep_researcher/configuration.py:37-38](https://github.com/langchain-ai/local-deep-researcher/blob/ba505ffc3d7e897bc48b6169fa2cb1ec859dd38d/src/ollama_deep_researcher/configuration.py#L37-L38); [.env.example:17](https://github.com/langchain-ai/local-deep-researcher/blob/ba505ffc3d7e897bc48b6169fa2cb1ec859dd38d/.env.example#L17)) | Research works from search snippets, so the researcher doesn't download result pages from arbitrary hosts (C3) |
+| A short research loop | Keep `MAX_WEB_RESEARCH_LOOPS` at the default 3 or lower, set in the environment ([src/ollama_deep_researcher/configuration.py:19-20](https://github.com/langchain-ai/local-deep-researcher/blob/ba505ffc3d7e897bc48b6169fa2cb1ec859dd38d/src/ollama_deep_researcher/configuration.py#L19-L20); [.env.example:16](https://github.com/langchain-ai/local-deep-researcher/blob/ba505ffc3d7e897bc48b6169fa2cb1ec859dd38d/.env.example#L16)) | Every run ends after a small, fixed number of searches (C10) |
+| Public-only outbound network | Run it on a machine or VM whose outbound network reaches the public internet and your model server, not internal hosts | Page downloads stay on public sites, away from internal and link-local addresses (C3) |
+| A run trace you keep | Turn on LangSmith tracing to a project you control | A record of each run's searches and results that lives outside the dev server's memory (C9) |
+
+### Handling data
+
+- Full model responses print to the console by default; treat console output like the research it covers.
+- LangSmith tracing sends search queries and results to LangSmith; keep the project access as tight as the topics need.
+- Research topics leave as search queries to the configured provider, so choose one you're comfortable sharing them with.
+
 ## Critical gaps
 - None: no criterion is capped and no blast radius is at the worst level.
 

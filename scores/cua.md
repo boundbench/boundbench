@@ -25,6 +25,29 @@ Controls where a risk surface exists: 2.07 / 9.0 (23%); 1 criterion scored SA (s
 
 Cua puts its computer-use agent inside a well-built, disposable sandbox (gVisor when available, no host mounts, resource limits), so a hijacked agent cannot touch your own machine. But the agent loop itself has almost no safety controls: no human approval, no step or time limit by default, unvalidated actions, and it auto-acknowledges the model provider's safety checks. A malicious web page seen in the sandbox can steer the agent to leak data or act on the web unattended.
 
+## Safest setup
+
+Cua runs every on-screen action in a disposable sandbox with no host mounts, resource limits and gVisor when the engine has it. The agent loop itself has no approval step, no step limit and no default spend cap, and it acknowledges the provider's safety checks automatically, so the safest setup narrows what the sandbox can reach and adds the limits and record Cua offers.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Dedicated, low-limit keys | Give the agent process its own model and Cua API keys, with a spending limit set at the provider | A runaway or steered run can only spend and reach what those keys allow (C8) |
+| A guest with task accounts only | Sign the sandbox desktop into only the accounts and data the task needs | Whatever a page on screen steers the agent toward, it can touch only those accounts (C5) |
+| A gVisor sandbox by name | Pass `runtime="gvisor"` to `ephemeral` when creating the sandbox ([libs/python/cua-sandbox/cua_sandbox/sandbox.py:1735](https://github.com/trycua/cua/blob/2bce4442c107fc34c45b374b29a35d09f630fd83/libs/python/cua-sandbox/cua_sandbox/sandbox.py#L1735); [libs/python/cua-sandbox/cua_sandbox/sandbox.py:1750](https://github.com/trycua/cua/blob/2bce4442c107fc34c45b374b29a35d09f630fd83/libs/python/cua-sandbox/cua_sandbox/sandbox.py#L1750); [libs/cua/crates/cua-vmm/src/container/mod.rs:1708](https://github.com/trycua/cua/blob/2bce4442c107fc34c45b374b29a35d09f630fd83/libs/cua/crates/cua-vmm/src/container/mod.rs#L1708)) | Every action runs in a throwaway guest under gVisor's separate kernel, and the sandbox won't start without it (C4) |
+| Limited outbound network | Run the container engine on a host or network whose outbound access reaches only the sites the task needs | Fewer places for data to leave and fewer sites the agent can act on unattended (C5) |
+| A spend ceiling | Set `max_trajectory_budget=<dollars>` on the agent ([libs/python/agent/cua_agent/agent.py:269](https://github.com/trycua/cua/blob/2bce4442c107fc34c45b374b29a35d09f630fd83/libs/python/agent/cua_agent/agent.py#L269)) | The run stops once its provider cost reaches that amount (C10) |
+| Hosted model, no remote code | Use a hosted model from the Python API, keeping the default `trust_remote_code=False` ([libs/python/agent/cua_agent/agent.py:271](https://github.com/trycua/cua/blob/2bce4442c107fc34c45b374b29a35d09f630fd83/libs/python/agent/cua_agent/agent.py#L271)) | No model code from Hugging Face runs in the process that holds your keys (C7) |
+| A trajectory record | Set `trajectory_dir=<path>` to a directory outside any shared or synced folder ([libs/python/agent/cua_agent/agent.py:265](https://github.com/trycua/cua/blob/2bce4442c107fc34c45b374b29a35d09f630fd83/libs/python/agent/cua_agent/agent.py#L265)) | A per-action record of model calls, computer actions and screenshots, written as each one happens (C9) |
+
+### Approving with confidence
+
+- Cua acts without asking, so watch the sandbox desktop live for tasks that submit forms, send messages or make purchases.
+
+### Handling data
+
+- Trajectories and debug logs are unredacted and hold screenshots of everything on screen; store them like the accounts the agent used.
+- Content-free usage telemetry is on by default; `telemetry_enabled=False` on the agent or `CUA_TELEMETRY=0` turns it off.
+
 ## Critical gaps
 - A hijacked session can browse to any URL and act on the web unattended; provider safety checks are auto-acknowledged. (ASI01, ASI09; C5) — [libs/python/agent/cua_agent/agent.py:795-800](https://github.com/trycua/cua/blob/2bce4442c107fc34c45b374b29a35d09f630fd83/libs/python/agent/cua_agent/agent.py#L795-L800); [libs/python/agent/cua_agent/tools/browser_tool.py:367-373](https://github.com/trycua/cua/blob/2bce4442c107fc34c45b374b29a35d09f630fd83/libs/python/agent/cua_agent/tools/browser_tool.py#L367-L373)
 - The Moondream3 loop and the shipped CLI load unpinned Hugging Face repos with trust_remote_code=True, running remote code in the agent process. (ASI04; C7) — [libs/python/agent/cua_agent/loops/moondream3.py:47-49](https://github.com/trycua/cua/blob/2bce4442c107fc34c45b374b29a35d09f630fd83/libs/python/agent/cua_agent/loops/moondream3.py#L47-L49); [libs/python/agent/cua_agent/cli.py:398](https://github.com/trycua/cua/blob/2bce4442c107fc34c45b374b29a35d09f630fd83/libs/python/agent/cua_agent/cli.py#L398)

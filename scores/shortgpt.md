@@ -24,6 +24,29 @@
 
 ShortGPT is a fixed content pipeline, not a tool-using agent: the LLM only returns text (scripts, search queries, titles, translations), so a hijacked model cannot pick actions, run code or read secrets. The dominant risk is the web app around it: access control on its default exposure of the UI and stored API keys is not locked down. There are no spend or wall-clock limits, and two LLM retry loops have no upper bound.
 
+## Safest setup
+
+ShortGPT gives the model no tools and keeps API keys out of every prompt, so a hijacked completion can only change the text of a video. Beyond that the defaults are thin: the web UI is not locked down, keys are full-account and unlimited, there is no time or spend limit, and there is nothing to turn on, so the safest setup is mostly containment you build around it.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Dedicated, low-limit keys | Put only keys made for this app in `.env` (`OPENAI_API_KEY` or `GEMINI_API_KEY`, `ELEVENLABS_API_KEY`, `PEXELS_API_KEY`), each with a spending limit set at the provider ([shortGPT/config/api_db.py:5-10](https://github.com/rayventura/shortgpt/blob/3df4e0f7a422bf7386565d498bf4521a2544c614/shortGPT/config/api_db.py#L5-L10)) | A lost or runaway key can spend only what you allowed, on this app's accounts alone (C1) |
+| A UI only you reach | Run the web UI on a machine and network only you can reach, behind your own sign-in such as a VPN or an authenticating proxy | Only you can start jobs and use the keys the app holds (C1) |
+| A hardened container | Run the README's Docker image as a non-root user, with capabilities dropped and a read-only root filesystem | ffmpeg, model loading and the rest of the pipeline run inside a narrow boundary instead of on your host (C4) |
+| Public-only outbound network | Give the container internet access with no route to your internal network or cloud metadata addresses | Image URLs the pipeline fetches can reach only public hosts (C3) |
+| Pinned speech-model dependencies | Install with exact versions of `torch` and `whisper-timestamped`, and fetch the Whisper model once yourself before the first job ([requirements.txt:11-14](https://github.com/rayventura/shortgpt/blob/3df4e0f7a422bf7386565d498bf4521a2544c614/requirements.txt#L11-L14)) | The code and weights that load into the app are ones you chose, not whatever is newest on first use (C7) |
+| Small, watched jobs | Ask for a few shorts per click, watch each job, and stop the server process if one runs long | A stuck or oversized job costs only as much as the time you let it run (C10) |
+| The LLM call log | Keep the per-call files the app writes to `.logs/gpt_logs` ([shortGPT/gpt/gpt_utils.py:109-111](https://github.com/rayventura/shortgpt/blob/3df4e0f7a422bf7386565d498bf4521a2544c614/shortGPT/gpt/gpt_utils.py#L109-L111)) | A record of every prompt and response, to check what a job asked the model (C9) |
+
+### Approving with confidence
+
+- Check the inputs and the number of shorts before each Generate click; one click runs the whole pipeline, paid API calls included.
+
+### Handling data
+
+- `.logs/gpt_logs` holds every prompt and response, YouTube transcripts included; store it like the content you process.
+- Job state and any keys saved in the app sit in plain JSON files under `.database/`; keep that folder private to you.
+
 ## Critical gaps
 - The documented Docker run passes every API key into the container environment with unrestricted network, so anything that executes there holds all credentials. (ASI05, T11; C4) — [README.md:82](https://github.com/rayventura/shortgpt/blob/3df4e0f7a422bf7386565d498bf4521a2544c614/README.md#L82); [shortGPT/editing_utils/handle_videos.py:61-63](https://github.com/rayventura/shortgpt/blob/3df4e0f7a422bf7386565d498bf4521a2544c614/shortGPT/editing_utils/handle_videos.py#L61-L63)
 - Whisper model weights are auto-downloaded and deserialized in-process with the app's keys and environment, without consent. (ASI04, T17; C7) — [shortGPT/audio/audio_utils.py:73-76](https://github.com/rayventura/shortgpt/blob/3df4e0f7a422bf7386565d498bf4521a2544c614/shortGPT/audio/audio_utils.py#L73-L76)

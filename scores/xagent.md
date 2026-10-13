@@ -24,6 +24,30 @@
 
 XAgent runs a fully autonomous loop with a root shell, Python execution and unrestricted web access, and no human approval at any step. Its 'safe' ToolServer sandbox is a privileged Docker container that shares a network with the databases and mounts the shared config directory read-write, and the default deployment's credentials and access control are not locked down. A single prompt injection from a web page can therefore lead to host takeover and persistent changes to every later session.
 
+## Safest setup
+
+XAgent runs every command inside a per-session container rather than on your host, and it bounds each subtask's steps and each command's run time. Beyond that the defaults are weak: tools run as root in a privileged container with no approval step, so the safest setup hardens that container and builds containment around the whole stack.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Give XAgent its own model key with a provider spending limit, and leave `api_key` under `bing:` and `rapidapi:` empty unless a task needs search ([assets/config/node.yml:23-24](https://github.com/openbmb/xagent/blob/0dea79924347fad46e114621d7334d1136b30691/assets/config/node.yml#L23-L24); [assets/config/node.yml:54-58](https://github.com/openbmb/xagent/blob/0dea79924347fad46e114621d7334d1136b30691/assets/config/node.yml#L54-L58)) | Any key the agent can read reaches only XAgent's own spend and can be revoked on its own (C8) |
+| A private web server | Publish the XAgentServer web port only to localhost or a private network | Only the people you choose can reach the server and start tasks (C1) |
+| Manual mode | `--mode manual` when starting run.py ([run.py:22](https://github.com/openbmb/xagent/blob/0dea79924347fad46e114621d7334d1136b30691/run.py#L22)) | You can read and edit each subtask between steps, so you can steer the plan as it runs (C2) |
+| Step and time limits | Keep the default `max_subtask_chain_length: 15` and the `timeout: 300` under `shell:`, or lower them for short tasks ([assets/config.yml:44](https://github.com/openbmb/xagent/blob/0dea79924347fad46e114621d7334d1136b30691/assets/config.yml#L44); [assets/config/node.yml:61-62](https://github.com/openbmb/xagent/blob/0dea79924347fad46e114621d7334d1136b30691/assets/config/node.yml#L61-L62)) | Each subtask stops after a fixed number of tool steps and each shell command after five minutes (C10) |
+| Built-in tools only | Keep the default empty `enabled_extensions` list in node.yml ([assets/config/node.yml:64-65](https://github.com/openbmb/xagent/blob/0dea79924347fad46e114621d7334d1136b30691/assets/config/node.yml#L64-L65)) | The tool server imports only the tools it ships with (C7) |
+| A non-privileged node | Set `privileged` under `creation_kwargs` in manager.yml to false ([assets/config/manager.yml:13-16](https://github.com/openbmb/xagent/blob/0dea79924347fad46e114621d7334d1136b30691/assets/config/manager.yml#L13-L16)) | Agent code runs in an ordinary container, a much stronger boundary between its shell and your host (C4) |
+| A read-only config mount | Mount the config volume read-only in the node `volumes` list in manager.yml ([assets/config/manager.yml:18-19](https://github.com/openbmb/xagent/blob/0dea79924347fad46e114621d7334d1136b30691/assets/config/manager.yml#L18-L19)) | Extensions, limits and container settings stay as you set them across sessions (C6) |
+| Its own VM | Run the whole stack in a dedicated VM whose network reaches only the hosts the task needs | An outer boundary around the node and its databases, and a narrow path for data to leave (C5) |
+
+### Approving with confidence
+
+- Tool calls run without a prompt, so in manual mode read each subtask and edit it before letting the next step start.
+- Stopping a run ends the loop between steps; stop its node container too, since background shells keep running until the node stops.
+
+### Handling data
+
+- The MySQL run records hold every tool call and output, and the run config with API keys unmasked; store the database like the keys it holds.
+
 ## Critical gaps
 - Agent tools run as root in a privileged container on the same network as the databases, giving a hijacked agent host-wide reach. (ASI03, T3; C1) — [assets/config/manager.yml:16](https://github.com/openbmb/xagent/blob/0dea79924347fad46e114621d7334d1136b30691/assets/config/manager.yml#L16); [ToolServer/ToolServerNode/core/tools/shell.py:27](https://github.com/openbmb/xagent/blob/0dea79924347fad46e114621d7334d1136b30691/ToolServer/ToolServerNode/core/tools/shell.py#L27)
 - The root shell, the most powerful action, runs with no approval gate in the default auto mode. (ASI02, ASI09; C2) — [ToolServer/ToolServerNode/core/tools/shell.py:27](https://github.com/openbmb/xagent/blob/0dea79924347fad46e114621d7334d1136b30691/ToolServer/ToolServerNode/core/tools/shell.py#L27); [ToolServer/ToolServerNode/main.py:260](https://github.com/openbmb/xagent/blob/0dea79924347fad46e114621d7334d1136b30691/ToolServer/ToolServerNode/main.py#L260); [run.py:22](https://github.com/openbmb/xagent/blob/0dea79924347fad46e114621d7334d1136b30691/run.py#L22)

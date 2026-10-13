@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="assets/logo.png" alt="BoundBench logo" width="192" height="192">
+  <img src="assets/logo.png" alt="SafetyCard logo" width="192" height="192">
 </p>
 
-<h1 align="center">BoundBench</h1>
+<h1 align="center">SafetyCard</h1>
 
-<p align="center"><a href="https://boundbench.com">Leaderboard of scored agents at boundbench.com</a></p>
+<p align="center"><a href="https://safetycard.dev">Leaderboard of scored agents at safetycard.dev</a></p>
 
-BoundBench scores how well an AI agent stays within bounds when something goes wrong, evaluating the safety measures built into the agent to limit what a compromised or confused agent can damage. It is built on the [OWASP Top 10 for Agentic Applications](https://genai.owasp.org/), OWASP's list of the main security risks for autonomous agents, and it works in Claude Code, Codex and any other agent that supports skills.
+SafetyCard scores how well an AI agent stays within bounds when something goes wrong, evaluating the safety measures built into the agent to limit what a compromised or confused agent can damage. It is built on the [OWASP Top 10 for Agentic Applications](https://genai.owasp.org/), OWASP's list of the main security risks for autonomous agents, and it works in Claude Code, Codex and any other agent that supports skills.
 
 ## The criteria
 
@@ -27,49 +27,49 @@ Each criterion is worth 1.0 and is rated L0 to L4 on four parameters: the streng
 
 The score doesn't count vulnerabilities: a low score means little built-in protection rather than a known exploit, and a high score doesn't mean the agent is free of bugs.
 
-The full scorecard and the rules for frameworks and tool servers are in [`criteria.md`](skills/boundbench/references/criteria.md) and [`SKILL.md`](skills/boundbench/SKILL.md).
+The full scorecard and the rules for frameworks and tool servers are in [`criteria.md`](skills/safetycard/references/criteria.md) and [`SKILL.md`](skills/safetycard/SKILL.md).
 
 ## Installation
 
 ### Claude Code
 
 ```
-/plugin marketplace add boundbench/boundbench
-/plugin install boundbench@boundbench
+/plugin marketplace add safetycard/safetycard
+/plugin install safetycard@safetycard
 ```
 
 ### Codex
 
 ```bash
-npx skills add boundbench/boundbench --global --agent codex
+npx skills add safetycard/safetycard --global --agent codex
 ```
 
 ### Claude.ai and Claude Desktop
 
-Zip the [`skills/boundbench/`](skills/boundbench/) folder and upload it as a skill in Settings.
+Zip the [`skills/safetycard/`](skills/safetycard/) folder and upload it as a skill in Settings.
 
 ### Other agents
 
 ```bash
-npx skills add boundbench/boundbench --global --agent '*'
+npx skills add safetycard/safetycard --global --agent '*'
 ```
 
-This installs BoundBench for every agent the Skills CLI supports, including Cursor, Gemini CLI, GitHub Copilot and Windsurf. Leave off `--global` in any command above to install it only in the current project. For an agent the Skills CLI does not know, copy the whole `skills/boundbench/` folder into its skill folder. `SKILL.md` alone is not enough, because the skill also uses the `scripts/` and `references/` folders.
+This installs SafetyCard for every agent the Skills CLI supports, including Cursor, Gemini CLI, GitHub Copilot and Windsurf. Leave off `--global` in any command above to install it only in the current project. For an agent the Skills CLI does not know, copy the whole `skills/safetycard/` folder into its skill folder. `SKILL.md` alone is not enough, because the skill also uses the `scripts/` and `references/` folders.
 
 ## Usage
 
-Run `/boundbench` (`/boundbench:boundbench` with the Claude Code plugin) followed by a repository, a subdirectory for a monorepo, or a local checkout:
+Run `/safetycard` (`/safetycard:safetycard` with the Claude Code plugin) followed by a repository, a subdirectory for a monorepo, or a local checkout:
 
 ```
-/boundbench https://github.com/owner/repo
-/boundbench packages/server in https://github.com/owner/repo
-/boundbench this repo
+/safetycard https://github.com/owner/repo
+/safetycard packages/server in https://github.com/owner/repo
+/safetycard this repo
 ```
 
-You can also just ask. The skill starts when you mention BoundBench or ask how well an agent is protected:
+You can also just ask. The skill starts when you mention SafetyCard or ask how well an agent is protected:
 
 ```
-Score https://github.com/owner/repo with BoundBench
+Score https://github.com/owner/repo with SafetyCard
 How well is https://github.com/owner/repo protected against prompt injection?
 ```
 
@@ -78,34 +78,34 @@ Scoring a local checkout is how you check your own agent before release. Each ru
 | File | Contents |
 |---|---|
 | `report.md` | Headline, score table, critical gaps, the reasoning and code links for each criterion, suggested fixes and limitations |
-| `entry.json` | The same data as JSON, matching [`entry.schema.json`](skills/boundbench/schema/entry.schema.json) |
+| `entry.json` | The same data as JSON, matching [`entry.schema.json`](skills/safetycard/schema/entry.schema.json) |
 | `scorecard.json` | The working scorecard the other two are rendered from; edit it and rerun the calculator to change a rating |
 
 ## How it works
 
-The skill clones the target but never installs, builds or runs it, and treats all text in it as data, so an instruction aimed at the reviewer is recorded as a finding. Each score applies to one commit, and [`score.py`](skills/boundbench/scripts/score.py) refuses to render a report unless every cited file, line and quote exists at that commit and every search reproduces its hit count.
+The skill clones the target but never installs, builds or runs it, and treats all text in it as data, so an instruction aimed at the reviewer is recorded as a finding. Each score applies to one commit, and [`score.py`](skills/safetycard/scripts/score.py) refuses to render a report unless every cited file, line and quote exists at that commit and every search reproduces its hit count.
 
 If the review finds what looks like an exploitable vulnerability, the details go only in the chat reply. The report shows only the affected scores.
 
 ## Leaderboard and published scores
 
-[boundbench.com](https://boundbench.com) ranks the published scores. The reports are in [`scores/`](scores/), one `<id>.md` and one `<id>.json` per agent, named by a lowercase id such as `github-mcp-server`. Each names the commit it was scored at, and its code links point to that commit.
+[safetycard.dev](https://safetycard.dev) ranks the published scores. The reports are in [`scores/`](scores/), one `<id>.md` and one `<id>.json` per agent, named by a lowercase id such as `github-mcp-server`. Each names the commit it was scored at, and its code links point to that commit.
 
-If you find a mistake, [open a score correction](https://github.com/boundbench/boundbench/issues/new?template=score-correction.yml) with the agent, the criterion, and the file and lines. If you maintain the agent and it has changed since the scored commit, use the same form and pick "The project changed after the pinned commit". To suggest a new agent, [request an agent](https://github.com/boundbench/boundbench/issues/new?template=agent-request.yml).
+If you find a mistake, [open a score correction](https://github.com/safetycard/safetycard/issues/new?template=score-correction.yml) with the agent, the criterion, and the file and lines. If you maintain the agent and it has changed since the scored commit, use the same form and pick "The project changed after the pinned commit". To suggest a new agent, [request an agent](https://github.com/safetycard/safetycard/issues/new?template=agent-request.yml).
 
 ### Add a badge
 
 You can put a badge in your agent's README. Replace `<owner>` and `<repo>` with its GitHub repository:
 
 ```markdown
-[![BoundBench](https://img.shields.io/endpoint?url=https%3A%2F%2Fboundbench.com%2Fbadge%2Fgithub.com%2F<owner>%2F<repo>.json)](https://boundbench.com/github.com/<owner>/<repo>)
+[![SafetyCard](https://img.shields.io/endpoint?url=https%3A%2F%2Fsafetycard.dev%2Fbadge%2Fgithub.com%2F<owner>%2F<repo>.json)](https://safetycard.dev/github.com/<owner>/<repo>)
 ```
 
-The badge shows where it ranks among all scored agents (`Top 1%`, `Top 5%`, `Top 10%` or `Audited`) and links to its report. For a server in a monorepo, copy the Markdown from its page on boundbench.com, which adds the server's directory. Until a repository is scored, the badge reads `score` and links to the instructions for scoring it yourself.
+The badge shows where it ranks among all scored agents (`Top 1%`, `Top 5%`, `Top 10%` or `Audited`) and links to its report. For a server in a monorepo, copy the Markdown from its page on safetycard.dev, which adds the server's directory. Until a repository is scored, the badge reads `score` and links to the instructions for scoring it yourself.
 
 ## Privacy
 
-The BoundBench plugin runs entirely on your machine. It collects no data, sends nothing over the network, and reads no credentials. The audit reads a repository you have cloned locally, and the scorecard and report are written to your local disk. Nothing is shared unless you share it.
+The SafetyCard plugin runs entirely on your machine. It collects no data, sends nothing over the network, and reads no credentials. The audit reads a repository you have cloned locally, and the scorecard and report are written to your local disk. Nothing is shared unless you share it.
 
 ## License
 

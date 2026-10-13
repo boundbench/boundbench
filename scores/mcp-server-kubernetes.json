@@ -36,6 +36,117 @@
     "external_communication": "no"
   },
   "headline": "As shipped, this server gives the model the operator's full kubeconfig authority across every context, with exec into any pod, a generic kubectl tool, Helm installs from any repository, and forced deletes all enabled. It has a careful argv flag denylist and masks Secret values in kubectl_get, but the generic tool can run 'config view --raw', which returns raw credentials to the model, and neither the denylist nor the masking is a complete boundary. The dominant risk is a prompt-injected host agent using cluster-admin-equivalent credentials unattended; the read-only and allowlist modes that would contain it are opt-in.",
+  "safe_setup": {
+    "intro": "As shipped, this server runs every tool, including pod exec and a general-purpose kubectl tool, with your full kubeconfig, and nothing in it asks a person before acting. It does include read-only and tool-allowlist modes, a kubectl flag denylist and Secret masking in kubectl_get, so the safest setup narrows the Kubernetes identity first, turns those modes on and builds containment around the process.",
+    "steps": [
+      {
+        "setup": "A scoped Kubernetes identity",
+        "how": "`KUBECONFIG_PATH=<file>` pointing at a kubeconfig with one context whose ServiceAccount has a namespace-scoped, read-mostly role",
+        "gives_you": "The Kubernetes API itself refuses anything outside that role, on that one cluster",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "src/utils/kubernetes-manager.ts",
+            "lines": "259-263",
+            "contains": "KUBECONFIG_PATH",
+            "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/utils/kubernetes-manager.ts#L259-L263"
+          }
+        ]
+      },
+      {
+        "setup": "Read-only mode",
+        "how": "`ALLOW_ONLY_READONLY_TOOLS=true` in the server's environment",
+        "gives_you": "The server lists and accepts only its small read-only tool set, checked on every call",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/index.ts",
+            "lines": "84",
+            "contains": "ALLOW_ONLY_READONLY_TOOLS",
+            "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L84"
+          }
+        ]
+      },
+      {
+        "setup": "Only the tools needed",
+        "how": "When a task needs writes, `ALLOWED_TOOLS=<list>` naming just those tools, or `ALLOW_ONLY_NON_DESTRUCTIVE_TOOLS=true`",
+        "gives_you": "Exec, generic kubectl and delete tools stay off unless the task calls for them",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/index.ts",
+            "lines": "85-87",
+            "contains": "ALLOWED_TOOLS",
+            "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L85-L87"
+          }
+        ]
+      },
+      {
+        "setup": "The kubectl flag denylist",
+        "how": "Keep `ALLOW_KUBECTL_UNSAFE_FLAGS` unset",
+        "gives_you": "Every kubectl and helm call keeps rejecting API server, token, impersonation and kubeconfig flags",
+        "criterion": "C3",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "src/security/kubectl-flags.ts",
+            "lines": "162-164",
+            "contains": "ALLOW_KUBECTL_UNSAFE_FLAGS",
+            "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/security/kubectl-flags.ts#L162-L164"
+          }
+        ]
+      },
+      {
+        "setup": "Secret masking",
+        "how": "Keep the default `MASK_SECRETS`, leaving it unset",
+        "gives_you": "kubectl_get keeps masking Secret values, the one tool output the review found masked",
+        "criterion": "C8",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "src/tools/kubectl-get.ts",
+            "lines": "178-180",
+            "contains": "MASK_SECRETS",
+            "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-get.ts#L178-L180"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the server in a container or VM whose network reaches only the Kubernetes API servers it needs",
+        "gives_you": "An outer boundary around host-side kubectl and helm, and a narrow path for data to leave",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Tool-call tracing",
+        "how": "`ENABLE_TELEMETRY=true` with `OTEL_EXPORTER_OTLP_ENDPOINT=<url>` pointing at a collector you control",
+        "gives_you": "A span for every tool call, with tool name, argument names, context and namespace, kept outside the server",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/config/telemetry-config.ts",
+            "lines": "78-81",
+            "contains": "ENABLE_TELEMETRY",
+            "url": "https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/config/telemetry-config.ts#L78-L81"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; kubectl_generic and kubectl_create can change cluster state without a destructive label.",
+      "Deletes, Helm uninstalls and pod exec have no preview or undo, so check the context, namespace and resource names before approving."
+    ],
+    "handling": [
+      "Output from kubectl_generic, exec_in_pod and logs reaches the model unmasked; treat transcripts like the cluster data they include.",
+      "Telemetry spans hold argument names, not the commands or manifests; only kubectl_generic also prints its command, to stderr."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

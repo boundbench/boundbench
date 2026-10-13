@@ -36,6 +36,145 @@
     "external_communication": "yes"
   },
   "headline": "kagent runs each agent in a gVisor-isolated Substrate actor whose network egress is limited to configured origins and whose model and MCP credentials are injected by an egress gateway rather than placed in the agent's environment - a genuinely strong isolation design. That design is undercut by the control plane it ships with: the default controller authentication mode is 'insecure' (any caller can claim any user, defaulting to admin) with a permit-all authorizer, and every agent actor is always allowed to reach that controller API, which can create agents, tool servers and model configs and call any registered MCP tool under a cluster-wide service account. Human approval of tool calls exists but is off by default, and there are no step, time or spend limits on the agent loop.",
+  "safe_setup": {
+    "intro": "kagent runs every agent in a gVisor sandbox with an egress allowlist, and keeps model and tool keys out of the agent itself. The chart ships with an open control plane, cluster-wide RBAC, approval off and no run limits, so the safest setup locks down access first and then turns on the approval and limits kagent already includes.",
+    "steps": [
+      {
+        "setup": "Namespace-scoped RBAC",
+        "how": "List the namespaces kagent manages in `namespaces` under `rbac`",
+        "gives_you": "Kubernetes itself confines what the controller can change to those namespaces, whatever reaches it",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "helm/kagent/values.yaml",
+            "lines": "193-206",
+            "contains": "# namespaces: []",
+            "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L193-L206"
+          }
+        ]
+      },
+      {
+        "setup": "An authenticated controller",
+        "how": "Set `mode: trusted-proxy` under `auth` in the controller values, behind a validating proxy with network isolation, and supply a restrictive authorizer",
+        "gives_you": "Only verified users reach the controller API, and each request carries their real identity",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "helm/kagent/values.yaml",
+            "lines": "226-230",
+            "contains": "mode: insecure",
+            "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L226-L230"
+          }
+        ]
+      },
+      {
+        "setup": "Per-call approval",
+        "how": "`requireApproval: true` on each MCP tool binding to a server that can change the cluster",
+        "gives_you": "A person sees the exact tool name and arguments before each bound call runs",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "go/api/v1alpha3/agenttemplate_types.go",
+            "lines": "61-65",
+            "contains": "RequireApproval bool `json:\"requireApproval,omitempty\"`",
+            "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/api/v1alpha3/agenttemplate_types.go#L61-L65"
+          }
+        ]
+      },
+      {
+        "setup": "Only the tools needed",
+        "how": "Name just the tools the agent uses in each binding's `tools` list",
+        "gives_you": "The agent sees a narrow set of tools, with write tools only where you chose them",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "go/api/v1alpha3/agenttemplate_types.go",
+            "lines": "53-60",
+            "contains": "Tools []string `json:\"tools,omitempty\"`",
+            "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/api/v1alpha3/agenttemplate_types.go#L53-L60"
+          }
+        ]
+      },
+      {
+        "setup": "The gVisor sandbox",
+        "how": "Keep the WorkerPool on its default gVisor sandbox class, or choose MicroVM",
+        "gives_you": "Agent code and shell commands run in an isolated sandbox, never directly on the node",
+        "criterion": "C4",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "go/core/internal/substrate/actor_template.go",
+            "lines": "217-229",
+            "contains": "SandboxClassGvisor",
+            "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/substrate/actor_template.go#L217-L229"
+          }
+        ]
+      },
+      {
+        "setup": "Long-term memory off",
+        "how": "Keep the default `vectorEnabled: false` in the database values unless agents need memory",
+        "gives_you": "Each session starts clean, with nothing saved earlier replayed into it",
+        "criterion": "C6",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "helm/kagent/values.yaml",
+            "lines": "113-116",
+            "contains": "vectorEnabled: false",
+            "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L113-L116"
+          }
+        ]
+      },
+      {
+        "setup": "Your own database",
+        "how": "Set `enabled: false` under `bundled` in the database values and point `urlFile` at credentials you manage",
+        "gives_you": "Conversation history, which can hold tool output, sits behind credentials only you know",
+        "criterion": "C8",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "helm/kagent/values.yaml",
+            "lines": "110-112",
+            "contains": "urlFile: \"\"",
+            "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L110-L112"
+          },
+          {
+            "file": "helm/kagent/values.yaml",
+            "lines": "130-132",
+            "contains": "enabled: true",
+            "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L130-L132"
+          }
+        ]
+      },
+      {
+        "setup": "Time and spend limits",
+        "how": "Set `a2aClientTimeout: \"<duration>\"` in the controller values and a spending limit on each model key at the provider",
+        "gives_you": "Each controller call to an agent, and model spend, stops at a ceiling you chose",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "helm/kagent/values.yaml",
+            "lines": "245-253",
+            "contains": "a2aClientTimeout: \"\"",
+            "url": "https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L245-L253"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; the prompt shows the exact tool and arguments.",
+      "Approval covers MCP tool bindings only; the skills shell and the Claude and Codex harnesses run their own tools without it."
+    ],
+    "handling": [
+      "Secrets that tools read reach the model and the stored history unredacted; protect the database like the cluster Secrets themselves.",
+      "The bundled tool server logs at `debug` by default, and telemetry with `messageContent` capture ships off; review both before sending logs anywhere shared."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

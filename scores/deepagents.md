@@ -24,6 +24,30 @@
 
 Out of the box Deep Agents is fairly contained: files live in an in-memory virtual filesystem and the execute tool does nothing until a developer picks an execution backend. Everything protective beyond that is opt-in: human approval, path permission rules, remote sandboxes and persistence all need explicit configuration, and the core package's own shell backend runs commands directly on the host. The dominant risk is prompt injection through tool results driving the developer's tools with no approval step, plus profile plugins from any installed package running inside the agent process.
 
+## Safest setup
+
+Deep Agents starts contained: files live in an in-memory virtual filesystem and nothing executes until you choose an execution backend. Approval, path rules, sandboxing and durable records are all opt-in, and every tool runs with the host process's credentials, so the safest setup turns those mechanisms on and builds the boundaries around the process yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Run the process with only the keys its tools need, each scoped or read-only with a spending limit set at the provider | A hijacked agent reaches only the systems and spend you chose, not everything your shell can (C1) |
+| Per-call approval | Pass `interrupt_on` naming every tool that writes, sends or runs code ([libs/deepagents/deepagents/graph.py:283](https://github.com/langchain-ai/deepagents/blob/44bd956bf8ca86c7cf0831132d69d38e06dd1573/libs/deepagents/deepagents/graph.py#L283)) | A person approves, edits or rejects each of those calls before it runs, in declarative sub-agents too (C2) |
+| Path permission rules | Pass `permissions` as `FilesystemPermission` rules with `mode` set to deny or interrupt for paths the task needn't change, memory files included ([libs/deepagents/deepagents/graph.py:281](https://github.com/langchain-ai/deepagents/blob/44bd956bf8ca86c7cf0831132d69d38e06dd1573/libs/deepagents/deepagents/graph.py#L281); [libs/deepagents/deepagents/middleware/filesystem.py:366-371](https://github.com/langchain-ai/deepagents/blob/44bd956bf8ca86c7cf0831132d69d38e06dd1573/libs/deepagents/deepagents/middleware/filesystem.py#L366-L371)) | File writes stay inside the paths you chose, and memory changes wait for you (C3) |
+| A remote sandbox | Keep the default in-memory `backend`, or for code execution pass a remote sandbox such as `DaytonaSandbox` or `ModalSandbox` ([libs/deepagents/deepagents/graph.py:282](https://github.com/langchain-ai/deepagents/blob/44bd956bf8ca86c7cf0831132d69d38e06dd1573/libs/deepagents/deepagents/graph.py#L282); [libs/partners/daytona/langchain_daytona/sandbox.py:23](https://github.com/langchain-ai/deepagents/blob/44bd956bf8ca86c7cf0831132d69d38e06dd1573/libs/partners/daytona/langchain_daytona/sandbox.py#L23); [libs/partners/modal/langchain_modal/sandbox.py:16](https://github.com/langchain-ai/deepagents/blob/44bd956bf8ca86c7cf0831132d69d38e06dd1573/libs/partners/modal/langchain_modal/sandbox.py#L16)) | Model-written commands and file operations run in a provider sandbox, away from your host and its keys (C4) |
+| A tighter step limit | Set `recursion_limit` to <n> in each run's config, sized to the task ([libs/deepagents/deepagents/graph.py:995](https://github.com/langchain-ai/deepagents/blob/44bd956bf8ca86c7cf0831132d69d38e06dd1573/libs/deepagents/deepagents/graph.py#L995)) | A runaway loop stops after the number of steps you chose (C10) |
+| A dedicated, reviewed environment | Run the agent from its own virtual environment holding only packages you have reviewed, pinned by version and hash | Only code you chose loads as a profile plugin inside the agent process (C7) |
+| Its own container or VM | Run the agent process in a container or VM whose network reaches only the hosts the task needs | An outer boundary around in-process tools and a narrow path for data to leave (C5) |
+| A durable run record | Pass a database-backed `checkpointer`, or turn on LangSmith tracing ([libs/deepagents/deepagents/graph.py:287](https://github.com/langchain-ai/deepagents/blob/44bd956bf8ca86c7cf0831132d69d38e06dd1573/libs/deepagents/deepagents/graph.py#L287)) | Tool calls and results survive the process, so a run can be reconstructed (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; only tools named in `interrupt_on` or matched by interrupt rules pause.
+- Compiled and remote async sub-agents don't inherit `interrupt_on`; configure approval inside each of them.
+
+### Handling data
+
+- Tool results and shell output reach the model unredacted, and tracing uploads them to LangSmith; treat traces and checkpoints like the data the agent read.
+
 ## Critical gaps
 - The agent and every registered tool act with the host process's full ambient credentials; the framework has no per-request authorization or credential scoping. (ASI03; C1) — [README.md:112](https://github.com/langchain-ai/deepagents/blob/44bd956bf8ca86c7cf0831132d69d38e06dd1573/README.md#L112); [libs/deepagents/deepagents/backends/local_shell.py:197-198](https://github.com/langchain-ai/deepagents/blob/44bd956bf8ca86c7cf0831132d69d38e06dd1573/libs/deepagents/deepagents/backends/local_shell.py#L197-L198)
 - Content the agent reads can steer it into using any registered tool, including ones that send data out or change state, with no approval or capability restriction in the default configuration. (ASI01, LLM01; C5) — [README.md:112](https://github.com/langchain-ai/deepagents/blob/44bd956bf8ca86c7cf0831132d69d38e06dd1573/README.md#L112); [libs/deepagents/deepagents/graph.py:283](https://github.com/langchain-ai/deepagents/blob/44bd956bf8ca86c7cf0831132d69d38e06dd1573/libs/deepagents/deepagents/graph.py#L283)

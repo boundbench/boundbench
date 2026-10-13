@@ -36,6 +36,135 @@
     "external_communication": "opt_in"
   },
   "headline": "mcp-agent is a thin orchestration layer: as shipped it adds no approval gate, no sandbox, and no argument validation between the model and its MCP tools. The scaffolded default gives one unattended session web fetch, a filesystem server over the project directory, and the plaintext secrets file in that same directory, so a prompt injection can read API keys and overwrite files. Sub-agent specs and config are also auto-loaded from the working directory, where they can trigger Python module imports. Opt-in OAuth scoping and OpenTelemetry tracing are the strongest controls on offer.",
+  "safe_setup": {
+    "intro": "mcp-agent ships with few protections on: it adds no approval step, no sandbox and no argument checks between the model and its tools, and the scaffolded config gives one unattended session web fetch and write access to the project folder. The safest setup turns on the OAuth scoping, tracing and hooks the framework offers and builds containment around the process yourself.",
+    "steps": [
+      {
+        "setup": "Scoped, low-limit keys",
+        "how": "Pass only the model and tool keys this app needs through environment variables, each scoped with a spending limit set at the provider",
+        "gives_you": "Whatever the agent does, it reaches only the systems and spend you chose",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "OAuth for HTTP servers",
+        "how": "Under each HTTP server's `auth:` block, set `oauth:` with `enabled: true` and only the `scopes` the task needs",
+        "gives_you": "Each server's token is limited to the scopes you requested for that one server",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/mcp_agent/config.py",
+            "lines": "265",
+            "contains": "auth: MCPServerAuthSettings | None = None",
+            "url": "https://github.com/lastmile-ai/mcp-agent/blob/f62d849350816588b1c6294e7914bbe4d8b84072/src/mcp_agent/config.py#L265"
+          },
+          {
+            "file": "src/mcp_agent/config.py",
+            "lines": "186",
+            "contains": "oauth: MCPOAuthClientSettings | None = None",
+            "url": "https://github.com/lastmile-ai/mcp-agent/blob/f62d849350816588b1c6294e7914bbe4d8b84072/src/mcp_agent/config.py#L186"
+          },
+          {
+            "file": "src/mcp_agent/config.py",
+            "lines": "91-94",
+            "contains": "enabled: bool = False",
+            "url": "https://github.com/lastmile-ai/mcp-agent/blob/f62d849350816588b1c6294e7914bbe4d8b84072/src/mcp_agent/config.py#L91-L94"
+          }
+        ]
+      },
+      {
+        "setup": "A dedicated task folder",
+        "how": "Root the filesystem server at a folder holding only the task's files, outside the folder with your secrets file, config and logs",
+        "gives_you": "The model reads and writes only the task's files, never your API keys or settings",
+        "criterion": "C8",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Sub-agent discovery off",
+        "how": "Set `enabled: false` under `agents:` and define sub-agents in your own code",
+        "gives_you": "Only agents you wrote run, so spec files in a folder can't add agents or import code",
+        "criterion": "C6",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/mcp_agent/config.py",
+            "lines": "638",
+            "contains": "enabled: bool = True",
+            "url": "https://github.com/lastmile-ai/mcp-agent/blob/f62d849350816588b1c6294e7914bbe4d8b84072/src/mcp_agent/config.py#L638"
+          },
+          {
+            "file": "src/mcp_agent/config.py",
+            "lines": "1202",
+            "contains": "agents: SubagentSettings | None = SubagentSettings()",
+            "url": "https://github.com/lastmile-ai/mcp-agent/blob/f62d849350816588b1c6294e7914bbe4d8b84072/src/mcp_agent/config.py#L1202"
+          }
+        ]
+      },
+      {
+        "setup": "A clean working directory",
+        "how": "Start the app from a directory whose config, secrets and .env files you wrote yourself",
+        "gives_you": "Servers, keys and the model endpoint come only from you, not from a folder you happen to run in",
+        "criterion": "C6",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Per-call approval",
+        "how": "Override `pre_tool_call` on your LLM class to ask a person and return `False` to refuse",
+        "gives_you": "A person sees each tool and its arguments before a consequential call runs",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/mcp_agent/workflows/llm/augmented_llm.py",
+            "lines": "559-562",
+            "contains": "Return False to prevent execution.",
+            "url": "https://github.com/lastmile-ai/mcp-agent/blob/f62d849350816588b1c6294e7914bbe4d8b84072/src/mcp_agent/workflows/llm/augmented_llm.py#L559-L562"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the app and its MCP servers in a container or VM whose network reaches only the hosts the task needs",
+        "gives_you": "An outer boundary around servers and tools that otherwise run as you, and a narrow path for data to leave",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "OpenTelemetry tracing",
+        "how": "Set `enabled: true` under `otel:` with an `otlp` exporter to a collector outside the agent's reach",
+        "gives_you": "A record of each tool call with its arguments, kept where the agent can't edit it",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/mcp_agent/config.py",
+            "lines": "825-831",
+            "contains": "enabled: bool = False",
+            "url": "https://github.com/lastmile-ai/mcp-agent/blob/f62d849350816588b1c6294e7914bbe4d8b84072/src/mcp_agent/config.py#L825-L831"
+          },
+          {
+            "file": "src/mcp_agent/config.py",
+            "lines": "1193",
+            "contains": "otel: OpenTelemetrySettings | None = OpenTelemetrySettings()",
+            "url": "https://github.com/lastmile-ai/mcp-agent/blob/f62d849350816588b1c6294e7914bbe4d8b84072/src/mcp_agent/config.py#L1193"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; the hook sees the exact tool name and arguments."
+    ],
+    "handling": [
+      "The scaffolded file log is written inside the project; set `path` under `logger:` to a location the filesystem server can't reach.",
+      "Leave `LOG_SECRETS` unset so values under sensitive keys stay partly masked in logs.",
+      "Traces carry tool arguments and results unredacted; store them like the data the agent read."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

@@ -36,6 +36,127 @@
     "external_communication": "no"
   },
   "headline": "As shipped in the README's lead command, DBHub gives MCP clients full read-write SQL access to your database, with no row limit or timeout, over an HTTP transport whose access control is not locked down. Its read-only mode is well built (a statement classifier plus a read-only database transaction on every engine), but it is opt-in and can only be enabled through a TOML file. Use a least-privilege database account and set readonly and max_rows in TOML before exposing it; the MCPB bundle and Claude Code plugin already ship read-only.",
+  "safe_setup": {
+    "intro": "DBHub masks database passwords in its logs, sends no telemetry and includes a well-built read-only mode, but as shipped `execute_sql` runs any SQL, writes included, with no row limit or timeout. The safest setup pairs a least-privilege database account with the read-only mode and limits DBHub already offers, all set in a TOML file.",
+    "steps": [
+      {
+        "setup": "A least-privilege database account",
+        "how": "Connect with a dedicated, non-superuser account granted only the schemas and operations the task needs, read-only where the task allows",
+        "gives_you": "The database itself refuses anything outside that grant, whatever SQL the model writes",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Read-only mode",
+        "how": "`readonly = true` on the `execute_sql` entry under `[[tools]]` in a file passed with `--config <path>`",
+        "gives_you": "Non-read statements are rejected and every query runs in a read-only database transaction",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/types/config.ts",
+            "lines": "82-86",
+            "contains": "readonly?: boolean;",
+            "url": "https://github.com/bytebase/dbhub/blob/4ddb26e73c5d8f1d54f5d04351c11c3caeb43cbb/src/types/config.ts#L82-L86"
+          },
+          {
+            "file": "src/types/config.ts",
+            "lines": "141",
+            "contains": "tools?: ToolConfig[];",
+            "url": "https://github.com/bytebase/dbhub/blob/4ddb26e73c5d8f1d54f5d04351c11c3caeb43cbb/src/types/config.ts#L141"
+          },
+          {
+            "file": "src/config/toml-loader.ts",
+            "lines": "69",
+            "contains": "requireFlagValue(\"config\"",
+            "url": "https://github.com/bytebase/dbhub/blob/4ddb26e73c5d8f1d54f5d04351c11c3caeb43cbb/src/config/toml-loader.ts#L69"
+          }
+        ]
+      },
+      {
+        "setup": "Parameterized custom tools",
+        "how": "List only the tools each source needs under `[[tools]]`, using custom tools with a fixed `statement` and typed `parameters` in place of raw SQL",
+        "gives_you": "The model fills in checked values for queries you wrote, against only the tools you listed",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/types/config.ts",
+            "lines": "116-123",
+            "contains": "statement: string;",
+            "url": "https://github.com/bytebase/dbhub/blob/4ddb26e73c5d8f1d54f5d04351c11c3caeb43cbb/src/types/config.ts#L116-L123"
+          },
+          {
+            "file": "src/types/config.ts",
+            "lines": "141",
+            "contains": "tools?: ToolConfig[];",
+            "url": "https://github.com/bytebase/dbhub/blob/4ddb26e73c5d8f1d54f5d04351c11c3caeb43cbb/src/types/config.ts#L141"
+          }
+        ]
+      },
+      {
+        "setup": "Row and time limits",
+        "how": "`max_rows = <n>` on each `[[tools]]` entry and `query_timeout = <seconds>` on each `[[sources]]` entry",
+        "gives_you": "Each query returns a bounded number of rows and, on engines that support it, stops after a set time",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/types/config.ts",
+            "lines": "86",
+            "contains": "max_rows?: number;",
+            "url": "https://github.com/bytebase/dbhub/blob/4ddb26e73c5d8f1d54f5d04351c11c3caeb43cbb/src/types/config.ts#L86"
+          },
+          {
+            "file": "src/types/config.ts",
+            "lines": "57",
+            "contains": "query_timeout?: number;",
+            "url": "https://github.com/bytebase/dbhub/blob/4ddb26e73c5d8f1d54f5d04351c11c3caeb43cbb/src/types/config.ts#L57"
+          }
+        ]
+      },
+      {
+        "setup": "The stdio transport",
+        "how": "Keep the default `stdio` transport whenever one local client is all you need",
+        "gives_you": "Only the host process that launched DBHub can call it",
+        "criterion": "C1",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "src/config/env.ts",
+            "lines": "319-320",
+            "contains": "return { type: \"stdio\", source: \"default\" };",
+            "url": "https://github.com/bytebase/dbhub/blob/4ddb26e73c5d8f1d54f5d04351c11c3caeb43cbb/src/config/env.ts#L319-L320"
+          }
+        ]
+      },
+      {
+        "setup": "A private HTTP endpoint",
+        "how": "When you need HTTP, serve it only on a private network reachable by your own clients, with access control turned on",
+        "gives_you": "Only clients you chose share the database credential DBHub holds",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A clean working directory",
+        "how": "Start DBHub from a directory with no .env file you didn't write",
+        "gives_you": "The database and transport settings come only from you",
+        "criterion": "C6",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve `execute_sql` calls one at a time; with writes enabled one tool runs both reads and writes, so the SQL text is what shows which kind a call is.",
+      "Statements run as soon as they are approved, with no preview or undo, so a call that changes data is worth a careful read."
+    ],
+    "handling": [
+      "The tool-call record holds full SQL text in memory, keeps the last 100 calls per source and is gone on restart; keep your MCP host's own log if you need a lasting record.",
+      "The README's `--dsn` command puts the database password on the command line; a TOML file readable only by you keeps it out of shell history and process listings."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

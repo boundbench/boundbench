@@ -24,6 +24,30 @@
 
 jcode runs model-chosen shell commands, file writes and web requests directly on your machine with no human approval and no sandbox. Its only built-in check is a destructive-command filter that the model can clear by giving a written justification, apart from a short list of catastrophic targets it always refuses. Opening a repository also loads its MCP server config and system-prompt files without asking, so a cloned repository can add tools that run as you. Treat it as having your full account authority whenever it reads untrusted content.
 
+## Safest setup
+
+jcode records every tool call and always refuses a short list of catastrophic deletions. As shipped it runs shell commands, file writes and web requests as you with no human approval and no sandbox, and there is no approval mode or sandbox to turn on. The safest setup adds a policy hook and a smaller tool set, then builds the boundaries around jcode yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A minimal environment | Start the jcode daemon from a dedicated account or shell that holds only the model provider key, with no cloud, Git push or other credentials | Commands the model runs reach only what that environment holds, not your whole account (C1) |
+| A pre-tool policy hook | Set `pre_tool` under `[hooks]` to a program you wrote that exits 2 for shell, write and web calls outside what the task needs ([crates/jcode-base/src/config/default_file.rs:583](https://github.com/1jehuang/jcode/blob/e46eff2e6c6818c5be7291297d1867323cce7eb0/crates/jcode-base/src/config/default_file.rs#L583); [crates/jcode-base/src/config/default_file.rs:623-627](https://github.com/1jehuang/jcode/blob/e46eff2e6c6818c5be7291297d1867323cce7eb0/crates/jcode-base/src/config/default_file.rs#L623-L627)) | A check you control runs before every tool call, in place of the model's own justification (C2) |
+| Only the tools needed | List the tools the task uses in `enabled` under `[tools]`, or hide the rest with `disabled` ([crates/jcode-base/src/config/default_file.rs:340-352](https://github.com/1jehuang/jcode/blob/e46eff2e6c6818c5be7291297d1867323cce7eb0/crates/jcode-base/src/config/default_file.rs#L340-L352)) | The model sees only the tools you chose, so email, swarm and browser tools stay out unless you add them (C3) |
+| A swarm worker ceiling | Keep the default `swarm_max_concurrent_agents = 32`, or lower it ([crates/jcode-base/src/config/default_file.rs:483](https://github.com/1jehuang/jcode/blob/e46eff2e6c6818c5be7291297d1867323cce7eb0/crates/jcode-base/src/config/default_file.rs#L483)) | A bound on how many sub-agents run at the same time (C10) |
+| A reviewed workspace | Open jcode only in repositories whose project MCP config, system-prompt and AGENTS.md files you have read | Tools and instructions come only from files you have checked (C6) |
+| Its own container or VM | Run jcode in a container or VM holding only the project, with outbound network limited to the model provider and the hosts the task needs | An outer boundary around unsandboxed commands and a narrow path for data to leave (C4) |
+| A log the agent can't edit | Copy the daily log from the jcode home directory to storage outside the agent's reach as it is written | A record of every tool call that the model's shell can't alter (C9) |
+
+### Approving with confidence
+
+- jcode shows no approval prompt by default, and its risky-command check is answered by the model, so the `pre_tool` hook is where your own policy decides.
+- The `pre_tool` hook allows a call on any exit other than 2 and on timeout, so have it exit 2 whenever it can't decide.
+
+### Handling data
+
+- Saved sessions keep full tool arguments and results unredacted under the jcode home directory; store them like the data the agent read.
+- Anonymous usage telemetry is on by default; `JCODE_NO_TELEMETRY=1` turns it off.
+
 ## Critical gaps
 - Risky shell commands are confirmed by the model itself: re-sending the call with a short justification satisfies the check, and no human approval exists by default. (ASI09, ASI02, T10; C2). Evidence: [crates/jcode-command-risk/src/gate.rs:89-96](https://github.com/1jehuang/jcode/blob/e46eff2e6c6818c5be7291297d1867323cce7eb0/crates/jcode-command-risk/src/gate.rs#L89-L96); [crates/jcode-command-risk/src/gate.rs:75](https://github.com/1jehuang/jcode/blob/e46eff2e6c6818c5be7291297d1867323cce7eb0/crates/jcode-command-risk/src/gate.rs#L75); [crates/jcode-command-risk/src/lib.rs:5-7](https://github.com/1jehuang/jcode/blob/e46eff2e6c6818c5be7291297d1867323cce7eb0/crates/jcode-command-risk/src/lib.rs#L5-L7)
 - A hijacked session can exfiltrate data through web fetch or the shell and take irreversible actions with no human in the loop. (ASI01, T6, LLM01; C5). Evidence: [crates/jcode-app-core/src/tool/webfetch.rs:78](https://github.com/1jehuang/jcode/blob/e46eff2e6c6818c5be7291297d1867323cce7eb0/crates/jcode-app-core/src/tool/webfetch.rs#L78); [crates/jcode-app-core/src/tool/bash.rs:677-678](https://github.com/1jehuang/jcode/blob/e46eff2e6c6818c5be7291297d1867323cce7eb0/crates/jcode-app-core/src/tool/bash.rs#L677-L678); [crates/jcode-app-core/src/tool/mod.rs:955](https://github.com/1jehuang/jcode/blob/e46eff2e6c6818c5be7291297d1867323cce7eb0/crates/jcode-app-core/src/tool/mod.rs#L955)

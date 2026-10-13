@@ -25,6 +25,29 @@ Controls where a risk surface exists: 3.62 / 8.0 (45%); 2 criteria scored SA (su
 
 As shipped, Linux MCP Server only exposes fixed, genuinely read-only diagnostic commands, run as argument lists with timeouts and size caps, so it cannot change your systems. The main risk is what it can read and where it can reach: read_file opens any file your account can read, including SSH private keys, and the model can point any tool at any host name using your own SSH identity, which also gives a hijacked session a way to leak what it read. Its strong authorization policy and the sandbox for the optional script-execution mode are opt-in, and that script mode is much weaker than the default.
 
+## Safest setup
+
+Linux MCP Server ships a fixed set of read-only diagnostic tools with timeouts, size caps and a log of every call, so no call can change your systems. As shipped it reads with your own account and SSH keys on any host the model names, so the safest setup narrows that identity and contains what the server can read and reach.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated read-only account | Create a low-privilege SSH account on each host the agent should inspect, and give the server only that account's key | Each host itself limits what the server can see, whatever the model asks for (C1) |
+| An authorization policy | `LINUX_MCP_POLICY_PATH` pointing at a YAML policy that allows only the tools and hosts the task needs, each with its own key and user ([src/linux_mcp_server/config.py:271-272](https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L271-L272); [docs/config-reference.md:119](https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/docs/config-reference.md#L119)) | Calls the policy doesn't match are refused, and each allowed host is reached with the account you chose (C1) |
+| The read-only toolset | Keep the default `LINUX_MCP_TOOLSET=fixed` ([src/linux_mcp_server/config.py:250-251](https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L250-L251); [docs/config-reference.md:51](https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/docs/config-reference.md#L51)) | Every tool runs a fixed read-only command, so no call can change a system (C2) |
+| Time and size limits | Keep the defaults `LINUX_MCP_COMMAND_TIMEOUT=30` and `LINUX_MCP_MAX_FILE_READ_BYTES=1048576`, or lower them ([src/linux_mcp_server/config.py:259-260](https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L259-L260); [src/linux_mcp_server/config.py:238-239](https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/config.py#L238-L239); [docs/config-reference.md:36](https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/docs/config-reference.md#L36); [docs/config-reference.md:54](https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/docs/config-reference.md#L54)) | Every command ends after a fixed time and each file read returns a bounded amount (C10) |
+| Its own user or container | Run the server as a dedicated user or in a container whose files hold only the key from the first step | What the tools can read holds no other SSH keys or cloud credentials (C8) |
+| Outbound access to known hosts | Limit the server's outbound network to the hosts it should manage | Data the server reads has a narrow path out, even if the model is misled (C5) |
+| Logs kept off the host | Forward the files in `LINUX_MCP_LOG_DIR` to a central collector the server's user can't modify ([docs/config-reference.md:106](https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/docs/config-reference.md#L106)) | A record of every tool call that the server's own account can't alter (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time, checking that the host is one you expect.
+- A file read returns whatever your account can read, so look at the path before approving it.
+
+### Handling data
+
+- Logs under ~/.local/share/linux-mcp-server/logs record each call's arguments, with sensitive-looking names redacted, for ten days; store them like other system logs.
+
 ## Critical gaps
 - In the opt-in run_script toolset the model's own readonly flag selects the sandbox profile, so modifying scripts run as root via sudo systemd-run with host networking, and the sandbox is not a complete boundary. (ASI05, T11; C4) — [src/linux_mcp_server/tools/run_script.py:189-202](https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/run_script.py#L189-L202); [src/linux_mcp_server/tools/run_script.py:249-262](https://github.com/rhel-lightspeed/linux-mcp-server/blob/11e303597c02d357144f9d05d4994e1d945f7e86/src/linux_mcp_server/tools/run_script.py#L249-L262)
 

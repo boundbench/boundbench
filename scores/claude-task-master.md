@@ -24,6 +24,31 @@
 
 Task Master runs with your full user authority and every provider API key you give it, and it loads project configuration and .env files from the workspace without asking, so an untrusted repository can change which model provider and endpoints it uses. Telemetry is on by default and records prompts and responses. Tool annotations are accurate, but there is no path containment, isolation or audit record.
 
+## Safest setup
+
+Task Master labels every tool as read-only or destructive and keeps its default models on API providers, but it runs with your full user authority, trusts whatever configuration the project holds, and has no isolation, path containment or spend limit of its own. The safest setup narrows the keys and tools it gets, keeps your editor's approval in the loop, and builds containment around it yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Dedicated, low-limit keys | Give the MCP server only the key for each provider you use, each a dedicated key with a spending limit set at the provider | Spend and account reach stop at what the provider allows, whatever the session does (C1) |
+| Per-call approval | Keep your editor's approval prompt on for tools marked `destructiveHint` ([mcp-server/src/tools/parse-prd.js:68-71](https://github.com/eyaltoledano/claude-task-master/blob/c0c98d367c55296bfe69e65680625b6db437af02/mcp-server/src/tools/parse-prd.js#L68-L71)) | A person sees each write to task files, config or git before it runs (C2) |
+| Only the tools needed | Set `TASK_MASTER_TOOLS` to `core` or a comma-separated list of the tools you use ([mcp-server/src/tools/index.js:20-25](https://github.com/eyaltoledano/claude-task-master/blob/c0c98d367c55296bfe69e65680625b6db437af02/mcp-server/src/tools/index.js#L20-L25)) | The model sees fewer write, git and research tools (C3) |
+| API model providers | Keep the default `anthropic` and `perplexity` providers for the main and research roles ([scripts/modules/config-manager.js:28-36](https://github.com/eyaltoledano/claude-task-master/blob/c0c98d367c55296bfe69e65680625b6db437af02/scripts/modules/config-manager.js#L28-L36)) | Model calls stay API requests, with no agent CLI started on your machine (C4) |
+| Telemetry off | Set `anonymousTelemetry` to false in the global section of the project's Task Master config ([scripts/modules/config-manager.js:61](https://github.com/eyaltoledano/claude-task-master/blob/c0c98d367c55296bfe69e65680625b6db437af02/scripts/modules/config-manager.js#L61); [scripts/modules/config-manager.js:747](https://github.com/eyaltoledano/claude-task-master/blob/c0c98d367c55296bfe69e65680625b6db437af02/scripts/modules/config-manager.js#L747)) | Prompts, responses and tool activity stay off the third-party telemetry service (C8) |
+| Reviewed project configuration | Use Task Master in projects whose .taskmaster configuration and .env files you wrote or have read | Providers, endpoints and provider settings come only from you (C6) |
+| Task data under version control | Commit the .taskmaster directory before bulk or destructive task operations | A way back from a wrong overwrite or deletion of task data (C2) |
+| Its own container or VM | Run the editor session with Task Master in a container or VM whose network reaches only your model providers | File reads, writes and outbound requests stay inside a boundary you set (C5) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; a research call can attach local files to its request.
+- A `models` call changes which provider and endpoint later calls use, so approve it when you asked for that change.
+
+### Handling data
+
+- Tasks and research notes are built from model output, PRDs and web results; read new tasks before your agent acts on them.
+- Autopilot workflows append an activity log under your home directory; store it like the projects it covers.
+
 ## Critical gaps
 - Workspace configuration and .env files can change model providers, endpoints and provider settings with no trust decision. (ASI06, ASI04; C6). Evidence: [scripts/modules/config-manager.js:136-144](https://github.com/eyaltoledano/claude-task-master/blob/c0c98d367c55296bfe69e65680625b6db437af02/scripts/modules/config-manager.js#L136-L144); [apps/mcp/src/shared/utils.ts:401-403](https://github.com/eyaltoledano/claude-task-master/blob/c0c98d367c55296bfe69e65680625b6db437af02/apps/mcp/src/shared/utils.ts#L401-L403)
 - Agent-CLI providers run on the host as the same user with the full environment and no isolation. (ASI05; C4). Evidence: [packages/ai-sdk-provider-grok-cli/src/grok-cli-language-model.ts:124-130](https://github.com/eyaltoledano/claude-task-master/blob/c0c98d367c55296bfe69e65680625b6db437af02/packages/ai-sdk-provider-grok-cli/src/grok-cli-language-model.ts#L124-L130)

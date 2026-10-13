@@ -25,6 +25,31 @@ Controls where a risk surface exists: 3.02 / 9.0 (34%); 1 criterion scored SA (s
 
 mini runs every command the model writes directly on your machine, as you, with your full environment (including its own API keys) and open network access. The main safeguard is confirm mode, on by default: you see the proposed commands and must press Enter before anything runs, but there are no risk tiers, nothing can be undone, and a flag or a config setting switches it to fully automatic. Use one of the shipped container backends and keep confirm mode on when working on untrusted code.
 
+## Safest setup
+
+mini starts in confirm mode, so no model command runs until you press Enter, and it stops a run once estimated model spend passes $3. Beyond that the defaults are thin: commands run on your own machine as you, with your full environment and open network, so the safest setup moves them into a container and puts the boundaries around mini yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A separate, low-privilege account | Run mini as a separate OS user or in a VM whose environment holds only the model key, with a spending limit set at the provider | Approved commands reach only what that account holds, not your cloud, Git or SSH credentials (C1) |
+| A container backend | `--environment-class docker`, with the container `image` set in your own config file ([src/minisweagent/run/mini.py:59](https://github.com/SWE-agent/mini-swe-agent/blob/04d809ceab9df28f9adaed044884180159172930/src/minisweagent/run/mini.py#L59); [src/minisweagent/environments/__init__.py:9](https://github.com/SWE-agent/mini-swe-agent/blob/04d809ceab9df28f9adaed044884180159172930/src/minisweagent/environments/__init__.py#L9); [src/minisweagent/environments/docker.py:16](https://github.com/SWE-agent/mini-swe-agent/blob/04d809ceab9df28f9adaed044884180159172930/src/minisweagent/environments/docker.py#L16)) | Model commands run in a container with no host mounts and no forwarded environment, removed after the run (C4) |
+| A hardened, offline container | Add no-network, non-root, dropped-capability and memory-limit options to the container's `run_args` ([src/minisweagent/environments/docker.py:30](https://github.com/SWE-agent/mini-swe-agent/blob/04d809ceab9df28f9adaed044884180159172930/src/minisweagent/environments/docker.py#L30)) | Commands inside the container can't reach the network or exhaust the host (C4) |
+| Confirm mode | Keep the default `mode: confirm` and run without `--yolo` ([src/minisweagent/config/mini.yaml:103](https://github.com/SWE-agent/mini-swe-agent/blob/04d809ceab9df28f9adaed044884180159172930/src/minisweagent/config/mini.yaml#L103); [src/minisweagent/run/mini.py:61](https://github.com/SWE-agent/mini-swe-agent/blob/04d809ceab9df28f9adaed044884180159172930/src/minisweagent/run/mini.py#L61)) | A person decides on every batch of model commands before it runs (C2) |
+| A spend ceiling | Keep the default `cost_limit: 3.` or set a lower one with `--cost-limit <n>` ([src/minisweagent/config/mini.yaml:102](https://github.com/SWE-agent/mini-swe-agent/blob/04d809ceab9df28f9adaed044884180159172930/src/minisweagent/config/mini.yaml#L102); [src/minisweagent/run/mini.py:62](https://github.com/SWE-agent/mini-swe-agent/blob/04d809ceab9df28f9adaed044884180159172930/src/minisweagent/run/mini.py#L62)) | The run stops once estimated model spend passes the limit (C10) |
+| Step and time limits | Set `step_limit: <n>` and `wall_time_limit_seconds: <n>` in your own config file ([src/minisweagent/agents/default.py:26](https://github.com/SWE-agent/mini-swe-agent/blob/04d809ceab9df28f9adaed044884180159172930/src/minisweagent/agents/default.py#L26); [src/minisweagent/agents/default.py:30](https://github.com/SWE-agent/mini-swe-agent/blob/04d809ceab9df28f9adaed044884180159172930/src/minisweagent/agents/default.py#L30)) | Every run ends after a fixed number of steps and a fixed time (C10) |
+| A trajectory per run | Give each run its own file with `--output <path>` and copy it to storage the agent can't write ([src/minisweagent/run/mini.py:64](https://github.com/SWE-agent/mini-swe-agent/blob/04d809ceab9df28f9adaed044884180159172930/src/minisweagent/run/mini.py#L64)) | A record of every command and its output that the next run doesn't overwrite (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve batches one at a time; typing a comment rejects the batch and tells the model why.
+- Answer with Enter or a comment; typing /y at the prompt also switches the rest of the run to yolo mode.
+- Ctrl-C stops the agent loop but not a command already running; check for leftover background processes after stopping.
+
+### Handling data
+
+- First-run setup stores API keys in plain text in a .env file in the user config directory; keep only scoped, low-limit keys there.
+- The trajectory holds every command's output unredacted; store it like the data the agent read.
+
 ## Critical gaps
 - Model commands run on the host as the user with the full process environment, including API keys, and open network; isolation backends exist but are off by default. (ASI05, T11, LLM05; C4). Evidence: [src/minisweagent/environments/local.py:29](https://github.com/SWE-agent/mini-swe-agent/blob/04d809ceab9df28f9adaed044884180159172930/src/minisweagent/environments/local.py#L29); [src/minisweagent/environments/local.py:74-80](https://github.com/SWE-agent/mini-swe-agent/blob/04d809ceab9df28f9adaed044884180159172930/src/minisweagent/environments/local.py#L74-L80); [src/minisweagent/run/mini.py:100](https://github.com/SWE-agent/mini-swe-agent/blob/04d809ceab9df28f9adaed044884180159172930/src/minisweagent/run/mini.py#L100)
 

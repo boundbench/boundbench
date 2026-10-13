@@ -36,6 +36,112 @@
     "external_communication": "no"
   },
   "headline": "GPT Researcher's research pipeline itself is mostly read-only: it searches the web, fetches pages through an SSRF filter, and writes a report. The dominant risk is the server around it. No endpoint authenticates callers, and a research request may include an MCP server 'command' that the server spawns as a process. So anyone who can reach the port can run commands with the user's account and API keys (root in the shipped docker-compose). Run it only on localhost behind your own authentication, and treat stored reports and chat history as shared and untrusted.",
+  "safe_setup": {
+    "intro": "GPT Researcher's default pipeline only searches and reads public web pages, through a check that skips private addresses. The server around it has no login, no approval step and no sandbox, and it launches MCP server commands that a request supplies, so the safest setup builds the boundaries around it yourself.",
+    "steps": [
+      {
+        "setup": "Dedicated, low-limit keys",
+        "how": "Give the server its own model and search API keys, each with a spending limit set at the provider",
+        "gives_you": "Whoever reaches the server can spend only what you set aside, and those keys can be revoked alone",
+        "criterion": "C8",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Localhost behind your login",
+        "how": "Bind the server to 127.0.0.1 and put an authenticating reverse proxy in front for anyone else who needs it",
+        "gives_you": "The server stays off the network, and remote callers pass your login before reaching it",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Web-only research",
+        "how": "Keep the default `REPORT_SOURCE` of `web` and send requests without local-document or MCP options",
+        "gives_you": "Sessions that read untrusted pages hold no private documents and have no write-capable tools",
+        "criterion": "C5",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "gpt_researcher/config/variables/default.py",
+            "lines": "33",
+            "contains": "\"REPORT_SOURCE\": \"web\"",
+            "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/config/variables/default.py#L33"
+          }
+        ]
+      },
+      {
+        "setup": "Small search budgets",
+        "how": "Keep the defaults `MAX_ITERATIONS` of 3 and `MAX_SEARCH_RESULTS_PER_QUERY` of 5",
+        "gives_you": "Each run starts from a short search plan and a few results per query",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "gpt_researcher/config/variables/default.py",
+            "lines": "22",
+            "contains": "\"MAX_SEARCH_RESULTS_PER_QUERY\": 5",
+            "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/config/variables/default.py#L22"
+          },
+          {
+            "file": "gpt_researcher/config/variables/default.py",
+            "lines": "26",
+            "contains": "\"MAX_ITERATIONS\": 3",
+            "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/gpt_researcher/config/variables/default.py#L26"
+          }
+        ]
+      },
+      {
+        "setup": "A non-root container",
+        "how": "Run the shipped image as its `gpt-researcher` user, leaving out the compose file's `user: root`",
+        "gives_you": "Anything the server spawns runs inside a container without root, away from your home directory",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "Dockerfile",
+            "lines": "59",
+            "contains": "USER gpt-researcher",
+            "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/Dockerfile#L59"
+          },
+          {
+            "file": "docker-compose.yml",
+            "lines": "21",
+            "contains": "user: root",
+            "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/docker-compose.yml#L21"
+          }
+        ]
+      },
+      {
+        "setup": "No route to internal services",
+        "how": "Place the server on a network that reaches the internet but not your internal hosts or cloud metadata",
+        "gives_you": "A network backstop behind the scraper's own private-address check",
+        "criterion": "C3",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Logs kept off the server",
+        "how": "Copy `logs/app.log` and the per-run files in outputs to storage the server can't modify",
+        "gives_you": "A record of each research run that outlives the server and its working directory",
+        "criterion": "C9",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "main.py",
+            "lines": "15",
+            "contains": "logs/app.log",
+            "url": "https://github.com/assafelovic/gpt-researcher/blob/0957c301ed06c2a5857b834358c7227c739041d4/main.py#L15"
+          }
+        ]
+      }
+    ],
+    "handling": [
+      "Per-run files in outputs hold queries, sources and report text and are served by the web server; treat them and the app log like the data you research.",
+      "Stored reports and chat history are shared by everyone who reaches the server; treat them as untrusted and clear ones you didn't write.",
+      "In the multi-agent flow, a set `LANGCHAIN_API_KEY` turns on LangSmith tracing, which sends prompts to LangSmith; leave it unset unless you want that."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

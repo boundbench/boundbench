@@ -24,6 +24,30 @@
 
 Codewhale asks before every shell command that is not a carefully parsed read-only one, before every web fetch or search, and before MCP tools with side effects, and it strips secrets from the environment of everything it launches. The dominant risk on Linux is that approved commands run with no OS sandbox by default, so one wrongly approved command can reach your whole home directory; on macOS a Seatbelt sandbox is applied automatically. File edits inside a git repository run without a prompt, AGENTS.md loads silently, and turns have no step, time or spend limit by default.
 
+## Safest setup
+
+Codewhale asks before every shell command outside a short read-only list, before every web fetch or search, and before MCP tools with side effects, and it keeps secrets out of the programs it launches. On Linux, approved commands run with your full reach and turns have no step or time limit, so the safest setup turns on the bubblewrap sandbox and limits Codewhale offers and builds containment around the process.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A credential-free account | Run Codewhale as an OS user or in a container whose home holds the project and no cloud, gh or SSH credential files | Any command you approve reaches only this project, not your other accounts (C1) |
+| Per-call approval | Keep the default Ask posture and leave Full Access off ([crates/execpolicy/src/approval_mode.rs:13-14](https://github.com/Hmbown/Codewhale/blob/b131357276568aa969d573129efa0d77c09f68cd/crates/execpolicy/src/approval_mode.rs#L13-L14)) | A person sees the exact command, fetch or file content before each gated call runs (C2) |
+| The bubblewrap sandbox | Install bubblewrap at `/usr/bin/bwrap` and set `prefer_bwrap = true` in config.toml, or `CODEWHALE_PREFER_BWRAP=1` ([crates/tui/src/config.rs:3142-3147](https://github.com/Hmbown/Codewhale/blob/b131357276568aa969d573129efa0d77c09f68cd/crates/tui/src/config.rs#L3142-L3147); [crates/tui/src/config.rs:10190](https://github.com/Hmbown/Codewhale/blob/b131357276568aa969d573129efa0d77c09f68cd/crates/tui/src/config.rs#L10190)) | Shell commands and test runners get a read-only disk, a writable workspace and no network (C4) |
+| Plan mode for exploring | Switch to Plan mode while reading unfamiliar code ([crates/tui/src/core/authority.rs:410](https://github.com/Hmbown/Codewhale/blob/b131357276568aa969d573129efa0d77c09f68cd/crates/tui/src/core/authority.rs#L410)) | The session stays read-only, with no shell, until you choose Work mode (C3) |
+| Step and time limits | Set `max_model_steps = <n>` and `turn_wall_clock_secs = <seconds>` under `[tui]`, and `max_continuations = <n>` under `[goal]` ([crates/tui/src/config.rs:1887](https://github.com/Hmbown/Codewhale/blob/b131357276568aa969d573129efa0d77c09f68cd/crates/tui/src/config.rs#L1887); [crates/tui/src/config.rs:1892](https://github.com/Hmbown/Codewhale/blob/b131357276568aa969d573129efa0d77c09f68cd/crates/tui/src/config.rs#L1892); [crates/tui/src/config.rs:8127](https://github.com/Hmbown/Codewhale/blob/b131357276568aa969d573129efa0d77c09f68cd/crates/tui/src/config.rs#L8127); [crates/tui/src/config.rs:2180](https://github.com/Hmbown/Codewhale/blob/b131357276568aa969d573129efa0d77c09f68cd/crates/tui/src/config.rs#L2180); [crates/tui/src/config.rs:2169](https://github.com/Hmbown/Codewhale/blob/b131357276568aa969d573129efa0d77c09f68cd/crates/tui/src/config.rs#L2169)) | Every turn and every goal run ends after a ceiling you chose (C10) |
+| A clean working directory | Start from a directory with no .env file you didn't write, and read its AGENTS.md before the first session | Keys and standing instructions come only from you (C6) |
+| Telemetry off | `telemetry = false` in config.toml, or `CODEWHALE_TELEMETRY=0` ([crates/config/src/lib.rs:905](https://github.com/Hmbown/Codewhale/blob/b131357276568aa969d573129efa0d77c09f68cd/crates/config/src/lib.rs#L905); [crates/config/src/lib.rs:3683](https://github.com/Hmbown/Codewhale/blob/b131357276568aa969d573129efa0d77c09f68cd/crates/config/src/lib.rs#L3683)) | Usage data stays on your machine (C8) |
+| Its own container or VM | Run Codewhale in a container or VM whose network reaches only the model provider and the hosts the task needs | An outer boundary around MCP servers and language servers, which run on the host even with bubblewrap (C4) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; a session approval covers later variants of the same command family.
+- Inside a git repository, project file edits run without a prompt; review the diff, including AGENTS.md, before committing.
+
+### Handling data
+
+- Sessions under ~/.codewhale/sessions keep every tool call and result; store them like the projects they cover.
+
 ## Critical gaps
 - A workspace .env is auto-loaded at startup, before any trust decision, and can supply model-provider and sandbox-service API keys that Codewhale uses when the user has not configured their own. (ASI06, ASI04; C6) — [crates/tui/src/lib.rs:2020](https://github.com/Hmbown/Codewhale/blob/b131357276568aa969d573129efa0d77c09f68cd/crates/tui/src/lib.rs#L2020); [crates/tui/src/lib.rs:3108-3121](https://github.com/Hmbown/Codewhale/blob/b131357276568aa969d573129efa0d77c09f68cd/crates/tui/src/lib.rs#L3108-L3121); [crates/tui/src/lib.rs:3086-3103](https://github.com/Hmbown/Codewhale/blob/b131357276568aa969d573129efa0d77c09f68cd/crates/tui/src/lib.rs#L3086-L3103)
 - On Linux, model-requested shell commands run unsandboxed by default (bubblewrap is opt-in and silently skipped if missing), with the user's full home directory in reach. (ASI05; C4) — [crates/tui/src/sandbox/mod.rs:349-362](https://github.com/Hmbown/Codewhale/blob/b131357276568aa969d573129efa0d77c09f68cd/crates/tui/src/sandbox/mod.rs#L349-L362); [crates/tui/src/tui/ui/frame.rs:1029](https://github.com/Hmbown/Codewhale/blob/b131357276568aa969d573129efa0d77c09f68cd/crates/tui/src/tui/ui/frame.rs#L1029); [crates/tui/src/sandbox/mod.rs:661-673](https://github.com/Hmbown/Codewhale/blob/b131357276568aa969d573129efa0d77c09f68cd/crates/tui/src/sandbox/mod.rs#L661-L673)

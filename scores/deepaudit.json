@@ -36,6 +36,99 @@
     "external_communication": "yes"
   },
   "headline": "DeepAudit runs an autonomous orchestrator with recon, analysis and verification sub-agents that feed untrusted repository content to an LLM and let it run code and HTTP requests in per-call Docker containers, with no human approval step anywhere. The container itself is reasonably hardened (non-root, read-only root, no-new-privileges, network off by default), but the HTTP tool and external scanners use an unrestricted bridge network, so a hijacked agent can send data to arbitrary hosts unattended. The shipped deployment also mounts the Docker socket into the backend, and its default credential handling and API access controls are not locked down.",
+  "safe_setup": {
+    "intro": "DeepAudit runs model-written code in hardened per-call containers with networking off for commands, and records every tool call in its database. There is no approval step, the HTTP and scanner containers have open egress, and the deployment's access setup is not locked down, so the safest setup narrows the keys, locks down access and builds containment around the stack.",
+    "steps": [
+      {
+        "setup": "Scoped, low-limit keys",
+        "how": "Give the deployment a model key with a spending limit set at the provider and a read-only Git token limited to the repositories you audit",
+        "gives_you": "Whatever an agent does, it reaches only the accounts and spend you chose",
+        "criterion": "C8",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Private access only",
+        "how": "Serve the deployment only to trusted users on a private network",
+        "gives_you": "Only people you chose can start audits or reach the stored credentials",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "All capabilities dropped",
+        "how": "Set `SANDBOX_CAP_DROP=ALL` in the backend env file and keep the default `SANDBOX_NO_NEW_PRIVILEGES` of true",
+        "gives_you": "Sandbox containers run with no Linux capabilities and can't gain privileges",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "backend/app/core/config.py",
+            "lines": "117-118",
+            "contains": "SANDBOX_CAP_DROP",
+            "url": "https://github.com/lintsinghua/DeepAudit/blob/630229163f10c9be74317d1edd06d16cfe6c59f0/backend/app/core/config.py#L117-L118"
+          }
+        ]
+      },
+      {
+        "setup": "A per-task iteration cap",
+        "how": "Keep `max_iterations` at the default 50 or lower when creating each audit task",
+        "gives_you": "Each agent loop stops after a fixed number of steps",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "backend/app/api/v1/endpoints/agent_tasks.py",
+            "lines": "82",
+            "contains": "max_iterations: int = Field(50",
+            "url": "https://github.com/lintsinghua/DeepAudit/blob/630229163f10c9be74317d1edd06d16cfe6c59f0/backend/app/api/v1/endpoints/agent_tasks.py#L82"
+          }
+        ]
+      },
+      {
+        "setup": "Prompt logging off",
+        "how": "Keep the defaults `log_llm_prompts` and `log_llm_responses` at false",
+        "gives_you": "Audited code and any secrets in it stay out of the application logs",
+        "criterion": "C8",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "backend/app/services/agent/config.py",
+            "lines": "249-256",
+            "contains": "log_llm_prompts",
+            "url": "https://github.com/lintsinghua/DeepAudit/blob/630229163f10c9be74317d1edd06d16cfe6c59f0/backend/app/services/agent/config.py#L249-L256"
+          }
+        ]
+      },
+      {
+        "setup": "Its own VM",
+        "how": "Run the whole stack on a dedicated VM that holds nothing else, since the backend mounts the Docker socket",
+        "gives_you": "The backend's host-level reach stays inside a machine with nothing else to lose",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "docker-compose.yml",
+            "lines": "46",
+            "contains": "/var/run/docker.sock",
+            "url": "https://github.com/lintsinghua/DeepAudit/blob/630229163f10c9be74317d1edd06d16cfe6c59f0/docker-compose.yml#L46"
+          }
+        ]
+      },
+      {
+        "setup": "An egress allowlist",
+        "how": "Firewall the Docker bridge network on that VM so sandbox and scanner containers reach only the hosts the audit needs",
+        "gives_you": "Content planted in an audited repository can't send your code to arbitrary hosts",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "handling": [
+      "Audited source goes to the model provider unredacted, secrets in it included; audit only code you are comfortable sending there.",
+      "The database keeps every tool call's arguments and a result preview; store it and its backups like the code it covers."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

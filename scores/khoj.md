@@ -24,6 +24,27 @@
 
 Khoj keeps model-written code out of its own process and its file tools only see the requesting user's documents, but nothing asks a human before any tool runs. The dominant risk is data leakage: a web page or document can steer the model into fetching an attacker URL that carries your notes or memories, and the web reader and chat renderer are not locked down either. The shipped compose file adds deployment risk: its access-control and credential defaults are not locked down, logs are verbose and unredacted, and telemetry is on by default.
 
+## Safest setup
+
+Khoj runs model-written code in a separate sandbox container, never on the host, and its file and memory tools see only the requesting user's data. Beyond that the defaults are thin: tools run without an approval step, every tool shares one database superuser, and the shipped compose file's access-control and credential defaults are not locked down. The safest setup narrows the identities, trims the tools and memory, and builds containment around the containers.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A least-privilege database role | Connect Khoj with a Postgres role that owns only the Khoj database, in place of the superuser | The database itself limits what the server can reach if its own checks fail (C1) |
+| Scoped, low-limit provider keys | Give Khoj model and search keys made for it alone, each with a spending limit set at the provider | Any exposed key reaches only this deployment's spend and is easy to rotate (C8) |
+| Private, signed-in access | Turn on authentication and serve Khoj only to trusted users on a private network | Only people you chose can reach the server and its stored data (C1) |
+| Only the tools needed | Leave `KHOJ_SEARXNG_URL` and the other search settings unset where users don't need the web, and give each custom agent only the input tools it uses ([src/khoj/utils/helpers.py:819](https://github.com/khoj-ai/khoj/blob/ae229ca894c0b80ad84664afcfdde523b5e87057/src/khoj/utils/helpers.py#L819); [src/khoj/routers/research.py:365-366](https://github.com/khoj-ai/khoj/blob/ae229ca894c0b80ad84664afcfdde523b5e87057/src/khoj/routers/research.py#L365-L366)) | The model is offered only the tools the work calls for (C3) |
+| Memory you switch on | Set `memory_mode` in the server chat settings to `enabled_default_off`, or `disabled` where users don't need memory ([src/khoj/database/models/__init__.py:516-519](https://github.com/khoj-ai/khoj/blob/ae229ca894c0b80ad84664afcfdde523b5e87057/src/khoj/database/models/__init__.py#L516-L519); [src/khoj/database/models/__init__.py:484-485](https://github.com/khoj-ai/khoj/blob/ae229ca894c0b80ad84664afcfdde523b5e87057/src/khoj/database/models/__init__.py#L484-L485)) | Facts are saved and reused across chats only for users who choose it (C6) |
+| A sandbox away from your data | Set `E2B_API_KEY` to run code in a remote E2B sandbox, or keep `KHOJ_TERRARIUM_URL` with the sandbox container on a network of its own without outbound access ([src/khoj/utils/helpers.py:333](https://github.com/khoj-ai/khoj/blob/ae229ca894c0b80ad84664afcfdde523b5e87057/src/khoj/utils/helpers.py#L333); [src/khoj/utils/helpers.py:787](https://github.com/khoj-ai/khoj/blob/ae229ca894c0b80ad84664afcfdde523b5e87057/src/khoj/utils/helpers.py#L787)) | Model-written code runs apart from the database and the rest of your network (C4) |
+| A research step budget | Keep the default `KHOJ_RESEARCH_ITERATIONS` of 5, or lower it ([src/khoj/routers/research.py:498](https://github.com/khoj-ai/khoj/blob/ae229ca894c0b80ad84664afcfdde523b5e87057/src/khoj/routers/research.py#L498)) | Every research run ends after a fixed number of iterations (C10) |
+| A narrow network path out | Run the server container with outbound access limited to the model provider and the public sites users need | A narrower path for data to leave and fewer hosts the server can reach (C5) |
+
+### Handling data
+
+- Server logs record every chat turn and each code snippet with its output, unredacted; store them like the notes they cover.
+- Telemetry sends content-free usage metadata by default; `KHOJ_TELEMETRY_DISABLE=True` turns it off.
+- Users can review, edit and delete saved memories in their memory settings; a periodic look catches facts picked up from web pages.
+
 ## Critical gaps
 - The server's single database-superuser identity exposes every user's data and every stored provider key if the authorization boundary fails; the shipped compose deployment's access-control and credential defaults are not locked down. (ASI03, T3, T9; C1) — [docker-compose.yml:67-68](https://github.com/khoj-ai/khoj/blob/ae229ca894c0b80ad84664afcfdde523b5e87057/docker-compose.yml#L67-L68)
 

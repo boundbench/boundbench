@@ -24,6 +24,25 @@
 
 As shipped, smolagents runs model-written Python inside your own process with an interpreter its authors say is not a security boundary, and there is no approval step, no taint handling, and no credential scoping. A prompt injection in a fetched web page can read API keys held by tools and send them out through the bundled web tool. The remote sandboxes (E2B, Modal, Blaxel, Docker) are a real improvement but must be opted into. Importing the library also silently loads a .env file, and the bundled web UI's default exposure is not locked down.
 
+## Safest setup
+
+smolagents keeps its own footprint small: agents get only the tools you list, Hub code needs an explicit trust flag, and every run stops after 20 steps. Model-written code runs in your own Python process by default and there is no approval step, so the safest setup moves that code into a remote sandbox and builds the boundaries around the process yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, low-limit key | Run the agent in an environment that holds only the model key and tool credentials this agent needs, each with a spending limit set at the provider | Whatever the agent does, it reaches only the systems and spend you gave it, not everything your shell can (C1) |
+| A remote sandbox | `executor_type="e2b"` on `CodeAgent` ([src/smolagents/agents.py:1535](https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/src/smolagents/agents.py#L1535)) | Model-written code and your registered tools run in a remote ephemeral sandbox that never sees your host environment (C4) |
+| Reviewed, pinned Hub code | Keep the default `trust_remote_code=False`; for a Hub tool you have read, set it to `True` and pin the commit with `revision` ([src/smolagents/tools.py:521](https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/src/smolagents/tools.py#L521); [src/smolagents/tools.py:563](https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/src/smolagents/tools.py#L563)) | Only code you have read runs inside your agent, and it can't change after you read it (C7) |
+| A step budget | Keep the default `max_steps=20`, or lower it for short tasks ([src/smolagents/agents.py:300](https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/src/smolagents/agents.py#L300)) | Every top-level run ends after a fixed number of steps (C10) |
+| A clean working directory | Start agents from a directory that holds no .env file you didn't write | Settings such as the model endpoint and keys come only from you, not from a project you happen to run in (C6) |
+| A private web UI | If you use the bundled web UI, serve it on a private network behind authentication you control | Only people you choose can send the agent instructions (C5) |
+| Its own container or VM | Run the agent process in a container or VM whose network reaches only the hosts the task needs | An outer boundary around the local executor and your registered tools, and a narrow path for data to leave (C5) |
+| A run record on disk | Register a callback in `step_callbacks` that writes each step to storage the agent process can't modify ([src/smolagents/agents.py:304](https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/src/smolagents/agents.py#L304)) | A record of every step and observation that outlives the process (C9) |
+
+### Handling data
+
+- Steps and observations print to the console unredacted at the default `verbosity_level`, and DEBUG adds full model messages; treat console output and anything a step callback stores like the data the agent read.
+
 ## Critical gaps
 - load_dotenv() runs at every `import smolagents`, so a .env in the project or working directory can silently redirect the model endpoint and credentials. (ASI06, ASI04, T1; C6) — [src/smolagents/remote_executors.py:46-48](https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/src/smolagents/remote_executors.py#L46-L48); [src/smolagents/agents.py:80](https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/src/smolagents/agents.py#L80); [src/smolagents/models.py:1686](https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/src/smolagents/models.py#L1686)
 - The default LocalPythonExecutor runs model-written code in the developer's own process and is documented as not a security boundary; an escape has the OS user's full authority. (ASI05, T11, LLM05; C4) — [src/smolagents/agents.py:1535](https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/src/smolagents/agents.py#L1535); [src/smolagents/local_python_executor.py:1693](https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/src/smolagents/local_python_executor.py#L1693)

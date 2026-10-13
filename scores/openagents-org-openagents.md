@@ -24,6 +24,30 @@
 
 OpenAgents turns local coding agents into workspace participants, and to do so it switches off every agent's own approval prompts and sandbox while adding no gate of its own. Any message that reaches the agent through the workspace, from any link holder, another agent, or content read in the shared browser, can run shell commands on the user's machine with the user's full environment. The owner-level workspace token is also written into model-read skill files, and remote control events can install unpinned skills. Run it only on a disposable machine or account.
 
+## Safest setup
+
+OpenAgents ships with weak defaults: agents run with every runtime's own approvals and sandbox switched off, your full environment, and an owner-level workspace token, and it adds no approval or sandbox of its own. The safest setup gives the agents a disposable machine and a narrow identity, keeps the workspace private, and uses the two modes OpenAgents offers that reduce what the model sees and does.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A narrow provider key | Start the daemon from an environment that holds only the model provider key the agent needs, with a spending limit set at the provider | Whatever an agent runs, it reaches only that key, not the cloud, GitHub and other credentials in your usual shell (C1) |
+| A private workspace | Keep the workspace token and share links to yourself, and add only agents you run | Messages, files and skill installs that drive your agents come only from people and agents you chose (C5) |
+| MCP tool mode | `agn tool-mode <agent> mcp` for each agent, in place of the default `skills` mode ([packages/agent-connector/src/cli.js:1093](https://github.com/openagents-org/openagents/blob/812890186609158b5caf61263723aaeee67c6f3a/packages/agent-connector/src/cli.js#L1093); [packages/agent-connector/src/daemon.js:1384](https://github.com/openagents-org/openagents/blob/812890186609158b5caf61263723aaeee67c6f3a/packages/agent-connector/src/daemon.js#L1384)) | The workspace token goes to the workspace tool process instead of into a skill file the model reads (C8) |
+| Plan mode for review | Switch the agent to `plan` mode from the workspace for tasks that only need reading and planning ([packages/agent-connector/src/adapters/base.js:517](https://github.com/openagents-org/openagents/blob/812890186609158b5caf61263723aaeee67c6f3a/packages/agent-connector/src/adapters/base.js#L517); [packages/agent-connector/src/adapters/claude.js:508](https://github.com/openagents-org/openagents/blob/812890186609158b5caf61263723aaeee67c6f3a/packages/agent-connector/src/adapters/claude.js#L508)) | Claude Code runs in its own plan permission mode, with write tools left out, until you switch back to execute (C2) |
+| Stop, then clear routines | Use the workspace Stop control to halt a run, then cancel any routines and timers the agent created ([packages/agent-connector/src/adapters/base.js:522](https://github.com/openagents-org/openagents/blob/812890186609158b5caf61263723aaeee67c6f3a/packages/agent-connector/src/adapters/base.js#L522)) | The agent's whole process group ends and nothing it scheduled starts it again (C10) |
+| Its own VM or user | Run the daemon in a disposable VM or separate OS account with outbound access limited to the model provider and the workspace | An outer boundary around unsandboxed commands, so they reach only that machine's files and a narrow network path (C4) |
+| The daemon log, copied off | Ship `daemon.log` from the OpenAgents config directory to storage the agent can't write ([packages/agent-connector/src/config.js:17](https://github.com/openagents-org/openagents/blob/812890186609158b5caf61263723aaeee67c6f3a/packages/agent-connector/src/config.js#L17)) | A record of the agent's activity and control actions that its own shell can't edit (C9) |
+
+### Approving with confidence
+
+- Execute mode has no per-call prompt, so review the agent's plan in plan mode before switching it to execute.
+
+### Handling data
+
+- In `skills` mode the agent's working directory holds a skill file containing the workspace token; treat that directory like a credential.
+- Provider keys are stored in plain-text env files; restrict their file permissions yourself.
+- Tool-call previews, including commands, paths and the start of written content, are posted to the workspace; treat it like the data the agent works on.
+
 ## Critical gaps
 - Agents run with the user's full environment and an owner-equivalent workspace token, with no narrowing. (ASI03, T3; C1) — [packages/agent-connector/src/daemon.js:1562](https://github.com/openagents-org/openagents/blob/812890186609158b5caf61263723aaeee67c6f3a/packages/agent-connector/src/daemon.js#L1562); [workspace/backend/app/access.py:42-43](https://github.com/openagents-org/openagents/blob/812890186609158b5caf61263723aaeee67c6f3a/workspace/backend/app/access.py#L42-L43)
 - Commands run unsandboxed on the host; the Codex adapter explicitly disables Codex's own sandbox. (ASI05, T11; C4) — [packages/agent-connector/src/adapters/codex.js:315](https://github.com/openagents-org/openagents/blob/812890186609158b5caf61263723aaeee67c6f3a/packages/agent-connector/src/adapters/codex.js#L315); [packages/agent-connector/src/daemon.js:1562](https://github.com/openagents-org/openagents/blob/812890186609158b5caf61263723aaeee67c6f3a/packages/agent-connector/src/daemon.js#L1562)

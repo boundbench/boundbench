@@ -24,6 +24,29 @@
 
 Maestro launches every supported coding agent with its permission prompts and sandbox switched off, which its own code describes as a requirement, and gives each agent the user's full environment. Any prompt injection from a repository, web page or GitHub issue can therefore run commands, read credentials and send them anywhere with no human in the loop. Project-level .maestro/cue.yaml files can also add shell and agent automations without a trust prompt. Use it only inside a disposable VM or container holding no sensitive credentials.
 
+## Safest setup
+
+Maestro ships a few useful bounds: a per-tab Read-Only mode, time limits on Cue runs, and a stop that ends an agent's whole process tree. Every agent otherwise runs with its approvals and sandbox off and your full environment, so the safest setup narrows what that environment holds and puts the boundaries around Maestro yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Start Maestro from an environment holding only the keys these agents need, each scoped or read-only with a spending limit at the provider | Agents inherit only the access you chose, not every credential in your shell (C1) |
+| Protected main branches | Turn on branch protection at your Git host and let agents push only to work branches | The Git host keeps force-pushes and unreviewed merges off the branches you rely on (C2) |
+| Read-only tabs | Turn on Read-Only mode on tabs used for review or planning ([src/main/agents/definitions.ts:189](https://github.com/runmaestro/maestro/blob/54ffa324752415d7015e0dda3230c6811d4f52c3/src/main/agents/definitions.ts#L189); [src/renderer/components/PromptComposerModal.tsx:783](https://github.com/runmaestro/maestro/blob/54ffa324752415d7015e0dda3230c6811d4f52c3/src/renderer/components/PromptComposerModal.tsx#L783)) | Claude Code in those tabs runs in plan mode and leaves your files unchanged (C3) |
+| Cue only when needed | Turn off `maestroCue` in Settings, Encore, unless you use it, and read a project's cue.yaml before turning it on ([src/shared/encoreFeatures.ts:35](https://github.com/runmaestro/maestro/blob/54ffa324752415d7015e0dda3230c6811d4f52c3/src/shared/encoreFeatures.ts#L35)) | Automations run only from configuration you have read (C6) |
+| Shorter run limits | Lower `autoRunInactivityTimeoutMin` from its default of 240 and set a maximum loop count for looping Auto Runs ([src/shared/settingsMetadata.ts:473-478](https://github.com/runmaestro/maestro/blob/54ffa324752415d7015e0dda3230c6811d4f52c3/src/shared/settingsMetadata.ts#L473-L478)) | Stalled or looping runs end in minutes rather than hours (C10) |
+| A disposable VM or container | Run Maestro and its agents in a disposable VM or container whose network reaches only the hosts the work needs | An outer boundary around agents and Cue shell commands, which otherwise run as you on the host (C4) |
+| A local-only control port | Block inbound connections to Maestro's remote-control server with a host firewall unless you use remote control | Only your own machine can reach the control server (C1) |
+
+### Approving with confidence
+
+- Maestro runs agent actions without per-call prompts, so read each agent's diff before you push or merge it.
+
+### Handling data
+
+- Crash reports go to Sentry by default; turn crash reporting off in Settings when sessions handle sensitive data.
+- Session history sits in the app data folder, where agents can edit it; copy anything you need as a record somewhere they can't reach.
+
 ## Critical gaps
 - Every agent is spawned with its approval gate and sandbox disabled (--dangerously-skip-permissions, --dangerously-bypass-approvals-and-sandbox, --skip-permissions-unsafe, --allow-all). (ASI02, ASI09, T10; C2) — [src/main/agents/definitions.ts:169-175](https://github.com/runmaestro/maestro/blob/54ffa324752415d7015e0dda3230c6811d4f52c3/src/main/agents/definitions.ts#L169-L175); [src/main/agents/definitions.ts:251](https://github.com/runmaestro/maestro/blob/54ffa324752415d7015e0dda3230c6811d4f52c3/src/main/agents/definitions.ts#L251)
 - Agent and Cue shell execution runs on the host as the user with no isolation, and Codex's own sandbox is bypassed. (ASI05, T11; C4) — [src/main/agents/definitions.ts:251](https://github.com/runmaestro/maestro/blob/54ffa324752415d7015e0dda3230c6811d4f52c3/src/main/agents/definitions.ts#L251); [src/main/cue/cue-shell-executor.ts:6](https://github.com/runmaestro/maestro/blob/54ffa324752415d7015e0dda3230c6811d4f52c3/src/main/cue/cue-shell-executor.ts#L6)

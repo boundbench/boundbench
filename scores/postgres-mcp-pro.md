@@ -25,6 +25,29 @@ Controls where a risk surface exists: 2.15 / 8.0 (27%); 2 criteria scored SA (su
 
 As shipped, Postgres MCP Pro runs in unrestricted mode: the model can execute any SQL, including multi-statement DROP/DELETE batches, with the operator's database login, and every statement is committed immediately with no timeout, record or undo. Risk annotations on some read-only-labelled tools are not accurate. The opt-in restricted mode is a genuinely strong parser allowlist plus read-only transaction with a 30-second timeout; deployers should always use it and a read-only database role.
 
+## Safest setup
+
+Postgres MCP Pro keeps no memory, loads no plugins and runs over stdio by default, but as shipped it runs any SQL the model writes with your login and commits it at once. The safest setup gives it a read-only database role, turns on its restricted mode and adds limits and logging on the database side.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A read-only database role | Put a login in `DATABASE_URI` that can only read the schemas the task needs and is neither owner nor superuser ([src/postgres_mcp/server.py:629](https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L629)) | Postgres itself refuses writes and host-level features, whatever SQL the model sends (C1) |
+| Restricted mode | `--access-mode=restricted` on the server command line ([src/postgres_mcp/server.py:561-566](https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L561-L566)) | Every tool runs SQL through a parser allowlist in a read-only transaction with a 30-second timeout (C3) |
+| The local stdio transport | Keep the default `--transport` of `stdio` ([src/postgres_mcp/server.py:568-573](https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L568-L573)) | Only the host that launched the server can talk to it (C1) |
+| A role-level timeout | Set a statement timeout and connection limit on the database role | Postgres ends runaway queries even when the server sets no limit of its own (C10) |
+| Index tuning kept local | Start the server with no OpenAI API key in its environment | Query text and plans stay on your network, since the 'llm' tuning method can't reach OpenAI (C5) |
+| A database-side record | Turn on Postgres statement logging or auditing for the role, written where the agent can't reach | A record of every statement the agent ran, which the server itself doesn't keep (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; in the default mode a single `execute_sql` call can run several statements and commit them immediately.
+- Restricted mode makes every tool's read-only label accurate; in the default mode, rely on reading each call rather than on the labels.
+
+### Handling data
+
+- Failed queries are logged with their full SQL text and errors return to the model as-is; treat the server's stderr like the data it queries.
+- The connection string carries a long-lived password; keep it in your host's secret store rather than in shared config files.
+
 ## Critical gaps
 - Default unrestricted mode: a hijacked host session can read any data the login can see and run irreversible SQL that the server commits immediately, with no server-side gate. (ASI01, ASI02; C5) — [src/postgres_mcp/server.py:565](https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L565); [src/postgres_mcp/server.py:608-615](https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L608-L615); [src/postgres_mcp/sql/sql_driver.py:255-256](https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/sql/sql_driver.py#L255-L256)
 

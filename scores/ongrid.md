@@ -24,6 +24,31 @@
 
 Ongrid lets a chat agent run commands on every enrolled host through edge agents that run as root. By default the agent is read-only, and an admin-only approval card guards the write tools once writes are enabled. But enforcement of the read-only host shell filter and of the write approval gate are not complete boundaries. Combined with untrusted logs and repos in context, a hijacked session has unattended egress paths.
 
+## Safest setup
+
+Ongrid keeps the agent read-only until an admin turns on writes, sends classified write tools to an admin-only approval card, and records tool calls in its database. Edge agents run as root on every enrolled host and the read-only command filter is not a complete boundary, so the safest setup narrows what the agent can reach and builds containment around the hosts.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Only the hosts needed | Enroll edge agents only on the hosts this team needs the agent to investigate | A hijacked session reaches those machines, not your whole fleet (C1) |
+| Scoped cloud credentials | Store only scoped, read-only, short-lived cloud credentials in the vault, set up at the provider | The cloud provider itself limits what any cloud command can do (C8) |
+| Read-only agent mode | Keep `write_enabled` in the `agent` settings category unset, its default ([internal/manager/model/setting/model.go:44](https://github.com/ongridio/ongrid/blob/ce5c620a0af05f79938ea9f74cccff27634db3d0/internal/manager/model/setting/model.go#L44); [internal/manager/model/setting/model.go:75](https://github.com/ongridio/ongrid/blob/ce5c620a0af05f79938ea9f74cccff27634db3d0/internal/manager/model/setting/model.go#L75)) | The model is offered only read tools until an admin deliberately turns on writes (C1) |
+| Viewer accounts | Give people who only investigate the `viewer` role ([internal/iam/model/model.go:34](https://github.com/ongridio/ongrid/blob/ce5c620a0af05f79938ea9f74cccff27634db3d0/internal/iam/model/model.go#L34)) | Their chat sessions get only read tools, even once writes are on (C1) |
+| Approval for MCP tools | Keep each MCP server's `trusted` flag at its default `false` ([internal/manager/server/mcp/http.go:69](https://github.com/ongridio/ongrid/blob/ce5c620a0af05f79938ea9f74cccff27634db3d0/internal/manager/server/mcp/http.go#L69); [internal/manager/model/mcp/model.go:48](https://github.com/ongridio/ongrid/blob/ce5c620a0af05f79938ea9f74cccff27634db3d0/internal/manager/model/mcp/model.go#L48)) | Tool calls to registered MCP servers go to the admin approval card (C2) |
+| Outbound limits on hosts | Limit each enrolled host's outbound traffic to the manager and the services that host needs | Commands run on a host have a narrow path for data to leave (C4) |
+| An off-box audit copy | Copy the manager database's tool-call and approval records to storage the manager can't modify | A record of every recorded call and approver that outlives the manager (C9) |
+
+### Approving with confidence
+
+- Read each approval card and approve calls one at a time; the inline summary stops at 500 characters, so open the full arguments of long commands.
+- A skill install approval shows the source URL, not the code that will run; read the skill's repository at a fixed commit before approving it.
+- Installed skills load into every user's future sessions, so review the installed list from time to time and remove the ones you no longer use.
+
+### Handling data
+
+- Tool output, cloud_bash output included, reaches the model and the manager database without secret scanning; store database backups like the credentials your hosts hold.
+- Actions requested over IM are recorded under one shared service account; use the web UI with personal accounts when you need to know who asked.
+
 ## Critical gaps
 - Every edge agent runs as root, and any non-viewer user or IM message can direct the agent at any enrolled host, so a hijacked agent has fleet-wide root authority. (ASI03, T3; C1) — [deploy/install/edge/ongrid-edge.service:23-31](https://github.com/ongridio/ongrid/blob/ce5c620a0af05f79938ea9f74cccff27634db3d0/deploy/install/edge/ongrid-edge.service#L23-L31); [internal/manager/biz/imbridge/adapter.go:56-60](https://github.com/ongridio/ongrid/blob/ce5c620a0af05f79938ea9f74cccff27634db3d0/internal/manager/biz/imbridge/adapter.go#L56-L60)
 - A hijacked session has unattended egress paths in the default configuration, and its reach to act on hosts is not fully contained. (ASI01, LLM01, T6; C5)

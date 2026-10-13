@@ -24,6 +24,31 @@
 
 The HTTP API server has no authorization, approval step, or sandbox in front of a generic shell-execution endpoint, and its default network exposure and authentication are not locked down. Any client driving the MCP bridge runs commands with the full authority of the server's OS user. Tool argument handling is not strict either, and the only bounds are a 5-minute per-command timeout and a log file. It should only run in a disposable, network-isolated VM.
 
+## Safest setup
+
+HexStrike AI ships no authentication, approval step, sandbox or tool selection of its own, and its only built-in bounds are a 5-minute per-command timeout and a log file. The safest setup builds every boundary around it: a disposable, network-isolated VM, a low-privilege account and per-call approval in your MCP host.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated low-privilege account | Run the server as its own OS user that holds no keys, tokens or files beyond what the engagement needs | Every command and subprocess reaches only that account's files and environment, not yours (C1) |
+| A firewalled API port | Use a host firewall so only the MCP bridge on the same machine can reach the API port | Only your own MCP host can drive the server (C1) |
+| Per-call approval in the host | Keep the sample MCP config's `alwaysAllow` list empty so your host asks before each tool call ([hexstrike-ai-mcp.json:12](https://github.com/0x4m4/hexstrike-ai/blob/d689933ff579d839c676c82b231f8e98326c5f04/hexstrike-ai-mcp.json#L12)) | A person sees each tool call and its arguments before it runs (C2) |
+| The per-command timeout | Keep the built-in `COMMAND_TIMEOUT` of 300 seconds ([hexstrike_server.py:6664](https://github.com/0x4m4/hexstrike-ai/blob/d689933ff579d839c676c82b231f8e98326c5f04/hexstrike_server.py#L6664)) | Each command on the main executor ends after five minutes (C10) |
+| A disposable, isolated VM | Run both processes in a throwaway VM with no host mounts and egress limited to the in-scope targets | An outer boundary around every command, script and package, and a narrow path for data to leave (C4) |
+| A fresh snapshot per engagement | Revert the VM to a clean snapshot after each engagement | Files, cached results and installed packages from one session never carry into the next (C6) |
+| A log kept off the VM | Ship `hexstrike.log` to storage outside the VM as it is written ([hexstrike_server.py:79](https://github.com/0x4m4/hexstrike-ai/blob/d689933ff579d839c676c82b231f8e98326c5f04/hexstrike_server.py#L79)) | A record of every command that the tools themselves can't alter or delete (C9) |
+| A whole-VM stop | Halt runaway work by stopping the VM or the server's whole process tree | Child processes that outlive the timeout end too (C10) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; the generic command and Python-script tools can run anything the account can.
+- A package-install call fetches and runs code from the package index, so approve it only for a package you chose.
+
+### Handling data
+
+- `hexstrike.log` and the console keep every command line and its output unredacted, credentials included; store them like the engagement data.
+- Leave the bridge's `--debug` off where its output is shared, since it logs complete request bodies.
+
 ## Critical gaps
 - The most powerful action path, an arbitrary-command endpoint, has no approval or risk gate. (ASI02, ASI09; C2) — [hexstrike_server.py:9137](https://github.com/0x4m4/hexstrike-ai/blob/d689933ff579d839c676c82b231f8e98326c5f04/hexstrike_server.py#L9137); [hexstrike_server.py:6878](https://github.com/0x4m4/hexstrike-ai/blob/d689933ff579d839c676c82b231f8e98326c5f04/hexstrike_server.py#L6878)
 - Commands run as same-user shell children with the full environment and no isolation. (ASI05, T11; C4) — [hexstrike_server.py:6878](https://github.com/0x4m4/hexstrike-ai/blob/d689933ff579d839c676c82b231f8e98326c5f04/hexstrike_server.py#L6878); [hexstrike_server.py:5274](https://github.com/0x4m4/hexstrike-ai/blob/d689933ff579d839c676c82b231f8e98326c5f04/hexstrike_server.py#L5274)

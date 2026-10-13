@@ -24,6 +24,32 @@
 
 This is a high-privilege platform by design: its shell and scanner tools run as the server's OS user with the full environment, and the human-approval gate is off by default. Authentication is real (generated admin password, per-user RBAC), but nothing contains the agent once a session is running, and untrusted target content flows straight into a model that can run commands. Operators should treat every deployment as a privileged system, enable approval, and isolate the host.
 
+## Safest setup
+
+CyberStrikeAI ships with real sign-in (a generated admin password and per-user roles), a per-call approval gate and a record of every tool call. As shipped, approval is off and every tool runs as the server's own OS user with no sandbox, so the safest setup turns approval on, trims the tool set and builds the containment around the host yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Give the server only model and search keys made for it, each with a spending limit set at the provider | Whatever the shell or a tool reads, the keys it finds reach only the spend and services you chose (C8) |
+| A dedicated host and user | Run the server as its own low-privilege OS user on a VM or container that holds only this engagement's files, with the web UI reachable only from your own network | The agent's authority ends at that user and machine, not your workstation or other systems (C1) |
+| Per-call human approval | Set `default_mode: approval` and keep `default_reviewer: human` in the hitl block of config.yaml ([config.example.yaml:188-192](https://github.com/AIPentest/CyberStrikeAI/blob/470eb5ead185dc90f2441e89b31ceb1be913ac44/config.example.yaml#L188-L192)) | A person sees the tool name and exact arguments before each non-allowlisted call runs (C2) |
+| A read-only approval allowlist | Keep only read-only lookups in `tool_whitelist` ([config.example.yaml:206](https://github.com/AIPentest/CyberStrikeAI/blob/470eb5ead185dc90f2441e89b31ceb1be913ac44/config.example.yaml#L206)) | Project-fact writes and C2 helper tools also come to a person for approval (C2) |
+| Only the tools needed | List just the engagement's tools under `tools` in the role file you use ([internal/config/config.go:2376](https://github.com/AIPentest/CyberStrikeAI/blob/470eb5ead185dc90f2441e89b31ceb1be913ac44/internal/config/config.go#L2376)) | The model sees a smaller tool set, with shell and exploitation tools only where you chose them (C3) |
+| C2 off when unused | Set `enabled: false` in the `c2:` block when the engagement has no C2 work ([config.example.yaml:435-436](https://github.com/AIPentest/CyberStrikeAI/blob/470eb5ead185dc90f2441e89b31ceb1be913ac44/config.example.yaml#L435-L436)) | No C2 listener starts and no C2 tools are offered to the model (C3) |
+| Tight run limits | Lower `max_iterations` and `tool_timeout_minutes` in the agent block to fit the task ([config.example.yaml:159-160](https://github.com/AIPentest/CyberStrikeAI/blob/470eb5ead185dc90f2441e89b31ceb1be913ac44/config.example.yaml#L159-L160)) | A runaway agent or a hung tool stops in minutes rather than hours (C10) |
+| Records kept off the host | Copy the tool-call and audit records under data/ regularly to storage the server's OS user can't write ([config.example.yaml:389](https://github.com/AIPentest/CyberStrikeAI/blob/470eb5ead185dc90f2441e89b31ceb1be913ac44/config.example.yaml#L389)) | A record of every tool call and approval that the agent's own shell can't alter (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; review_edit mode lets you correct the arguments before a call runs.
+- Keep the reviewer human: the optional audit-agent reviewer is told to approve when unsure.
+- An unanswered prompt is rejected after `default_timeout_seconds`, so a missed prompt stops the call.
+
+### Handling data
+
+- Tool arguments and results are stored unredacted for 90 days by default; store data/ like the target data it holds.
+- config.yaml holds keys in plain text with owner-only permissions; keep it that way and out of shared directories.
+
 ## Critical gaps
 - Tools run as same-user host subprocesses with the full inherited environment and no sandbox of any kind. (ASI05, T11; C4) — [internal/security/executor.go:1260-1261](https://github.com/AIPentest/CyberStrikeAI/blob/470eb5ead185dc90f2441e89b31ceb1be913ac44/internal/security/executor.go#L1260-L1261); [internal/security/executor.go:822](https://github.com/AIPentest/CyberStrikeAI/blob/470eb5ead185dc90f2441e89b31ceb1be913ac44/internal/security/executor.go#L822)
 - Worst case after a hijack is unattended data leakage plus irreversible actions, because the approval gate defaults to off (C5-WORSTCASE). (ASI01, LLM01; C5) — [config.example.yaml:190](https://github.com/AIPentest/CyberStrikeAI/blob/470eb5ead185dc90f2441e89b31ceb1be913ac44/config.example.yaml#L190); [tools/exec.yaml:1-3](https://github.com/AIPentest/CyberStrikeAI/blob/470eb5ead185dc90f2441e89b31ceb1be913ac44/tools/exec.yaml#L1-L3)

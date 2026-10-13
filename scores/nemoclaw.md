@@ -24,6 +24,30 @@
 
 NemoClaw puts a strong box around the agent: every command runs in a hardened, non-root OpenShell sandbox, egress is deny-by-default with operator approval for new hosts, and API keys never enter the sandbox. Inside the box it adds little: no approval for commands, no integrity protection for the agent's self-writable config, hooks, memory and cron jobs, and no cost cap. The dominant risk is that the default Balanced tier still leaves unattended outbound channels (POST to clawhub.ai/openclaw.ai, uninspected npm traffic) and lets the agent install arbitrary packages, so a prompt-injected agent can exfiltrate sandbox data and persist itself.
 
+## Safest setup
+
+NemoClaw runs the agent in a hardened OpenShell sandbox with deny-by-default egress, operator approval for new hosts, and provider keys held outside the sandbox. Inside the sandbox it adds no command approval, no protection for the agent's own config and no spend cap, so the safest setup closes the package registries, bounds resources, and keeps records and clean rebuilds on the host side.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, low-limit key | Onboard with a provider key used only by this sandbox, with a spending limit set at the provider | Inference spend and any misuse of the key stay within the budget you chose for this agent (C1) |
+| The Restricted tier | Choose Restricted at the onboarding tier prompt, or set `NEMOCLAW_POLICY_TIER` to `restricted` for non-interactive installs ([src/lib/onboard/policy-tier-env.ts:15](https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/onboard/policy-tier-env.ts#L15); [nemoclaw-blueprint/policies/tiers.yaml:18-21](https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/tiers.yaml#L18-L21)) | npm, PyPI and Homebrew stay closed, so the agent can't install packages from them at runtime (C7) |
+| Approval for new hosts | Keep the shipped deny-by-default network policy and add messaging, mail or GitHub presets only for tasks that need them ([nemoclaw-blueprint/policies/openclaw-sandbox.yaml:5](https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L5)) | Every new destination waits for your decision in the OpenShell TUI (C2) |
+| Only the task's files | Put only the files and data the task needs into the sandbox | Anything that leaves through the allowed endpoints is limited to what you chose to share (C5) |
+| CPU and memory caps | Set `NEMOCLAW_CPU` and `NEMOCLAW_RAM` before onboarding, as a share of the host such as 25% ([src/lib/onboard/resource-profile-selection.ts:35-36](https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/onboard/resource-profile-selection.ts#L35-L36)) | A runaway agent stays within a fixed share of the host (C4) |
+| Transcripts kept on the host | Run `nemoclaw <name> sessions export` on a schedule and store the copies outside the sandbox ([docs/reference/commands.mdx:2962](https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/docs/reference/commands.mdx#L2962)) | A record of what the agent did that the agent can no longer edit (C9) |
+| A one-command stop | `nemoclaw <name> stop` whenever the agent should pause ([docs/reference/commands.mdx:1564](https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/docs/reference/commands.mdx#L1564)) | Every process in the sandbox ends, scheduled jobs included, with its state kept for inspection (C10) |
+| Regular clean rebuilds | Run `nemoclaw <name> destroy` and onboard again when a task ends or behaviour changes unexpectedly ([docs/reference/commands.mdx:2020](https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/docs/reference/commands.mdx#L2020)) | Hooks, skills, cron jobs and config the agent wrote are cleared, and the sandbox starts again from the blueprint (C6) |
+
+### Approving with confidence
+
+- Read each network approval prompt and approve hosts one at a time; an approved host stays in the policy until the sandbox is rebuilt.
+- Commands, file writes and calls to hosts already in the policy run without a prompt, so the network prompt is your main checkpoint.
+
+### Handling data
+
+- Session transcripts live inside the sandbox, where the agent can change them; exported copies hold full conversations, so store them like the data the agent read.
+
 ## Critical gaps
 - In the default Balanced tier the agent can install and run arbitrary npm/PyPI/Homebrew packages and ClawHub skills at the model's choice with no consent step. (ASI04, T17, LLM03; C7) — [nemoclaw-blueprint/policies/presets/npm.yaml:16-19](https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/presets/npm.yaml#L16-L19); [nemoclaw-blueprint/policies/tiers.yaml:23-31](https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/tiers.yaml#L23-L31); [nemoclaw-blueprint/policies/openclaw-sandbox.yaml:121-132](https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L121-L132)
 

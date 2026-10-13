@@ -24,6 +24,27 @@
 
 As shipped, OpenAgents runs model-written Python directly inside its backend process, with the operator's OpenAI key in the environment and no approval step. Any content that hijacks the model can execute code as root in the container and read every user's data; access control on the backend API is not locked down. The optional Docker code interpreter helps, but it is off by default and not hardened in this repo.
 
+## Safest setup
+
+OpenAgents ships few protections on by default: model-written Python runs inside the backend with no approval step, and access to the backend API is not locked down. The one mechanism to turn on is the Docker code interpreter, so the safest setup pairs it with scoped keys, a private deployment and containment you add yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Dedicated, low-limit keys | Give the deployment its own OpenAI key with a spending limit set at the provider, a Kaggle account used for nothing else, and save only the plugin keys you need, scoped or read-only where the service allows | A hijacked agent reaches only the spend and services you set aside for it, not your own accounts (C1) |
+| A private, authenticated entry point | Keep the backend and frontend ports on a private network behind an authenticating proxy, with one deployment per trusted group of users | Only people you chose can reach the agent, and stored conversations and files stay within that group (C1) |
+| The Docker code interpreter | Uncomment the `code_interpreter` service without its added capabilities and set `CODE_EXECUTION_MODE=docker` for the backend ([docker-compose.yml:27](https://github.com/xlang-ai/openagents/blob/ff2e46440699af1324eb25655b622c4a131265bb/docker-compose.yml#L27); [docker-compose.yml:54](https://github.com/xlang-ai/openagents/blob/ff2e46440699af1324eb25655b622c4a131265bb/docker-compose.yml#L54); [backend/app.py:11](https://github.com/xlang-ai/openagents/blob/ff2e46440699af1324eb25655b622c4a131265bb/backend/app.py#L11)) | Model-written Python runs in a separate kernel container that never holds the OpenAI key (C4) |
+| Only the tools needed | In the data agent's tool picker, select Python only for tasks that need code ([frontend/pages/api/home/home.state.tsx:108](https://github.com/xlang-ai/openagents/blob/ff2e46440699af1324eb25655b622c4a131265bb/frontend/pages/api/home/home.state.tsx#L108)) | Conversations that don't need code never run model-written Python (C3) |
+| The iteration cap | Keep the default `max_iterations` of 5 ([real_agents/adapters/agent_helpers/agent.py:428](https://github.com/xlang-ai/openagents/blob/ff2e46440699af1324eb25655b622c4a131265bb/real_agents/adapters/agent_helpers/agent.py#L428)) | Every agent turn ends after a small, fixed number of steps (C10) |
+| A separate browser profile | Install the web agent's extension in a browser profile signed in to nothing you would not hand to the agent | Clicks and form fills the agent sends land only in sessions you set aside for it (C2) |
+| A pre-fetched embedding model | Download the embedding model at a revision you have checked into the backend's model cache before first start, and run with Hugging Face downloads turned off | The backend loads only model weights you chose, and they can't change between restarts (C7) |
+| Its own VM with limited egress | Run the whole stack on a VM that holds no other data, with outbound traffic limited to OpenAI and the plugin hosts you use | An outer boundary around in-process code and plugins, and a narrow path for data to leave (C5) |
+
+### Handling data
+
+- Request bodies and generated code are logged at DEBUG and TRACE by default; store `runtime.log` and container output like the conversations they hold.
+- Plugin keys users save are kept in plaintext in Redis and MongoDB; protect and back up those stores like a secrets store.
+- Copy MongoDB conversation records regularly to storage outside the stack, so the record survives anything the agent's own code changes.
+
 ## Critical gaps
 - Model-generated Python runs in-process in the backend by default. (ASI05; C4) — [docker-compose.yml:54](https://github.com/xlang-ai/openagents/blob/ff2e46440699af1324eb25655b622c4a131265bb/docker-compose.yml#L54); [real_agents/data_agent/evaluation/python_evaluator.py:96-101](https://github.com/xlang-ai/openagents/blob/ff2e46440699af1324eb25655b622c4a131265bb/real_agents/data_agent/evaluation/python_evaluator.py#L96-L101)
 - Code execution (the most powerful path) has no approval gate. (ASI02, ASI09; C2) — [real_agents/data_agent/evaluation/python_evaluator.py:96-101](https://github.com/xlang-ai/openagents/blob/ff2e46440699af1324eb25655b622c4a131265bb/real_agents/data_agent/evaluation/python_evaluator.py#L96-L101)

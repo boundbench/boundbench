@@ -25,6 +25,29 @@ Controls where a risk surface exists: 2.77 / 7.0 (40%); 3 criteria scored SA (su
 
 As a CLI, k8sgpt is a fixed pipeline, not a tool-using agent: hard-coded read-only analyzers collect cluster problems, the model explains each one in text, and nothing the model says is executed. A hijacked model can only mislead the operator. The main posture gaps are elsewhere: the CLI uses the operator's full kubeconfig with no narrowing, keeps no record of what it sent to the AI provider, and stores the provider key in plaintext. The score does not cover `k8sgpt serve --mcp`, which hands an MCP host tools that read any Secret and rewrite cache and analyzer endpoints. Assess that mode separately before using it.
 
+## Safest setup
+
+In the CLI analyze flow the model only writes explanations: the analyzers are fixed read-only code and nothing the model says is run. The weak spots are around it, with the full kubeconfig identity, a plaintext provider key and no record of what was sent, so the safest setup narrows the identity and the data and adds containment outside the tool. The serve and MCP modes were not scored and need their own assessment.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A read-only identity | Pass `--kubeconfig` and `--kubecontext` for a context bound to a view-only ServiceAccount ([cmd/root.go:86-87](https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/root.go#L86-L87)) | The cluster itself refuses writes and reads outside that role, whatever the tool does (C1) |
+| A scoped provider key | Use an AI provider key made for k8sgpt alone, with a spending limit set at the provider | A leaked key reaches only this use and a bounded spend (C8) |
+| Only the namespaces needed | `--namespace <ns>` and `--filter <analyzers>` on each analyze run ([cmd/analyze/analyze.go:199](https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/analyze/analyze.go#L199); [cmd/analyze/analyze.go:205](https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/analyze/analyze.go#L205)) | Each run reads and sends to the provider only the resources you chose (C1) |
+| Anonymized prompts | `--anonymize` on each explain run ([cmd/analyze/analyze.go:203](https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/analyze/analyze.go#L203)) | Object names and labels are masked before they reach the provider (C8) |
+| Built-in analyzers only | Keep the default `custom-analysis` off by leaving out `-z` ([cmd/analyze/analyze.go:221](https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/analyze/analyze.go#L221)) | Every analyzer result comes from code shipped in k8sgpt (C7) |
+| Fresh answers per cluster | `--no-cache` when switching clusters, and `k8sgpt cache purge --all` to clear stored answers ([cmd/analyze/analyze.go:201](https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/analyze/analyze.go#L201); [cmd/cache/purge.go:29](https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/cache/purge.go#L29); [cmd/cache/purge.go:81](https://github.com/k8sgpt-ai/k8sgpt/blob/635d9b122318a41ada1bfcf9153801365fdcaf77/cmd/cache/purge.go#L81)) | Explanations come from the current cluster's problems, not an earlier stored answer (C6) |
+| Cluster-side audit logging | Turn on Kubernetes API audit logging for the identity k8sgpt uses | A record of what each run read, which the CLI does not keep itself (C9) |
+
+### Approving with confidence
+
+- There are no approval prompts; read each suggested fix and check it against the cluster before running it, since workload messages can shape the advice.
+
+### Handling data
+
+- k8sgpt.yaml in the user config directory holds the provider key in plaintext; keep it readable only by your user.
+- Cached answers stay in the user cache directory with no expiry; clear them with the purge command when they are no longer needed.
+
 ## Critical gaps
 - None: no criterion is capped and no blast radius is at the worst level.
 

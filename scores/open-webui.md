@@ -24,6 +24,32 @@
 
 Open WebUI scopes its built-in tools to the requesting user and has strong SSRF protection, but its tool-approval gate is off by default, so tools, including delete tools, run without a human. Admin-installed Tools and Functions are Python exec()-ed inside the server process, which runs as root with every stored API key. Model-written code runs in a browser Pyodide worker. Exfiltration paths and the code interpreter's boundary are not fully contained.
 
+## Safest setup
+
+Open WebUI checks the requesting user on its built-in tools, guards web fetches against internal addresses, and runs model-written code in the browser rather than on the server. Tool approval is off by default and admin-installed plugins run inside the server with every stored key, so the safest setup turns on approval, narrows what runs, and builds containment around the server.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Give the server only the provider and connector keys you use, each scoped or read-only with a spending limit set at the provider | Whatever runs inside the server reaches only the systems and spend you chose (C1) |
+| A non-admin chat account | Keep the default `DEFAULT_USER_ROLE` of pending and do everyday chatting from a separate non-admin account ([backend/open_webui/config.py:1720](https://github.com/open-webui/open-webui/blob/8bd8b4fac5e059578ac0c74b3c18d11139f88b7d/backend/open_webui/config.py#L1720)) | New accounts wait for your approval, and chat sessions carry no admin rights (C1) |
+| Per-call approval | Set `ENABLE_TOOL_PERMISSIONS=true`, then switch each chat's tool mode from full to ask ([backend/open_webui/config.py:2196](https://github.com/open-webui/open-webui/blob/8bd8b4fac5e059578ac0c74b3c18d11139f88b7d/backend/open_webui/config.py#L2196)) | A person sees each tool's name and exact arguments and allows or denies the call (C2) |
+| Admin-reviewed extensions | Keep `USER_PERMISSIONS_WORKSPACE_TOOLS_ACCESS` off and set `ENABLE_PIP_INSTALL_FRONTMATTER_REQUIREMENTS=false` ([backend/open_webui/config.py:1745-1746](https://github.com/open-webui/open-webui/blob/8bd8b4fac5e059578ac0c74b3c18d11139f88b7d/backend/open_webui/config.py#L1745-L1746); [backend/open_webui/env.py:1190-1191](https://github.com/open-webui/open-webui/blob/8bd8b4fac5e059578ac0c74b3c18d11139f88b7d/backend/open_webui/env.py#L1190-L1191)) | Only plugin code an admin has read runs in the server, with packages you install yourself (C7) |
+| Only the features you use | Set `ENABLE_MEMORIES=false` and `ENABLE_AUTOMATIONS=false` unless you rely on them ([backend/open_webui/config.py:426](https://github.com/open-webui/open-webui/blob/8bd8b4fac5e059578ac0c74b3c18d11139f88b7d/backend/open_webui/config.py#L426); [backend/open_webui/config.py:2034](https://github.com/open-webui/open-webui/blob/8bd8b4fac5e059578ac0c74b3c18d11139f88b7d/backend/open_webui/config.py#L2034)) | Nothing the model writes is carried into later chats or re-run on a schedule without you (C6) |
+| Time and loop limits | Set `AIOHTTP_CLIENT_TIMEOUT=<seconds>` and a lower `CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS=<n>` ([backend/open_webui/env.py:608-610](https://github.com/open-webui/open-webui/blob/8bd8b4fac5e059578ac0c74b3c18d11139f88b7d/backend/open_webui/env.py#L608-L610); [backend/open_webui/env.py:1085-1086](https://github.com/open-webui/open-webui/blob/8bd8b4fac5e059578ac0c74b3c18d11139f88b7d/backend/open_webui/env.py#L1085-L1086)) | Model and tool-server calls end after a set time, and each response stops after fewer tool rounds (C10) |
+| Its own container or VM | Run the server in a container or VM whose network reaches only your model providers and tool servers | An outer boundary around plugin code, which runs in the server process (C7) |
+| A request audit log | Set `AUDIT_LOG_LEVEL=METADATA` and keep the log on storage chat users can't reach ([backend/open_webui/env.py:1236](https://github.com/open-webui/open-webui/blob/8bd8b4fac5e059578ac0c74b3c18d11139f88b7d/backend/open_webui/env.py#L1236)) | A per-user record of requests that chat deletion doesn't remove (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; it shows the tool name and the exact arguments that will run.
+- Automations and channel chats run tools without the prompt, so keep them to tasks that need no review.
+
+### Handling data
+
+- Saved chats keep every tool call's arguments and results, and provider keys sit in plaintext in the configuration table; protect the database and its backups like a secret store.
+- `ENABLE_VALVE_ENCRYPTION=true` encrypts plugin valve secrets at rest.
+- The audit log masks only password fields, so store it like the chats it records.
+
 ## Critical gaps
 - Admin Tools and Functions are exec()-ed in the root server process with all credentials; a malicious or compromised plugin owns the instance. (ASI04, T17, LLM03; C7) — [backend/open_webui/utils/plugin.py:241](https://github.com/open-webui/open-webui/blob/8bd8b4fac5e059578ac0c74b3c18d11139f88b7d/backend/open_webui/utils/plugin.py#L241); [Dockerfile:23](https://github.com/open-webui/open-webui/blob/8bd8b4fac5e059578ac0c74b3c18d11139f88b7d/Dockerfile#L23)
 - With approval off by default, injected content can drive delete tools and exfiltrate data with no human involved (C5-WORSTCASE). (ASI01, T6, LLM01; C5) — [backend/open_webui/config.py:2196](https://github.com/open-webui/open-webui/blob/8bd8b4fac5e059578ac0c74b3c18d11139f88b7d/backend/open_webui/config.py#L2196)

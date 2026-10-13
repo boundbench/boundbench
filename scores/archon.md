@@ -24,6 +24,31 @@
 
 Archon runs Claude Code with permission prompts switched off (and Codex with approvals set to never), handing the agent the user's full environment and credentials and letting it act on GitHub issues, push branches and open pull requests unattended. The per-run git worktree keeps workflows from colliding but is not a security boundary, and the only container isolation is opt-in and limited to folder projects. Repositories can bring their own workflows, MCP servers, environment and assistant settings, which load without a trust prompt. Run it only on repositories and inputs you fully trust.
 
+## Safest setup
+
+Archon runs its agents with permission prompts off, your full environment and settings from the repository, so as shipped little stands between a misled agent and your accounts. Workflows can turn on approval gates, per-node tool lists, Claude's sandbox and spend budgets, and the safest setup pairs those with a narrow identity and a VM around the process.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A narrowly scoped identity | Run Archon from an environment holding only a fine-grained GitHub token for the repositories the workflow touches and a model key with a spending limit | GitHub and the model provider refuse anything outside what you granted, whatever the agent runs (C1) |
+| An approval gate before shipping | Add an `approval:` node with a `message` ahead of the nodes that push or open pull requests ([packages/workflows/src/schemas/dag-node.ts:1118](https://github.com/coleam00/Archon/blob/f326bb4d9e09ddb929b3740cae35d672d82e4b8b/packages/workflows/src/schemas/dag-node.ts#L1118); [packages/workflows/src/schemas/dag-node.ts:613](https://github.com/coleam00/Archon/blob/f326bb4d9e09ddb929b3740cae35d672d82e4b8b/packages/workflows/src/schemas/dag-node.ts#L613)) | The run pauses for a person before changes leave your machine (C2) |
+| Tools per node | List the tools each AI node needs in `allowed_tools`, or remove the rest with `denied_tools` ([packages/workflows/src/schemas/dag-node.ts:189-190](https://github.com/coleam00/Archon/blob/f326bb4d9e09ddb929b3740cae35d672d82e4b8b/packages/workflows/src/schemas/dag-node.ts#L189-L190)) | Each step gets only the tool set its job needs (C3) |
+| Claude's own sandbox | Set `sandbox:` with `enabled: true` and `allowedDomains` listing the hosts the task needs, on the workflow or each AI node ([packages/workflows/src/schemas/dag-node.ts:235](https://github.com/coleam00/Archon/blob/f326bb4d9e09ddb929b3740cae35d672d82e4b8b/packages/workflows/src/schemas/dag-node.ts#L235); [packages/workflows/src/schemas/dag-node.ts:92](https://github.com/coleam00/Archon/blob/f326bb4d9e09ddb929b3740cae35d672d82e4b8b/packages/workflows/src/schemas/dag-node.ts#L92); [packages/workflows/src/schemas/dag-node.ts:97](https://github.com/coleam00/Archon/blob/f326bb4d9e09ddb929b3740cae35d672d82e4b8b/packages/workflows/src/schemas/dag-node.ts#L97); [packages/workflows/src/schemas/workflow.ts:207](https://github.com/coleam00/Archon/blob/f326bb4d9e09ddb929b3740cae35d672d82e4b8b/packages/workflows/src/schemas/workflow.ts#L207)) | Claude's shell commands run under OS-level file and network limits (C4) |
+| A worktree per run | Keep the default worktree by running without `--no-worktree`, with each workflow's `worktree` block leaving `enabled` on or unset ([packages/cli/src/cli.ts:727](https://github.com/coleam00/Archon/blob/f326bb4d9e09ddb929b3740cae35d672d82e4b8b/packages/cli/src/cli.ts#L727); [packages/workflows/src/schemas/workflow.ts:208](https://github.com/coleam00/Archon/blob/f326bb4d9e09ddb929b3740cae35d672d82e4b8b/packages/workflows/src/schemas/workflow.ts#L208); [packages/workflows/src/schemas/workflow.ts:72](https://github.com/coleam00/Archon/blob/f326bb4d9e09ddb929b3740cae35d672d82e4b8b/packages/workflows/src/schemas/workflow.ts#L72)) | Local edits land in a separate checkout you can inspect or discard (C4) |
+| A spend ceiling per step | Set `maxBudgetUsd: <n>` on each AI node ([packages/workflows/src/schemas/dag-node.ts:223](https://github.com/coleam00/Archon/blob/f326bb4d9e09ddb929b3740cae35d672d82e4b8b/packages/workflows/src/schemas/dag-node.ts#L223)) | Each AI step stops at a dollar limit you chose (C10) |
+| Its own container or VM | Run Archon in a container or VM with network access limited to the model provider and GitHub | An outer boundary around the agent's shell, keeping your home directory and other credentials out of reach (C4) |
+| Trusted repositories | Run Archon in repositories whose .archon folder, Claude project settings and CLAUDE.md you have read and trust | Workflows, MCP servers, hooks and settings come only from people you trust (C6) |
+
+### Approving with confidence
+
+- Read each gate's message and approve or reject paused runs yourself from the CLI; the chat assistant's run-management tool can also resolve a gate.
+- The bundled delivery workflow leaves the final check to pull request review, so read each pull request before merging.
+
+### Handling data
+
+- Each run's JSONL log under the Archon home records node output and tool calls and is writable by the agent's user; copy it elsewhere when you need a lasting record.
+- Content-free usage telemetry is on by default; `ARCHON_TELEMETRY_DISABLED=1` or `DO_NOT_TRACK=1` turns it off.
+
 ## Critical gaps
 - Agent tools run with permission prompts bypassed, so shell commands, file writes and pushes need no human approval. (ASI09, ASI02; C2). Evidence: [packages/providers/src/claude/provider.ts:981-982](https://github.com/coleam00/Archon/blob/f326bb4d9e09ddb929b3740cae35d672d82e4b8b/packages/providers/src/claude/provider.ts#L981-L982); [packages/providers/src/codex/provider.ts:986-987](https://github.com/coleam00/Archon/blob/f326bb4d9e09ddb929b3740cae35d672d82e4b8b/packages/providers/src/codex/provider.ts#L986-L987)
 - A paused workflow approval gate can be resolved by the chat model through its run-management tool. (ASI09; C2). Evidence: [packages/core/src/orchestrator/manage-run-tool.ts:74-78](https://github.com/coleam00/Archon/blob/f326bb4d9e09ddb929b3740cae35d672d82e4b8b/packages/core/src/orchestrator/manage-run-tool.ts#L74-L78); [packages/core/src/orchestrator/manage-run-tool.ts:296](https://github.com/coleam00/Archon/blob/f326bb4d9e09ddb929b3740cae35d672d82e4b8b/packages/core/src/orchestrator/manage-run-tool.ts#L296)

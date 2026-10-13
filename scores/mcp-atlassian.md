@@ -25,6 +25,28 @@ Controls where a risk surface exists: 2.65 / 7.0 (38%); 3 criteria scored SA (su
 
 MCP Atlassian gives an AI assistant about 98 Jira and Confluence tools, and in the README setup it runs them all, writes included, with the user's own long-lived API token. It runs no code, keeps no memory and loads no plugins, and it labels every tool clearly as read-only or as a write, with a server-enforced read-only mode, but that mode is off by default. The dominant risk is prompt injection through issues, comments, pages or service-desk requests: a hijacked session can copy private data into pages or comments and delete issues with nothing in the server asking a human. There is also no audit record of the changes it makes.
 
+## Safest setup
+
+MCP Atlassian runs no code, keeps no memory and labels every tool as read-only or as a write, but as shipped it loads every toolset, writes included, on the user's own full-access token, and records no successful calls. The safest setup narrows the account, turns on the read-only and toolset settings the server already includes, and bounds the work it can do.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, narrow account | Create the API token or personal access token under an Atlassian account that can see only the projects and spaces the task needs, read-only where the task allows | Jira and Confluence themselves refuse anything outside that account's access, and its changes show under its own name in Atlassian history (C1) |
+| OAuth with read scopes | On Atlassian Cloud, run `--oauth-setup` with `ATLASSIAN_OAUTH_SCOPE` listing only read scopes such as read:jira-work ([src/mcp_atlassian/__init__.py:129](https://github.com/sooperset/mcp-atlassian/blob/0a5d2427144d72f5aade07d4fabd385421cec401/src/mcp_atlassian/__init__.py#L129); [src/mcp_atlassian/utils/oauth_setup.py:426-428](https://github.com/sooperset/mcp-atlassian/blob/0a5d2427144d72f5aade07d4fabd385421cec401/src/mcp_atlassian/utils/oauth_setup.py#L426-L428)) | A grant limited to the scopes you name in place of a long-lived full-access token, kept in the OS keyring (C1) |
+| Read-only mode | `READ_ONLY_MODE=true` in the environment, or `--read-only` ([src/mcp_atlassian/utils/io.py:20](https://github.com/sooperset/mcp-atlassian/blob/0a5d2427144d72f5aade07d4fabd385421cec401/src/mcp_atlassian/utils/io.py#L20); [src/mcp_atlassian/__init__.py:198](https://github.com/sooperset/mcp-atlassian/blob/0a5d2427144d72f5aade07d4fabd385421cec401/src/mcp_atlassian/__init__.py#L198)) | Every write tool is removed from the listing and refused at call time, so content the model reads cannot lead to edits, comments or deletions (C5) |
+| Only the toolsets needed | Set `TOOLSETS` (or `--toolsets`) to the core default set or to just the toolsets the task uses ([src/mcp_atlassian/utils/toolsets.py:191-195](https://github.com/sooperset/mcp-atlassian/blob/0a5d2427144d72f5aade07d4fabd385421cec401/src/mcp_atlassian/utils/toolsets.py#L191-L195); [src/mcp_atlassian/__init__.py:207](https://github.com/sooperset/mcp-atlassian/blob/0a5d2427144d72f5aade07d4fabd385421cec401/src/mcp_atlassian/__init__.py#L207)) | The model sees a smaller set of tools, with write tools only where you chose them (C3) |
+| Result and rate ceilings | Set `ATLASSIAN_MAX_PAGINATION_LIMIT` and `ATLASSIAN_REQUESTS_PER_SECOND` to positive values ([src/mcp_atlassian/utils/pagination.py:29](https://github.com/sooperset/mcp-atlassian/blob/0a5d2427144d72f5aade07d4fabd385421cec401/src/mcp_atlassian/utils/pagination.py#L29); [src/mcp_atlassian/utils/http.py:349](https://github.com/sooperset/mcp-atlassian/blob/0a5d2427144d72f5aade07d4fabd385421cec401/src/mcp_atlassian/utils/http.py#L349)) | Searches stop at a fixed number of results and calls to Atlassian run at a bounded rate (C10) |
+| A clean working directory | Have the MCP host start the server from a directory holding only files you are happy to attach to Jira or Confluence | The attachment and page-from-file tools can reach only those files (C3) |
+
+### Approving with confidence
+
+- Read each prompt and approve write calls one at a time; deleted issues and attachments cannot be restored, and comments notify people at once.
+- The server marks each tool as read-only or destructive, so a host that asks before non-read-only tools gives you a check on every write.
+
+### Handling data
+
+- Keep the default log level; `MCP_VERY_VERBOSE` and `-vv` turn on debug output from HTTP libraries that the server's masking does not cover.
+
 ## Critical gaps
 - In the default configuration a session that reads other people's issues, comments or pages can also write, comment, upload and delete across the user's whole Jira and Confluence access, with no server-enforced human step. (ASI01, T6, LLM01; C5). Evidence: [src/mcp_atlassian/utils/toolsets.py:195-203](https://github.com/sooperset/mcp-atlassian/blob/0a5d2427144d72f5aade07d4fabd385421cec401/src/mcp_atlassian/utils/toolsets.py#L195-L203); [src/mcp_atlassian/utils/io.py:20](https://github.com/sooperset/mcp-atlassian/blob/0a5d2427144d72f5aade07d4fabd385421cec401/src/mcp_atlassian/utils/io.py#L20)
 

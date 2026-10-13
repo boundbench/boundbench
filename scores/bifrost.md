@@ -24,6 +24,29 @@
 
 Bifrost's MCP agent mode is cautious where it counts: no tool runs unattended unless the operator lists it, and model-written code-mode scripts run in a capability-limited Starlark interpreter. The dominant risk is the default deployment posture: admin and inference auth are off, the Docker image listens on all interfaces, and every caller shares the gateway's provider keys and MCP credentials. Native plugins load in-process without integrity checks, and secrets are stored in plaintext unless an encryption key is set.
 
+## Safest setup
+
+Bifrost runs no MCP tool unattended unless you list it, exposes no tool you haven't enabled, and runs code-mode scripts in a capability-limited interpreter. As shipped, though, sign-in is off and every caller shares the gateway's provider keys and MCP credentials, so the safest setup turns on the access controls Bifrost already includes and narrows what those shared keys can reach.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Give the gateway only the provider keys and MCP credentials it serves, each scoped or read-only where the task allows, with a spending limit set at the provider | The provider and each MCP server refuse anything outside the grant you chose, whoever is calling (C1) |
+| Admin and inference sign-in | Set `is_enabled: true` with `admin_username` and `admin_password` in the `auth_config` block, and `enforce_auth_on_inference: true` ([framework/configstore/clientconfig.go:2022-2024](https://github.com/maximhq/bifrost/blob/3b31be0037e1414edc4644edcba3d33011518a47/framework/configstore/clientconfig.go#L2022-L2024); [framework/configstore/clientconfig.go:2042](https://github.com/maximhq/bifrost/blob/3b31be0037e1414edc4644edcba3d33011518a47/framework/configstore/clientconfig.go#L2042); [framework/configstore/tables/clientconfig.go:39](https://github.com/maximhq/bifrost/blob/3b31be0037e1414edc4644edcba3d33011518a47/framework/configstore/tables/clientconfig.go#L39)) | Only signed-in callers can change settings, tool lists and keys, or send requests through the gateway (C1) |
+| Per-user MCP credentials | Use `auth_type` `per_user_oauth`, `per_user_headers` or `token_exchange` on MCP clients, and grant tools per virtual key in `mcp_configs` ([core/schemas/mcp.go:412-414](https://github.com/maximhq/bifrost/blob/3b31be0037e1414edc4644edcba3d33011518a47/core/schemas/mcp.go#L412-L414); [core/schemas/mcp.go:523](https://github.com/maximhq/bifrost/blob/3b31be0037e1414edc4644edcba3d33011518a47/core/schemas/mcp.go#L523); [framework/configstore/tables/virtualkey.go:253](https://github.com/maximhq/bifrost/blob/3b31be0037e1414edc4644edcba3d33011518a47/framework/configstore/tables/virtualkey.go#L253)) | Each caller acts with their own access on each server and sees only the tools granted to their key (C1) |
+| Short, manual tool lists | List only the tools the task needs in `tools_to_execute`, and keep the default empty `tools_to_auto_execute` ([core/schemas/mcp.go:550](https://github.com/maximhq/bifrost/blob/3b31be0037e1414edc4644edcba3d33011518a47/core/schemas/mcp.go#L550); [core/schemas/mcp.go:556](https://github.com/maximhq/bifrost/blob/3b31be0037e1414edc4644edcba3d33011518a47/core/schemas/mcp.go#L556)) | The model sees only those tools, and every call goes back to your application to run (C2) |
+| Spend and rate limits | Attach `budgets` and a `rate_limit` to each virtual key ([framework/configstore/tables/virtualkey.go:280-281](https://github.com/maximhq/bifrost/blob/3b31be0037e1414edc4644edcba3d33011518a47/framework/configstore/tables/virtualkey.go#L280-L281)) | A ceiling on what each caller can spend and how fast, on top of the default 10-step agent loop (C10) |
+| Encrypted secrets at rest | Set `BIFROST_ENCRYPTION_KEY` or `encryption_key` before adding providers or MCP clients ([transports/bifrost-http/lib/config.go:5664](https://github.com/maximhq/bifrost/blob/3b31be0037e1414edc4644edcba3d33011518a47/transports/bifrost-http/lib/config.go#L5664); [transports/bifrost-http/lib/config.go:177](https://github.com/maximhq/bifrost/blob/3b31be0037e1414edc4644edcba3d33011518a47/transports/bifrost-http/lib/config.go#L177)) | Provider keys and MCP credentials are stored encrypted in the local database (C8) |
+| Reviewed, pinned extensions | Add only stdio MCP servers and native plugins you have read, pinned to an exact version | Code that runs with the gateway's keys is code you chose, and it can't change after you read it (C7) |
+| A private, contained gateway | Publish the gateway port only on localhost or a private network, and limit its outbound access to your providers and MCP servers | Only callers you expect can reach it, and data leaves only for hosts you chose (C1) |
+
+### Approving with confidence
+
+- Calls outside the auto-execute list come back to your application; show each one to a person and approve calls one at a time.
+
+### Handling data
+
+- Prompts, responses and tool arguments are logged in full by default; store the log database like the data it covers, or set `disable_content_logging: true`.
+
 ## Critical gaps
 - Native .so plugins are dlopen'd into the gateway process (optionally downloaded from a URL) with no hash or signature check, and stdio MCP servers inherit the gateway environment, so a malicious extension gets every provider key. (ASI04, T17, LLM03; C7) — [framework/plugins/soloader.go:30](https://github.com/maximhq/bifrost/blob/3b31be0037e1414edc4644edcba3d33011518a47/framework/plugins/soloader.go#L30); [framework/plugins/soloader.go:42](https://github.com/maximhq/bifrost/blob/3b31be0037e1414edc4644edcba3d33011518a47/framework/plugins/soloader.go#L42); [core/mcp/clientmanager.go:3329](https://github.com/maximhq/bifrost/blob/3b31be0037e1414edc4644edcba3d33011518a47/core/mcp/clientmanager.go#L3329)
 

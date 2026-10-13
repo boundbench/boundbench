@@ -24,6 +24,31 @@
 
 Eigent puts a careful, deterministic approval gate in front of almost everything: by default every shell command, file write, browser action and MCP or connector call waits for the user to approve the call and its arguments, and the approval is bound to the call that actually runs. Behind that gate there is little containment. Approved commands run on the host as the user, with the user's connector keys in their environment, and web-fetch and search tools run unattended, so injected content can send data out without a prompt. There are no default step or cost limits; the durable run journal is a strong audit trail.
 
+## Safest setup
+
+Eigent ships a careful approval gate: in the default mode every shell command, file write, browser action and connector call waits for you, and a durable run journal records each call. Behind that gate, approved commands run on your machine as you, with no sandbox and no step or spend limit, so the safest setup narrows the keys, adds hard timeouts and builds containment around the app.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Connect only the accounts a task needs, each with a scoped or read-only key and a spending limit set at the provider | Whatever an approved call does, it reaches only the accounts and spend you chose (C1) |
+| Per-call approval | Keep each Space's approval mode at the default `Ask me first` ([src/components/ChatBox/BottomBox/ApprovalModeSelect.tsx:92-94](https://github.com/eigent-ai/eigent/blob/5877598509f64e4c2d33771a1c60bf7dd3666977/src/components/ChatBox/BottomBox/ApprovalModeSelect.tsx#L92-L94); [backend/app/permission_policy/service.py:59-60](https://github.com/eigent-ai/eigent/blob/5877598509f64e4c2d33771a1c60bf7dd3666977/backend/app/permission_policy/service.py#L59-L60)) | You see every shell command, file write, browser action and connector call with its arguments before it runs (C2) |
+| Read-only mode for reading | Switch the approval mode to `Read only` for tasks that only need to read ([src/components/ChatBox/BottomBox/ApprovalModeSelect.tsx:84-85](https://github.com/eigent-ai/eigent/blob/5877598509f64e4c2d33771a1c60bf7dd3666977/src/components/ChatBox/BottomBox/ApprovalModeSelect.tsx#L84-L85); [backend/app/permission_policy/models.py:610](https://github.com/eigent-ai/eigent/blob/5877598509f64e4c2d33771a1c60bf7dd3666977/backend/app/permission_policy/models.py#L610)) | Eigent can read your files but cannot change anything during those tasks (C3) |
+| Hard timeouts | Set `AGENT_STEP_TIMEOUT_SECONDS=<seconds>` and `WORKFORCE_TASK_TIMEOUT_SECONDS=<seconds>` in ~/.eigent/.env ([backend/app/agent/listen_chat_agent.py:101](https://github.com/eigent-ai/eigent/blob/5877598509f64e4c2d33771a1c60bf7dd3666977/backend/app/agent/listen_chat_agent.py#L101); [backend/app/utils/workforce.py:166](https://github.com/eigent-ai/eigent/blob/5877598509f64e4c2d33771a1c60bf7dd3666977/backend/app/utils/workforce.py#L166); [backend/app/component/environment.py:40](https://github.com/eigent-ai/eigent/blob/5877598509f64e4c2d33771a1c60bf7dd3666977/backend/app/component/environment.py#L40)) | Each agent step and worker task ends at a fixed time, not only after 30 minutes without progress (C10) |
+| A clean Space folder | Open Spaces on folders whose skills/, .eigent/skills and .agents/skills hold only skills you wrote or read | Only instructions you chose load into the agent's context (C6) |
+| Its own VM or account | Run Eigent in a VM or separate OS account that holds only the task's files, with network limited to the hosts the task uses | An outer boundary around approved shell commands, skill scripts and MCP servers, which otherwise run as you (C4) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; an approved shell command runs on your machine with your connector keys in its environment.
+- Web fetch and search run without a prompt, so keep sensitive files out of sessions that read untrusted pages.
+- `Approve for me` and `Full access` stay on for the whole Space until you switch back.
+
+### Handling data
+
+- Connector keys sit in plaintext in ~/.eigent/.env, readable by anything running as you; prefer keys you can revoke quickly.
+- Model request and response logging is on by default and unredacted; treat those logs like the data the agent read.
+- The run journal at ~/.eigent/run-journal.sqlite3 records every call and approval; copy it somewhere the agent can't write if you need it as a record.
+
 ## Critical gaps
 - Tools run with the desktop user's full authority and the connector keys saved in ~/.eigent/.env, so a hijacked session reaches the user's files and every connected account. (ASI03, T3; C1). Evidence: [backend/app/agent/toolkit/terminal_toolkit.py:344-366](https://github.com/eigent-ai/eigent/blob/5877598509f64e4c2d33771a1c60bf7dd3666977/backend/app/agent/toolkit/terminal_toolkit.py#L344-L366); [backend/app/component/environment.py:93-103](https://github.com/eigent-ai/eigent/blob/5877598509f64e4c2d33771a1c60bf7dd3666977/backend/app/component/environment.py#L93-L103)
 - Shell commands run on the host as the desktop user with the user's network access and connector keys; there is no sandbox behind the approval prompt. (ASI05, T11; C4). Evidence: [backend/app/agent/toolkit/terminal_toolkit.py:344-366](https://github.com/eigent-ai/eigent/blob/5877598509f64e4c2d33771a1c60bf7dd3666977/backend/app/agent/toolkit/terminal_toolkit.py#L344-L366); [SECURITY.md:36-41](https://github.com/eigent-ai/eigent/blob/5877598509f64e4c2d33771a1c60bf7dd3666977/SECURITY.md#L36-L41)

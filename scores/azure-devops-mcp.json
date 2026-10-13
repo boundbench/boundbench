@@ -36,6 +36,100 @@
     "external_communication": "yes"
   },
   "headline": "Microsoft's local Azure DevOps MCP server signs in as you and, by default, loads every tool group, so an AI assistant can commit code, run pipelines, approve pull requests and edit work items and wikis with your full Azure DevOps rights and no confirmation step of its own. The dominant risk is prompt injection through work items, pull request comments, wiki pages or files written by others: the server labels all returned content as untrusted, but that label is only a hint, and there is no read-only mode to switch off the write side. It runs no code, keeps no memory, loads no plugins and keeps the token away from the model, but it records nothing about the actions it takes.",
+  "safe_setup": {
+    "intro": "Azure DevOps MCP Server keeps its token away from the model, labels every tool as read-only or mutating, and marks everything it returns as untrusted content. As shipped it signs in with your full Azure DevOps rights, loads every tool group with no approval step of its own and records nothing, so the safest setup narrows the identity and tool set and puts approval and records in your host and in Azure DevOps.",
+    "steps": [
+      {
+        "setup": "A narrowly scoped token",
+        "how": "`--authentication pat` with `PERSONAL_ACCESS_TOKEN` holding a token limited to the projects and scopes the task needs, read-only where it allows",
+        "gives_you": "Azure DevOps itself refuses anything outside that token's scopes, whatever the model asks for",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "src/index.ts",
+            "lines": "46-52",
+            "contains": "choices: [\"interactive\", \"azcli\", \"env\", \"envvar\", \"pat\"]",
+            "url": "https://github.com/microsoft/azure-devops-mcp/blob/2ffa682e2394e961e804a2739d0de62651213365/src/index.ts#L46-L52"
+          },
+          {
+            "file": "src/auth.ts",
+            "lines": "45",
+            "contains": "PERSONAL_ACCESS_TOKEN",
+            "url": "https://github.com/microsoft/azure-devops-mcp/blob/2ffa682e2394e961e804a2739d0de62651213365/src/auth.ts#L45"
+          }
+        ]
+      },
+      {
+        "setup": "A read-only entry for reviews",
+        "how": "Add a second server entry with a read-only token for sessions that read other people's work items, pull requests or wiki pages",
+        "gives_you": "Instructions hidden in that content can't commit, run pipelines or approve pull requests",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Branch and pipeline policies",
+        "how": "Require reviews on protected branches and approvals on pipeline environments, and give the agent's identity no permission to bypass policies",
+        "gives_you": "Commits and pipeline runs the agent starts still pass the checks your team set",
+        "criterion": "C3",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Only the domains needed",
+        "how": "`-d` followed by just the domains the task uses, such as `core` and `work-items`, spelled as listed",
+        "gives_you": "Tool groups the task doesn't use, write tools included, never load",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/index.ts",
+            "lines": "39-45",
+            "contains": "alias: \"d\"",
+            "url": "https://github.com/microsoft/azure-devops-mcp/blob/2ffa682e2394e961e804a2739d0de62651213365/src/index.ts#L39-L45"
+          },
+          {
+            "file": "src/shared/domains.ts",
+            "lines": "12-18",
+            "contains": "WORK_ITEMS = \"work-items\"",
+            "url": "https://github.com/microsoft/azure-devops-mcp/blob/2ffa682e2394e961e804a2739d0de62651213365/src/shared/domains.ts#L12-L18"
+          }
+        ]
+      },
+      {
+        "setup": "Per-call approval in your host",
+        "how": "Set your MCP host to ask before every tool not marked `readOnlyHint: true`",
+        "gives_you": "A person sees each commit, pipeline run and pull request vote before it happens",
+        "criterion": "C2",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "src/shared/tool-annotations.ts",
+            "lines": "7-17",
+            "contains": "readOnlyHint: true",
+            "url": "https://github.com/microsoft/azure-devops-mcp/blob/2ffa682e2394e961e804a2739d0de62651213365/src/shared/tool-annotations.ts#L7-L17"
+          }
+        ]
+      },
+      {
+        "setup": "Records outside the server",
+        "how": "Keep the host's transcript and turn on auditing for the Azure DevOps organization",
+        "gives_you": "A trail of what the agent called and changed, since the server records nothing itself",
+        "criterion": "C9",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; pipeline runs, pull request approvals and auto-complete merges can't be taken back.",
+      "A write the task didn't ask for, right after reading a work item, comment or wiki page, is worth a closer look."
+    ],
+    "handling": [
+      "A personal access token is long-lived; give it a short expiry and revoke it when the work is done.",
+      "Azure DevOps error text reaches the model as is, and the server logs to standard error at `info` level unless `LOG_LEVEL` says otherwise."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

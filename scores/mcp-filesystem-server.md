@@ -25,6 +25,31 @@ Controls where a risk surface exists: 2.33 / 7.0 (33%); 3 criteria scored SA (su
 
 A small, well-fenced file server: every path is resolved through symlinks and checked against the directories you allow, and it never runs code, touches the network or holds credentials. The main risk is what it hands a hijacked model inside those directories: write, edit and move tools are always on with no read-only switch and no undo, and file contents (including any .env or key files there) go to the model unmarked. It keeps no log of what it did and puts no limits on file sizes or recursive listings, so allow only the narrowest directories you need and rely on the host to approve writes.
 
+## Safest setup
+
+The filesystem server holds no credentials, runs no code and makes no network calls, and every path it touches is checked against the directories you allow. Write tools are always on, nothing is logged and nothing is limited, so the safest setup narrows what the process can reach and adds approval, backups and a record around it.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated non-root user | Run the server, or its container, as an OS user whose own permissions reach only the directories it serves | The operating system itself keeps the rest of your files out of reach, whatever the server is asked to do (C1) |
+| Read-only mounts | Run the Docker image with each directory mounted under `/projects`, adding the `ro` flag to every directory the task only reads ([src/filesystem/README.md:215](https://github.com/modelcontextprotocol/servers/blob/f46d9578190b476b3501923ea8977d899e8db2cb/src/filesystem/README.md#L215)) | Those directories cannot be changed, even though the write tools stay registered (C3) |
+| Only the directories needed | Pass just the task's directories as the allowed-directory arguments ([src/filesystem/index.ts:35](https://github.com/modelcontextprotocol/servers/blob/f46d9578190b476b3501923ea8977d899e8db2cb/src/filesystem/index.ts#L35)) | The server's path check measures every call against just the folders you named (C3) |
+| Matching client roots | Set the host's roots to the same narrow directories, since client roots replace the command-line list ([src/filesystem/README.md:29](https://github.com/modelcontextprotocol/servers/blob/f46d9578190b476b3501923ea8977d899e8db2cb/src/filesystem/README.md#L29)) | The allowed directories stay the ones you chose for the whole session (C1) |
+| Secrets kept elsewhere | Keep .env files, private keys and credential files outside every allowed directory | File contents sent to the model hold no secrets to leak (C8) |
+| Version control or backups | Keep the allowed directories under version control or a regular backup | Any overwrite, edit or move can be rolled back (C2) |
+| A memory ceiling | Run the server with a memory limit set by the container or the OS | A large file or deep directory walk stops at the limit you set, not at the machine's memory (C10) |
+| A host-side call log | Keep the host application's record of MCP tool calls, stored outside the allowed directories | A trace of every read, write and move that the server does not keep itself (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve write, edit and move calls one at a time; every tool is labelled read-only or destructive for the host to act on.
+- Ask for an edit preview with `dryRun` before approving the edit itself; whole-file writes and moves have no preview.
+
+### Handling data
+
+- File contents go to the model verbatim and unmarked, so treat the conversation like the files it read.
+- The server's stderr output holds directory paths and errors, never file contents.
+
 ## Critical gaps
 - None: no criterion is capped and no blast radius is at the worst level.
 

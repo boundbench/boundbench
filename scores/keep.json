@@ -36,6 +36,142 @@
     "external_communication": "yes"
   },
   "headline": "Keep's AI incident chat can call methods on connected providers with no approval step and no allowlist, and the provider-invocation endpoint it uses is not locked down, which widens its reach. Alert text from monitoring tools goes into the same session, so a prompt injection in an alert could act on Kubernetes or ticketing systems and reach stored integration secrets. The default compose file also disables authentication and enables telemetry. Treat the AI features as unsafe to enable on a deployment with real integrations until the invoke endpoint is restricted and chat actions are gated.",
+  "safe_setup": {
+    "intro": "Keep ships with its AI features off until you add a model key, and its backend checks each caller's role when sign-in is on. The shipped compose file turns sign-in off, and the incident chat has no approval step or limits of its own, so the safest setup turns on sign-in and narrow roles and puts most of the protection around Keep yourself.",
+    "steps": [
+      {
+        "setup": "Least-privilege integration credentials",
+        "how": "Give each connected integration a credential scoped at the provider to read-only or to the actions you need, such as a read-only Kubernetes service account",
+        "gives_you": "Each connected system itself refuses anything outside that grant, whatever Keep or its assistant asks for",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Sign-in turned on",
+        "how": "Set `AUTH_TYPE` to `DB` or to your identity provider, such as `KEYCLOAK` or `OKTA`, on both the frontend and backend",
+        "gives_you": "Every request comes from a signed-in user whose role the backend checks",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "keep/identitymanager/identitymanagerfactory.py",
+            "lines": "21-27",
+            "contains": "DB = \"db\"",
+            "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/identitymanager/identitymanagerfactory.py#L21-L27"
+          },
+          {
+            "file": "keep/identitymanager/identitymanagerfactory.py",
+            "lines": "55-57",
+            "contains": "\"AUTH_TYPE\", default=IdentityManagerTypes.NOAUTH.value",
+            "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/identitymanager/identitymanagerfactory.py#L55-L57"
+          }
+        ]
+      },
+      {
+        "setup": "Read-only roles for most users",
+        "how": "Give people who triage incidents the `noc` role and keep `admin` for those who manage providers",
+        "gives_you": "Most sessions, and the chat acting in them, can read but not change provider setup or call provider methods",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "keep/identitymanager/rbac.py",
+            "lines": "20-24",
+            "contains": "NOC = \"noc\"",
+            "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/identitymanager/rbac.py#L20-L24"
+          },
+          {
+            "file": "keep/identitymanager/rbac.py",
+            "lines": "55-58",
+            "contains": "SCOPES = [\"read:*\", \"execute:workflows\"]",
+            "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/identitymanager/rbac.py#L55-L58"
+          }
+        ]
+      },
+      {
+        "setup": "AI chat off with live integrations",
+        "how": "Leave `OPENAI_API_KEY` and `OPEN_AI_API_KEY` unset on deployments connected to production systems",
+        "gives_you": "Alert text from monitoring tools never reaches a model that can act on your connected systems",
+        "criterion": "C5",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "keep-ui/shared/lib/server/getConfig.ts",
+            "lines": "76-77",
+            "contains": "!!process.env.OPEN_AI_API_KEY || !!process.env.OPENAI_API_KEY",
+            "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/shared/lib/server/getConfig.ts#L76-L77"
+          }
+        ]
+      },
+      {
+        "setup": "A managed secret store",
+        "how": "Set `SECRET_MANAGER_TYPE` to `VAULT`, `AWS`, `GCP` or `K8S` in place of the default `FILE`",
+        "gives_you": "Integration credentials live in your secret manager rather than as plaintext files in the state directory",
+        "criterion": "C8",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "keep/secretmanager/secretmanagerfactory.py",
+            "lines": "8-14",
+            "contains": "VAULT = \"vault\"",
+            "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/secretmanager/secretmanagerfactory.py#L8-L14"
+          },
+          {
+            "file": "keep/secretmanager/secretmanagerfactory.py",
+            "lines": "26",
+            "contains": "config(\"SECRET_MANAGER_TYPE\", default=\"FILE\")",
+            "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/secretmanager/secretmanagerfactory.py#L26"
+          }
+        ]
+      },
+      {
+        "setup": "Telemetry turned off",
+        "how": "Set `POSTHOG_DISABLED=true` on both containers and `SENTRY_DISABLED=true` on the frontend",
+        "gives_you": "Usage events and user emails stay inside your deployment",
+        "criterion": "C8",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "keep/api/core/posthog.py",
+            "lines": "17",
+            "contains": "POSTHOG_DISABLED = os.getenv(\"POSTHOG_DISABLED\", \"false\")",
+            "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep/api/core/posthog.py#L17"
+          },
+          {
+            "file": "keep-ui/shared/lib/server/getConfig.ts",
+            "lines": "72-74",
+            "contains": "SENTRY_DISABLED: process.env.SENTRY_DISABLED",
+            "url": "https://github.com/keephq/keep/blob/465e99152e7586fcbe4c2732213d31c5c28def4b/keep-ui/shared/lib/server/getConfig.ts#L72-L74"
+          }
+        ]
+      },
+      {
+        "setup": "A private, egress-limited network",
+        "how": "Run the Keep containers on a private network whose outbound access reaches only the model provider and the integrations you connect",
+        "gives_you": "An outer boundary around code the server runs and a narrow path for data to leave",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Logs kept outside Keep",
+        "how": "Ship the backend container's logs to a log store outside the Keep containers",
+        "gives_you": "A record of provider calls that code running inside Keep can't alter",
+        "criterion": "C9",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "The workflow builder shows each proposed step; read each one and accept steps one at a time.",
+      "Incident chat actions run as soon as the model calls them, so review the enrichments a chat session added to an incident before later sessions rely on them."
+    ],
+    "handling": [
+      "With the default file store, the state directory holds integration credentials in plaintext; store and back it up like a password vault.",
+      "Chat history, including tool results, stays in the browser; clear it on shared machines."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

@@ -24,6 +24,31 @@
 
 The central tool runs any Python the model writes inside the user's Blender, with the user's full file, network and credential access and no sandbox. The server leaves approval entirely to the MCP host, marks only its read-only viewing tools, and gives untrusted asset or scene text no special handling, so one injected instruction can read and send private data or make irreversible changes. An opt-in safe mode filters scripts before they run, but it is off by default and is a filter, not a boundary. Logging, limits and secret handling are thin.
 
+## Safest setup
+
+MCP for Blender ships its asset and generation integrations off and checks the inputs of its narrower tools, but its main tool runs any Python the model writes inside Blender with your full user access, with no approval step or sandbox of its own. The safest setup turns on the opt-in safe mode and puts the real boundaries around Blender yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated OS account | Run Blender and the server under an account that holds only this project's files, with no SSH keys or cloud credentials | Model-written Python reaches only that account's files, not your home directory and keys (C1) |
+| Safe mode | Set `BLENDER_MCP_SAFE_MODE` to 1 in the server's environment ([src/blender_mcp/safe_mode.py:72-77](https://github.com/ahujasid/mcp-for-blender/blob/addda778d58a6a05f10a61ef8e2ca8958e915637/src/blender_mcp/safe_mode.py#L72-L77)) | Each script is checked against module and Blender-path allowlists before it reaches Blender (C4) |
+| Integrations left off | Keep the asset and generation integration checkboxes off, turning on only the one a task needs ([src/blender_mcp/bundled/addon.py:6235-6239](https://github.com/ahujasid/mcp-for-blender/blob/addda778d58a6a05f10a61ef8e2ca8958e915637/src/blender_mcp/bundled/addon.py#L6235-L6239)) | Third-party assets and paid generation stay out of the session until you choose them (C7) |
+| Trusted .blend files | Open only .blend files you made or trust while the addon server is running | Integration switches and endpoints come only from your own settings (C6) |
+| Only the keys needed | Enter API keys only for integrations the task uses, each with a spending limit at the provider | Code the model runs can reach only those keys and that spend (C8) |
+| Its own container or VM | Run Blender in a container or VM with network access limited to the hosts the task needs | An outer boundary around in-process scripts and a narrow path for data to leave (C5) |
+| Usage telemetry off | Set `BLENDER_MCP_DISABLE_TELEMETRY` to true in the server's environment ([src/blender_mcp/telemetry.py:108-116](https://github.com/ahujasid/mcp-for-blender/blob/addda778d58a6a05f10a61ef8e2ca8958e915637/src/blender_mcp/telemetry.py#L108-L116)) | Usage data about your tool calls stays on your machine (C8) |
+| A log kept elsewhere | Have your MCP host save the server's log to storage the Blender process can't write | A timestamped record of every command that outlives the session (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve `execute_blender_code` calls one at a time, reading the script first; only the viewing tools are marked read-only.
+- Blender's undo covers only the scene, so give scripts that touch files, the network or paid generation the closest read.
+
+### Handling data
+
+- The server log records every command with its full parameters, scripts included; store it like other sensitive logs.
+- API keys typed into the scene panel are saved inside the .blend file, so clear them before sharing a file.
+
 ## Critical gaps
 - Model-written Python runs with the operating-system user's full authority; nothing narrows identity or credentials. (ASI03, T3; C1) — [src/blender_mcp/bundled/addon.py:2243-2248](https://github.com/ahujasid/mcp-for-blender/blob/addda778d58a6a05f10a61ef8e2ca8958e915637/src/blender_mcp/bundled/addon.py#L2243-L2248)
 - Code execution is in-process exec() inside Blender with no isolation by default. (ASI05, T11; C4) — [src/blender_mcp/bundled/addon.py:2243-2248](https://github.com/ahujasid/mcp-for-blender/blob/addda778d58a6a05f10a61ef8e2ca8958e915637/src/blender_mcp/bundled/addon.py#L2243-L2248); [src/blender_mcp/safe_mode.py:77](https://github.com/ahujasid/mcp-for-blender/blob/addda778d58a6a05f10a61ef8e2ca8958e915637/src/blender_mcp/safe_mode.py#L77)

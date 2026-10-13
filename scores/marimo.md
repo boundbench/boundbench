@@ -24,6 +24,30 @@
 
 Once the chat is in Agent or Code Mode, marimo's assistant runs the code it writes in your notebook kernel immediately, as you, with no approval, sandbox or step limit. The 'Fix with AI' button on any cell error switches the chat to Code Mode and keeps it there. A prompt injection in a shared notebook, a dataset or a web page can therefore read your credentials (including the AI keys marimo hands the kernel) and send them anywhere, or delete files, unattended. A cloned repo's pyproject.toml can also make marimo launch MCP server commands at startup.
 
+## Safest setup
+
+marimo ships with the chat in Manual mode, which sends the model no tools, and with no MCP servers configured. Once the chat is in Agent or Code Mode there is no approval step, sandbox or spend limit, so the safest setup keeps Manual mode and builds the boundaries around marimo yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated account and key | Run marimo as a separate OS user whose environment holds only the data and AI key this work needs, with a spending limit set at the provider | Code the assistant runs reaches only what that account holds, not every credential in your shell (C1) |
+| Manual chat mode | Keep the default `mode = "manual"` under `[ai]`, and set it back after using 'Fix with AI' ([frontend/src/core/config/config-schema.ts:170](https://github.com/marimo-team/marimo/blob/82b936f910b644c6b8052b22e4083b77a1b716b7/frontend/src/core/config/config-schema.ts#L170); [marimo/_config/config.py:339](https://github.com/marimo-team/marimo/blob/82b936f910b644c6b8052b22e4083b77a1b716b7/marimo/_config/config.py#L339)) | The model gets no tools, so code runs in the kernel only when you run it (C3) |
+| Only MCP servers you chose | Keep the default empty `mcpServers` under `[mcp]`, adding only servers you have reviewed, at a pinned version ([marimo/_config/config.py:854-855](https://github.com/marimo-team/marimo/blob/82b936f910b644c6b8052b22e4083b77a1b716b7/marimo/_config/config.py#L854-L855)) | No extension process starts unless you picked it (C7) |
+| Reviewed project settings | Read the marimo section of a project's pyproject.toml, and any .marimo.toml above it, before opening the project | MCP servers, the AI endpoint and the chat mode come only from settings you have checked (C6) |
+| A response length cap | Set `max_tokens = <n>` under `[ai]` ([marimo/_config/config.py:338](https://github.com/marimo-team/marimo/blob/82b936f910b644c6b8052b22e4083b77a1b716b7/marimo/_config/config.py#L338); [frontend/src/core/config/config-schema.ts:169](https://github.com/marimo-team/marimo/blob/82b936f910b644c6b8052b22e4083b77a1b716b7/frontend/src/core/config/config-schema.ts#L169)) | Each model response stops at a length you chose (C10) |
+| Its own container or VM | Run marimo in a container or VM that mounts only the project and reaches only the model provider and the data sources the notebook needs | An outer boundary around kernel code, and a narrow path for data to leave (C4) |
+| Traces outside the browser | Set `MARIMO_TRACING=true` with `OTEL_EXPORTER_OTLP_ENDPOINT` pointing at a collector you run ([marimo/_config/settings.py:17](https://github.com/marimo-team/marimo/blob/82b936f910b644c6b8052b22e4083b77a1b716b7/marimo/_config/settings.py#L17); [marimo/_tracer.py:101-102](https://github.com/marimo-team/marimo/blob/82b936f910b644c6b8052b22e4083b77a1b716b7/marimo/_tracer.py#L101-L102)) | A record of AI requests that lives outside the browser profile (C9) |
+
+### Approving with confidence
+
+- Agent and Code Mode run the model's code without a prompt, so the chat mode you pick is your approval step; Manual mode leaves every run to you.
+- 'Fix with AI' switches the chat to Code Mode and saves that choice; check the mode before your next request.
+
+### Handling data
+
+- The chat transcript, with every tool call's arguments and results, is saved in your browser's local storage; treat that browser profile like the data the notebook reads.
+- Traces carry details of AI requests; store them like other sensitive logs.
+
 ## Critical gaps
 - Agent-written code runs as the user in the notebook kernel with the user's full environment and marimo's unmasked AI keys, so a hijacked session holds all of the user's authority. (ASI03, T3; C1) — [marimo/_session/managers/kernel.py:77](https://github.com/marimo-team/marimo/blob/82b936f910b644c6b8052b22e4083b77a1b716b7/marimo/_session/managers/kernel.py#L77); [marimo/_session/managers/kernel.py:90](https://github.com/marimo-team/marimo/blob/82b936f910b644c6b8052b22e4083b77a1b716b7/marimo/_session/managers/kernel.py#L90)
 - The assistant's most powerful actions, running model-written code in the kernel via execute_code or run_stale_cells, execute with no human approval. (ASI09, ASI02, T10, LLM06; C2) — [marimo/_server/ai/tools/code_mode.py:36-50](https://github.com/marimo-team/marimo/blob/82b936f910b644c6b8052b22e4083b77a1b716b7/marimo/_server/ai/tools/code_mode.py#L36-L50); [frontend/src/core/ai/tools/run-cells-tool.ts:99-104](https://github.com/marimo-team/marimo/blob/82b936f910b644c6b8052b22e4083b77a1b716b7/frontend/src/core/ai/tools/run-cells-tool.ts#L99-L104); [frontend/src/components/chat/chat-panel.tsx:669-680](https://github.com/marimo-team/marimo/blob/82b936f910b644c6b8052b22e4083b77a1b716b7/frontend/src/components/chat/chat-panel.tsx#L669-L680)

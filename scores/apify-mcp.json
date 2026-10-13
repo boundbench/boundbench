@@ -36,6 +36,121 @@
     "external_communication": "yes"
   },
   "headline": "In its default configuration this server lets the model start any Actor from Apify Store, including third-party code, on the user's account and bill, using one account-wide API token, and read the web through Actor tools in the same session. Argument checking, URL and origin gates and tool annotations are careful, and nothing runs on the local machine, but there is no allowlist of Actors, no spend ceiling the operator sets, and no local record of tool calls. Deploy it with an explicit --tools list and a scoped Apify token.",
+  "safe_setup": {
+    "intro": "Apify MCP Server runs nothing on your machine, validates every tool call against its schema, and leaves account-changing tools out of the default set. As shipped, though, the model can start any Actor in Apify Store on your account with one account-wide token, so the safest setup narrows the token and the Actor list and puts approval and records around the server.",
+    "steps": [
+      {
+        "setup": "A scoped Apify token",
+        "how": "Create a scoped token in Apify Console with only the access the task needs, and pass it as `APIFY_TOKEN`",
+        "gives_you": "Apify itself refuses anything outside that token's scope, whatever the model asks for",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "src/stdio.ts",
+            "lines": "151",
+            "contains": "process.env.APIFY_TOKEN",
+            "url": "https://github.com/apify/apify-mcp-server/blob/47a6c9fe4f9e96445316285fb4dfcfaee4cb28c6/src/stdio.ts#L151"
+          }
+        ]
+      },
+      {
+        "setup": "Only the Actors you name",
+        "how": "`--tools docs,<owner>/<actor>` listing just the Actors the task uses, leaving out the `actors` category",
+        "gives_you": "The model can run only the Actors you chose, since the open-ended call-actor tool is not served",
+        "criterion": "C7",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/stdio.ts",
+            "lines": "93-98",
+            "contains": "Comma-separated list of tools to enable",
+            "url": "https://github.com/apify/apify-mcp-server/blob/47a6c9fe4f9e96445316285fb4dfcfaee4cb28c6/src/stdio.ts#L93-L98"
+          },
+          {
+            "file": "src/tools/registry.ts",
+            "lines": "61-62",
+            "contains": "actors: [searchActors, fetchActorDetails, callActor]",
+            "url": "https://github.com/apify/apify-mcp-server/blob/47a6c9fe4f9e96445316285fb4dfcfaee4cb28c6/src/tools/registry.ts#L61-L62"
+          }
+        ]
+      },
+      {
+        "setup": "Account tools left off",
+        "how": "Keep `tasks`, `schedules`, `builds` and `delete-actor` out of the list unless the task needs them",
+        "gives_you": "Tasks, schedules, builds and your own Actors stay out of the model's reach",
+        "criterion": "C2",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "src/tools/registry.ts",
+            "lines": "74-76",
+            "contains": "schedules: [createSchedule",
+            "url": "https://github.com/apify/apify-mcp-server/blob/47a6c9fe4f9e96445316285fb4dfcfaee4cb28c6/src/tools/registry.ts#L74-L76"
+          },
+          {
+            "file": "src/tools/registry.ts",
+            "lines": "110-112",
+            "contains": "`delete-actor` stays here",
+            "url": "https://github.com/apify/apify-mcp-server/blob/47a6c9fe4f9e96445316285fb4dfcfaee4cb28c6/src/tools/registry.ts#L110-L112"
+          }
+        ]
+      },
+      {
+        "setup": "Per-call approval in the host",
+        "how": "Use an MCP host that asks before each tool call and honours the server's destructive and read-only hints",
+        "gives_you": "A person sees each paid Actor run and its input before it starts",
+        "criterion": "C2",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A spend limit on the account",
+        "how": "Set a usage limit on the Apify account the token belongs to, at a level you are comfortable with",
+        "gives_you": "A ceiling on what runs can spend, which the server itself does not set",
+        "criterion": "C10",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Telemetry off",
+        "how": "`--telemetry-enabled=false` or `TELEMETRY_ENABLED=false`",
+        "gives_you": "Tool names, run IDs and error details stay with you, not with usage and crash reporting services",
+        "criterion": "C8",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/stdio.ts",
+            "lines": "100-105",
+            "contains": "TELEMETRY_ENABLED environment variable",
+            "url": "https://github.com/apify/apify-mcp-server/blob/47a6c9fe4f9e96445316285fb4dfcfaee4cb28c6/src/stdio.ts#L100-L105"
+          },
+          {
+            "file": "src/instrument.ts",
+            "lines": "16-19",
+            "contains": "process.env.TELEMETRY_ENABLED === 'false'",
+            "url": "https://github.com/apify/apify-mcp-server/blob/47a6c9fe4f9e96445316285fb4dfcfaee4cb28c6/src/instrument.ts#L16-L19"
+          }
+        ]
+      },
+      {
+        "setup": "A record you keep",
+        "how": "Keep the MCP host's tool-call log and the server's stderr, and check runs in Apify Console's run history",
+        "gives_you": "A record of every call and run, since the server logs only errors locally",
+        "criterion": "C9",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve Actor runs one at a time, checking the Actor name and the URLs in its input.",
+      "Before approving a run, check its `memory` and `timeout` and that `maxTotalChargeUsd` is set where the Actor supports it; a `timeout` of 0 means no limit."
+    ],
+    "handling": [
+      "Stopping the client leaves started runs going in Apify's cloud; abort any you no longer need from Apify Console.",
+      "Web pages and Actor output reach the model unmarked; treat any session that reads the web as handling untrusted input."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

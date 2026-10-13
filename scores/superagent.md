@@ -24,6 +24,28 @@
 
 Guard and redact are single LLM calls with a well-hardened URL fetcher, but scan is an unattended agent: it installs opencode-ai@latest in a remote Daytona sandbox, points it at an untrusted repository, and gives it the operator's Anthropic and OpenAI API keys with unrestricted network. A poisoned repository can steal those keys, and nothing approves, logs, or time-limits the run. The sandbox keeps the operator's machine safe, but not their keys.
 
+## Safest setup
+
+Superagent runs all scan code in a remote Daytona sandbox that is deleted after each scan, and its guard URL fetcher blocks internal addresses with firm size and time limits. Beyond that the defaults are weak and there is nothing to turn on: scans get your provider keys, run with no approval, limit or record, and install the newest OpenCode release each time. The safest setup builds those boundaries around the tool yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Dedicated, spend-limited keys | Give the process that runs scans its own `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`, only the one your scan model needs, with a spending limit set at the provider ([sdk/typescript/src/providers/anthropic.ts:53](https://github.com/superagent-ai/superagent/blob/c9e646271bf15cf7ea7b8e2de9de98008ea1099d/sdk/typescript/src/providers/anthropic.ts#L53); [sdk/typescript/src/providers/openai.ts:38](https://github.com/superagent-ai/superagent/blob/c9e646271bf15cf7ea7b8e2de9de98008ea1099d/sdk/typescript/src/providers/openai.ts#L38)) | A key exposed during a scan reaches only that budget, not your main provider accounts (C1) |
+| Scan only where needed | Set `DAYTONA_API_KEY` only for the MCP servers and processes whose job is scanning ([mcp/src/index.ts:305](https://github.com/superagent-ai/superagent/blob/c9e646271bf15cf7ea7b8e2de9de98008ea1099d/mcp/src/index.ts#L305)) | Everywhere else, scan stays unavailable and an AI host can use only guard and redact (C3) |
+| Ask before each scan | Set your MCP host to ask before every `superagent_scan` call, whatever its read-only label ([mcp/src/index.ts:267](https://github.com/superagent-ai/superagent/blob/c9e646271bf15cf7ea7b8e2de9de98008ea1099d/mcp/src/index.ts#L267)) | A person decides each time a sandbox is started with your keys (C2) |
+| A scan-only Daytona account | Use a Daytona account reserved for scans, and check it for leftover sandboxes after an interrupted scan | Sandbox spend and any orphaned sandboxes stay separate from your other work (C10) |
+| Your own scan record | Record each scan's repository, time and result in your own application | A record of which repositories ran with your keys, since the scan itself keeps none (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve scan calls one at a time, checking the repository is the one you meant to scan.
+- The scan tool is labelled read-only, so a host that auto-approves read-only tools runs it without asking.
+
+### Handling data
+
+- Scan reports are written from untrusted repository content; treat them as untrusted input for any model that reads them.
+- Usage telemetry, on by default with no opt-out, sends token counts with your Superagent key to superagent.sh.
+
 ## Critical gaps
 - Scan injects the operator's Anthropic/OpenAI API keys into the sandbox where an agent reads an untrusted repository with network access, so a poisoned repo can exfiltrate them. (ASI05, ASI03, LLM02; C4) — [sdk/typescript/src/client.ts:778-790](https://github.com/superagent-ai/superagent/blob/c9e646271bf15cf7ea7b8e2de9de98008ea1099d/sdk/typescript/src/client.ts#L778-L790); [sdk/typescript/src/client.ts:809-811](https://github.com/superagent-ai/superagent/blob/c9e646271bf15cf7ea7b8e2de9de98008ea1099d/sdk/typescript/src/client.ts#L809-L811)
 - OpenCode runs with the scanned (untrusted) repository as its working directory, so repo-controlled agent config and instruction files can reconfigure the agent holding the operator's keys. (ASI06, ASI01; C6) — [sdk/typescript/src/client.ts:809-811](https://github.com/superagent-ai/superagent/blob/c9e646271bf15cf7ea7b8e2de9de98008ea1099d/sdk/typescript/src/client.ts#L809-L811)

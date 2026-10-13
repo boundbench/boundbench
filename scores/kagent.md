@@ -24,6 +24,31 @@
 
 kagent runs each agent in a gVisor-isolated Substrate actor whose network egress is limited to configured origins and whose model and MCP credentials are injected by an egress gateway rather than placed in the agent's environment - a genuinely strong isolation design. That design is undercut by the control plane it ships with: the default controller authentication mode is 'insecure' (any caller can claim any user, defaulting to admin) with a permit-all authorizer, and every agent actor is always allowed to reach that controller API, which can create agents, tool servers and model configs and call any registered MCP tool under a cluster-wide service account. Human approval of tool calls exists but is off by default, and there are no step, time or spend limits on the agent loop.
 
+## Safest setup
+
+kagent runs every agent in a gVisor sandbox with an egress allowlist, and keeps model and tool keys out of the agent itself. The chart ships with an open control plane, cluster-wide RBAC, approval off and no run limits, so the safest setup locks down access first and then turns on the approval and limits kagent already includes.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Namespace-scoped RBAC | List the namespaces kagent manages in `namespaces` under `rbac` ([helm/kagent/values.yaml:193-206](https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L193-L206)) | Kubernetes itself confines what the controller can change to those namespaces, whatever reaches it (C1) |
+| An authenticated controller | Set `mode: trusted-proxy` under `auth` in the controller values, behind a validating proxy with network isolation, and supply a restrictive authorizer ([helm/kagent/values.yaml:226-230](https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L226-L230)) | Only verified users reach the controller API, and each request carries their real identity (C1) |
+| Per-call approval | `requireApproval: true` on each MCP tool binding to a server that can change the cluster ([go/api/v1alpha3/agenttemplate_types.go:61-65](https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/api/v1alpha3/agenttemplate_types.go#L61-L65)) | A person sees the exact tool name and arguments before each bound call runs (C2) |
+| Only the tools needed | Name just the tools the agent uses in each binding's `tools` list ([go/api/v1alpha3/agenttemplate_types.go:53-60](https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/api/v1alpha3/agenttemplate_types.go#L53-L60)) | The agent sees a narrow set of tools, with write tools only where you chose them (C3) |
+| The gVisor sandbox | Keep the WorkerPool on its default gVisor sandbox class, or choose MicroVM ([go/core/internal/substrate/actor_template.go:217-229](https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/substrate/actor_template.go#L217-L229)) | Agent code and shell commands run in an isolated sandbox, never directly on the node (C4) |
+| Long-term memory off | Keep the default `vectorEnabled: false` in the database values unless agents need memory ([helm/kagent/values.yaml:113-116](https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L113-L116)) | Each session starts clean, with nothing saved earlier replayed into it (C6) |
+| Your own database | Set `enabled: false` under `bundled` in the database values and point `urlFile` at credentials you manage ([helm/kagent/values.yaml:110-112](https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L110-L112); [helm/kagent/values.yaml:130-132](https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L130-L132)) | Conversation history, which can hold tool output, sits behind credentials only you know (C8) |
+| Time and spend limits | Set `a2aClientTimeout: "<duration>"` in the controller values and a spending limit on each model key at the provider ([helm/kagent/values.yaml:245-253](https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L245-L253)) | Each controller call to an agent, and model spend, stops at a ceiling you chose (C10) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; the prompt shows the exact tool and arguments.
+- Approval covers MCP tool bindings only; the skills shell and the Claude and Codex harnesses run their own tools without it.
+
+### Handling data
+
+- Secrets that tools read reach the model and the stored history unredacted; protect the database like the cluster Secrets themselves.
+- The bundled tool server logs at `debug` by default, and telemetry with `messageContent` capture ships off; review both before sending logs anywhere shared.
+
 ## Critical gaps
 - Default controller authentication accepts any caller-asserted user (default admin@kagent.dev) with a permit-all authorizer, and every agent actor is always allowed to reach that controller. (ASI03, T3, T9; C1) — [helm/kagent/values.yaml:227-230](https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/values.yaml#L227-L230); [go/core/internal/httpserver/auth/authn.go:24-31](https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/httpserver/auth/authn.go#L24-L31); [go/core/pkg/app/app.go:128-130](https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/pkg/app/app.go#L128-L130); [go/core/internal/translator/kagent/compiler.go:71](https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/go/core/internal/translator/kagent/compiler.go#L71)
 - The controller ServiceAccount holds cluster-wide create/update/patch/delete on all core, apps and batch resources, reachable through the unauthenticated API. (ASI03, T3; C1) — [helm/kagent/templates/rbac/writer-role.yaml:50-58](https://github.com/kagent-dev/kagent/blob/72a28f01403ab48f7d6df02d67e24e937c3a0459/helm/kagent/templates/rbac/writer-role.yaml#L50-L58)

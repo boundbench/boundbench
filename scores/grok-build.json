@@ -36,6 +36,143 @@
     "external_communication": "yes"
   },
   "headline": "Grok Build has a carefully engineered approval gate: in its default mode every shell command, edit, MCP call and unknown web fetch is shown to you with the exact command and parsed rule checks, and repo-shipped config waits for a folder-trust decision. But everything you approve runs unsandboxed as you, with your full environment and credentials, and the gate is easy to lose: the first prompt preselects a global always-approve option that persists to every future session, and a trusted repo can turn on bypass mode. There are no cost or time budgets, installed plugins update themselves silently, and secrets are redacted only from telemetry.",
+  "safe_setup": {
+    "intro": "Grok Build asks before every shell command, edit, MCP call and unknown web fetch, and holds repository settings back until you trust the folder. Everything you approve runs on your machine as you, with your full environment, so the safest setup keeps the gate in front of you and adds the sandbox and containment around it.",
+    "steps": [
+      {
+        "setup": "A scoped, clean shell",
+        "how": "Start Grok from a shell or account that holds only the credentials the task needs, scoped or read-only at each provider",
+        "gives_you": "Whatever runs through the agent reaches only the systems you chose, not everything your own shell can",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Per-call approval",
+        "how": "Keep Ask mode, pinned with `permission_mode = \"ask\"` under `[ui]` in ~/.grok/config.toml",
+        "gives_you": "Every shell command, edit, MCP call and sub-agent launch waits for you, and remote settings can't change the mode",
+        "criterion": "C2",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "crates/codegen/xai-grok-shell/src/util/config/permissions.rs",
+            "lines": "7-13",
+            "contains": "\"ask\" => PermissionMode::Ask",
+            "url": "https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-shell/src/util/config/permissions.rs#L7-L13"
+          },
+          {
+            "file": "crates/codegen/xai-grok-shell/src/util/config/permissions.rs",
+            "lines": "28-29",
+            "contains": "const UI_PERMISSION_MODE_KEYS: &[&str] = &[\"permission_mode\"",
+            "url": "https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-shell/src/util/config/permissions.rs#L28-L29"
+          }
+        ]
+      },
+      {
+        "setup": "Folder trust",
+        "how": "Use the released binary, keep folder trust on (`GROK_FOLDER_TRUST` and `[folder_trust] enabled` left at their default), and trust a folder after reading its settings",
+        "gives_you": "A repository's MCP servers, hooks, permission rules, agents and instructions load only once you have looked at them",
+        "criterion": "C6",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "crates/codegen/xai-grok-permission-rules/src/folder_trust.rs",
+            "lines": "140-148",
+            "contains": "BoolFlag::env(\"GROK_FOLDER_TRUST\")",
+            "url": "https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-permission-rules/src/folder_trust.rs#L140-L148"
+          }
+        ]
+      },
+      {
+        "setup": "Only the tools needed",
+        "how": "`--disallowed-tools <list>` naming the built-in tools the task doesn't use",
+        "gives_you": "The model sees a smaller set of tools for each session",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "crates/codegen/xai-grok-pager/src/app/cli.rs",
+            "lines": "661-663",
+            "contains": "long = \"disallowed-tools\"",
+            "url": "https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-pager/src/app/cli.rs#L661-L663"
+          }
+        ]
+      },
+      {
+        "setup": "A secret-free shell environment",
+        "how": "Set `inherit = \"core\"` and `ignore_default_excludes = false` under `[shell_environment_policy]` in ~/.grok/config.toml",
+        "gives_you": "Shell commands start with core variables only, without your *KEY*, *SECRET* and *TOKEN* variables",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "crates/codegen/xai-grok-tools/src/util/shell_env_policy.rs",
+            "lines": "29-35",
+            "contains": "Core,",
+            "url": "https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-tools/src/util/shell_env_policy.rs#L29-L35"
+          },
+          {
+            "file": "crates/codegen/xai-grok-tools/src/util/shell_env_policy.rs",
+            "lines": "43-45",
+            "contains": "pub ignore_default_excludes: bool,",
+            "url": "https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-tools/src/util/shell_env_policy.rs#L43-L45"
+          },
+          {
+            "file": "crates/codegen/xai-grok-config/src/config_override.rs",
+            "lines": "116-117",
+            "contains": "&[\"shell_environment_policy\", \"inherit\"],",
+            "url": "https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-config/src/config_override.rs#L116-L117"
+          }
+        ]
+      },
+      {
+        "setup": "The OS sandbox",
+        "how": "`--sandbox workspace` for everyday work, or `--sandbox strict` for untrusted code, also settable as `GROK_SANDBOX`",
+        "gives_you": "The kernel limits where Grok and every command, hook and MCP server it starts can write, and strict also cuts child network on Linux",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "crates/codegen/xai-grok-pager/src/app/cli.rs",
+            "lines": "700-702",
+            "contains": "#[arg(long, env = \"GROK_SANDBOX\", value_name = \"PROFILE\")]",
+            "url": "https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-pager/src/app/cli.rs#L700-L702"
+          }
+        ]
+      },
+      {
+        "setup": "A turn limit",
+        "how": "`--max-turns <n>` on each run",
+        "gives_you": "Every run ends after a fixed number of agent turns",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "crates/codegen/xai-grok-pager/src/app/cli.rs",
+            "lines": "664-669",
+            "contains": "long = \"max-turns\"",
+            "url": "https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-pager/src/app/cli.rs#L664-L669"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run Grok in a container or VM with only the project checked out and network limited to the hosts the task needs",
+        "gives_you": "An outer boundary around approved commands, and a narrow path for data to leave",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time with the single-call option; the preselected first row turns on always-approve for this and later sessions.",
+      "Approving a sub-agent can cover all of its calls when its definition sets bypassPermissions, so read agent definitions before trusting a folder.",
+      "Files changed by approved commands have no undo, and /rewind restores only the conversation, so commit or back up before a session."
+    ],
+    "handling": [
+      "Transcripts and events.jsonl under ~/.grok/sessions keep tool calls unredacted, and the agent's own shell can edit them; copy them elsewhere when you need a lasting record."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

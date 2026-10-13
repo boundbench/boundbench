@@ -36,6 +36,170 @@
     "external_communication": "yes"
   },
   "headline": "As shipped, nanobot gives the model an unsandboxed shell, unrestricted file access across the user's home directory, web access and the ability to message any configured chat, with no human approval for any of it. Its good controls (SSRF-safe web fetching, a bubblewrap/Seatbelt sandbox, workspace restriction, scrubbed subprocess environments, deny-by-default chat access with pairing) are either narrow or off by default. The dominant risk is prompt injection from web pages, email or chat turning into secret theft (config.json holds the API keys) and destructive commands with no one in the loop.",
+  "safe_setup": {
+    "intro": "nanobot ships a few solid protections: SSRF-safe web fetching, deny-by-default chat access with pairing, and a scrubbed environment for shell commands. As shipped, its shell and file tools reach your whole home directory with no sandbox and no approval step, so the safest setup turns on the workspace restriction and sandbox nanobot includes and builds containment around the process.",
+    "steps": [
+      {
+        "setup": "A dedicated OS account",
+        "how": "Run nanobot as its own OS user whose home holds only nanobot's files, with provider keys that carry a spending limit",
+        "gives_you": "Your SSH keys, cloud credentials and other personal files stay out of the agent's reach",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Workspace restriction",
+        "how": "`tools.restrictToWorkspace: true` in config.json",
+        "gives_you": "File tools stay inside the workspace and shell commands get nanobot's path checks and deny-list",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "nanobot/config/schema.py",
+            "lines": "402",
+            "contains": "restrict_to_workspace: bool = False",
+            "url": "https://github.com/HKUDS/nanobot/blob/b0d2382856a2857780181aefe09fd4ccb4fd8fd1/nanobot/config/schema.py#L402"
+          },
+          {
+            "file": "docs/configuration.md",
+            "lines": "2136",
+            "contains": "`tools.restrictToWorkspace` | `false`",
+            "url": "https://github.com/HKUDS/nanobot/blob/b0d2382856a2857780181aefe09fd4ccb4fd8fd1/docs/configuration.md#L2136"
+          }
+        ]
+      },
+      {
+        "setup": "The exec sandbox",
+        "how": "`tools.exec.sandbox: \"bwrap\"` on Linux or `\"seatbelt\"` on macOS",
+        "gives_you": "Shell commands write only to the workspace and never see the config directory",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "nanobot/agent/tools/shell.py",
+            "lines": "100",
+            "contains": "sandbox: str = \"\"",
+            "url": "https://github.com/HKUDS/nanobot/blob/b0d2382856a2857780181aefe09fd4ccb4fd8fd1/nanobot/agent/tools/shell.py#L100"
+          },
+          {
+            "file": "nanobot/agent/tools/sandbox.py",
+            "lines": "309",
+            "contains": "_BACKENDS = {\"bwrap\": _bwrap, \"seatbelt\": _seatbelt}",
+            "url": "https://github.com/HKUDS/nanobot/blob/b0d2382856a2857780181aefe09fd4ccb4fd8fd1/nanobot/agent/tools/sandbox.py#L309"
+          },
+          {
+            "file": "docs/configuration.md",
+            "lines": "2138",
+            "contains": "`tools.exec.sandbox`",
+            "url": "https://github.com/HKUDS/nanobot/blob/b0d2382856a2857780181aefe09fd4ccb4fd8fd1/docs/configuration.md#L2138"
+          }
+        ]
+      },
+      {
+        "setup": "Shell only where needed",
+        "how": "`tools.exec.enable: false` for setups whose tasks need no shell",
+        "gives_you": "The model works through nanobot's narrower file and web tools alone",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "nanobot/agent/tools/shell.py",
+            "lines": "96",
+            "contains": "enable: bool = True",
+            "url": "https://github.com/HKUDS/nanobot/blob/b0d2382856a2857780181aefe09fd4ccb4fd8fd1/nanobot/agent/tools/shell.py#L96"
+          },
+          {
+            "file": "docs/configuration.md",
+            "lines": "2139",
+            "contains": "`tools.exec.enable` | `true`",
+            "url": "https://github.com/HKUDS/nanobot/blob/b0d2382856a2857780181aefe09fd4ccb4fd8fd1/docs/configuration.md#L2139"
+          }
+        ]
+      },
+      {
+        "setup": "Skills you chose",
+        "how": "`agents.defaults.disabledSkills: [\"clawhub\"]`, adding skills to the workspace yourself",
+        "gives_you": "New skills come from you, not from a public registry the model picks",
+        "criterion": "C7",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "nanobot/config/schema.py",
+            "lines": "147",
+            "contains": "disabled_skills: list[str] = Field(default_factory=list)",
+            "url": "https://github.com/HKUDS/nanobot/blob/b0d2382856a2857780181aefe09fd4ccb4fd8fd1/nanobot/config/schema.py#L147"
+          },
+          {
+            "file": "docs/configuration.md",
+            "lines": "2386",
+            "contains": "`agents.defaults.disabledSkills`",
+            "url": "https://github.com/HKUDS/nanobot/blob/b0d2382856a2857780181aefe09fd4ccb4fd8fd1/docs/configuration.md#L2386"
+          }
+        ]
+      },
+      {
+        "setup": "Owner-only chat access",
+        "how": "Keep each channel's `allowFrom` unset for pairing, or list only your own user IDs",
+        "gives_you": "Only people you approved can give the agent instructions over chat",
+        "criterion": "C5",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "nanobot/channels/base.py",
+            "lines": "238-254",
+            "contains": "config_mapping.get(\"allowFrom\")",
+            "url": "https://github.com/HKUDS/nanobot/blob/b0d2382856a2857780181aefe09fd4ccb4fd8fd1/nanobot/channels/base.py#L238-L254"
+          },
+          {
+            "file": "docs/configuration.md",
+            "lines": "2147",
+            "contains": "`channels.*.allowFrom` | omitted",
+            "url": "https://github.com/HKUDS/nanobot/blob/b0d2382856a2857780181aefe09fd4ccb4fd8fd1/docs/configuration.md#L2147"
+          }
+        ]
+      },
+      {
+        "setup": "Run and command limits",
+        "how": "Keep the default `maxToolIterations` of 200 or lower, and the default `tools.exec.timeout` of 60 seconds",
+        "gives_you": "Each run ends after a fixed number of tool calls and each shell command after a minute",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "nanobot/config/schema.py",
+            "lines": "130",
+            "contains": "max_tool_iterations: int = 200",
+            "url": "https://github.com/HKUDS/nanobot/blob/b0d2382856a2857780181aefe09fd4ccb4fd8fd1/nanobot/config/schema.py#L130"
+          },
+          {
+            "file": "nanobot/agent/tools/shell.py",
+            "lines": "97",
+            "contains": "timeout: int = Field(default=60, ge=0)",
+            "url": "https://github.com/HKUDS/nanobot/blob/b0d2382856a2857780181aefe09fd4ccb4fd8fd1/nanobot/agent/tools/shell.py#L97"
+          },
+          {
+            "file": "docs/configuration.md",
+            "lines": "2140",
+            "contains": "`tools.exec.timeout` | `60`",
+            "url": "https://github.com/HKUDS/nanobot/blob/b0d2382856a2857780181aefe09fd4ccb4fd8fd1/docs/configuration.md#L2140"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run nanobot in a container or VM whose network reaches only the model provider and the chat services you use",
+        "gives_you": "An outer boundary around CLI apps and MCP servers, and a narrow path for data to leave",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "handling": [
+      "Tool-call arguments go to the INFO log unredacted and transcripts are stored unencrypted; store both like the keys in config.json.",
+      "SOUL.md, USER.md and MEMORY.md can be rolled back with `/dream-restore`; review AGENTS.md and workspace skills yourself, since they have no history.",
+      "Scheduled jobs the agent created keep running after `/stop`; check the job list when you end a run."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

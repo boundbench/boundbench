@@ -36,6 +36,88 @@
     "external_communication": "yes"
   },
   "headline": "As shipped, DB-GPT's data agent runs model-written shell commands and Python directly on the server host with the server's full environment, including its API keys, and none of it needs human approval. The web server's default network exposure and authentication are not locked down. The Docker sandbox is opt-in, and even then skill scripts run on the host. Treat a default install as remote code execution for anyone who controls data the agent reads.",
+  "safe_setup": {
+    "intro": "DB-GPT caps each agent run at a fixed number of steps, times out shell and Python calls, and shows a confirmation prompt for catalog connector write tools. Beyond that the defaults are weak: model-written code runs on the server host with the server's full environment and no approval, and the server's network exposure and authentication are not locked down. The safest setup turns on the container sandbox and builds most of the protection around the server yourself.",
+    "steps": [
+      {
+        "setup": "A read-only database role",
+        "how": "Connect each datasource with a database account that can only read the tables the task needs",
+        "gives_you": "The database itself refuses writes and schema changes, whatever SQL the agent sends",
+        "criterion": "C3",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A dedicated, low-limit identity",
+        "how": "Run the server as its own OS user whose environment holds only a scoped LLM key with a spending limit set at the provider",
+        "gives_you": "Code the agent runs reaches only that account and that key, not your other credentials",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Access for trusted users only",
+        "how": "Serve DB-GPT only on a private network or behind an authenticating proxy that admits people you trust",
+        "gives_you": "Only people you chose can send the agent instructions",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "The container sandbox",
+        "how": "Set `SANDBOX_RUNTIME=docker` (or `podman` or `nerdctl`) in the server's environment",
+        "gives_you": "Shell and Python calls run in a throwaway container that receives only explicit variables, and a failed backend stops rather than falling back to the host",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/dbgpt-sandbox/src/dbgpt_sandbox/sandbox/config.py",
+            "lines": "40-42",
+            "contains": "SANDBOX_RUNTIME = os.getenv(\"SANDBOX_RUNTIME\")",
+            "url": "https://github.com/eosphoros-ai/DB-GPT/blob/5905245a6750bafa636aa36a904b7fd4ead75334/packages/dbgpt-sandbox/src/dbgpt_sandbox/sandbox/config.py#L40-L42"
+          },
+          {
+            "file": "packages/dbgpt-sandbox/src/dbgpt_sandbox/sandbox/execution_layer/runtime_factory.py",
+            "lines": "28",
+            "contains": "if preference not in {\"docker\", \"podman\", \"nerdctl\"}:",
+            "url": "https://github.com/eosphoros-ai/DB-GPT/blob/5905245a6750bafa636aa36a904b7fd4ead75334/packages/dbgpt-sandbox/src/dbgpt_sandbox/sandbox/execution_layer/runtime_factory.py#L28"
+          }
+        ]
+      },
+      {
+        "setup": "Reviewed skills only",
+        "how": "Import only skills whose instructions and scripts you have read, from a copy you keep",
+        "gives_you": "Skill scripts, which run on the host even with the sandbox on, are code you have checked",
+        "criterion": "C7",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the whole server in a container or VM with outbound access limited to the model provider and your databases",
+        "gives_you": "An outer boundary around host-run code and package installs, and a narrow path for data to leave",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Logs kept off the host",
+        "how": "Ship the tracer's files under `logs/` to storage the server account can't modify",
+        "gives_you": "A record of every agent action that the agent's own shell can't edit or delete",
+        "criterion": "C9",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Connector write prompts show the call's arguments with secret-named keys masked; read each prompt and approve calls one at a time.",
+      "Shell, Python, SQL and skill scripts run without a prompt, so the steps above carry the protection for those tools."
+    ],
+    "handling": [
+      "The tracer stores full model replies and tool results under `logs/` and in SQLite; store them like the data the agent read.",
+      "Datasource passwords sit in the metadata database; protect it like the databases they open."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

@@ -36,6 +36,150 @@
     "external_communication": "no"
   },
   "headline": "As shipped, this server hands the model the operator's full kubeconfig authority across every context in it: it can exec arbitrary commands in any pod, run any image, apply or delete any resource, and read Secrets and the raw kubeconfig (including tokens and client keys) through configuration_view. Every tool carries accurate read-only/destructive annotations and there are solid opt-in controls (read_only mode, elicitation-based confirmation rules, a central denied-resources filter, OAuth with token exchange), but none of them is on by default. The dominant risk is a prompt-injected or misled host agent using cluster-admin-equivalent credentials unattended, with nothing in the server's default configuration to stop or record it.",
+  "safe_setup": {
+    "intro": "Kubernetes MCP Server labels every tool as read-only or destructive and includes a read-only mode, confirmation prompts, a resource denylist and per-user OAuth, but none of them is on by default: as shipped it acts with your full kubeconfig across every context. The safest setup narrows the cluster identity first and then turns those controls on in a config file passed with `--config`.",
+    "steps": [
+      {
+        "setup": "A scoped kubeconfig",
+        "how": "Set `kubeconfig` to a file holding one context whose identity has read-only or single-namespace RBAC, such as a ServiceAccount bound to the view ClusterRole",
+        "gives_you": "The Kubernetes API itself refuses anything outside that role, on the one cluster you chose",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "pkg/config/config.go",
+            "lines": "406",
+            "contains": "opt(\"kubeconfig\", \"\")",
+            "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L406"
+          }
+        ]
+      },
+      {
+        "setup": "Per-user OAuth over HTTP",
+        "how": "For HTTP deployments, set `require_oauth = true` and configure a `[token_exchange]` table",
+        "gives_you": "Each request reaches the cluster with the requesting user's own identity, and requests without a token are refused",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "pkg/config/validate.go",
+            "lines": "291-292",
+            "contains": "token exchange requires require_oauth=true",
+            "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/validate.go#L291-L292"
+          },
+          {
+            "file": "pkg/config/config.go",
+            "lines": "338",
+            "contains": "toml:\"token_exchange\"",
+            "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L338"
+          }
+        ]
+      },
+      {
+        "setup": "Read-only mode",
+        "how": "`read_only = true` in the config file",
+        "gives_you": "Only tools annotated read-only are exposed, so nothing the agent reads can lead to exec, apply or delete",
+        "criterion": "C5",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "pkg/config/config.go",
+            "lines": "411",
+            "contains": "opt(\"read_only\", false)",
+            "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L411"
+          }
+        ]
+      },
+      {
+        "setup": "Only the toolsets needed",
+        "how": "`toolsets = [\"core\"]`, leaving out `config` unless the task needs it",
+        "gives_you": "The raw kubeconfig stays out of the model's context and the tool list stays small",
+        "criterion": "C8",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "pkg/config/config.go",
+            "lines": "416",
+            "contains": "opt(\"toolsets\", []string{\"core\", \"config\"})",
+            "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L416"
+          }
+        ]
+      },
+      {
+        "setup": "Secrets on the denylist",
+        "how": "Add `{ group = \"\", version = \"v1\", kind = \"Secret\" }` to `denied_resources`",
+        "gives_you": "Tool requests for Secret objects are refused at the one point every Kubernetes API call passes",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "pkg/config/config.go",
+            "lines": "410",
+            "contains": "opt(\"denied_resources\"",
+            "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L410"
+          },
+          {
+            "file": "pkg/config/schema.go",
+            "lines": "38-40",
+            "contains": "toml:\"kind,omitempty\"",
+            "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/schema.go#L38-L40"
+          }
+        ]
+      },
+      {
+        "setup": "Confirmation before destructive calls",
+        "how": "Add a `confirmation_rules` entry with `destructive = true`, and set `confirmation_fallback = \"deny\"`",
+        "gives_you": "The server asks you through your MCP client before each destructive call, and clients that can't ask are refused",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "pkg/config/config.go",
+            "lines": "421-424",
+            "contains": "opt(\"confirmation_fallback\", \"allow\")",
+            "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L421-L424"
+          },
+          {
+            "file": "pkg/config/schema.go",
+            "lines": "82-83",
+            "contains": "toml:\"destructive,omitempty\"",
+            "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/schema.go#L82-L83"
+          }
+        ]
+      },
+      {
+        "setup": "Restricted pod security",
+        "how": "Use the server only on namespaces where Pod Security admission enforces the restricted profile",
+        "gives_you": "Any pod the agent starts runs without privileges or host mounts",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A tool-call log",
+        "how": "`log_level = 5` with `log_file = \"<path>\"` outside any workspace",
+        "gives_you": "A record of each tool call's name and sanitized arguments that outlives the session",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "pkg/config/config.go",
+            "lines": "395-396",
+            "contains": "opt(\"log_level\", 0)",
+            "url": "https://github.com/containers/kubernetes-mcp-server/blob/26eaf54c2a67fd4ea42657a83e6fd22aca4ccb40/pkg/config/config.go#L395-L396"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; deletes and full-replace applies have no preview and no undo.",
+      "`pods_run` is not marked destructive, so add a rule with `tool = \"pods_run\"` if you want a prompt before new pods start."
+    ],
+    "handling": [
+      "`configuration_view` and Secret reads return credentials in full; treat the session transcript like the kubeconfig itself.",
+      "Log sanitization is best-effort and results are logged from level 6; store the log like the cluster data it covers."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

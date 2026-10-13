@@ -24,6 +24,30 @@
 
 BabyAGI runs every stored function with Python exec() inside the server process, injects every stored API key into each one, and pip-installs whatever imports a function lists. Access control on the dashboard and REST API that execute functions is not locked down. There are no approval gates, sandbox, or limits. The author labels it experimental and not for production; treat it that way.
 
+## Safest setup
+
+BabyAGI is an experimental framework, and its author says it is not for production. It runs every stored function inside the server process with all stored keys in scope, has no approval step, sandbox or limits, and access to its dashboard and API is not locked down. The safest setup keeps it on a machine of its own with only the keys a task needs, and builds the boundaries around it yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Dedicated, low-limit keys | Store only the API keys this deployment needs, each scoped or read-only with a spending limit set at the provider | Any function, hijacked or not, reaches only the systems and spend you chose (C1) |
+| Private, signed-in access | Serve the dashboard and API only on a network you control, behind a proxy that requires sign-in | Only people you choose can run functions or chat with the agent (C1) |
+| Only the functions needed | Pass the chat only the functions the task uses in `available_function_names`, leaving out the code-writing and key-store functions ([babyagi/functionz/packs/default/function_calling_chat.py:16](https://github.com/yoheinakajima/babyagi/blob/fa8930ebe72a82e5ad57b356e7cbec96290e5bb2/babyagi/functionz/packs/default/function_calling_chat.py#L16)) | The model can call only the tools you offered it in that conversation (C3) |
+| A remote code sandbox | Load the E2B plugin with `load_functions("plugins/e2b")` and send model-written code through `execute_code_in_sandbox` ([babyagi/__init__.py:61](https://github.com/yoheinakajima/babyagi/blob/fa8930ebe72a82e5ad57b356e7cbec96290e5bb2/babyagi/__init__.py#L61); [babyagi/functionz/packs/plugins/e2b.py:8](https://github.com/yoheinakajima/babyagi/blob/fa8930ebe72a82e5ad57b356e7cbec96290e5bb2/babyagi/functionz/packs/plugins/e2b.py#L8)) | Code you pass to it runs in a remote sandbox per call, away from your keys and files (C4) |
+| Pinned, pre-installed packages | Run it from a virtual environment where you installed and pinned every package your functions import | Functions load the package versions you chose and installed yourself (C7) |
+| A clean working directory | Start the server from a dedicated directory holding only the function database and key file you created | The functions, triggers and keys that load are the ones you put there (C6) |
+| Its own container or VM | Run the server in a container or VM whose network reaches only the model provider and the services your functions call | An outer boundary around function code, which otherwise runs as your user on your machine, and a narrow path for data to leave (C4) |
+| An off-box execution log | Copy the execution log regularly to storage the server can't modify | A record of every function call that survives changes made from inside the server (C9) |
+
+### Approving with confidence
+
+- There is no approval step, so read a function's code and imports in the dashboard before you run it or offer it to the chat.
+
+### Handling data
+
+- The function database and its key file together unlock every stored key; keep them readable only by you and back them up like a password vault.
+- The chat turns on LiteLLM verbose logging, so keep the server's console output out of shared logs.
+
 ## Critical gaps
 - Every stored secret key is injected into the scope of every executed function, so any hijacked function holds all credentials. (ASI03, T3, LLM06; C1) — [babyagi/functionz/core/execution.py:158-162](https://github.com/yoheinakajima/babyagi/blob/fa8930ebe72a82e5ad57b356e7cbec96290e5bb2/babyagi/functionz/core/execution.py#L158-L162); [babyagi/api/__init__.py:55-71](https://github.com/yoheinakajima/babyagi/blob/fa8930ebe72a82e5ad57b356e7cbec96290e5bb2/babyagi/api/__init__.py#L55-L71)
 - Default pack exposes add_key_wrapper and get_all_secret_keys as callable tools, letting a caller rewrite or dump the credential store. (ASI03, T3; C1) — [babyagi/functionz/packs/default/default_functions.py:75-80](https://github.com/yoheinakajima/babyagi/blob/fa8930ebe72a82e5ad57b356e7cbec96290e5bb2/babyagi/functionz/packs/default/default_functions.py#L75-L80); [babyagi/functionz/packs/default/default_functions.py:116-118](https://github.com/yoheinakajima/babyagi/blob/fa8930ebe72a82e5ad57b356e7cbec96290e5bb2/babyagi/functionz/packs/default/default_functions.py#L116-L118)

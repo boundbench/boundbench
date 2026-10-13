@@ -24,6 +24,30 @@
 
 As shipped, DB-GPT's data agent runs model-written shell commands and Python directly on the server host with the server's full environment, including its API keys, and none of it needs human approval. The web server's default network exposure and authentication are not locked down. The Docker sandbox is opt-in, and even then skill scripts run on the host. Treat a default install as remote code execution for anyone who controls data the agent reads.
 
+## Safest setup
+
+DB-GPT caps each agent run at a fixed number of steps, times out shell and Python calls, and shows a confirmation prompt for catalog connector write tools. Beyond that the defaults are weak: model-written code runs on the server host with the server's full environment and no approval, and the server's network exposure and authentication are not locked down. The safest setup turns on the container sandbox and builds most of the protection around the server yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A read-only database role | Connect each datasource with a database account that can only read the tables the task needs | The database itself refuses writes and schema changes, whatever SQL the agent sends (C3) |
+| A dedicated, low-limit identity | Run the server as its own OS user whose environment holds only a scoped LLM key with a spending limit set at the provider | Code the agent runs reaches only that account and that key, not your other credentials (C1) |
+| Access for trusted users only | Serve DB-GPT only on a private network or behind an authenticating proxy that admits people you trust | Only people you chose can send the agent instructions (C5) |
+| The container sandbox | Set `SANDBOX_RUNTIME=docker` (or `podman` or `nerdctl`) in the server's environment ([packages/dbgpt-sandbox/src/dbgpt_sandbox/sandbox/config.py:40-42](https://github.com/eosphoros-ai/DB-GPT/blob/5905245a6750bafa636aa36a904b7fd4ead75334/packages/dbgpt-sandbox/src/dbgpt_sandbox/sandbox/config.py#L40-L42); [packages/dbgpt-sandbox/src/dbgpt_sandbox/sandbox/execution_layer/runtime_factory.py:28](https://github.com/eosphoros-ai/DB-GPT/blob/5905245a6750bafa636aa36a904b7fd4ead75334/packages/dbgpt-sandbox/src/dbgpt_sandbox/sandbox/execution_layer/runtime_factory.py#L28)) | Shell and Python calls run in a throwaway container that receives only explicit variables, and a failed backend stops rather than falling back to the host (C4) |
+| Reviewed skills only | Import only skills whose instructions and scripts you have read, from a copy you keep | Skill scripts, which run on the host even with the sandbox on, are code you have checked (C7) |
+| Its own container or VM | Run the whole server in a container or VM with outbound access limited to the model provider and your databases | An outer boundary around host-run code and package installs, and a narrow path for data to leave (C5) |
+| Logs kept off the host | Ship the tracer's files under `logs/` to storage the server account can't modify | A record of every agent action that the agent's own shell can't edit or delete (C9) |
+
+### Approving with confidence
+
+- Connector write prompts show the call's arguments with secret-named keys masked; read each prompt and approve calls one at a time.
+- Shell, Python, SQL and skill scripts run without a prompt, so the steps above carry the protection for those tools.
+
+### Handling data
+
+- The tracer stores full model replies and tool results under `logs/` and in SQLite; store them like the data the agent read.
+- Datasource passwords sit in the metadata database; protect it like the databases they open.
+
 ## Critical gaps
 - The shell and Python tools skip approval entirely, and the connector approval gate is not a strict boundary. (ASI09, ASI02, T10; C2)
 - Model-generated Python and shell run as host subprocesses by default with the server's full environment, including API keys. (ASI05, T11, LLM05; C4) — [packages/dbgpt-sandbox/src/dbgpt_sandbox/sandbox/execution_layer/runtime_factory.py:25](https://github.com/eosphoros-ai/DB-GPT/blob/5905245a6750bafa636aa36a904b7fd4ead75334/packages/dbgpt-sandbox/src/dbgpt_sandbox/sandbox/execution_layer/runtime_factory.py#L25); [packages/dbgpt-sandbox/src/dbgpt_sandbox/sandbox/execution_layer/local_runtime.py:222](https://github.com/eosphoros-ai/DB-GPT/blob/5905245a6750bafa636aa36a904b7fd4ead75334/packages/dbgpt-sandbox/src/dbgpt_sandbox/sandbox/execution_layer/local_runtime.py#L222); [packages/dbgpt-sandbox/src/dbgpt_sandbox/sandbox/config.py:40-42](https://github.com/eosphoros-ai/DB-GPT/blob/5905245a6750bafa636aa36a904b7fd4ead75334/packages/dbgpt-sandbox/src/dbgpt_sandbox/sandbox/config.py#L40-L42)

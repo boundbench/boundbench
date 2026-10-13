@@ -27,6 +27,25 @@
 
 As shipped, model-written code runs inside the developer's own Python process behind a filter its maintainers say is not a security boundary, with no approval gate and no separation between web content and instructions. The dominant risk is goal hijack: a web page read during a run can steer code that executes with the host's authority. Strong isolation exists but is opt-in, and the framework gives developers no oversight primitive for the tools they register.
 
+## Safest setup
+
+smolagents keeps its own footprint small: agents get only the tools you list, Hub code needs an explicit trust flag, and every run stops after 20 steps. Model-written code runs in your own Python process by default and there is no approval step, so the safest setup moves that code into a sandbox and puts the boundaries around the process yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, low-limit key | Run the agent in an environment that holds only the model key and tool credentials this agent needs, with a spending limit set at the provider | Whatever the agent does, it can only reach the systems and spend you gave it, not everything your shell can (C1) |
+| A remote sandbox | `executor_type="e2b"` on `CodeAgent` ([src/smolagents/agents.py:1535](https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/src/smolagents/agents.py#L1535)) | Model-written code and your registered tools run in a remote sandbox that never sees your host environment (C4) |
+| A short import list | List only the modules the task needs in `additional_authorized_imports` ([src/smolagents/agents.py:1532](https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/src/smolagents/agents.py#L1532)) | The local interpreter keeps blocking `os`, `subprocess` and other modules the task has no use for (C4) |
+| Reviewed, pinned Hub code | Keep the default `trust_remote_code=False`; when you load a tool you have read, set it to `True` and pin the commit with `revision` ([src/smolagents/tools.py:521](https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/src/smolagents/tools.py#L521); [src/smolagents/tools.py:563](https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/src/smolagents/tools.py#L563)) | Only code you have read runs inside your agent, and it can't change after you read it (C7) |
+| A step budget | Keep the default `max_steps=20`, or lower it for short tasks ([src/smolagents/agents.py:300](https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/src/smolagents/agents.py#L300)) | Every run ends after a fixed number of steps (C10) |
+| A clean working directory | Start agents from a directory that holds no `.env` file you didn't write ([src/smolagents/remote_executors.py:48](https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/src/smolagents/remote_executors.py#L48)) | Settings such as the model endpoint come only from you, not from a repository you happen to run in (C6) |
+| Its own container or VM | Run the agent process in a container or VM with network access limited to the hosts the task needs | An outer boundary around the local executor and your registered tools, and a narrower path for data to leave (C5) |
+| A run record on disk | Register a callback in `step_callbacks` that writes each step to storage the agent can't modify ([src/smolagents/agents.py:304](https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/src/smolagents/agents.py#L304)) | A record of every tool call and observation that outlives the process (C9) |
+
+### Handling data
+
+- Tool observations print to the console unredacted at the default `verbosity_level`; treat console output and anything a step callback stores like the data the agent read.
+
 ## Critical gaps
 - Model-generated code executes in-process by default; the maintainers state the local executor is not a security boundary. (ASI05; C4). Evidence: [src/smolagents/agents.py:1535](https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/src/smolagents/agents.py#L1535); [SECURITY.md:80](https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/SECURITY.md#L80)
 - If a web page the agent reads hijacks it, it can leak data through arbitrary URL fetches and run any registered tool, with no human involved. (ASI01; C5). Evidence: [README.md:61-64](https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/README.md#L61-L64); [src/smolagents/default_tools.py:528](https://github.com/huggingface/smolagents/blob/c30b115286e000e98711fae5e85993547b73d826/src/smolagents/default_tools.py#L528)

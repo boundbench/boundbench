@@ -24,6 +24,30 @@
 
 As shipped, OpenClaw gives the model a shell on your machine with no approval prompt and no sandbox. Onboarding enables every tool, and the agent can message from your connected chat accounts, write any file, and install plugins. Strong controls exist (exec approvals, a hardened Docker sandbox, SSRF-guarded fetch, taint-aware memory), but most are opt-in. A prompt injection in a web page or message can lead straight to data theft or irreversible actions.
 
+## Safest setup
+
+OpenClaw ships with a guarded web fetch, randomized markers around web and message content, secret redaction in logs and transcripts, and an audit ledger, all on by default. As installed by onboarding it also gives the model every tool and a shell on your machine with no prompt and no sandbox, so the safest setup narrows the tool set and turns on the approvals and Docker sandbox OpenClaw already includes.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated account or VM | Run the Gateway under its own OS user or VM that holds only the model key and channel accounts this agent needs | The operating system, not OpenClaw's own config, limits which files, keys and accounts any tool or plugin can reach (C1) |
+| A smaller tool profile | `tools.profile: "messaging"`, adding only the tools a task needs with `alsoAllow` ([src/config/schema.help.runtime.ts:453-454](https://github.com/openclaw/openclaw/blob/4c0c0c0e3af9310aef3ca8c765a498ca47f9d1d7/src/config/schema.help.runtime.ts#L453-L454); [src/config/zod-schema.agent-runtime.ts:279-281](https://github.com/openclaw/openclaw/blob/4c0c0c0e3af9310aef3ca8c765a498ca47f9d1d7/src/config/zod-schema.agent-runtime.ts#L279-L281); [src/config/zod-schema.agent-runtime.ts:124](https://github.com/openclaw/openclaw/blob/4c0c0c0e3af9310aef3ca8c765a498ca47f9d1d7/src/config/zod-schema.agent-runtime.ts#L124)) | The shell, file writes, browser and plugin management stay out of the model's reach until you add them (C3) |
+| Approval for shell commands | `tools.exec.mode: "ask"` ([src/config/schema.help.runtime.ts:105-106](https://github.com/openclaw/openclaw/blob/4c0c0c0e3af9310aef3ca8c765a498ca47f9d1d7/src/config/schema.help.runtime.ts#L105-L106)) | Commands outside your allowlist wait for you to see the exact command and working directory first (C2) |
+| Workspace-only file tools | `tools.fs.workspaceOnly: true` ([src/config/schema.help.runtime.ts:580-581](https://github.com/openclaw/openclaw/blob/4c0c0c0e3af9310aef3ca8c765a498ca47f9d1d7/src/config/schema.help.runtime.ts#L580-L581)) | File reads and writes stay inside the agent workspace, away from the rest of your home directory (C3) |
+| A plugin allowlist | `plugins.allow` listing the plugin ids you use ([src/config/schema.help.agents.ts:14-15](https://github.com/openclaw/openclaw/blob/4c0c0c0e3af9310aef3ca8c765a498ca47f9d1d7/src/config/schema.help.agents.ts#L14-L15)) | Plugins sitting in the global plugin folder load only when you have listed them (C7) |
+| The Docker sandbox | `agents.defaults.sandbox.mode: "all"` with `tools.elevated.enabled: false` ([src/config/zod-schema.agent-runtime.ts:538](https://github.com/openclaw/openclaw/blob/4c0c0c0e3af9310aef3ca8c765a498ca47f9d1d7/src/config/zod-schema.agent-runtime.ts#L538); [src/config/zod-schema.agent-defaults.ts:27](https://github.com/openclaw/openclaw/blob/4c0c0c0e3af9310aef3ca8c765a498ca47f9d1d7/src/config/zod-schema.agent-defaults.ts#L27); [src/config/schema.help.runtime.ts:172-173](https://github.com/openclaw/openclaw/blob/4c0c0c0e3af9310aef3ca8c765a498ca47f9d1d7/src/config/schema.help.runtime.ts#L172-L173)) | Commands run in a container with a read-only root, no network and no capabilities, and stay there (C4) |
+| A session per sender | `session.dmScope: "per-channel-peer"` ([src/config/schema.help.automation.ts:6-7](https://github.com/openclaw/openclaw/blob/4c0c0c0e3af9310aef3ca8c765a498ca47f9d1d7/src/config/schema.help.automation.ts#L6-L7)) | Each person who messages the agent gets their own session, so one sender's content stays out of another's (C6) |
+| Tighter run limits | `agents.defaults.timeoutSeconds: <n>` well below the 48-hour default, plus `tools.loopDetection.enabled: true` ([src/config/zod-schema.agent-defaults-base.ts:229](https://github.com/openclaw/openclaw/blob/4c0c0c0e3af9310aef3ca8c765a498ca47f9d1d7/src/config/zod-schema.agent-defaults-base.ts#L229); [docs/tools/exec.md:94](https://github.com/openclaw/openclaw/blob/4c0c0c0e3af9310aef3ca8c765a498ca47f9d1d7/docs/tools/exec.md#L94); [src/config/schema.help.runtime.ts:434-435](https://github.com/openclaw/openclaw/blob/4c0c0c0e3af9310aef3ca8c765a498ca47f9d1d7/src/config/schema.help.runtime.ts#L434-L435)) | A runaway turn ends in minutes and repeated tool calls are caught (C10) |
+
+### Approving with confidence
+
+- Read each prompt and approve commands one at a time; allow-always adds the command to your allowlist for later runs.
+- Approval covers shell commands only, so file writes, messages and browser actions follow the tool profile you chose.
+
+### Handling data
+
+- Session transcripts in ~/.openclaw hold full tool arguments; keep the default redaction on and store the folder like other sensitive data.
+
 ## Critical gaps
 - Host shell exec runs with no approval by default (security full, ask off), and it is the most powerful action path. (ASI02, ASI09, T10; C2) — [src/infra/exec-approvals-config.ts:95-96](https://github.com/openclaw/openclaw/blob/4c0c0c0e3af9310aef3ca8c765a498ca47f9d1d7/src/infra/exec-approvals-config.ts#L95-L96); [src/agents/exec-defaults.ts:166](https://github.com/openclaw/openclaw/blob/4c0c0c0e3af9310aef3ca8c765a498ca47f9d1d7/src/agents/exec-defaults.ts#L166)
 - The agent's identity is the user's OS account; the default write tool can rewrite the hot-reloaded config and so its own permissions. (ASI03, T3; C1) — [src/agents/agent-tools.read.ts:1389-1392](https://github.com/openclaw/openclaw/blob/4c0c0c0e3af9310aef3ca8c765a498ca47f9d1d7/src/agents/agent-tools.read.ts#L1389-L1392); [src/gateway/config-reload-settings.ts:8](https://github.com/openclaw/openclaw/blob/4c0c0c0e3af9310aef3ca8c765a498ca47f9d1d7/src/gateway/config-reload-settings.ts#L8)

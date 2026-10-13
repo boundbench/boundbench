@@ -25,6 +25,24 @@ Controls where a risk surface exists: 1.05 / 9.0 (12%); 1 criterion scored SA (s
 
 AgentVerse ships no safety controls around what its agents do. Its built-in executors run model-generated code on the host through a shell or Python eval/exec, with the operator's API keys in the environment and no approval, sandbox, or argument checks. Tool-using tasks forward any tool call the model emits, including a root shell, to an external tool server. Treat it as a research framework and run it only inside a disposable VM or container that holds no credentials you care about.
 
+## Safest setup
+
+AgentVerse ships no approval step, sandbox or argument checks, and model-written code runs on the host with your API keys in its environment; there is nothing to turn on. What it does ship is a turn cap, a per-round tool-call limit and an activity log. The safest setup keeps those and builds every other boundary around the process yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, low-limit key | Give the process only a project-scoped `OPENAI_API_KEY` with a spending limit set at the provider, and no other credentials ([agentverse/llms/openai.py:38](https://github.com/openbmb/agentverse/blob/f90c4bd9680fdd3bcff8c52c9170911a59b23478/agentverse/llms/openai.py#L38)) | Model-run code can reach only that key and its budget, not every credential in your shell (C1) |
+| A disposable container or VM | Run each task in a throwaway container or VM holding no files you care about, with outbound access limited to the model provider | An outer boundary around model-written code, which otherwise runs on your host as you (C4) |
+| Tool servers you run | Point tasks only at tool servers you started yourself, in their own container, at a version you have read | Tools the model reaches run apart from your machine and change only when you update them (C7) |
+| A low turn cap | Keep `max_turn` at the default 10 or lower in the task config, and the default `max_tool_call_times` of 10 ([agentverse/environments/tasksolving_env/basic.py:26](https://github.com/openbmb/agentverse/blob/f90c4bd9680fdd3bcff8c52c9170911a59b23478/agentverse/environments/tasksolving_env/basic.py#L26); [agentverse/environments/tasksolving_env/rules/executor/tool_using.py:32](https://github.com/openbmb/agentverse/blob/f90c4bd9680fdd3bcff8c52c9170911a59b23478/agentverse/environments/tasksolving_env/rules/executor/tool_using.py#L32)) | Each run ends after a fixed number of turns and tool calls per round (C10) |
+| Stop the whole container | End a run by stopping its container or VM rather than the AgentVerse process alone | Child processes and timed-out work stop along with the run (C10) |
+| A run record off-box | Copy `activity.log` and `error.log` from the package's logs directory to storage the agent can't write after each run ([agentverse/logging.py:46-47](https://github.com/openbmb/agentverse/blob/f90c4bd9680fdd3bcff8c52c9170911a59b23478/agentverse/logging.py#L46-L47)) | A record of plans, tool calls and results that model-run code can't edit afterwards (C9) |
+
+### Handling data
+
+- The activity log keeps tool inputs, outputs and execution results unredacted; store it like the data the agents read.
+- `--debug` also writes full prompts to the log, so leave it off where logs are shared.
+
 ## Critical gaps
 - Model-generated code runs on the host as the invoking user through shell=True, with the full environment (including OPENAI_API_KEY) inherited. (ASI05, T11; C4) — [agentverse/environments/tasksolving_env/rules/executor/code_test.py:18](https://github.com/openbmb/agentverse/blob/f90c4bd9680fdd3bcff8c52c9170911a59b23478/agentverse/environments/tasksolving_env/rules/executor/code_test.py#L18); [agentverse/llms/openai.py:38](https://github.com/openbmb/agentverse/blob/f90c4bd9680fdd3bcff8c52c9170911a59b23478/agentverse/llms/openai.py#L38)
 - A hijacked agent holds the operator's ambient identity: model-run subprocesses inherit all credentials in the launching shell. (ASI03, T3; C1) — [agentverse/environments/tasksolving_env/rules/executor/code_test.py:18](https://github.com/openbmb/agentverse/blob/f90c4bd9680fdd3bcff8c52c9170911a59b23478/agentverse/environments/tasksolving_env/rules/executor/code_test.py#L18); [agentverse/llms/openai.py:38](https://github.com/openbmb/agentverse/blob/f90c4bd9680fdd3bcff8c52c9170911a59b23478/agentverse/llms/openai.py#L38)

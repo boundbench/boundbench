@@ -24,6 +24,31 @@
 
 Atomic Agent ships a well-built per-call approval ladder (strictest level by default, exact command previews, a never-grantable trust-config category), but everything runs directly on the host as your user with your full environment, including every API key in ~/.atomic-agent/.env. The shell approval guard is not a strict boundary and can let commands run without a prompt. HTTP POSTs, web fetches and browser typing/clicking are also ungated by default, so a prompt-injected page can both exfiltrate data and act without a human.
 
+## Safest setup
+
+Atomic Agent starts at its strictest approval level, shows the exact command or diff in each prompt, and keeps file reads to the working directory. Everything else runs on your machine as you, with every stored key in reach and web requests unprompted by default, so the safest setup narrows the keys, turns on HTTP approval and gives the agent its own container.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Keep only the keys this agent needs in `~/.atomic-agent/.env`, with a read-only fine-grained GitHub token and a spending limit set at each provider | Every command and MCP server it starts holds only those keys, and the provider caps what they can do (C1) |
+| The strictest approval level | Keep the default `agent.approvalLevel: 1` and start without `--no-approval` ([src/config/config-schema.ts:2870](https://github.com/atomicbot-ai/atomic-agent/blob/cce6262c135c97a15c020284a699dc6d164d34d3/src/config/config-schema.ts#L2870); [src/config/config-schema.ts:3953](https://github.com/atomicbot-ai/atomic-agent/blob/cce6262c135c97a15c020284a699dc6d164d34d3/src/config/config-schema.ts#L3953); [src/tui/tui-args.ts:101](https://github.com/atomicbot-ai/atomic-agent/blob/cce6262c135c97a15c020284a699dc6d164d34d3/src/tui/tui-args.ts#L101)) | File writes, email, publishing and most shell commands wait for you, with the exact command or diff shown (C2) |
+| Approval for HTTP requests | Set `http.approvalMode: "always"` in the config file ([src/config/config-schema.ts:1409](https://github.com/atomicbot-ai/atomic-agent/blob/cce6262c135c97a15c020284a699dc6d164d34d3/src/config/config-schema.ts#L1409); [src/config/config-schema.ts:4996-4999](https://github.com/atomicbot-ai/atomic-agent/blob/cce6262c135c97a15c020284a699dc6d164d34d3/src/config/config-schema.ts#L4996-L4999)) | Every request the HTTP tool sends, POSTs included, waits for your approval (C5) |
+| A host allowlist | Set `http.hostAllowlist` to the hosts the task needs, or `http.enabled: false` when it needs none ([src/config/config-schema.ts:4992-5004](https://github.com/atomicbot-ai/atomic-agent/blob/cce6262c135c97a15c020284a699dc6d164d34d3/src/config/config-schema.ts#L4992-L5004)) | The HTTP tool reaches only the hosts you named (C3) |
+| Working-directory reads | Keep the default `agent.readScope: "working-dir"` ([src/config/config-schema.ts:2869](https://github.com/atomicbot-ai/atomic-agent/blob/cce6262c135c97a15c020284a699dc6d164d34d3/src/config/config-schema.ts#L2869); [src/config/config-schema.ts:4942-4945](https://github.com/atomicbot-ai/atomic-agent/blob/cce6262c135c97a15c020284a699dc6d164d34d3/src/config/config-schema.ts#L4942-L4945)) | Reads outside the working directory ask you first (C3) |
+| Its own container or VM | Run the agent in a container or VM holding only the task's files, with network limited to the model provider and the hosts the task needs | An outer boundary around shell commands, skill scripts and MCP servers, which otherwise run as you on your machine (C4) |
+| Reviewed, pinned extensions | Add only MCP servers and skills you have read, with each MCP command naming a fixed version, and start from a directory with no `.atomic-agent/skills` folder you didn't write | Only code and instructions you chose run inside the agent (C7) |
+| A trace kept elsewhere | Keep the default per-session trace and copy `~/.atomic-agent/traces` to storage the agent can't write ([src/tui/tui-command.ts:222](https://github.com/atomicbot-ai/atomic-agent/blob/cce6262c135c97a15c020284a699dc6d164d34d3/src/tui/tui-command.ts#L222)) | A record of every tool call and its arguments that the agent can't rewrite (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; a session grant covers later calls of the same kind until the session ends.
+- Web fetches, browser typing and clicking, memory writes and scheduled tasks run without a prompt, so the prompts you do see are the main check.
+
+### Handling data
+
+- Traces hold full tool arguments unredacted; store `~/.atomic-agent/traces` like the data the agent read.
+- Analytics is on by default and carries no content; `analytics.enabled: false` turns it off.
+
 ## Critical gaps
 - No execution isolation: shell commands, skill scripts and MCP servers run on the host as the user with the full environment, including .env API keys. (ASI05, T11; C4) — [src/sandbox/command-job.ts:141](https://github.com/atomicbot-ai/atomic-agent/blob/cce6262c135c97a15c020284a699dc6d164d34d3/src/sandbox/command-job.ts#L141); [src/sandbox/shell-invocation.ts:30](https://github.com/atomicbot-ai/atomic-agent/blob/cce6262c135c97a15c020284a699dc6d164d34d3/src/sandbox/shell-invocation.ts#L30); [AGENTS.md:519](https://github.com/atomicbot-ai/atomic-agent/blob/cce6262c135c97a15c020284a699dc6d164d34d3/AGENTS.md#L519)
 - A prompt-injected session can exfiltrate through ungated HTTP POST and fetch without any human approval. (ASI01, LLM01, T6; C5) — [src/config/config-schema.ts:2883](https://github.com/atomicbot-ai/atomic-agent/blob/cce6262c135c97a15c020284a699dc6d164d34d3/src/config/config-schema.ts#L2883); [src/tools/os/http-request.ts:297](https://github.com/atomicbot-ai/atomic-agent/blob/cce6262c135c97a15c020284a699dc6d164d34d3/src/tools/os/http-request.ts#L297)

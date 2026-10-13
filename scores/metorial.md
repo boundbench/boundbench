@@ -25,6 +25,29 @@ Controls where a risk surface exists: 2.25 / 8.0 (28%); 2 criteria scored SA (su
 
 Metorial's integrations give agents thousands of tools against real accounts (GitHub, Gmail, Slack, Kubernetes, databases) with the user's long-lived credentials and every tool exposed by default. The SDK validates argument types centrally and redacts secrets from HTTP traces well, but it leaves approval, scoping and authorization to the host platform, which is not in this repo, and several high-impact tools are mislabelled as non-destructive. The dominant risk is a hijacked agent running arbitrary SQL, sending mail or rewriting Kubernetes RBAC with no server-side check.
 
+## Safest setup
+
+Metorial's integrations check every tool call's arguments against a typed schema and keep credentials out of recorded HTTP traces. Approval, tool selection and authorization are left to the host, every tool ships enabled, and connected credentials carry account-level authority, so the safest setup narrows each credential at the service and builds containment around the process.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Narrowly scoped credentials | Connect each integration with a token or account limited to the projects and permissions the task needs, read-only where the task allows | Each service itself refuses anything outside that grant, whatever the model asks for (C1) |
+| A namespaced Kubernetes account | Connect Kubernetes with a service account bound to a namespaced Role that cannot create or change role bindings | The agent works inside the permissions you granted and cannot widen them (C1) |
+| A read-only database role | Connect PostgreSQL as a role limited to SELECT on the schemas the task needs, or point it at a read replica | The database itself keeps model-written SQL from changing or dropping data (C4) |
+| Only the tools needed | In the host, expose only the read tools the task uses and enable write, delete and raw-SQL tools per deployment | Write access stays something you add deliberately, per integration (C3) |
+| A query time limit | Keep the default `queryTimeout` of 30000 ms in the PostgreSQL config, or lower it ([integrations/postgresql/src/config.ts:10](https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/postgresql/src/config.ts#L10)) | Each database query ends after a fixed time (C10) |
+| Limited outbound network | Run the integration process with outbound access limited to the APIs of the services you connected | Data has fewer places to go, and tools that fetch URLs reach only those hosts (C5) |
+| A durable call log | Pass `listeners` to `createLocalSlateTransport` that write each record to storage the agent cannot modify ([packages/client/src/transport.ts:30-34](https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/client/src/transport.ts#L30-L34)) | A record of every tool call that outlives the process (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; sent email, SQL changes and cluster role changes cannot be undone.
+- Several mutating tools are tagged non-destructive or carry no tag, so judge each call by its tool name and arguments rather than its tag.
+
+### Handling data
+
+- Error log entries keep raw messages and stack traces without redaction; store them like other sensitive logs.
+
 ## Critical gaps
 - The Kubernetes manage_rbac tool can create ClusterRoleBindings for a ServiceAccount (the default credential type) and is tagged non-destructive, letting a hijacked agent grant itself cluster-admin. (ASI03, T3; C1) — [integrations/kubernetes/src/tools/manage-rbac.ts:17](https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/kubernetes/src/tools/manage-rbac.ts#L17); [integrations/kubernetes/src/tools/manage-rbac.ts:43](https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/kubernetes/src/tools/manage-rbac.ts#L43); [integrations/kubernetes/src/tools/manage-rbac.ts:35-37](https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/kubernetes/src/tools/manage-rbac.ts#L35-L37); [integrations/kubernetes/src/auth.ts:30](https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/kubernetes/src/auth.ts#L30)
 - Connected credentials carry account-level authority (GitHub admin:org/delete_repo, cluster RBAC, database passwords) with no per-tool narrowing. (ASI03, T3; C1) — [integrations/github/src/auth.ts:31](https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/github/src/auth.ts#L31); [integrations/github/src/auth.ts:106](https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/integrations/github/src/auth.ts#L106); [packages/provider-handler/src/index.ts:939-1012](https://github.com/metorial/metorial/blob/221f8ead1244f884711ac062398ae4e4f771b1ee/packages/provider-handler/src/index.ts#L939-L1012)

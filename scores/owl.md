@@ -25,6 +25,27 @@ Controls where a risk surface exists: 1.07 / 9.0 (12%); 1 criterion scored SA (s
 
 OWL runs a team of AI agents that browse the web, read documents and write and run code, and as shipped none of it is contained. Model-written Python and shell code runs directly on your machine as your user, with every API key from owl/.env in its environment, and there is no approval step, no sandbox and nothing limiting what injected web content can make the agents do. Run it only in a disposable VM or container that holds no valuable credentials or data.
 
+## Safest setup
+
+As shipped, OWL runs model-written code on your machine as your user, with every key from owl/.env in reach, and no step asks for approval. The few protections it offers have to be turned on in the example script, so the safest setup adds those and builds the boundaries around OWL yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Only the keys needed | Keep owl/.env to the model key and tool keys this task needs, each scoped where the provider allows and with a spending limit set at the provider ([examples/run.py:38-40](https://github.com/camel-ai/owl/blob/d67601b245bb91a38876c603cb8a70aa2f5faae8/examples/run.py#L38-L40)) | Whatever the agents do, they reach only the services and spend you chose (C1) |
+| A sandboxed code backend | In examples/run.py, set `sandbox` on `CodeExecutionToolkit` to one of CAMEL's container backends in place of `"subprocess"` ([examples/run.py:87](https://github.com/camel-ai/owl/blob/d67601b245bb91a38876c603cb8a70aa2f5faae8/examples/run.py#L87)) | Model-written code runs in a container instead of directly on your host (C4) |
+| Confirmation before code runs | Turn on the code toolkit's confirmation option where `CodeExecutionToolkit` is built in examples/run.py ([examples/run.py:87](https://github.com/camel-ai/owl/blob/d67601b245bb91a38876c603cb8a70aa2f5faae8/examples/run.py#L87)) | You see each piece of code before the code tool runs it (C2) |
+| Its own container or VM | Run OWL in a disposable container or VM that holds no other credentials or personal files, with outbound access limited to the hosts the task needs | An outer boundary around everything the agents do, and a narrow path for data to leave (C4) |
+| A protected config file | Give OWL owl/.env through a read-only mount or file permissions, and check it before each run | Model endpoints and keys come only from you, run after run (C6) |
+| A run record on disk | Send the console output of each run to a log file stored outside the container or VM | A record of the model requests and tool calls that outlives the terminal (C9) |
+
+### Approving with confidence
+
+- With confirmation on, read each prompt and approve code runs one at a time; file writes and browsing still have no prompt of their own.
+
+### Handling data
+
+- The example scripts log at DEBUG, so console output and any saved run record include model requests, tool results and file contents unredacted; store them like the data the agents read.
+
 ## Critical gaps
 - Agents run with the launching user's full authority, and model-written code inherits every API key and the user's home directory. (ASI03, T3; C1). Evidence: [examples/run.py:38-40](https://github.com/camel-ai/owl/blob/d67601b245bb91a38876c603cb8a70aa2f5faae8/examples/run.py#L38-L40); [examples/run.py:87](https://github.com/camel-ai/owl/blob/d67601b245bb91a38876c603cb8a70aa2f5faae8/examples/run.py#L87)
 - Model-written Python and shell code runs on the host as the user, with no sandbox and no approval, by default. (ASI05, T11; C4). Evidence: [examples/run.py:87](https://github.com/camel-ai/owl/blob/d67601b245bb91a38876c603cb8a70aa2f5faae8/examples/run.py#L87); [examples/run.py:140-144](https://github.com/camel-ai/owl/blob/d67601b245bb91a38876c603cb8a70aa2f5faae8/examples/run.py#L140-L144)

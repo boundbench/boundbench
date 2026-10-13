@@ -25,6 +25,29 @@ Controls where a risk surface exists: 2.10 / 8.0 (26%); 2 criteria scored SA (su
 
 A narrow code-search server: it runs no code and loads no plugins, and it keeps dotfiles and .env files out of its index. Around that core it has few safeguards. Any directory the user can read can be indexed and uploaded to the embedding provider and vector database, the destructive clear tool carries no risk labels for hosts, and search results return indexed code (including third-party code) unmarked. The index persists and re-syncs in the background, with no audit log of the server's own.
 
+## Safest setup
+
+Claude Context runs no code, loads no plugins and keeps dotfiles and .env files out of its index. It has no read-only mode, no approval step of its own and no limit on which directories it reads, so the safest setup narrows its keys and its view of your files from the outside.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A cluster-scoped database token | Set `MILVUS_TOKEN` to a token scoped to one dedicated cluster, in place of an account-level Personal Key ([packages/mcp/src/config.ts:186](https://github.com/zilliztech/claude-context/blob/6fc318b4e3ce58e2898b00a9c3538ead9e24dee5/packages/mcp/src/config.ts#L186)) | The vector database itself keeps the server's writes and deletions inside that one cluster (C1) |
+| A dedicated, low-limit embedding key | Give the server its own embedding-provider key with a spending limit set at the provider | Indexing spend has a ceiling, and a leaked key reaches only this one use (C10) |
+| Local embeddings | `EMBEDDING_PROVIDER=Ollama` with `OLLAMA_HOST` pointing at an Ollama server you run ([packages/mcp/src/config.ts:170](https://github.com/zilliztech/claude-context/blob/6fc318b4e3ce58e2898b00a9c3538ead9e24dee5/packages/mcp/src/config.ts#L170); [packages/mcp/src/config.ts:182](https://github.com/zilliztech/claude-context/blob/6fc318b4e3ce58e2898b00a9c3538ead9e24dee5/packages/mcp/src/config.ts#L182)) | Your source code is embedded on your own machine instead of at a third-party provider (C8) |
+| Indexing on request | `CLAUDE_CONTEXT_BACKGROUND_SYNC=false` ([packages/mcp/src/sync.ts:16](https://github.com/zilliztech/claude-context/blob/6fc318b4e3ce58e2898b00a9c3538ead9e24dee5/packages/mcp/src/sync.ts#L16)) | Tracked codebases stop re-indexing on a timer, so spend and index contents follow your own calls (C6) |
+| Only the projects you mean | Run the server in a container or as an OS user that can read only the repositories you want indexed | Whatever the model asks for, only those directories can reach the index and the embedding provider (C3) |
+| A kept server log | Have your MCP host save the server's stderr to a file the agent can't modify | A record of index runs, searches and clears that outlives the session (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; search_code and get_indexing_status only read, while index_codebase uploads file contents and clear_index drops an index.
+- Check the path in each index_codebase call, and approve force=true only when you want the existing index rebuilt.
+
+### Handling data
+
+- Keys stored in ~/.context/.env sit in plain text; keep that file readable only by you.
+- Indexed code, including any secrets inside source files, is stored at the embedding provider and in the vector database, and stderr logs include search queries and file paths.
+
 ## Critical gaps
 - None: no criterion is capped and no blast radius is at the worst level.
 

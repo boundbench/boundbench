@@ -24,6 +24,30 @@
 
 LlamaIndex gives you an agent loop with a default 20-step limit and little else in the way of safety controls: no approval gate, no argument validation, no code-execution isolation, and no protection against prompt injection, which its security policy leaves to the application. Every tool the developer registers runs immediately with the process's full authority. Extension loading in one core component is also not locked down. Treat it as a toolkit: the guardrails have to be built by you.
 
+## Safest setup
+
+LlamaIndex starts every agent with no tools, stops each run after 20 steps, and loads no workspace config files. Beyond that the defaults are thin: no approval step, no argument checks, no code isolation and no durable record. The safest setup turns on the sandbox and timeout LlamaIndex offers and builds approval, logging and containment around the process.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Give the process only the API keys this agent needs, each scoped or read-only with a spending limit set at the provider | Whatever the agent does, it reaches only the systems and spend you chose (C1) |
+| Tools per agent | Give each agent only the `tools` it needs, and set `can_handoff_to` for each agent in a workflow ([llama-index-core/llama_index/core/agent/workflow/base_agent.py:159-161](https://github.com/run-llama/llama_index/blob/962940ddc079cc21701d28d1237c84c82a7c5164/llama-index-core/llama_index/core/agent/workflow/base_agent.py#L159-L161)) | Each agent can call only the tools and hand off only to the agents you listed (C3) |
+| Per-call approval | Wrap each tool that writes, sends or spends so it waits for a person's yes before acting | A person sees the exact arguments before each consequential call runs (C2) |
+| A remote code sandbox | Run model-written code through `AzureCodeInterpreterToolSpec` with `pool_management_endpoint` set to your session pool ([llama-index-integrations/tools/llama-index-tools-azure-code-interpreter/llama_index/tools/azure_code_interpreter/base.py:70](https://github.com/run-llama/llama_index/blob/962940ddc079cc21701d28d1237c84c82a7c5164/llama-index-integrations/tools/llama-index-tools-azure-code-interpreter/llama_index/tools/azure_code_interpreter/base.py#L70); [llama-index-integrations/tools/llama-index-tools-azure-code-interpreter/llama_index/tools/azure_code_interpreter/base.py:81](https://github.com/run-llama/llama_index/blob/962940ddc079cc21701d28d1237c84c82a7c5164/llama-index-integrations/tools/llama-index-tools-azure-code-interpreter/llama_index/tools/azure_code_interpreter/base.py#L81)) | That code runs in a remote sandbox that never sees your host environment or keys (C4) |
+| Step and time limits | Keep `max_iterations` at the default 20 or lower, and set `timeout=<seconds>` on each agent ([llama-index-core/llama_index/core/agent/workflow/base_agent.py:757](https://github.com/run-llama/llama_index/blob/962940ddc079cc21701d28d1237c84c82a7c5164/llama-index-core/llama_index/core/agent/workflow/base_agent.py#L757); [llama-index-core/llama_index/core/agent/workflow/base_agent.py:67](https://github.com/run-llama/llama_index/blob/962940ddc079cc21701d28d1237c84c82a7c5164/llama-index-core/llama_index/core/agent/workflow/base_agent.py#L67); [llama-index-core/llama_index/core/agent/workflow/base_agent.py:169](https://github.com/run-llama/llama_index/blob/962940ddc079cc21701d28d1237c84c82a7c5164/llama-index-core/llama_index/core/agent/workflow/base_agent.py#L169)) | Every run ends after a fixed number of steps and a fixed wall-clock time (C10) |
+| Reviewed, pinned extensions | Pin each integration package, MCP server command and model to a version you have reviewed | Only extension code you have read runs alongside the agent's credentials (C7) |
+| Its own container or VM | Run the agent in a container or VM whose network reaches only the hosts the task needs | An outer boundary around in-process tools and a narrow path for data to leave (C5) |
+| A run record on disk | Write every `ToolCall` and `ToolCallResult` event the run emits to storage the agent can't modify ([llama-index-core/llama_index/core/agent/workflow/workflow_events.py:98-106](https://github.com/run-llama/llama_index/blob/962940ddc079cc21701d28d1237c84c82a7c5164/llama-index-core/llama_index/core/agent/workflow/workflow_events.py#L98-L106)) | A record of every tool call and its result that outlives the process (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; the prompt your own wrapper shows is the only check before a tool runs.
+
+### Handling data
+
+- Tool-call events carry raw arguments and outputs; store a run record like the data the agent read.
+- Opt-in memory blocks save model-extracted facts and add them to the system message; review what a persistent memory store holds.
+
 ## Critical gaps
 - Core ships no code-execution isolation; the official CodeActAgent example runs model code with in-process exec() and the code-interpreter tool runs it as a host subprocess with the full environment. (ASI05, T11; C4) — [docs/examples/agent/code_act_agent.ipynb:169](https://github.com/run-llama/llama_index/blob/962940ddc079cc21701d28d1237c84c82a7c5164/docs/examples/agent/code_act_agent.ipynb#L169); [llama-index-integrations/tools/llama-index-tools-code-interpreter/llama_index/tools/code_interpreter/base.py:34](https://github.com/run-llama/llama_index/blob/962940ddc079cc21701d28d1237c84c82a7c5164/llama-index-integrations/tools/llama-index-tools-code-interpreter/llama_index/tools/code_interpreter/base.py#L34)
 - A hijacked agent can leak data and take irreversible actions unattended: no taint tracking, no approval gate, and prompt injection is declared out of scope. (ASI01, LLM01, T6; C5) — [SECURITY.md:46](https://github.com/run-llama/llama_index/blob/962940ddc079cc21701d28d1237c84c82a7c5164/SECURITY.md#L46); [llama-index-core/llama_index/core/agent/workflow/base_agent.py:374](https://github.com/run-llama/llama_index/blob/962940ddc079cc21701d28d1237c84c82a7c5164/llama-index-core/llama_index/core/agent/workflow/base_agent.py#L374)

@@ -24,6 +24,30 @@
 
 Coze Studio agents call plugins, workflows and a raw-SQL database tool with no human approval, and nothing limits what injected content can make them do, including sending data to any URL. Workflow code runs in a Deno and Pyodide sandbox by default, but that sandbox lives inside the server container that holds every deployment secret. Credential storage and logging defaults are weak, and registration is open. Read the README's public-network warning and close registration before exposing it.
 
+## Safest setup
+
+Coze Studio starts every agent with no tools, runs workflow code in a Deno and Pyodide sandbox, and keeps the Coze SaaS plugin source off. There is no approval step and nothing limits what injected content can make an agent do, so the safest setup narrows what each agent can reach and puts access and network boundaries around the whole stack.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit credentials | Give each plugin a service token scoped to what its agent needs, read-only where possible, and each model key a spending limit at the provider | The provider itself refuses anything outside that grant, whatever an agent is told to do (C1) |
+| Closed registration | Set `DISABLE_USER_REGISTRATION="true"` in docker/.env before first start, or turn registration off in the admin settings ([docker/.env.example:261](https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/.env.example#L261); [backend/types/consts/consts.go:134](https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/types/consts/consts.go#L134)) | Only the accounts you create can build agents and workflows that run with the server's authority (C1) |
+| Read-only tables | Bind each database table in read-only mode wherever the agent only needs to look data up ([frontend/packages/arch/idl/src/auto-generated/developer_api/namespaces/bot_common.ts:82-84](https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/frontend/packages/arch/idl/src/auto-generated/developer_api/namespaces/bot_common.ts#L82-L84)) | The agent's SQL tool can't insert, update or delete rows in that table (C3) |
+| The sandbox runner | Leave `CODE_RUNNER_TYPE` unset or `sandbox`, and keep the sandbox runner selected in the admin settings ([backend/types/consts/consts.go:83](https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/types/consts/consts.go#L83); [backend/bizpkg/config/base/base.go:68-69](https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/bizpkg/config/base/base.go#L68-L69)) | Workflow code keeps running under Deno with network, environment and subprocess access denied (C4) |
+| Curated plugin sources | Keep the default `COZE_SAAS_PLUGIN_ENABLED` off and bind only catalog plugins or ones whose server you run or trust ([backend/bizpkg/config/base/base.go:81](https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/bizpkg/config/base/base.go#L81)) | Agents call only plugin endpoints you chose deliberately (C7) |
+| Info-level logging | Set `LOG_LEVEL="info"` in docker/.env ([docker/.env.example:3](https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/.env.example#L3); [backend/main.go:130](https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/main.go#L130)) | Server logs keep less detail, so less sensitive data collects in them (C8) |
+| Private access only | Serve the stack on a private network or behind your own sign-in proxy, as the README's public-network warning advises ([README.md:71](https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/README.md#L71)) | Only people you admit can reach the builder, the API and published agents (C1) |
+| An egress allowlist | Limit the server's outbound traffic to the model provider and the plugin hosts your agents use | Injected content has a narrow path for data to leave, even with no approval step (C5) |
+
+### Approving with confidence
+
+- Nothing pauses for approval once a tool is bound, so read each plugin and workflow before binding it to an agent; what you bind runs unattended.
+
+### Handling data
+
+- Logs are not redacted at any level; store them like the data your agents handle.
+- Conversation and workflow run records keep tool inputs and outputs in MySQL; protect database backups the same way.
+
 ## Critical gaps
 - Untrusted content can drive unattended exfiltration and database writes or deletes in one session. (ASI01, LLM01; C5). Evidence: [backend/domain/agent/singleagent/internal/agentflow/node_tool_database.go:66](https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/agent/singleagent/internal/agentflow/node_tool_database.go#L66); [backend/domain/plugin/service/tool/invocation_http.go:141](https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/domain/plugin/service/tool/invocation_http.go#L141)
 - The code sandbox runs inside the server container and inherits its environment, which holds all deployment secrets. (ASI05, T11; C4). Evidence: [backend/infra/coderunner/impl/script/sandbox.py:126-131](https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/backend/infra/coderunner/impl/script/sandbox.py#L126-L131); [docker/docker-compose.yml:392](https://github.com/coze-dev/coze-studio/blob/fefb05ff27be1da939612fbf9faf5db62583b8ae/docker/docker-compose.yml#L392)

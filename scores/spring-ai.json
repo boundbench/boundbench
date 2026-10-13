@@ -36,6 +36,130 @@
     "external_communication": "opt_in"
   },
   "headline": "Spring AI runs every tool call the model requests, automatically and without any approval step, inside your Spring application with all of its credentials and data access. Nothing in the framework separates untrusted content (web pages, documents, MCP results) from instructions, so a prompt injection can drive any registered tool. It does ship sensible defaults elsewhere: no tools unless you attach them, a per-turn cap of 150 tool calls, and content-free telemetry. Treat approvals, authorization, and isolation as work you must add yourself.",
+  "safe_setup": {
+    "intro": "Spring AI attaches no tools unless you pass them, caps each turn at 150 tool calls, and keeps prompt and tool content out of telemetry by default. Every requested tool call otherwise runs automatically with the application's full credentials, with no approval step and no record unless you add one, so the safest setup narrows those credentials, takes over the tool loop for approval and builds containment around the application.",
+    "steps": [
+      {
+        "setup": "A least-privileged service identity",
+        "how": "Run the application with database, cloud and service credentials scoped to what its tools need, read-only where the task allows",
+        "gives_you": "The systems themselves refuse anything outside that grant, whatever a tool call asks for",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Per-call approval",
+        "how": "Set `spring.ai.chat.client.tool-calling.enabled=false` (or `AdvisorParams.toolCallingAdvisorAutoRegister(false)` per call) and run each requested call through `ToolCallingManager` after a person approves it",
+        "gives_you": "A person sees each tool call before it runs, including calls to MCP tools",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "spring-ai-docs/src/main/antora/modules/ROOT/pages/upgrade-notes.adoc",
+            "lines": "635",
+            "contains": "spring.ai.chat.client.tool-calling.enabled=false",
+            "url": "https://github.com/spring-projects/spring-ai/blob/46d05c2fdbab52f6ef04207abe19b12687a47453/spring-ai-docs/src/main/antora/modules/ROOT/pages/upgrade-notes.adoc#L635"
+          },
+          {
+            "file": "spring-ai-client-chat/src/main/java/org/springframework/ai/chat/client/AdvisorParams.java",
+            "lines": "71-75",
+            "contains": "toolCallingAdvisorAutoRegister(boolean enabled)",
+            "url": "https://github.com/spring-projects/spring-ai/blob/46d05c2fdbab52f6ef04207abe19b12687a47453/spring-ai-client-chat/src/main/java/org/springframework/ai/chat/client/AdvisorParams.java#L71-L75"
+          }
+        ]
+      },
+      {
+        "setup": "Only attached tools",
+        "how": "Keep the default `spring.ai.tools.resolution.fallback.enabled=false` and attach only the tools each request needs",
+        "gives_you": "The model can call only the tools you passed for that request",
+        "criterion": "C3",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "spring-ai-docs/src/main/antora/modules/ROOT/pages/api/tools.adoc",
+            "lines": "915",
+            "contains": "spring.ai.tools.resolution.fallback.enabled",
+            "url": "https://github.com/spring-projects/spring-ai/blob/46d05c2fdbab52f6ef04207abe19b12687a47453/spring-ai-docs/src/main/antora/modules/ROOT/pages/api/tools.adoc#L915"
+          }
+        ]
+      },
+      {
+        "setup": "Tool context kept local",
+        "how": "Register a `ToolContextToMcpMetaConverter` bean that returns `ToolContextToMcpMetaConverter.noOp()`",
+        "gives_you": "Data you pass to your own tools stays out of requests to MCP servers",
+        "criterion": "C7",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "spring-ai-docs/src/main/antora/modules/ROOT/pages/api/mcp/mcp-client-boot-starter-docs.adoc",
+            "lines": "824-825",
+            "contains": "return ToolContextToMcpMetaConverter.noOp();",
+            "url": "https://github.com/spring-projects/spring-ai/blob/46d05c2fdbab52f6ef04207abe19b12687a47453/spring-ai-docs/src/main/antora/modules/ROOT/pages/api/mcp/mcp-client-boot-starter-docs.adoc#L824-L825"
+          },
+          {
+            "file": "mcp/common/src/main/java/org/springframework/ai/mcp/ToolContextToMcpMetaConverter.java",
+            "lines": "66",
+            "contains": "static ToolContextToMcpMetaConverter noOp()",
+            "url": "https://github.com/spring-projects/spring-ai/blob/46d05c2fdbab52f6ef04207abe19b12687a47453/mcp/common/src/main/java/org/springframework/ai/mcp/ToolContextToMcpMetaConverter.java#L66"
+          }
+        ]
+      },
+      {
+        "setup": "Tool-call caps",
+        "how": "Keep `spring.ai.tools.limits.max-calls-per-tool-default` at 40 and `spring.ai.tools.limits.max-total-tool-calls` at 150, or lower",
+        "gives_you": "Every turn stops after a fixed number of tool calls, a limit the model cannot change",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "spring-ai-docs/src/main/antora/modules/ROOT/pages/api/tools.adoc",
+            "lines": "870-873",
+            "contains": "spring.ai.tools.limits.max-total-tool-calls",
+            "url": "https://github.com/spring-projects/spring-ai/blob/46d05c2fdbab52f6ef04207abe19b12687a47453/spring-ai-docs/src/main/antora/modules/ROOT/pages/api/tools.adoc#L870-L873"
+          }
+        ]
+      },
+      {
+        "setup": "Reviewed, pinned MCP servers",
+        "how": "Configure only MCP servers you have reviewed, with an exact version in each launch command",
+        "gives_you": "The server code and tools that start with the application are the ones you checked",
+        "criterion": "C7",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the application in a container or VM whose network reaches only the model provider and the hosts its tools need",
+        "gives_you": "A narrower path for data to leave and an outer boundary around in-process tools and stdio MCP servers",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A tool-call record",
+        "how": "Provide an `ObservationRegistry` bean with a tracing exporter to durable storage",
+        "gives_you": "A span for every tool call, MCP tools included, with name, call id and timing",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "auto-configurations/models/tool/spring-ai-autoconfigure-model-tool/src/main/java/org/springframework/ai/model/tool/autoconfigure/ToolCallingAutoConfiguration.java",
+            "lines": "139",
+            "contains": "ObjectProvider<ObservationRegistry> observationRegistry",
+            "url": "https://github.com/spring-projects/spring-ai/blob/46d05c2fdbab52f6ef04207abe19b12687a47453/auto-configurations/models/tool/spring-ai-autoconfigure-model-tool/src/main/java/org/springframework/ai/model/tool/autoconfigure/ToolCallingAutoConfiguration.java#L139"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Show the exact tool name and arguments, then read each prompt and approve calls one at a time.",
+      "Web pages, documents and MCP results can carry instructions, so a call that follows reading them is worth a closer look."
+    ],
+    "handling": [
+      "Prompt, completion and tool content stay out of observations while `spring.ai.chat.observations.log-prompt`, `spring.ai.chat.observations.log-completion` and `spring.ai.tools.observations.include-content` are false, the default.",
+      "Chat-memory stores keep messages in plain text under the conversation id your application supplies; tie that id to the signed-in user."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

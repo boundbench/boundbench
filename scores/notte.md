@@ -25,6 +25,26 @@ Controls where a risk surface exists: 3.03 / 9.0 (34%); 1 criterion scored SA (s
 
 Notte's local agent acts on whatever web pages it reads with no approval step: every navigation, form submission and model-written JavaScript runs immediately, so a malicious page can steer it into exfiltrating data or submitting forms, including with vault logins and the stored card if a vault is attached. Browser launch hardening is incomplete. Its vault keeps secrets out of model prompts well, and step and timeout limits are sensible, but nothing contains a hijacked run.
 
+## Safest setup
+
+Notte starts each local run in a fresh browser with no logins, keeps vault secrets out of model prompts, and stops after 20 steps. There is no approval step and nothing limits which sites the agent reaches, so the safest setup keeps those defaults, uses a vault for any login, and builds containment around the process yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Give the process only the model and Notte API keys this run needs, each with a spending limit set at the provider | A misused key reaches one service and a capped budget, not every key in your shell (C8) |
+| A fresh browser | Keep the default fresh session and leave `cdp_url` unset rather than pointing it at your everyday browser ([packages/notte-core/src/notte_core/common/config.py:410](https://github.com/nottelabs/notte/blob/9c898d9cc8876e6ebcd0ba82751dbe046078cb6e/packages/notte-core/src/notte_core/common/config.py#L410)) | The agent starts with none of your cookies or signed-in accounts (C1) |
+| Logins through a vault | Pass a `vault` to the agent holding only the site logins the task needs ([packages/notte-agent/src/notte_agent/main.py:33](https://github.com/nottelabs/notte/blob/9c898d9cc8876e6ebcd0ba82751dbe046078cb6e/packages/notte-agent/src/notte_agent/main.py#L33)) | The model works with placeholders, and each login is released only for its own site (C8) |
+| Functions run in the cloud | Keep the default `local=False` on `run`; for a local run, read the code first and pin its `version` ([packages/notte-sdk/src/notte_sdk/endpoints/workflows.py:782-785](https://github.com/nottelabs/notte/blob/9c898d9cc8876e6ebcd0ba82751dbe046078cb6e/packages/notte-sdk/src/notte_sdk/endpoints/workflows.py#L782-L785)) | Shared function code runs away from your process and keys, and a local run executes only code you have read (C7) |
+| Browser web security | Keep the default `web_security = true` in the config file ([packages/notte-core/src/notte_core/config.toml:31](https://github.com/nottelabs/notte/blob/9c898d9cc8876e6ebcd0ba82751dbe046078cb6e/packages/notte-core/src/notte_core/config.toml#L31)) | Pages keep the browser's same-origin protections (C4) |
+| Step and failure limits | Keep the defaults `max_steps = 20` and `max_consecutive_failures = 3`, or lower them for short tasks ([packages/notte-core/src/notte_core/config.toml:11](https://github.com/nottelabs/notte/blob/9c898d9cc8876e6ebcd0ba82751dbe046078cb6e/packages/notte-core/src/notte_core/config.toml#L11); [packages/notte-core/src/notte_core/config.toml:18](https://github.com/nottelabs/notte/blob/9c898d9cc8876e6ebcd0ba82751dbe046078cb6e/packages/notte-core/src/notte_core/config.toml#L18)) | Every run ends after a fixed number of steps or a short run of failures (C10) |
+| Its own container or VM | Run the agent and its browser in a container or VM as a separate user, with network access limited to the sites the task needs | An outer boundary around the browser, away from your keys, home directory, localhost and intranet (C4) |
+| A saved run record | Write the trajectory each run returns to storage the agent can't modify | A record of every action and its result that outlives the process (C9) |
+
+### Handling data
+
+- Usage telemetry is on by default and content-free by design; `DISABLE_TELEMETRY=true` turns it off.
+- The trajectory and per-step log lines hold action arguments and page results unredacted; store them like the data the agent read.
+
 ## Critical gaps
 - Prompt injection from any visited page can drive unattended exfiltration (arbitrary goto/JavaScript) and irreversible web actions, including vault logins and the card, with no approval step. (ASI01, T6, LLM01; C5) — [packages/notte-agent/src/notte_agent/agent.py:349](https://github.com/nottelabs/notte/blob/9c898d9cc8876e6ebcd0ba82751dbe046078cb6e/packages/notte-agent/src/notte_agent/agent.py#L349); [packages/notte-agent/src/notte_agent/agent.py:249-251](https://github.com/nottelabs/notte/blob/9c898d9cc8876e6ebcd0ba82751dbe046078cb6e/packages/notte-agent/src/notte_agent/agent.py#L249-L251)
 - Locally run SDK functions (including forked shared ones) are downloaded unverified and exec()'d in-process, inheriting all the process's credentials. (ASI04, T17; C7) — [packages/notte-sdk/src/notte_sdk/endpoints/workflows.py:845-852](https://github.com/nottelabs/notte/blob/9c898d9cc8876e6ebcd0ba82751dbe046078cb6e/packages/notte-sdk/src/notte_sdk/endpoints/workflows.py#L845-L852); [packages/notte-core/src/notte_core/ast.py:826-853](https://github.com/nottelabs/notte/blob/9c898d9cc8876e6ebcd0ba82751dbe046078cb6e/packages/notte-core/src/notte_core/ast.py#L826-L853)

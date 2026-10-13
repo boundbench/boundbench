@@ -25,6 +25,28 @@ Controls where a risk surface exists: 0.40 / 7.0 (6%); 3 criteria scored SA (sur
 
 PocketFlow is a tiny orchestration core with almost no surface of its own: it runs no code, loads no extensions, and stores nothing, which is where most of its points come from. Everything safety-relevant is left to the developer: there is no approval step, no input validation, no record of what ran, and no step or time limit, so an agent loop can run forever. The dominant risk is the documented agent pattern itself, where model output picks the next action and tool results flow back unmarked, letting a prompt injection drive any action the developer wired in with the process's full credentials.
 
+## Safest setup
+
+PocketFlow keeps its own footprint tiny: it runs no code, loads no extensions and stores nothing. It also ships no approval step, step limit or run record, and there is nothing to turn on, so the safest setup builds those around your flow and the process yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Give the process only the keys this flow needs, each scoped or read-only with a spending limit set at the provider | Whatever a node does, it reaches only the systems and spend you chose, not every key in your shell (C1) |
+| A human check node | Wire a node that shows the planned action and waits for a person before each write or network node | A person sees each consequential action before it runs (C2) |
+| Only the nodes needed | Wire each decision node only to the successors the task needs, with write and network nodes behind the check node | Model-chosen actions can reach only the nodes you connected for this task (C3) |
+| A step counter | Count runs in the decision node's `post` and return an action that ends the flow past <n> steps ([pocketflow/__init__.py:11](https://github.com/The-Pocket/PocketFlow/blob/f74d023f93607b8c3268133339a5e532a949898c/pocketflow/__init__.py#L11)) | Every agent loop ends after a fixed number of steps (C10) |
+| A separate code sandbox | Send any model-written code to a separate sandbox process or service | That code runs away from your keys and files (C4) |
+| Its own container or VM | Run the flow in a container or VM whose network reaches only the hosts the task needs | An outer boundary around every node and a narrow path for data to leave (C5) |
+| A run record | Have each node's `post` append its name, action and time to storage the flow can't modify ([pocketflow/__init__.py:11](https://github.com/The-Pocket/PocketFlow/blob/f74d023f93607b8c3268133339a5e532a949898c/pocketflow/__init__.py#L11)) | A record of what ran that outlives the process (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve actions one at a time; show the exact inputs the next node will use.
+
+### Handling data
+
+- PocketFlow masks nothing, so anything you log from the shared store holds the data the flow read; store it accordingly.
+
 ## Critical gaps
 - No identity or authorization layer: every node runs with the host process's full ambient credentials, so a hijacked agent holds all of them. (ASI03, T3; C1) — [pocketflow/__init__.py:46-49](https://github.com/The-Pocket/PocketFlow/blob/f74d023f93607b8c3268133339a5e532a949898c/pocketflow/__init__.py#L46-L49)
 - Node output loops back into prompts unmarked and model output selects the next action with no approval, so a prompt injection can leak data and take irreversible actions unattended (C5-WORSTCASE). (ASI01, LLM01, T6; C5) — [pocketflow/__init__.py:42-45](https://github.com/The-Pocket/PocketFlow/blob/f74d023f93607b8c3268133339a5e532a949898c/pocketflow/__init__.py#L42-L45); [docs/design_pattern/agent.md:117-118](https://github.com/The-Pocket/PocketFlow/blob/f74d023f93607b8c3268133339a5e532a949898c/docs/design_pattern/agent.md#L117-L118)

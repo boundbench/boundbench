@@ -25,6 +25,30 @@ Controls where a risk surface exists: 2.68 / 8.0 (34%); 2 criteria scored SA (su
 
 Falcon MCP gives an AI host broad access to a CrowdStrike tenant: it can search hosts, detections and logs and, by default, also change policies, IOCs, host groups and exclusions, run read-only RTR commands on endpoints, and execute workflows. The server's own safeguards are accurate risk labels on tools and an opt-in read-only mode; it has no approval gate, no audit log of tool calls, and no marking of untrusted content. Run it with --read-only, a least-privilege API client, and a host that asks for approval on state-changing tools.
 
+## Safest setup
+
+Falcon MCP labels its tools accurately as read-only or state-changing and includes a read-only mode, but as shipped every write, delete and workflow tool is registered, and it has no approval step or call log of its own. The safest setup narrows the Falcon API client, turns on read-only mode and tool selection, and relies on your host for approvals.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A least-privilege API client | Create a Falcon API client with only the read scopes the task needs, and leave `FALCON_MEMBER_CID` unset unless you work across child tenants ([falcon_mcp/server.py:625-626](https://github.com/CrowdStrike/falcon-mcp/blob/9bc0efeb92e38ca0667e5a18847a7cbf09dcd206/falcon_mcp/server.py#L625-L626)) | Falcon itself refuses anything outside those scopes, whatever the model asks for (C1) |
+| Read-only mode | `--read-only` or `FALCON_MCP_READ_ONLY=true` ([falcon_mcp/server.py:649-653](https://github.com/CrowdStrike/falcon-mcp/blob/9bc0efeb92e38ca0667e5a18847a7cbf09dcd206/falcon_mcp/server.py#L649-L653)) | Only tools labelled read-only are registered, so nothing the agent reads can change tenant state (C2) |
+| Only the tools needed | `--modules <list>` or `--tools <list>` naming just what the task uses, with `--exclude-tools <list>` for any others ([falcon_mcp/server.py:561-567](https://github.com/CrowdStrike/falcon-mcp/blob/9bc0efeb92e38ca0667e5a18847a7cbf09dcd206/falcon_mcp/server.py#L561-L567); [falcon_mcp/server.py:656-659](https://github.com/CrowdStrike/falcon-mcp/blob/9bc0efeb92e38ca0667e5a18847a7cbf09dcd206/falcon_mcp/server.py#L656-L659); [falcon_mcp/server.py:667-670](https://github.com/CrowdStrike/falcon-mcp/blob/9bc0efeb92e38ca0667e5a18847a7cbf09dcd206/falcon_mcp/server.py#L667-L670)) | The model sees a smaller tool set, limited to the Falcon data the task needs (C3) |
+| Local stdio transport | Keep the default `--transport` of stdio ([falcon_mcp/server.py:550-554](https://github.com/CrowdStrike/falcon-mcp/blob/9bc0efeb92e38ca0667e5a18847a7cbf09dcd206/falcon_mcp/server.py#L550-L554)) | Only the local host that launched the server can call its tools (C1) |
+| Approval in your host | Configure your MCP host to ask before any tool not marked read-only runs | A person decides on each state-changing call, using the server's accurate risk labels (C2) |
+| Settings only from you | Pass credentials and switches through the process environment or flags, with no .env file you didn't write where the package is installed or run | The Falcon endpoint, credentials and read-only mode come only from your own configuration (C6) |
+| A dedicated API client | Give this server its own Falcon API client, used by nothing else | Falcon's own audit trail attributes every call from this server, which keeps no call log itself (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve state-changing calls one at a time; deletes, quarantine actions, RTR commands and workflow runs are hard to undo.
+- Bulk tools act on every ID or filter match they are given, so check the list or filter before approving.
+
+### Handling data
+
+- `--debug` logs request parameters and bodies unredacted to stderr; leave it off where output lands in shared logs.
+- RTR file reads bring endpoint file contents into the model's context; treat that context like the endpoints it came from.
+
 ## Critical gaps
 - A .env file auto-loaded at startup can silently set the Falcon credentials, API base URL and the server's read-only and tool-selection switches. (ASI06, T1; C6) — [falcon_mcp/server.py:682](https://github.com/CrowdStrike/falcon-mcp/blob/9bc0efeb92e38ca0667e5a18847a7cbf09dcd206/falcon_mcp/server.py#L682); [falcon_mcp/client.py:53-55](https://github.com/CrowdStrike/falcon-mcp/blob/9bc0efeb92e38ca0667e5a18847a7cbf09dcd206/falcon_mcp/client.py#L53-L55)
 

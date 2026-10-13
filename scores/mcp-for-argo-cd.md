@@ -25,6 +25,29 @@ Controls where a risk surface exists: 2.10 / 9.0 (23%); 1 criterion scored SA (s
 
 As shipped, this server hands the model an Argo CD token with every write tool switched on: it can create Applications from any repository, sync with prune, run resource actions and delete with cascade, and it gives the MCP host no read-only or destructive markings to decide what needs approval. Tool results include pod logs and manifests other people control, so a prompt injection can turn into cluster changes. The token itself is well handled (never in tool arguments, bound to its host), and MCP_READ_ONLY=true removes all write tools, but it is opt-in. It also auto-loads a .env from the launch directory, and it keeps no record of tool calls.
 
+## Safest setup
+
+MCP for Argo CD keeps its Argo CD token out of the model's hands and bound to the instance you configure. As shipped every write tool is on, no tool is marked as read-only or destructive for the host, and no tool call is recorded, so the safest setup narrows the Argo CD account, turns on read-only mode and builds the rest around the server.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A read-only Argo CD account | Give `ARGOCD_API_TOKEN` a token from an Argo CD account whose RBAC role grants read access only, on just the projects the task needs ([src/server/transport.ts:25](https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/transport.ts#L25)) | Argo CD itself refuses changes, whatever the model asks for (C1) |
+| A tight AppProject | Bind that account to an Argo CD AppProject that allows only your own source repositories and destinations | Any deployment stays within the repositories and clusters you chose (C4) |
+| Read-only mode | Set `MCP_READ_ONLY` to `true` in the server's environment ([src/server/server.ts:63-66](https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L63-L66)) | The create, update, delete, sync and resource-action tools are never registered, so the agent can only read (C2) |
+| A locked HTTP listener | For the HTTP transport, keep the default loopback `MCP_BIND_ADDRESS` and set `MCP_AUTH_TOKEN` before widening it ([src/cmd/cmd.ts:24-26](https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/cmd/cmd.ts#L24-L26); [src/cmd/cmd.ts:78](https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/cmd/cmd.ts#L78)) | Only callers you authorize reach the server's Argo CD tools (C1) |
+| Settings only from you | Set `ARGOCD_BASE_URL` in the host config and launch the server from a directory with no .env file you didn't write ([src/index.ts:4](https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/index.ts#L4); [src/server/transport.ts:24](https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/transport.ts#L24)) | The Argo CD endpoint and TLS settings come only from you, not from a repository you happen to open (C6) |
+| Certificate checks on | Use a trusted certificate on Argo CD and leave Node's certificate verification at its default, rather than copying the sample Cursor config's TLS setting | The Argo CD token travels only over verified connections (C8) |
+| Records outside the server | Keep your MCP host's tool-call history and Argo CD's own audit events, stored where the agent can't change them | A record of every change the agent made, since the server keeps none itself (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; the server marks no tool as read-only or destructive, so the tool name is your signal.
+- Ask for a dry run of `sync_application` first, and check the application and cascade setting before approving a delete.
+
+### Handling data
+
+- Tool results carry pod logs and manifests unredacted; treat the host's transcript like the cluster data it read.
+
 ## Critical gaps
 - The Argo CD token used for every tool can deploy any repository to any managed cluster and delete Applications with cascade; the server does not narrow it. (ASI03, T3, LLM06; C1) — [src/server/server.ts:279-285](https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L279-L285); [src/server/server.ts:293-321](https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L293-L321)
 - create_application plus sync lets the model have Argo CD deploy arbitrary manifests (any container) to production clusters with no isolation or policy in the server. (ASI05, T11, LLM05; C4) — [src/server/server.ts:279-285](https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/server/server.ts#L279-L285); [src/shared/models/schema.ts:30](https://github.com/argoproj-labs/mcp-for-argocd/blob/28d15ca69b0c31387cc6ec73d201fd13c5d22b6a/src/shared/models/schema.ts#L30)

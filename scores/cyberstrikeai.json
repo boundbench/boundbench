@@ -36,6 +36,126 @@
     "external_communication": "yes"
   },
   "headline": "This is a high-privilege platform by design: its shell and scanner tools run as the server's OS user with the full environment, and the human-approval gate is off by default. Authentication is real (generated admin password, per-user RBAC), but nothing contains the agent once a session is running, and untrusted target content flows straight into a model that can run commands. Operators should treat every deployment as a privileged system, enable approval, and isolate the host.",
+  "safe_setup": {
+    "intro": "CyberStrikeAI ships with real sign-in (a generated admin password and per-user roles), a per-call approval gate and a record of every tool call. As shipped, approval is off and every tool runs as the server's own OS user with no sandbox, so the safest setup turns approval on, trims the tool set and builds the containment around the host yourself.",
+    "steps": [
+      {
+        "setup": "Scoped, low-limit keys",
+        "how": "Give the server only model and search keys made for it, each with a spending limit set at the provider",
+        "gives_you": "Whatever the shell or a tool reads, the keys it finds reach only the spend and services you chose",
+        "criterion": "C8",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A dedicated host and user",
+        "how": "Run the server as its own low-privilege OS user on a VM or container that holds only this engagement's files, with the web UI reachable only from your own network",
+        "gives_you": "The agent's authority ends at that user and machine, not your workstation or other systems",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Per-call human approval",
+        "how": "Set `default_mode: approval` and keep `default_reviewer: human` in the hitl block of config.yaml",
+        "gives_you": "A person sees the tool name and exact arguments before each non-allowlisted call runs",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "config.example.yaml",
+            "lines": "188-192",
+            "contains": "default_mode: off",
+            "url": "https://github.com/AIPentest/CyberStrikeAI/blob/470eb5ead185dc90f2441e89b31ceb1be913ac44/config.example.yaml#L188-L192"
+          }
+        ]
+      },
+      {
+        "setup": "A read-only approval allowlist",
+        "how": "Keep only read-only lookups in `tool_whitelist`",
+        "gives_you": "Project-fact writes and C2 helper tools also come to a person for approval",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "config.example.yaml",
+            "lines": "206",
+            "contains": "tool_whitelist: [read_file",
+            "url": "https://github.com/AIPentest/CyberStrikeAI/blob/470eb5ead185dc90f2441e89b31ceb1be913ac44/config.example.yaml#L206"
+          }
+        ]
+      },
+      {
+        "setup": "Only the tools needed",
+        "how": "List just the engagement's tools under `tools` in the role file you use",
+        "gives_you": "The model sees a smaller tool set, with shell and exploitation tools only where you chose them",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "internal/config/config.go",
+            "lines": "2376",
+            "contains": "yaml:\"tools,omitempty\"",
+            "url": "https://github.com/AIPentest/CyberStrikeAI/blob/470eb5ead185dc90f2441e89b31ceb1be913ac44/internal/config/config.go#L2376"
+          }
+        ]
+      },
+      {
+        "setup": "C2 off when unused",
+        "how": "Set `enabled: false` in the `c2:` block when the engagement has no C2 work",
+        "gives_you": "No C2 listener starts and no C2 tools are offered to the model",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "config.example.yaml",
+            "lines": "435-436",
+            "contains": "c2:",
+            "url": "https://github.com/AIPentest/CyberStrikeAI/blob/470eb5ead185dc90f2441e89b31ceb1be913ac44/config.example.yaml#L435-L436"
+          }
+        ]
+      },
+      {
+        "setup": "Tight run limits",
+        "how": "Lower `max_iterations` and `tool_timeout_minutes` in the agent block to fit the task",
+        "gives_you": "A runaway agent or a hung tool stops in minutes rather than hours",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "config.example.yaml",
+            "lines": "159-160",
+            "contains": "max_iterations: 12000",
+            "url": "https://github.com/AIPentest/CyberStrikeAI/blob/470eb5ead185dc90f2441e89b31ceb1be913ac44/config.example.yaml#L159-L160"
+          }
+        ]
+      },
+      {
+        "setup": "Records kept off the host",
+        "how": "Copy the tool-call and audit records under data/ regularly to storage the server's OS user can't write",
+        "gives_you": "A record of every tool call and approval that the agent's own shell can't alter",
+        "criterion": "C9",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "config.example.yaml",
+            "lines": "389",
+            "contains": "path: data/conversations.db",
+            "url": "https://github.com/AIPentest/CyberStrikeAI/blob/470eb5ead185dc90f2441e89b31ceb1be913ac44/config.example.yaml#L389"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; review_edit mode lets you correct the arguments before a call runs.",
+      "Keep the reviewer human: the optional audit-agent reviewer is told to approve when unsure.",
+      "An unanswered prompt is rejected after `default_timeout_seconds`, so a missed prompt stops the call."
+    ],
+    "handling": [
+      "Tool arguments and results are stored unredacted for 90 days by default; store data/ like the target data it holds.",
+      "config.yaml holds keys in plain text with owner-only permissions; keep it that way and out of shared directories."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

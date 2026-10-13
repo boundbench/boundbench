@@ -24,6 +24,31 @@
 
 gh-aw is built around separating the agent from write access. The agent runs read-only inside a firewalled container with no tokens of its own, and its requested writes are typed, counted and applied by a separate job only after an AI threat check. The main gaps are that no human approves what gets posted by default, and that a manipulated agent can still read repository data and may be able to send it out through allowlisted domains. Keep integrity filtering on, and turn on manual approval or staged mode for sensitive repositories.
 
+## Safest setup
+
+gh-aw already keeps the agent read-only inside a firewalled container with no tokens of its own, and applies its requested writes in a separate job after a threat check. What it leaves to you is a human review of what gets posted and integrity filtering on private repositories, so the safest setup keeps the defaults and turns those on.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| The per-job GitHub token | Leave the `GH_AW_GITHUB_TOKEN` secret unset, or make it a fine-grained token scoped to this one repository ([pkg/workflow/github_token.go:45](https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/github_token.go#L45)) | GitHub itself limits reads and writes to one repository with a token that expires with the job (C1) |
+| Only the outputs needed | List under `safe-outputs:` only the output types the workflow needs, each with a low `max` ([pkg/workflow/safe_outputs_config_extraction.go:52](https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/safe_outputs_config_extraction.go#L52); [pkg/workflow/safe_outputs_config_types.go:23](https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/safe_outputs_config_types.go#L23)) | The write job gets only those permissions and applies a bounded number of typed writes (C3) |
+| A human approves each run | `manual-approval: <environment>` under `on:`, with required reviewers set on that GitHub environment ([pkg/workflow/manual_approval.go:27](https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/manual_approval.go#L27)) | No run starts until a person you chose approves it (C2) |
+| Staged preview | `staged: true` under `safe-outputs:` ([pkg/workflow/safe_outputs_config_extraction.go:52](https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/safe_outputs_config_extraction.go#L52); [pkg/workflow/safe_outputs_config_types.go:117](https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/safe_outputs_config_types.go#L117)) | Issues, comments and pull requests appear as a preview for you to read before anything is published (C2) |
+| Integrity filtering everywhere | `min-integrity: approved` under `tools:` `github:`, private repositories included ([pkg/workflow/compiler_orchestrator_tools.go:402](https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/compiler_orchestrator_tools.go#L402); [pkg/workflow/tools_parser.go:130](https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/tools_parser.go#L130); [pkg/workflow/tools_parser.go:322](https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/tools_parser.go#L322); [pkg/workflow/tools_types.go:321](https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/tools_types.go#L321)) | Content from authors without write access stays out of the model's context on every repository (C5) |
+| Strict mode and the sandbox | Keep the default `strict: true` and leave `sandbox:` `agent` on ([pkg/workflow/compiler_yaml_policy.go:21-29](https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/compiler_yaml_policy.go#L21-L29); [pkg/workflow/sandbox_validation.go:87-89](https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/sandbox_validation.go#L87-L89)) | Everything the agent runs stays inside the firewalled container, and the compiler keeps refusing weaker settings (C4) |
+| A narrow network allowlist | List under `network:` `allowed:` only the ecosystems and domains the task needs ([pkg/workflow/frontmatter_extraction_security.go:16](https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/frontmatter_extraction_security.go#L16); [pkg/workflow/engine.go:177-178](https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/engine.go#L177-L178)) | Fewer hosts the agent can reach, and so fewer paths for repository data to leave (C5) |
+| The run budget | Keep the default 20-minute agent timeout and 1,000-credit per-run budget ([pkg/constants/constants.go:388](https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/constants/constants.go#L388); [pkg/constants/constants.go:410](https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/constants/constants.go#L410)) | Every run ends within a fixed time and spend, sub-agents included (C10) |
+
+### Approving with confidence
+
+- A `manual-approval` covers the whole run before the agent starts, so pair it with staged mode to see the exact outputs.
+- Read each staged preview before turning staged mode off for that output type.
+
+### Handling data
+
+- Run logs and artifacts are redacted but not encrypted, and some are written from a directory the agent can reach; keep download access to people who need it.
+- Telemetry export stays off until you set an OpenTelemetry endpoint; send it only to a collector you control.
+
 ## Critical gaps
 - None: no criterion is capped and no blast radius is at the worst level.
 

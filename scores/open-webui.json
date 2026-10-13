@@ -36,6 +36,144 @@
     "external_communication": "no"
   },
   "headline": "Open WebUI scopes its built-in tools to the requesting user and has strong SSRF protection, but its tool-approval gate is off by default, so tools, including delete tools, run without a human. Admin-installed Tools and Functions are Python exec()-ed inside the server process, which runs as root with every stored API key. Model-written code runs in a browser Pyodide worker. Exfiltration paths and the code interpreter's boundary are not fully contained.",
+  "safe_setup": {
+    "intro": "Open WebUI checks the requesting user on its built-in tools, guards web fetches against internal addresses, and runs model-written code in the browser rather than on the server. Tool approval is off by default and admin-installed plugins run inside the server with every stored key, so the safest setup turns on approval, narrows what runs, and builds containment around the server.",
+    "steps": [
+      {
+        "setup": "Scoped, low-limit keys",
+        "how": "Give the server only the provider and connector keys you use, each scoped or read-only with a spending limit set at the provider",
+        "gives_you": "Whatever runs inside the server reaches only the systems and spend you chose",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A non-admin chat account",
+        "how": "Keep the default `DEFAULT_USER_ROLE` of pending and do everyday chatting from a separate non-admin account",
+        "gives_you": "New accounts wait for your approval, and chat sessions carry no admin rights",
+        "criterion": "C1",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "backend/open_webui/config.py",
+            "lines": "1720",
+            "contains": "DEFAULT_USER_ROLE = os.getenv('DEFAULT_USER_ROLE', 'pending')",
+            "url": "https://github.com/open-webui/open-webui/blob/8bd8b4fac5e059578ac0c74b3c18d11139f88b7d/backend/open_webui/config.py#L1720"
+          }
+        ]
+      },
+      {
+        "setup": "Per-call approval",
+        "how": "Set `ENABLE_TOOL_PERMISSIONS=true`, then switch each chat's tool mode from full to ask",
+        "gives_you": "A person sees each tool's name and exact arguments and allows or denies the call",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "backend/open_webui/config.py",
+            "lines": "2196",
+            "contains": "ENABLE_TOOL_PERMISSIONS = os.getenv('ENABLE_TOOL_PERMISSIONS', 'False')",
+            "url": "https://github.com/open-webui/open-webui/blob/8bd8b4fac5e059578ac0c74b3c18d11139f88b7d/backend/open_webui/config.py#L2196"
+          }
+        ]
+      },
+      {
+        "setup": "Admin-reviewed extensions",
+        "how": "Keep `USER_PERMISSIONS_WORKSPACE_TOOLS_ACCESS` off and set `ENABLE_PIP_INSTALL_FRONTMATTER_REQUIREMENTS=false`",
+        "gives_you": "Only plugin code an admin has read runs in the server, with packages you install yourself",
+        "criterion": "C7",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "backend/open_webui/config.py",
+            "lines": "1745-1746",
+            "contains": "USER_PERMISSIONS_WORKSPACE_TOOLS_ACCESS",
+            "url": "https://github.com/open-webui/open-webui/blob/8bd8b4fac5e059578ac0c74b3c18d11139f88b7d/backend/open_webui/config.py#L1745-L1746"
+          },
+          {
+            "file": "backend/open_webui/env.py",
+            "lines": "1190-1191",
+            "contains": "ENABLE_PIP_INSTALL_FRONTMATTER_REQUIREMENTS",
+            "url": "https://github.com/open-webui/open-webui/blob/8bd8b4fac5e059578ac0c74b3c18d11139f88b7d/backend/open_webui/env.py#L1190-L1191"
+          }
+        ]
+      },
+      {
+        "setup": "Only the features you use",
+        "how": "Set `ENABLE_MEMORIES=false` and `ENABLE_AUTOMATIONS=false` unless you rely on them",
+        "gives_you": "Nothing the model writes is carried into later chats or re-run on a schedule without you",
+        "criterion": "C6",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "backend/open_webui/config.py",
+            "lines": "426",
+            "contains": "ENABLE_MEMORIES = os.getenv('ENABLE_MEMORIES', 'True')",
+            "url": "https://github.com/open-webui/open-webui/blob/8bd8b4fac5e059578ac0c74b3c18d11139f88b7d/backend/open_webui/config.py#L426"
+          },
+          {
+            "file": "backend/open_webui/config.py",
+            "lines": "2034",
+            "contains": "ENABLE_AUTOMATIONS = os.getenv('ENABLE_AUTOMATIONS', 'True')",
+            "url": "https://github.com/open-webui/open-webui/blob/8bd8b4fac5e059578ac0c74b3c18d11139f88b7d/backend/open_webui/config.py#L2034"
+          }
+        ]
+      },
+      {
+        "setup": "Time and loop limits",
+        "how": "Set `AIOHTTP_CLIENT_TIMEOUT=<seconds>` and a lower `CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS=<n>`",
+        "gives_you": "Model and tool-server calls end after a set time, and each response stops after fewer tool rounds",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "backend/open_webui/env.py",
+            "lines": "608-610",
+            "contains": "AIOHTTP_CLIENT_TIMEOUT",
+            "url": "https://github.com/open-webui/open-webui/blob/8bd8b4fac5e059578ac0c74b3c18d11139f88b7d/backend/open_webui/env.py#L608-L610"
+          },
+          {
+            "file": "backend/open_webui/env.py",
+            "lines": "1085-1086",
+            "contains": "CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS",
+            "url": "https://github.com/open-webui/open-webui/blob/8bd8b4fac5e059578ac0c74b3c18d11139f88b7d/backend/open_webui/env.py#L1085-L1086"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the server in a container or VM whose network reaches only your model providers and tool servers",
+        "gives_you": "An outer boundary around plugin code, which runs in the server process",
+        "criterion": "C7",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A request audit log",
+        "how": "Set `AUDIT_LOG_LEVEL=METADATA` and keep the log on storage chat users can't reach",
+        "gives_you": "A per-user record of requests that chat deletion doesn't remove",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "backend/open_webui/env.py",
+            "lines": "1236",
+            "contains": "AUDIT_LOG_LEVEL = os.getenv('AUDIT_LOG_LEVEL', 'NONE')",
+            "url": "https://github.com/open-webui/open-webui/blob/8bd8b4fac5e059578ac0c74b3c18d11139f88b7d/backend/open_webui/env.py#L1236"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; it shows the tool name and the exact arguments that will run.",
+      "Automations and channel chats run tools without the prompt, so keep them to tasks that need no review."
+    ],
+    "handling": [
+      "Saved chats keep every tool call's arguments and results, and provider keys sit in plaintext in the configuration table; protect the database and its backups like a secret store.",
+      "`ENABLE_VALVE_ENCRYPTION=true` encrypts plugin valve secrets at rest.",
+      "The audit log masks only password fields, so store it like the chats it records."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

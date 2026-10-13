@@ -24,6 +24,30 @@
 
 dbt-mcp gives an AI host the operator's full dbt Platform identity and warehouse profile, with dbt build/run/clone, arbitrary SQL through 'show', and production job triggers turned on by default. Its only safety signal is MCP annotations, and these mark arbitrary SQL as read-only and job step overrides as non-destructive. The server auto-loads a .env from its working directory, so a cloned repository can change which binary runs, where the token is sent, and which tools are enabled. Run it with an explicit DBT_MCP_ENABLE_TOOLS allowlist, a scoped read-only token and warehouse role, and a working directory you control.
 
+## Safest setup
+
+dbt MCP ships with few protections on: as shipped it runs dbt with your full dbt Platform and warehouse access, turns on build, run, SQL and job-trigger tools, and reads a .env file from whatever directory it starts in. The safest setup narrows the identities first, turns on the tool allowlist the server already has, and puts containment around the process.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Read-only identities | Give the server a dbt Platform service token with only the permissions the task needs, and a dbt profile whose warehouse role can only read | dbt Platform and the warehouse themselves refuse writes, whatever the model asks for (C1) |
+| A tool allowlist | `DBT_MCP_ENABLE_TOOLS=<tool names>` listing only the tools the task uses ([src/dbt_mcp/config/settings.py:87-90](https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L87-L90)) | The model sees only the tools you named, with build, run, SQL and job triggers left out unless you add them (C3) |
+| Settings only from you | Start the server from a directory you control with no `.env` file, and set `DBT_PATH`, `DBT_HOST` and the tool settings in the host's server config ([src/dbt_mcp/config/settings.py:42](https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L42); [src/dbt_mcp/config/settings.py:48](https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L48); [src/dbt_mcp/config/settings.py:67](https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L67)) | The binary that runs, where your token goes and which tools load come only from you, not from a repository (C6) |
+| No remote app bundle | `DISABLE_MCP_APPS=true` ([src/dbt_mcp/config/settings.py:107](https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L107)) | No UI code is fetched from the CDN at runtime, and tools still return their data (C7) |
+| A short CLI timeout | Keep the default `DBT_CLI_TIMEOUT` of 60 seconds, or set it lower ([src/dbt_mcp/config/settings.py:68](https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L68); [src/dbt_mcp/config/settings.py:17](https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L17)) | Each dbt CLI call returns to the host within a fixed time (C10) |
+| Its own container or VM | Run the server and dbt in a container or VM holding only the project and profile, with network limited to your warehouse and dbt Platform | An outer boundary around dbt runs, which otherwise share your files, environment and network (C4) |
+| A tool-call log file | `DBT_MCP_SERVER_FILE_LOGGING=true`, with `DBT_MCP_LOG_LEVEL` left at its default ([src/dbt_mcp/config/settings.py:31-32](https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L31-L32)) | A timestamped record of every tool call that outlives the host session (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; `show` is labelled read-only but runs any SQL you pass it, so review its query as you would a write.
+- A `trigger_job_run` approval can run any job in the account with its own steps, so check the job and any step overrides first.
+
+### Handling data
+
+- Usage telemetry is on by default and sends most tool arguments to dbt Labs; `DO_NOT_TRACK=1` turns it off.
+- The server's log lines carry tool arguments, with SQL and vars masked; store captured logs like the project's data.
+
 ## Critical gaps
 - The 'show' tool executes arbitrary model-supplied SQL against the warehouse but is annotated readOnlyHint=True, so hosts that auto-approve read-only tools skip their gate. (ASI02, ASI09, T2; C2) — [src/dbt_mcp/dbt_cli/tools.py:279](https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L279); [src/dbt_mcp/dbt_cli/tools.py:510-515](https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/dbt_cli/tools.py#L510-L515); [src/dbt_mcp/prompts/dbt_cli/show.md:1](https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/prompts/dbt_cli/show.md#L1)
 - Tool enablement can be loosened by an auto-loaded workspace .env (e.g. enabling the SQL toolset or swapping DBT_PATH). (ASI02, LLM06; C3) — [src/dbt_mcp/config/settings.py:38-45](https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L38-L45); [src/dbt_mcp/config/settings.py:67](https://github.com/dbt-labs/dbt-mcp/blob/8e7022bae4cc6a0dc6f708fe9d95de8ac952661e/src/dbt_mcp/config/settings.py#L67)

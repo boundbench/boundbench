@@ -24,6 +24,32 @@
 
 Kilo's default coding agent edits files, fetches any URL and runs MCP tools without asking, and its default shell auto-approve list is not a strict boundary. Opening a repository is enough for its kilo.json or .kilo/plugin folder to load plugin code, start MCP servers and loosen permissions, with no trust prompt. Kilo ships a solid OS sandbox, but it is off by default. Turning the sandbox on and adopting the 'Review first' permission preset closes much of the gap.
 
+## Safest setup
+
+Kilo ships a well-built permission engine whose prompts show the exact command or full diff, an OS sandbox that confines writes and network, workspace snapshots, and a record of every tool call. As shipped, the default agent acts without asking, the sandbox is off and a repository's own config loads with no trust prompt, so the safest setup turns on the prompts and sandbox Kilo already includes and adds containment around it.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Start Kilo from a shell that holds only the keys this task needs, each scoped or read-only with a spending limit set at the provider | Commands and MCP servers inherit only the access you chose, not every credential on your machine (C1) |
+| Ask before acting | `permission` set to `"ask"` in your global config, adding `allow` only for tools that just read ([packages/core/src/v1/config/config.ts:266](https://github.com/Kilo-Org/kilocode/blob/76bcfd40be616a72f4697b3041565f322245b462/packages/core/src/v1/config/config.ts#L266); [packages/core/src/v1/config/permission.ts:5](https://github.com/Kilo-Org/kilocode/blob/76bcfd40be616a72f4697b3041565f322245b462/packages/core/src/v1/config/permission.ts#L5); [packages/core/src/v1/config/permission.ts:49](https://github.com/Kilo-Org/kilocode/blob/76bcfd40be616a72f4697b3041565f322245b462/packages/core/src/v1/config/permission.ts#L49)) | Edits, shell commands, web fetches and MCP tools each wait for a person to see the exact call (C2) |
+| The OS sandbox | `enabled: true` under `sandbox` in your global config, keeping the default `network` setting of `deny` ([packages/core/src/v1/config/config.ts:165-172](https://github.com/Kilo-Org/kilocode/blob/76bcfd40be616a72f4697b3041565f322245b462/packages/core/src/v1/config/config.ts#L165-L172)) | Shell commands can write only to the workspace and Kilo's own state, and reach no network unless you list a host (C4) |
+| A reviewed workspace | Open only repositories whose kilo.json, opencode.json, .kilo folder and AGENTS.md you have read | Permission rules, MCP servers, plugins and instructions come only from sources you trust (C6) |
+| Workspace snapshots | Keep the default `snapshot` setting on ([packages/core/src/v1/config/config.ts:80-82](https://github.com/Kilo-Org/kilocode/blob/76bcfd40be616a72f4697b3041565f322245b462/packages/core/src/v1/config/config.ts#L80-L82)) | File changes inside the workspace can be reverted after a session (C2) |
+| Step and command limits | `steps: <n>` on each agent under `agent`, and `KILO_COMMAND_TIMEOUT_MAX_MS=<ms>` in the environment ([packages/core/src/v1/config/config.ts:223](https://github.com/Kilo-Org/kilocode/blob/76bcfd40be616a72f4697b3041565f322245b462/packages/core/src/v1/config/config.ts#L223); [packages/core/src/v1/config/agent.ts:49-51](https://github.com/Kilo-Org/kilocode/blob/76bcfd40be616a72f4697b3041565f322245b462/packages/core/src/v1/config/agent.ts#L49-L51); [packages/opencode/src/kilocode/command-timeout.ts:8](https://github.com/Kilo-Org/kilocode/blob/76bcfd40be616a72f4697b3041565f322245b462/packages/opencode/src/kilocode/command-timeout.ts#L8)) | Each session ends after a set number of iterations and no shell command runs past your ceiling (C10) |
+| Cloud uploads off | `KILO_DISABLE_SESSION_INGEST=1` in the environment and `openTelemetry: false` under `experimental` ([packages/opencode/src/kilo-sessions/kilo-sessions.ts:276-277](https://github.com/Kilo-Org/kilocode/blob/76bcfd40be616a72f4697b3041565f322245b462/packages/opencode/src/kilo-sessions/kilo-sessions.ts#L276-L277); [packages/core/src/v1/config/config.ts:318](https://github.com/Kilo-Org/kilocode/blob/76bcfd40be616a72f4697b3041565f322245b462/packages/core/src/v1/config/config.ts#L318); [packages/core/src/v1/config/config.ts:344-345](https://github.com/Kilo-Org/kilocode/blob/76bcfd40be616a72f4697b3041565f322245b462/packages/core/src/v1/config/config.ts#L344-L345)) | Transcripts stay out of Kilo's session-ingest service, and usage telemetry stops (C8) |
+| Its own container or VM | Run Kilo in a container or VM whose network reaches only the model provider and the hosts the task needs | An outer boundary around local MCP servers, plugins and anything that runs outside the sandbox, and a narrow path for data to leave (C5) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; prompts show the exact command or the full diff.
+- An allow rule covers every later call it matches, so keep allow rules for tools that only read.
+- A call that writes kilo.json, opencode.json or anything under .kilo changes what later sessions may do, so read those with extra care.
+
+### Handling data
+
+- kilo.db in Kilo's data directory keeps the input and output of every tool call; store it like sensitive logs, and copy it off the machine when you need a record the agent's shell can't change.
+- Provider keys saved through Kilo sit in a plaintext, owner-only file; prefer short-lived keys.
+
 ## Critical gaps
 - A hijacked session holds the developer's full ambient authority: every shell command and MCP server inherits the whole environment and the sandbox is off by default. (ASI03, T3; C1) — [packages/opencode/src/kilocode/process/env.ts:1-14](https://github.com/Kilo-Org/kilocode/blob/76bcfd40be616a72f4697b3041565f322245b462/packages/opencode/src/kilocode/process/env.ts#L1-L14); [packages/opencode/src/kilocode/sandbox/config.ts:43](https://github.com/Kilo-Org/kilocode/blob/76bcfd40be616a72f4697b3041565f322245b462/packages/opencode/src/kilocode/sandbox/config.ts#L43)
 - Workspace kilo.json/opencode.json can loosen approval rules (e.g. '*': 'allow') with no trust prompt. (ASI09, ASI02, T10; C2) — [packages/opencode/src/config/config.ts:780-795](https://github.com/Kilo-Org/kilocode/blob/76bcfd40be616a72f4697b3041565f322245b462/packages/opencode/src/config/config.ts#L780-L795)

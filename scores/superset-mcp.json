@@ -36,6 +36,143 @@
     "external_communication": "no"
   },
   "headline": "Superset's MCP service puts every tool behind Superset's own role-based permissions, guards SQL with parsing, per-table access checks and a DML switch that is off by default, and logs every call to the Superset audit log. The main gap is the setup the README leads with: no transport authentication, with every request run as one configured user, which the quickstart sets to admin. Enable JWT or API-key auth and use a least-privilege Superset user before exposing it. By default hosts also see a single generic call_tool proxy rather than the per-tool risk annotations, which weakens host-side approval.",
+  "safe_setup": {
+    "intro": "Superset's MCP service checks every tool call against Superset's own role-based permissions, refuses warehouse writes unless a database allows them, keeps deletes restorable and records every call in the Action Log. The README quickstart runs with no transport authentication as admin, so the safest setup gives each caller its own least-privilege identity and lets your host see each tool's risk hints.",
+    "steps": [
+      {
+        "setup": "A read-only warehouse login",
+        "how": "Connect Superset to each warehouse with a database login that can only read the schemas the task needs",
+        "gives_you": "The warehouse itself refuses writes, whatever SQL reaches it",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A least-privilege Superset user",
+        "how": "Run MCP calls as a dedicated Superset user whose roles cover only the needed datasets and dashboards, not Admin",
+        "gives_you": "Superset's permission check limits every tool call to that user's data",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Per-caller authentication",
+        "how": "Set `MCP_AUTH_ENABLED` with `MCP_JWT_AUDIENCE` and leave `MCP_DEV_USERNAME` unset, or set `MCP_API_KEY_ENABLED`",
+        "gives_you": "Each request runs as its own Superset user, with token scopes narrowed by that user's roles",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "superset/mcp_service/mcp_config.py",
+            "lines": "577",
+            "contains": "MCP_AUTH_ENABLED",
+            "url": "https://github.com/apache/superset/blob/7a2913e2dbe892805f67138696ee5561d67ab7c5/superset/mcp_service/mcp_config.py#L577"
+          },
+          {
+            "file": "superset/mcp_service/mcp_config.py",
+            "lines": "587",
+            "contains": "MCP_DEV_USERNAME",
+            "url": "https://github.com/apache/superset/blob/7a2913e2dbe892805f67138696ee5561d67ab7c5/superset/mcp_service/mcp_config.py#L587"
+          },
+          {
+            "file": "superset/mcp_service/mcp_config.py",
+            "lines": "601",
+            "contains": "MCP_JWT_AUDIENCE",
+            "url": "https://github.com/apache/superset/blob/7a2913e2dbe892805f67138696ee5561d67ab7c5/superset/mcp_service/mcp_config.py#L601"
+          },
+          {
+            "file": "superset/mcp_service/mcp_config.py",
+            "lines": "224",
+            "contains": "MCP_API_KEY_ENABLED: bool | None = None",
+            "url": "https://github.com/apache/superset/blob/7a2913e2dbe892805f67138696ee5561d67ab7c5/superset/mcp_service/mcp_config.py#L224"
+          }
+        ]
+      },
+      {
+        "setup": "Per-tool risk hints",
+        "how": "Set `enabled` to False in `MCP_TOOL_SEARCH_CONFIG`",
+        "gives_you": "Your host sees each tool's read-only and destructive annotations and can gate deletes and SQL separately",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "superset/mcp_service/mcp_config.py",
+            "lines": "527-528",
+            "contains": "MCP_TOOL_SEARCH_CONFIG: dict[str, Any] = {",
+            "url": "https://github.com/apache/superset/blob/7a2913e2dbe892805f67138696ee5561d67ab7c5/superset/mcp_service/mcp_config.py#L527-L528"
+          }
+        ]
+      },
+      {
+        "setup": "Only the tools needed",
+        "how": "List the write tools and `execute_sql` the task doesn't use in `MCP_DISABLED_TOOLS`",
+        "gives_you": "The model never sees tools outside the task",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "superset/mcp_service/mcp_config.py",
+            "lines": "127-132",
+            "contains": "MCP_DISABLED_TOOLS = {\"execute_sql\", \"health_check\"}",
+            "url": "https://github.com/apache/superset/blob/7a2913e2dbe892805f67138696ee5561d67ab7c5/superset/mcp_service/mcp_config.py#L127-L132"
+          }
+        ]
+      },
+      {
+        "setup": "Warehouse writes off",
+        "how": "Keep the default `allow_dml` off on every database connection",
+        "gives_you": "Model-written SQL that changes data is refused before it reaches the warehouse",
+        "criterion": "C4",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "superset/models/core.py",
+            "lines": "214",
+            "contains": "allow_dml = Column(Boolean, default=False)",
+            "url": "https://github.com/apache/superset/blob/7a2913e2dbe892805f67138696ee5561d67ab7c5/superset/models/core.py#L214"
+          }
+        ]
+      },
+      {
+        "setup": "Extensions left off",
+        "how": "Keep the default `ENABLE_EXTENSIONS` feature flag off",
+        "gives_you": "Only Superset's built-in tools run inside the process that holds your database credentials",
+        "criterion": "C7",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "superset/config.py",
+            "lines": "733",
+            "contains": "\"ENABLE_EXTENSIONS\": False",
+            "url": "https://github.com/apache/superset/blob/7a2913e2dbe892805f67138696ee5561d67ab7c5/superset/config.py#L733"
+          }
+        ]
+      },
+      {
+        "setup": "The Action Log",
+        "how": "Keep the default `EVENT_LOGGER` set to `DBEventLogger`",
+        "gives_you": "A record of every tool call with user, agent id, arguments and outcome",
+        "criterion": "C9",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "superset/config.py",
+            "lines": "95",
+            "contains": "EVENT_LOGGER = DBEventLogger()",
+            "url": "https://github.com/apache/superset/blob/7a2913e2dbe892805f67138696ee5561d67ab7c5/superset/config.py#L95"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; with tool search off, deletes, dashboard owner and role changes and `execute_sql` carry a destructive hint.",
+      "Owner and role changes share a dashboard with other Superset users, so approve them when you mean to share it."
+    ],
+    "handling": [
+      "The Action Log keeps tool arguments with sensitive key names masked; store it like the data the configured user can query.",
+      "An error hook set in `MCP_ERROR_HOOK` receives raw exception text, so send it only to storage you treat as sensitive."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

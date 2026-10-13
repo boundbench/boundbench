@@ -36,6 +36,148 @@
     "external_communication": "opt_in"
   },
   "headline": "AgentScope 2.0 ships a real permission engine: by default it asks before writes and most shell commands and shows the exact call. But the shell runs directly on the host with the full environment, reads of any file are auto-approved, and MCP servers can exempt their own tools by labelling them read-only. Neither the shell auto-allow nor approval in the bundled agent service is a strict boundary. Use a sandboxed workspace and treat auto-approval as a convenience, not a boundary.",
+  "safe_setup": {
+    "intro": "AgentScope ships with per-call approval on by default, showing the exact tool and arguments before writes and most shell commands, and an agent starts with no tools. Shell commands otherwise run on your host with your full environment, so the safest setup moves tool execution into a sandbox, narrows the identity and builds containment around the process.",
+    "steps": [
+      {
+        "setup": "A dedicated, low-privilege account",
+        "how": "Run the agent under its own OS account and environment holding only the model key and credentials the task needs, with a spending limit set at the provider",
+        "gives_you": "Commands the agent runs reach only what that account can reach, not everything your own login can",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A remote sandbox",
+        "how": "Build an `E2BWorkspace`, passing only the `env` values the task needs, and register the tools from its `list_tools()`",
+        "gives_you": "Shell and file tools run in a remote sandbox away from your host files and credentials",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/agentscope/workspace/_e2b/_e2b_workspace.py",
+            "lines": "62",
+            "contains": "class E2BWorkspace",
+            "url": "https://github.com/agentscope-ai/agentscope/blob/72f3f6fa0b2fc38b8517f408ab616f0f2bd229e6/src/agentscope/workspace/_e2b/_e2b_workspace.py#L62"
+          },
+          {
+            "file": "src/agentscope/workspace/_e2b/_e2b_workspace.py",
+            "lines": "84",
+            "contains": "env: dict[str, str] | None = None",
+            "url": "https://github.com/agentscope-ai/agentscope/blob/72f3f6fa0b2fc38b8517f408ab616f0f2bd229e6/src/agentscope/workspace/_e2b/_e2b_workspace.py#L84"
+          },
+          {
+            "file": "src/agentscope/workspace/_base.py",
+            "lines": "554",
+            "contains": "async def list_tools",
+            "url": "https://github.com/agentscope-ai/agentscope/blob/72f3f6fa0b2fc38b8517f408ab616f0f2bd229e6/src/agentscope/workspace/_base.py#L554"
+          }
+        ]
+      },
+      {
+        "setup": "Per-call approval",
+        "how": "Keep the default `PermissionMode.DEFAULT` as the agent's permission `mode`",
+        "gives_you": "A person sees the exact tool and arguments before writes and most shell commands run",
+        "criterion": "C2",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "src/agentscope/permission/_context.py",
+            "lines": "31",
+            "contains": "mode: PermissionMode = PermissionMode.DEFAULT",
+            "url": "https://github.com/agentscope-ai/agentscope/blob/72f3f6fa0b2fc38b8517f408ab616f0f2bd229e6/src/agentscope/permission/_context.py#L31"
+          }
+        ]
+      },
+      {
+        "setup": "Only the tools needed",
+        "how": "Start from the empty default `Toolkit` and register only the tools the task uses",
+        "gives_you": "The model can call only the tools you chose for this task",
+        "criterion": "C3",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "src/agentscope/agent/_agent.py",
+            "lines": "201",
+            "contains": "self.toolkit = toolkit or Toolkit()",
+            "url": "https://github.com/agentscope-ai/agentscope/blob/72f3f6fa0b2fc38b8517f408ab616f0f2bd229e6/src/agentscope/agent/_agent.py#L201"
+          }
+        ]
+      },
+      {
+        "setup": "Reviewed, pinned MCP servers",
+        "how": "Connect only MCP servers you have reviewed, with an exact version in each launch command",
+        "gives_you": "Third-party tools, and the read-only labels that decide which of them need approval, come only from code you chose",
+        "criterion": "C7",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A token budget",
+        "how": "Add `ReplyBudgetControlMiddleware` with `token_budget=<n>` to the agent's `middlewares`",
+        "gives_you": "Once a reply reaches the budget, the agent stops calling tools and wraps up",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/agentscope/middleware/_budget.py",
+            "lines": "21",
+            "contains": "class ReplyBudgetControlMiddleware",
+            "url": "https://github.com/agentscope-ai/agentscope/blob/72f3f6fa0b2fc38b8517f408ab616f0f2bd229e6/src/agentscope/middleware/_budget.py#L21"
+          },
+          {
+            "file": "src/agentscope/middleware/_budget.py",
+            "lines": "65",
+            "contains": "token_budget: float",
+            "url": "https://github.com/agentscope-ai/agentscope/blob/72f3f6fa0b2fc38b8517f408ab616f0f2bd229e6/src/agentscope/middleware/_budget.py#L65"
+          },
+          {
+            "file": "src/agentscope/agent/_agent.py",
+            "lines": "126",
+            "contains": "middlewares: list[MiddlewareBase] | None = None",
+            "url": "https://github.com/agentscope-ai/agentscope/blob/72f3f6fa0b2fc38b8517f408ab616f0f2bd229e6/src/agentscope/agent/_agent.py#L126"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the agent process in a container or VM whose network reaches only the hosts the task needs",
+        "gives_you": "An outer boundary around host-side tools and a narrow path for data to leave",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A tool-call trace",
+        "how": "Add `TracingMiddleware` to `middlewares`, with an OpenTelemetry SDK tracer provider exporting to a collector outside the agent's reach",
+        "gives_you": "A record of every model call and tool execution that outlives the process",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/agentscope/middleware/_tracing/_trace.py",
+            "lines": "117",
+            "contains": "class TracingMiddleware",
+            "url": "https://github.com/agentscope-ai/agentscope/blob/72f3f6fa0b2fc38b8517f408ab616f0f2bd229e6/src/agentscope/middleware/_tracing/_trace.py#L117"
+          },
+          {
+            "file": "src/agentscope/agent/_agent.py",
+            "lines": "126",
+            "contains": "middlewares: list[MiddlewareBase] | None = None",
+            "url": "https://github.com/agentscope-ai/agentscope/blob/72f3f6fa0b2fc38b8517f408ab616f0f2bd229e6/src/agentscope/agent/_agent.py#L126"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; the console shows the exact tool and arguments that will run.",
+      "File reads, MCP tools their server labels read-only, and shell commands treated as read-only run without a prompt, so treat that auto-approval as a convenience and rely on the sandbox and account for the boundary."
+    ],
+    "handling": [
+      "Tool output reaches the model and any exported trace without redaction; store traces like the data the agent read.",
+      "Approvals and denials are not part of the trace, so keep your own note of what you approved when that matters."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

@@ -25,6 +25,31 @@ Controls where a risk surface exists: 2.57 / 9.0 (29%); 1 criterion scored SA (s
 
 Aider asks for an explicit yes before running any shell command and auto-commits every edit so it can be undone, but it has no sandbox and passes your full environment to everything it runs. The dominant risk is the repository itself: aider silently loads .aider.conf.yml and .env from the project folder, and those files can configure commands that run with no prompt, auto-approve other prompts, or redirect your API key. Only run it in repositories you trust, or check those files first.
 
+## Safest setup
+
+Aider asks for an explicit yes before it runs any shell command and commits every edit to git so it can be undone. It has no sandbox, passes your full environment to every command it runs, and applies settings from the repository you open, so the safest setup narrows what your shell holds, starts only in repositories you have checked and moves aider into a container.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, low-limit key | Start aider from a shell that holds only a dedicated model key with a spending limit set at the provider, and no cloud or Git credentials the task doesn't need | Every command aider runs reaches only that key and the spend you allowed, not everything your account can (C1) |
+| Repositories you have checked | Open aider in repositories you trust, after reading any `.aider.conf.yml` and `.env` they contain ([aider/args.py:31-32](https://github.com/Aider-AI/aider/blob/5dc9490bb35f9729ef2c95d00a19ccd30c26339c/aider/args.py#L31-L32); [aider/args.py:790-795](https://github.com/Aider-AI/aider/blob/5dc9490bb35f9729ef2c95d00a19ccd30c26339c/aider/args.py#L790-L795)) | Commands, approval settings and the model endpoint come only from settings you chose (C6) |
+| Per-call approval | Keep the default with `--yes-always` off, and answer each prompt yourself ([aider/args.py:760-764](https://github.com/Aider-AI/aider/blob/5dc9490bb35f9729ef2c95d00a19ccd30c26339c/aider/args.py#L760-L764)) | You see each suggested shell command, URL fetch and new file before it happens (C2) |
+| Read-only ask mode | `--chat-mode ask` while you explore code, and `suggest-shell-commands: false` in your own config when the task needs no commands ([aider/args.py:164-168](https://github.com/Aider-AI/aider/blob/5dc9490bb35f9729ef2c95d00a19ccd30c26339c/aider/args.py#L164-L168); [aider/coders/ask_coder.py:8](https://github.com/Aider-AI/aider/blob/5dc9490bb35f9729ef2c95d00a19ccd30c26339c/aider/coders/ask_coder.py#L8); [aider/args.py:807-811](https://github.com/Aider-AI/aider/blob/5dc9490bb35f9729ef2c95d00a19ccd30c26339c/aider/args.py#L807-L811)) | The model answers questions without editing files or proposing commands (C3) |
+| Auto-commits with undo | Keep the default `--auto-commits` on and use `/undo` to revert an unwanted edit ([aider/args.py:440-444](https://github.com/Aider-AI/aider/blob/5dc9490bb35f9729ef2c95d00a19ccd30c26339c/aider/args.py#L440-L444); [aider/commands.py:553-554](https://github.com/Aider-AI/aider/blob/5dc9490bb35f9729ef2c95d00a19ccd30c26339c/aider/commands.py#L553-L554)) | Every AI edit is its own git commit you can inspect and reverse (C2) |
+| The Docker image | Run the `paulgauthier/aider` image with only the project folder mounted and network limited to your model provider ([aider/website/docs/install/docker.md:23-24](https://github.com/Aider-AI/aider/blob/5dc9490bb35f9729ef2c95d00a19ccd30c26339c/aider/website/docs/install/docker.md#L23-L24); [docker/Dockerfile:54-56](https://github.com/Aider-AI/aider/blob/5dc9490bb35f9729ef2c95d00a19ccd30c26339c/docker/Dockerfile#L54-L56)) | Commands aider runs stay inside a non-root container that sees only that folder (C4) |
+| A transcript outside the repo | `--chat-history-file <path>` pointing outside the repository ([aider/args.py:283-288](https://github.com/Aider-AI/aider/blob/5dc9490bb35f9729ef2c95d00a19ccd30c26339c/aider/args.py#L283-L288)) | The session record sits apart from the files the agent edits (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve shell commands one at a time; the prompt shows the exact commands that will run.
+- Prompts for new files or files outside the chat show only the path, so review the resulting commit before moving on.
+- Files you add to the chat are edited without a further prompt, so add only the files you want changed.
+
+### Handling data
+
+- The chat transcript keeps every message and command output unredacted; store it like other sensitive logs.
+- An OpenRouter key from the sign-in flow is saved in plain text to `~/.aider/oauth-keys.env`; restrict that file to your user.
+
 ## Critical gaps
 - Repository-controlled .aider.conf.yml/.env are auto-loaded and can configure commands (test-cmd+auto-test, lint-cmd, load) that run without any approval prompt, bypassing the shell gate. (ASI09, ASI02, ASI06; C2) — [aider/main.py:464-476](https://github.com/Aider-AI/aider/blob/5dc9490bb35f9729ef2c95d00a19ccd30c26339c/aider/main.py#L464-L476); [aider/main.py:361-381](https://github.com/Aider-AI/aider/blob/5dc9490bb35f9729ef2c95d00a19ccd30c26339c/aider/main.py#L361-L381); [aider/main.py:1123-1124](https://github.com/Aider-AI/aider/blob/5dc9490bb35f9729ef2c95d00a19ccd30c26339c/aider/main.py#L1123-L1124); [aider/coders/base_coder.py:1616-1617](https://github.com/Aider-AI/aider/blob/5dc9490bb35f9729ef2c95d00a19ccd30c26339c/aider/coders/base_coder.py#L1616-L1617)
 - All commands, including the automatic lint and any configured test command, run on the host as the user with the full environment and network; there is no sandbox by default. (ASI05; C4) — [aider/run_cmd.py:62-72](https://github.com/Aider-AI/aider/blob/5dc9490bb35f9729ef2c95d00a19ccd30c26339c/aider/run_cmd.py#L62-L72); [aider/run_cmd.py:116](https://github.com/Aider-AI/aider/blob/5dc9490bb35f9729ef2c95d00a19ccd30c26339c/aider/run_cmd.py#L116); [aider/linter.py:137-159](https://github.com/Aider-AI/aider/blob/5dc9490bb35f9729ef2c95d00a19ccd30c26339c/aider/linter.py#L137-L159)

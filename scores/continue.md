@@ -24,6 +24,29 @@
 
 Continue's CLI asks before shell commands, file writes and MCP calls, but that approval gate does not cover every path. Read and Fetch also run unprompted with no workspace or host limits, giving a hijacked session an unattended exfiltration path. Everything runs on the host as the user, with the full environment, no sandbox, and no step or cost limits.
 
+## Safest setup
+
+Continue's CLI asks before shell commands, file writes and MCP calls in interactive mode, and reads its permissions and main config only from your home directory. Beyond that the defaults are thin: everything runs on the host as you, with your full environment, no sandbox and no spending limit, and Read and Fetch run unprompted. The safest setup keeps the prompts on, adds one for Fetch and builds containment around the process.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit credentials | Run cn from an account or environment that holds only the keys this task needs, each scoped or read-only with a spending limit set at the provider | Whatever the agent runs reaches only the systems and spend you chose, not every login in your shell (C1) |
+| Its own container or VM | Run cn in a container or VM with only the project mounted and network limited to the model provider and the hosts the task needs | An outer boundary around shell commands, MCP servers and file reads, with your home directory and keys out of reach (C4) |
+| Per-call approval | Run the interactive TUI in normal mode, without `--auto` ([extensions/cli/src/shared-options.ts:15](https://github.com/continuedev/continue/blob/5522c6f44ca0ac3528b37244818fbfa39b5af470/extensions/cli/src/shared-options.ts#L15)) | A person decides on shell commands, file writes and MCP calls before they run (C2) |
+| Approval for web fetches | `--ask Fetch` on each run, or `Fetch` under `ask:` in `~/.continue/permissions.yaml` ([extensions/cli/src/shared-options.ts:69-70](https://github.com/continuedev/continue/blob/5522c6f44ca0ac3528b37244818fbfa39b5af470/extensions/cli/src/shared-options.ts#L69-L70); [extensions/cli/src/permissions/permissionsYamlLoader.ts:17-22](https://github.com/continuedev/continue/blob/5522c6f44ca0ac3528b37244818fbfa39b5af470/extensions/cli/src/permissions/permissionsYamlLoader.ts#L17-L22)) | A person checks each request the Fetch tool makes before it leaves your machine (C5) |
+| Only the tools needed | `--exclude <tool>` for each tool the task has no use for, or list them under `exclude:` in `~/.continue/permissions.yaml` ([extensions/cli/src/shared-options.ts:79-80](https://github.com/continuedev/continue/blob/5522c6f44ca0ac3528b37244818fbfa39b5af470/extensions/cli/src/shared-options.ts#L79-L80); [extensions/cli/src/permissions/permissionsYamlLoader.ts:18-22](https://github.com/continuedev/continue/blob/5522c6f44ca0ac3528b37244818fbfa39b5af470/extensions/cli/src/permissions/permissionsYamlLoader.ts#L18-L22)) | The model sees a smaller tool set, with shell, write and network tools only where you chose them (C3) |
+| Trusted working directories | Start cn in repositories you trust, after reading their AGENTS.md, CLAUDE.md and .continue/rules | The instructions loaded into the system prompt come from people you trust (C6) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time with 'Continue'; 'Continue + don't ask again' saves a rule covering every later command that starts with the same word.
+- Shift+Tab cycles to a mode with no prompts, so keep the session in normal mode while you work.
+- Headless -p mode runs shell and MCP calls without prompts; use the interactive TUI for work on repositories or content you didn't write.
+
+### Handling data
+
+- ~/.continue/sessions keeps full transcripts, tool output included, in plain text; store it like the files the agent read.
+
 ## Critical gaps
 - A hijacked session can read files via the auto-approved Read tool and send them out via the auto-approved Fetch tool, with no human involved. (ASI01, LLM01, T6; C5) — [extensions/cli/src/permissions/defaultPolicies.ts:23](https://github.com/continuedev/continue/blob/5522c6f44ca0ac3528b37244818fbfa39b5af470/extensions/cli/src/permissions/defaultPolicies.ts#L23); [extensions/cli/src/permissions/defaultPolicies.ts:21](https://github.com/continuedev/continue/blob/5522c6f44ca0ac3528b37244818fbfa39b5af470/extensions/cli/src/permissions/defaultPolicies.ts#L21); [core/context/providers/URLContextProvider.ts:36-38](https://github.com/continuedev/continue/blob/5522c6f44ca0ac3528b37244818fbfa39b5af470/core/context/providers/URLContextProvider.ts#L36-L38)
 - All commands and MCP servers run on the host as the user with the full process environment; there is no sandbox. (ASI05, T11, LLM05; C4) — [extensions/cli/src/tools/runTerminalCommand.ts:85-86](https://github.com/continuedev/continue/blob/5522c6f44ca0ac3528b37244818fbfa39b5af470/extensions/cli/src/tools/runTerminalCommand.ts#L85-L86); [extensions/cli/src/tools/runTerminalCommand.ts:192](https://github.com/continuedev/continue/blob/5522c6f44ca0ac3528b37244818fbfa39b5af470/extensions/cli/src/tools/runTerminalCommand.ts#L192); [extensions/cli/src/services/mcpTransports.ts:77-90](https://github.com/continuedev/continue/blob/5522c6f44ca0ac3528b37244818fbfa39b5af470/extensions/cli/src/services/mcpTransports.ts#L77-L90)

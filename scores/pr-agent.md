@@ -25,6 +25,29 @@ Controls where a risk surface exists: 3.20 / 8.0 (40%); 2 criteria scored SA (su
 
 PR-Agent's model has no tools: deterministic code publishes its structured output to the triggering PR, it runs no code, loads no plugins, and reads its configuration only from the default branch. The dominant risk is who can drive it: authorization of comment-triggered commands and of comment-supplied setting overrides is not locked down. Nothing is human-approved before publishing.
 
+## Safest setup
+
+PR-Agent's model has no tools: it runs no code, loads no plugins, and reads its settings and AGENTS.md from the default branch. Who can drive it through comments is not locked down and nothing waits for approval before it posts, so the safest setup narrows the workflow token, limits who can trigger it, and caps spend at the model provider.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A narrower workflow token | In the workflow's permissions, grant `issues: write` and `pull-requests: write` and leave out `contents: write` ([docs/docs/installation/github.md:24-26](https://github.com/The-PR-Agent/pr-agent/blob/090a7e4ad7d3adaa8e87b4a0f874a3a4c438139e/docs/docs/installation/github.md#L24-L26)) | GitHub itself keeps the job from pushing to any branch, whatever a run is asked to do (C1) |
+| Trusted commenters only | Add a condition to the workflow so comment commands run only for people with write access to the repository, or trigger it on pull requests alone | Only people you already trust can start a run or change its settings from a comment (C5) |
+| A dedicated, capped model key | Store a model key used only by this workflow, with a monthly spending limit set at the provider | Repeated runs can never spend more than the limit you chose, and the key is easy to rotate (C10) |
+| Default-branch context | Keep the default `repo_context_from_default_branch = true` and `enable_per_directory_settings=false` ([pr_agent/settings/configuration.toml:40](https://github.com/The-PR-Agent/pr-agent/blob/090a7e4ad7d3adaa8e87b4a0f874a3a4c438139e/pr_agent/settings/configuration.toml#L40); [pr_agent/settings/configuration.toml:24](https://github.com/The-PR-Agent/pr-agent/blob/090a7e4ad7d3adaa8e87b4a0f874a3a4c438139e/pr_agent/settings/configuration.toml#L24)) | A pull request can't change the instructions or settings its own review runs with (C6) |
+| Reviewed context files | Require review for default-branch changes to AGENTS.md and `.pr_agent.toml`, or set `repo_context_files = []` ([pr_agent/settings/configuration.toml:36](https://github.com/The-PR-Agent/pr-agent/blob/090a7e4ad7d3adaa8e87b4a0f874a3a4c438139e/pr_agent/settings/configuration.toml#L36)) | Everything that shapes the reviewer's instructions has passed a person first (C6) |
+| Telemetry left off | Keep the default `is_enabled = false` in the `[otel]` section ([pr_agent/settings/configuration.toml:517-519](https://github.com/The-PR-Agent/pr-agent/blob/090a7e4ad7d3adaa8e87b4a0f874a3a4c438139e/pr_agent/settings/configuration.toml#L517-L519)) | Run data stays on the runner unless you send it somewhere deliberately (C8) |
+| A job time limit | Set a timeout on the job and a per-PR concurrency group in the workflow | Each run ends within a fixed time, and comments on one PR queue rather than pile up (C10) |
+
+### Approving with confidence
+
+- There is no approval prompt: the description, review and labels post as soon as the model answers, so read what PR-Agent publishes on each PR.
+
+### Handling data
+
+- The Action log records each command, its PR and the settings a comment changed; keep the repository's log retention long enough to review it.
+- Give the job only the secrets PR-Agent needs, since its git subprocesses inherit the full environment.
+
 ## Critical gaps
 - None: no criterion is capped and no blast radius is at the worst level.
 

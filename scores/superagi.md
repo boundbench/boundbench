@@ -24,6 +24,31 @@
 
 As shipped, SuperAGI has essentially no safety boundary: agents default to 'God Mode' with no approval, every agent uses the operator's global email, GitHub and chat credentials, and every container start downloads and runs unpinned third-party tool code. The API's access control is also not locked down, model output in task workflows is not confined, and the file tools' path handling is not a strict boundary. A single prompt injection from a search result or email can exfiltrate secrets and take irreversible actions unattended.
 
+## Safest setup
+
+SuperAGI ships with few protections on: agents start in God Mode with no approval, every agent shares the operator's credentials, and tool code is downloaded at every start. It does offer a per-call approval mode and per-agent tool choice, so the safest setup turns those on and builds most of the boundary around the deployment yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit credentials | Put only the keys this deployment needs into config.yaml, each for a dedicated account that is read-only where the task allows | A hijacked agent reaches only the systems and access you chose, not your own accounts (C1) |
+| Reachable only by you | Serve the web UI and API only on a private network or behind an authenticating proxy you control | Only the people you trust can create, run or approve agents (C1) |
+| Per-call approval | Choose the `RESTRICTED` permission type when you create each agent in the GUI ([gui/pages/Content/Agents/AgentCreate.js:97](https://github.com/transformeroptimus/superagi/blob/c3c1982e7bd6a11cfed53c5a193ea502f924b1b6/gui/pages/Content/Agents/AgentCreate.js#L97)) | A person decides before each gated tool call runs (C2) |
+| Only the tools needed | Pick just the tools the task needs on each agent, leaving Write File out unless it must write ([gui/pages/Content/Agents/AgentCreate.js:103](https://github.com/transformeroptimus/superagi/blob/c3c1982e7bd6a11cfed53c5a193ea502f924b1b6/gui/pages/Content/Agents/AgentCreate.js#L103)) | Each agent can call only the tools its task uses (C3) |
+| A short iteration limit | Keep the default limit of 25 iterations per run, or lower it for short tasks ([gui/pages/Content/Agents/AgentCreate.js:48](https://github.com/transformeroptimus/superagi/blob/c3c1982e7bd6a11cfed53c5a193ea502f924b1b6/gui/pages/Content/Agents/AgentCreate.js#L48)) | Every run stops after a fixed number of steps (C10) |
+| An empty external tool list | Keep the shipped empty `tools` list in tools.json, adding only tool repositories you have read ([tools.json:2](https://github.com/transformeroptimus/superagi/blob/c3c1982e7bd6a11cfed53c5a193ea502f924b1b6/tools.json#L2)) | Startup loads no extra GitHub tool code beyond the marketplace (C7) |
+| Its own host or VM | Run SuperAGI on a dedicated host or VM with outbound access limited to the model provider and the services its tools use | An outer boundary around downloaded tool code and model-driven actions, and a narrow path for data to leave (C4) |
+
+### Approving with confidence
+
+- Create agents in the GUI, since agents created through the public API run in God Mode.
+- Read each prompt and approve calls one at a time; the console shows only the tool name, so approve when you know what that tool will do in this run.
+- Only tools marked as needing permission ask first; the tool choice above keeps the rest to what the task needs.
+
+### Handling data
+
+- config.yaml holds every credential in plaintext; keep it readable only by the operators.
+- Worker logs carry full tool outputs at the default level; store them like the data the agents read.
+
 ## Critical gaps
 - A hijacked agent in default God Mode can exfiltrate secrets and take irreversible actions (email, tweets, GitHub deletes) with no human involved. (ASI01, T6, LLM01; C5) — [superagi/agent/output_handler.py:55-58](https://github.com/transformeroptimus/superagi/blob/c3c1982e7bd6a11cfed53c5a193ea502f924b1b6/superagi/agent/output_handler.py#L55-L58); [gui/pages/Content/Agents/AgentCreate.js:97-98](https://github.com/transformeroptimus/superagi/blob/c3c1982e7bd6a11cfed53c5a193ea502f924b1b6/gui/pages/Content/Agents/AgentCreate.js#L97-L98); [superagi/tools/email/send_email.py:81-85](https://github.com/transformeroptimus/superagi/blob/c3c1982e7bd6a11cfed53c5a193ea502f924b1b6/superagi/tools/email/send_email.py#L81-L85)
 - Every container start downloads unpinned main-branch tool code from GitHub, pip-installs its requirements and imports it in-process with no integrity check. (ASI04, T17, LLM03; C7) — [superagi/tool_manager.py:56-57](https://github.com/transformeroptimus/superagi/blob/c3c1982e7bd6a11cfed53c5a193ea502f924b1b6/superagi/tool_manager.py#L56-L57); [entrypoint_celery.sh:3-7](https://github.com/transformeroptimus/superagi/blob/c3c1982e7bd6a11cfed53c5a193ea502f924b1b6/entrypoint_celery.sh#L3-L7); [superagi/helper/tool_helper.py:113-116](https://github.com/transformeroptimus/superagi/blob/c3c1982e7bd6a11cfed53c5a193ea502f924b1b6/superagi/helper/tool_helper.py#L113-L116)

@@ -24,6 +24,27 @@
 
 MetaGPT runs model-written shell commands and notebook code directly on your machine, as you, with your full environment and with no approval step. Its Engineer can write any file, browse any URL, install packages it picks, and open pull requests using your ~/.git-credentials. Anything injected through a web page or file can therefore steal keys and act irreversibly. Run it only inside a disposable VM or container with no credentials you care about.
 
+## Safest setup
+
+MetaGPT ships few protections: model-written shell commands and notebook code run on your machine as you, with your full environment and no approval step, and there is no sandbox or approval mode to turn on. What it does ship is a small run budget and persistent memory that stays off. The safest setup keeps those and builds the boundaries around the process yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Disposable, low-limit credentials | Run it in an environment holding only a model key with a spending limit set at the provider, and no Git, cloud or other tokens | Whatever the agents run, they can only reach the spend and systems you chose for this run (C1) |
+| Its own container or VM | Run each project in a fresh container or VM with only its workspace mounted and outbound access limited to the model provider | An outer boundary around model-written shell commands, notebook code and package installs, and a narrow path for data to leave (C4) |
+| A small run budget | Keep the default `investment` of 3.0 and `n_round` of 5, or lower them for short tasks ([metagpt/software_company.py:80-81](https://github.com/foundationagents/metagpt/blob/11cdf466d042aece04fc6cfd13b28e1a70341b1f/metagpt/software_company.py#L80-L81)) | Each run stops after a fixed number of rounds or once the cost budget is spent (C10) |
+| Session-only memory | Keep the default `enable_longterm_memory` off under `role_zero`, and the experience pool's `enabled` off ([metagpt/configs/role_zero_config.py:7](https://github.com/foundationagents/metagpt/blob/11cdf466d042aece04fc6cfd13b28e1a70341b1f/metagpt/configs/role_zero_config.py#L7); [metagpt/config2.py:99](https://github.com/foundationagents/metagpt/blob/11cdf466d042aece04fc6cfd13b28e1a70341b1f/metagpt/config2.py#L99); [metagpt/configs/exp_pool_config.py:14-15](https://github.com/foundationagents/metagpt/blob/11cdf466d042aece04fc6cfd13b28e1a70341b1f/metagpt/configs/exp_pool_config.py#L14-L15)) | Nothing an agent reads in one run carries into the next (C6) |
+| A clean working directory | Start each run from an empty directory with no config folder you didn't write | Settings, tools and memory options come only from your own config file (C6) |
+| Logs kept outside the container | Stream the process output to storage the agents can't reach | A record of every command and output that the agent's own shell can't edit or delete (C9) |
+
+### Approving with confidence
+
+- When a role reaches its action limit it asks whether to continue; check the log of what it has done before answering yes.
+
+### Handling data
+
+- The log file under `logs/` records full prompts at debug level, including whatever tool output the agents saw; store it like the data the agents read.
+
 ## Critical gaps
 - The default shell tool runs every model command on the host with no approval gate. (ASI02, ASI09; C2) — [metagpt/roles/di/role_zero.py:443-446](https://github.com/foundationagents/metagpt/blob/11cdf466d042aece04fc6cfd13b28e1a70341b1f/metagpt/roles/di/role_zero.py#L443-L446)
 - The Engineer's bash shell inherits the full process environment and the PR tool reads ~/.git-credentials, giving a hijacked agent the user's whole authority. (ASI03; C1) — [metagpt/tools/libs/terminal.py:49-56](https://github.com/foundationagents/metagpt/blob/11cdf466d042aece04fc6cfd13b28e1a70341b1f/metagpt/tools/libs/terminal.py#L49-L56); [metagpt/tools/libs/git.py:69-71](https://github.com/foundationagents/metagpt/blob/11cdf466d042aece04fc6cfd13b28e1a70341b1f/metagpt/tools/libs/git.py#L69-L71)

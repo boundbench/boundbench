@@ -24,6 +24,31 @@
 
 As shipped, the Cline CLI auto-approves every tool, so the model runs arbitrary shell commands, edits files and fetches URLs on your machine with your full credentials and no human check. There is no sandbox, and opening a repository silently runs its .cline hook scripts and plugin modules. A prompt injection in a web page or cloned repo can therefore steal secrets and take irreversible actions unattended. Run it with --auto-approve false, only in trusted repos, and preferably inside a container.
 
+## Safest setup
+
+As shipped, the Cline CLI approves every tool call itself and runs commands on your machine with your full account, with no sandbox and no time or spend limit. It does include per-call approval, a plan mode and a run timeout, so the safest setup turns those on and puts the rest of the boundary around Cline yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, low-privilege account | Run Cline as an OS user or in an environment that holds only the keys and logins this task needs, each with a spending limit set at the provider | Every command the model runs reaches only the systems and spend you chose, not your whole account (C1) |
+| Per-call approval | Start interactive sessions with `--tui` and `--auto-approve false` ([apps/cli/src/commands/program.ts:29-32](https://github.com/cline/cline/blob/39ff2359f7e08231281539696e48a166ce49270c/apps/cli/src/commands/program.ts#L29-L32); [apps/cli/src/commands/program.ts:40](https://github.com/cline/cline/blob/39ff2359f7e08231281539696e48a166ce49270c/apps/cli/src/commands/program.ts#L40)) | You see the exact shell command, and the file path of each edit, before it runs (C2) |
+| Plan mode for reading | Use `--plan` for tasks that only need to read and investigate ([apps/cli/src/commands/program.ts:26](https://github.com/cline/cline/blob/39ff2359f7e08231281539696e48a166ce49270c/apps/cli/src/commands/program.ts#L26); [sdk/packages/core/src/extensions/tools/presets.ts:45-51](https://github.com/cline/cline/blob/39ff2359f7e08231281539696e48a166ce49270c/sdk/packages/core/src/extensions/tools/presets.ts#L45-L51)) | The file editor is off and shell commands go through the plan-mode command check (C3) |
+| A run timeout | `--timeout <seconds>` on every run ([apps/cli/src/commands/program.ts:59-62](https://github.com/cline/cline/blob/39ff2359f7e08231281539696e48a166ce49270c/apps/cli/src/commands/program.ts#L59-L62)) | A session ends after a fixed time instead of running until someone stops it (C10) |
+| Git checkpoints | Run Cline inside a git repository so the default checkpoints snapshot the working tree ([apps/cli/src/runtime/defaults.ts:15-17](https://github.com/cline/cline/blob/39ff2359f7e08231281539696e48a166ce49270c/apps/cli/src/runtime/defaults.ts#L15-L17)) | File changes in the workspace can be rolled back after a run (C2) |
+| Trusted repositories only | Open only repositories you trust, after reading their .cline/hooks, .clinerules/hooks, .cline/plugins, .clinerules and AGENTS.md | Code and instructions that load at session start come only from sources you have checked (C6) |
+| Its own container or VM | Run Cline in a container or VM that mounts only the project and reaches only the model provider and hosts the task needs | An outer boundary around model-written commands, hooks, plugins and MCP servers, and a narrow path for data to leave (C4) |
+| A copy of each transcript | Copy the session records under ~/.cline/data/sessions to storage the agent can't write | A record of every tool call and result that the agent's own shell can't alter afterwards (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; edit prompts show only the file path, so check the change with git afterwards.
+- Approval doesn't cover every tool path, so keep the container and account steps in place even with approval on.
+
+### Handling data
+
+- Session transcripts keep every tool call's arguments and results unredacted; store them like the data the agent read.
+- Provider keys sit in a plaintext file readable only by you, and product telemetry stays on until you opt out in Cline's settings.
+
 ## Critical gaps
 - Shell commands, file edits and MCP calls are auto-approved by default, so the most powerful action path has no human gate. (ASI09, ASI02, T10, LLM06; C2) — [apps/cli/src/commands/program.ts:28-32](https://github.com/cline/cline/blob/39ff2359f7e08231281539696e48a166ce49270c/apps/cli/src/commands/program.ts#L28-L32); [apps/cli/src/main.ts:892-902](https://github.com/cline/cline/blob/39ff2359f7e08231281539696e48a166ce49270c/apps/cli/src/main.ts#L892-L902)
 - Model-written commands run on the host as the user with the full environment and network; no isolation exists. (ASI05, T11, LLM05; C4) — [sdk/packages/core/src/extensions/tools/executors/bash.ts:733-737](https://github.com/cline/cline/blob/39ff2359f7e08231281539696e48a166ce49270c/sdk/packages/core/src/extensions/tools/executors/bash.ts#L733-L737)

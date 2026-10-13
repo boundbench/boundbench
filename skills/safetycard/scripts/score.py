@@ -104,6 +104,7 @@ CATEGORY_RULES = [
 CAPABILITIES = ["code_execution", "filesystem_write", "network_egress", "external_credentials", "persistent_memory",
                 "untrusted_input", "third_party_extensions", "sub_agents", "external_communication"]
 CRITICAL_B_CRITERIA = {"C1", "C4", "C5", "C7"}
+SAFE_SOURCES = ("default", "opt_in", "operator")
 
 
 class Problems:
@@ -312,6 +313,72 @@ def band(total):
     return {"id": "weak", "label": "Minimal", "color": "red"}
 
 
+def check_safe_setup(ss, P, repo=None):
+    """Validate the optional 'safe_setup' section (SKILL.md step 6). It never affects a score."""
+    if not isinstance(ss, dict):
+        P.err("safe_setup must be an object")
+        return
+    for k in set(ss) - {"intro", "steps", "approving", "handling"}:
+        P.err(f"safe_setup: unexpected key '{k}'")
+    intro = str(ss.get("intro", "")).strip()
+    if not intro:
+        P.err("safe_setup.intro is required (1-3 sentences on what already ships protected)")
+    elif len(re.findall(r"[.!?](?:\s|$)", intro)) > 3:
+        P.warn("safe_setup.intro: keep it to 1-3 sentences")
+    steps = ss.get("steps")
+    if not isinstance(steps, list) or not 2 <= len(steps) <= 8:
+        P.err("safe_setup.steps must be a list of 2-8 steps")
+        steps = steps if isinstance(steps, list) else []
+    for i, st in enumerate(steps):
+        tag = f"safe_setup.steps[{i}]"
+        if not isinstance(st, dict):
+            P.err(f"{tag}: must be an object")
+            continue
+        for k in set(st) - {"setup", "how", "gives_you", "criterion", "source", "evidence"}:
+            P.err(f"{tag}: unexpected key '{k}'")
+        for k in ("setup", "how", "gives_you"):
+            if not str(st.get(k, "")).strip():
+                P.err(f"{tag}: '{k}' is required")
+        if st.get("criterion") not in CRIT:
+            P.err(f"{tag}: criterion must be one of C1..C10 (the finding this step comes from)")
+        if st.get("source") not in SAFE_SOURCES:
+            P.err(f"{tag}: source must be one of {list(SAFE_SOURCES)}")
+        ev = st.setdefault("evidence", [])
+        if not isinstance(ev, list):
+            P.err(f"{tag}: evidence must be a list")
+            continue
+        if any(not isinstance(x, dict) or "file" not in x for x in ev):
+            P.err(f"{tag}: evidence items must be code citations (file, lines, contains)")
+            continue
+        if st.get("source") in ("default", "opt_in"):
+            if not ev:
+                P.err(f"{tag}: a '{st.get('source')}' step needs evidence citing where each named flag, key or env var is defined")
+                continue
+            require_contains(ev, tag, P, "safe-setup names must be proven at the pinned commit")
+        if ev:
+            check_evidence(ev, tag, P, repo)
+        if repo and ev and st.get("source") in ("default", "opt_in"):
+            spans = []
+            for x in ev:
+                path = os.path.join(repo, str(x.get("file", "")))
+                m = re.fullmatch(r"(\d+)(?:-(\d+))?", str(x.get("lines", "")))
+                if m and os.path.isfile(path):
+                    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                        fl = fh.read().split("\n")
+                    spans.append("\n".join(fl[int(m.group(1)) - 1:int(m.group(2) or m.group(1))]))
+            cited = "\n".join(spans)
+            for code in re.findall(r"`([^`]+)`", str(st.get("how", ""))):
+                if not re.search(r"[-_=:./]|^[A-Z0-9]{3,}$", code):
+                    continue  # a plain word (a class name, True), not a flag, key or env var
+                names = [t for t in re.findall(r"[A-Za-z_][\w.-]{2,}", re.sub(r"<[^>]*>", "", code))]
+                if names and not any(t.strip(".-") in cited for t in names):
+                    P.warn(f"{tag}: `{code}` in 'how' does not appear in the cited lines - cite where it is defined")
+    for k in ("approving", "handling"):
+        v = ss.get(k)
+        if v is not None and (not isinstance(v, list) or any(not str(x).strip() for x in v)):
+            P.err(f"safe_setup.{k} must be a list of short non-empty strings")
+
+
 def build_entry(card, P, repo=None):
     req = ["id", "name", "repo_url", "subpath", "description", "category", "pinned_commit",
            "version", "scored_date", "scored_configuration", "capability_profile", "headline", "criteria",
@@ -319,7 +386,7 @@ def build_entry(card, P, repo=None):
     for k in req:
         if k not in card:
             P.err(f"missing top-level field '{k}'")
-    allowed = set(req) | {"schema_version", "scorecard_version"}
+    allowed = set(req) | {"schema_version", "scorecard_version", "safe_setup"}
     for k in set(card) - allowed:
         P.err(f"unexpected top-level field '{k}' (computed fields are added by the script)")
     if P.errors:
@@ -447,6 +514,9 @@ def build_entry(card, P, repo=None):
         if not ok:
             P.err(f"reaudit_log[{i}]: needs criterion, parameter, from_level, to_level, reason")
 
+    if "safe_setup" in card:
+        check_safe_setup(card["safe_setup"], P, repo)
+
     if P.errors:
         return None
 
@@ -477,6 +547,11 @@ def build_entry(card, P, repo=None):
             url = permalink(card["repo_url"], card["pinned_commit"], ev)
             if url:
                 ev["url"] = url
+    for st in (card.get("safe_setup") or {}).get("steps", []):
+        for ev in st["evidence"]:
+            url = permalink(card["repo_url"], card["pinned_commit"], ev)
+            if url:
+                ev["url"] = url
 
     from decimal import Decimal, ROUND_HALF_UP
     exact = sum(Decimal(str(c["score"])) for c in out_criteria)
@@ -491,6 +566,7 @@ def build_entry(card, P, repo=None):
         "applicable": {"count": len(applicable), "score": app, "max": float(len(applicable)),
                        "percent": round(100 * app / len(applicable)) if applicable else None},
         "capability_profile": card["capability_profile"], "headline": card["headline"],
+        **({"safe_setup": card["safe_setup"]} if "safe_setup" in card else {}),
         "criteria": out_criteria, "critical_findings": card["critical_findings"],
         "rule_of_two": card["rule_of_two"], "fixes": fixes, "reaudit_log": card["reaudit_log"],
         "limitations": card["limitations"],
@@ -549,6 +625,22 @@ def render_table(e, standalone=True):
     return "\n".join(out)
 
 
+def md_cell(text):
+    return str(text).replace("|", "\\|").replace("\n", " ")
+
+
+def render_safe_setup(ss):
+    L = ["## Safest setup", "", ss["intro"], "", "| Setup | How | What it gives you |", "|---|---|---|"]
+    for st in ss["steps"]:
+        refs = "; ".join(fmt_ev(x) for x in st["evidence"])
+        L.append(f"| {md_cell(st['setup'])} | {md_cell(st['how'])}" + (f" ({md_cell(refs)})" if refs else "") +
+                 f" | {md_cell(st['gives_you'])} ({st['criterion']}) |")
+    for key, title in (("approving", "Approving with confidence"), ("handling", "Handling data")):
+        if ss.get(key):
+            L += ["", f"### {title}", ""] + [f"- {x}" for x in ss[key]]
+    return L + [""]
+
+
 def render_report(e):
     cp = e["capability_profile"]
     prof = " · ".join(f"{k.replace('_', ' ')} {v.replace('_', '-')}" for k, v in cp.items())
@@ -561,7 +653,10 @@ def render_report(e):
          f"**Scored configuration:** {e['scored_configuration']}",
          f"**Agent surface (default):** {prof}", "",
          f"## Score: {e['score']:.1f} / 10.0 ({e['band']['label']})", "", render_table(e, standalone=False), "",
-         e["headline"], "", "## Critical gaps"]
+         e["headline"], ""]
+    if e.get("safe_setup"):
+        L += render_safe_setup(e["safe_setup"])
+    L += ["## Critical gaps"]
     if e["critical_findings"]:
         for f in e["critical_findings"]:
             L.append(f"- {f['summary']} ({', '.join(f['owasp'])}; {f['criterion']}). Evidence: " +

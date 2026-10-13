@@ -36,6 +36,123 @@
     "external_communication": "yes"
   },
   "headline": "elizaOS ships a lot of careful security engineering (per-requester role checks, an SSRF-guarded web fetch, a vault for connector tokens, a confirm-code gate for destructive shell commands), but the default desktop agent runs any other shell command directly on your machine as you, with your model and connector keys in its environment. A web page or document that hijacks the agent can read your files and send them out, or make irreversible changes, without asking. Instruction files and startup hooks from the project folder load without a trust prompt. Turn on the container sandbox mode and set workspace roots before pointing it at anything you care about.",
+  "safe_setup": {
+    "intro": "elizaOS checks every action against the requester's role, guards web fetches against private addresses and asks for a one-time code before shell commands it flags as destructive. As shipped, other shell commands run directly on your machine as you, with your keys in reach, so the safest setup turns on the container sandbox and workspace limits elizaOS already includes and puts a boundary around the process.",
+    "steps": [
+      {
+        "setup": "A dedicated account and keys",
+        "how": "Run the agent under its own OS user that holds only the model and connector keys this agent needs, each with a spending limit set at the provider",
+        "gives_you": "Whatever the agent does, it reaches only that account's files and the keys you chose, not your whole user account",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "The container sandbox",
+        "how": "Set `ELIZA_RUNTIME_MODE` to `local-safe`",
+        "gives_you": "Shell commands run in a non-root container with networking off and resource limits, and refuse to run when no sandbox is available",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/host/src/config/runtime-mode.ts",
+            "lines": "110",
+            "contains": "\"ELIZA_RUNTIME_MODE\"",
+            "url": "https://github.com/elizaOS/eliza/blob/aa4f2b043b7af36517ce335319c99c68db449aa8/packages/host/src/config/runtime-mode.ts#L110"
+          },
+          {
+            "file": "packages/host/src/config/runtime-mode.ts",
+            "lines": "15",
+            "contains": "\"local-safe\"",
+            "url": "https://github.com/elizaOS/eliza/blob/aa4f2b043b7af36517ce335319c99c68db449aa8/packages/host/src/config/runtime-mode.ts#L15"
+          }
+        ]
+      },
+      {
+        "setup": "Workspace roots",
+        "how": "Set `CODING_TOOLS_WORKSPACE_ROOTS=<dir1>,<dir2>` to the folders the task needs",
+        "gives_you": "The file tools work only inside those folders, on top of the default blocklist of credential folders",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "plugins/plugin-coding-tools/package.json",
+            "lines": "99",
+            "contains": "CODING_TOOLS_WORKSPACE_ROOTS",
+            "url": "https://github.com/elizaOS/eliza/blob/aa4f2b043b7af36517ce335319c99c68db449aa8/plugins/plugin-coding-tools/package.json#L99"
+          }
+        ]
+      },
+      {
+        "setup": "Coding tools only when needed",
+        "how": "Set `shellEnabled: false` under `features` in the agent config for agents that do no coding work",
+        "gives_you": "The shell, file and coding web tools are not loaded at all",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/agent/src/runtime/plugin-collector.ts",
+            "lines": "393",
+            "contains": "config.features?.shellEnabled === false",
+            "url": "https://github.com/elizaOS/eliza/blob/aa4f2b043b7af36517ce335319c99c68db449aa8/packages/agent/src/runtime/plugin-collector.ts#L393"
+          }
+        ]
+      },
+      {
+        "setup": "Secrets kept from the model",
+        "how": "Set `ELIZA_SECRET_SWAP_ENABLED=true`",
+        "gives_you": "Configured secrets are swapped for placeholders before messages go to the model",
+        "criterion": "C8",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/core/src/security/secret-swap.ts",
+            "lines": "24",
+            "contains": "ELIZA_SECRET_SWAP_ENABLED",
+            "url": "https://github.com/elizaOS/eliza/blob/aa4f2b043b7af36517ce335319c99c68db449aa8/packages/core/src/security/secret-swap.ts#L24"
+          }
+        ]
+      },
+      {
+        "setup": "A clean workspace folder",
+        "how": "Start the agent in a folder holding only files you wrote, with no hooks or instruction files from someone else",
+        "gives_you": "Startup hooks and standing instructions come only from you",
+        "criterion": "C6",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the agent host in a container or VM whose network reaches only the model provider and the services the task needs",
+        "gives_you": "An outer boundary around plugins and hooks, which run in the agent process, and a narrow path for data to leave",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A trajectory record",
+        "how": "Set `ELIZA_TRAJECTORY_LOGGING=true`, which production builds need to keep recording",
+        "gives_you": "Each model call and its tool calls, with arguments, are recorded in the local database",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/core/src/runtime/trajectory-gate.ts",
+            "lines": "47",
+            "contains": "env.ELIZA_TRAJECTORY_LOGGING",
+            "url": "https://github.com/elizaOS/eliza/blob/aa4f2b043b7af36517ce335319c99c68db449aa8/packages/core/src/runtime/trajectory-gate.ts#L47"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "When the shell asks for a confirmation code, read the command it relays before replying; the code approves only that command in that folder.",
+      "Other shell commands, file writes and web requests run without a prompt, so the sandbox and the container or VM are what bound them."
+    ],
+    "handling": [
+      "Trajectories keep tool-call arguments in the agent's local database; store them like the data the agent reads."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

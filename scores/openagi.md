@@ -25,6 +25,28 @@ Controls where a risk surface exists: 1.08 / 9.0 (12%); 1 criterion scored SA (s
 
 OpenAGI runs whatever tool calls the model returns with no approval, no sandbox, and no budget, using long-lived API keys from the environment. The dominant risk is its agent hub: activating an agent that is not installed locally silently downloads its code from a hosted endpoint, pip-installs its requirements and imports it, with no pin or integrity check. The only argument check, a path rewrite, is not a complete boundary. The package is no longer the maintained SDK (the README points to Cerebrum), so treat it as a research prototype.
 
+## Safest setup
+
+OpenAGI keeps API keys out of the model prompt and gives each agent only the tools its config lists. Beyond that the defaults are weak and there is little to turn on: no approval step, no sandbox, no budget or stop, and agents missing locally are fetched from the hub and run. The safest setup is mostly containment you build around the process.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Give the process only the API keys this agent's tools need, each read-only where the vendor allows, with a spending limit set at the provider | Whatever the agent or code it loads does, it reaches only the accounts and spend you chose (C1) |
+| Agents you have read | Place each agent's folder and install its requirements yourself, from a source you have reviewed and pinned, before activating it | Only agent code you have read runs in your process, and it can't change after you read it (C7) |
+| Lookup tools only | List only the read-only lookup tools the task needs under `tools` in the agent's config.json ([pyopenagi/agents/base_agent.py:45](https://github.com/agiresearch/openagi/blob/26c119e55b8d6ad4bae96cd4e5901c1567a82aaa/pyopenagi/agents/base_agent.py#L45)) | The model can call only those tools, with no file writes or uploads unless you add them (C3) |
+| Its own container or VM | Run the agent in a container or VM holding only the task's files and those keys | An outer boundary around package installs and any code that runs, away from your host files and other credentials (C4) |
+| A narrow network path | Limit outbound access to your model provider and the tool vendors' hosts the agent uses | Agent code can't be fetched from the hub mid-run, and data leaves only to hosts you chose (C7) |
+| An outside time limit | Start each run under a wall-clock timeout from your process supervisor or container runtime | A dependable stop for runs whose length the model decides (C10) |
+| A step log on disk | Pass `agent_log_mode="file"` to `AgentFactory` and copy the logs folder to storage the agent can't write ([pyopenagi/agents/agent_factory.py:7-11](https://github.com/agiresearch/openagi/blob/26c119e55b8d6ad4bae96cd4e5901c1567a82aaa/pyopenagi/agents/agent_factory.py#L7-L11)) | A record of each step's tool name and parameters that outlives the process (C9) |
+
+### Approving with confidence
+
+- There is no approval step, so read an agent's config.json and tool list before you run it.
+
+### Handling data
+
+- Step logs, on the console or under ./logs, hold tool parameters and results unredacted; store them like the data the agent read.
+
 ## Critical gaps
 - Activating an agent auto-downloads unpinned, unverified Python code and requirements from a hosted hub, pip-installs them and imports the code into the agent process. (ASI04, T17, LLM03; C7) — [pyopenagi/agents/agent_factory.py:57-61](https://github.com/agiresearch/openagi/blob/26c119e55b8d6ad4bae96cd4e5901c1567a82aaa/pyopenagi/agents/agent_factory.py#L57-L61); [pyopenagi/agents/interact.py:41](https://github.com/agiresearch/openagi/blob/26c119e55b8d6ad4bae96cd4e5901c1567a82aaa/pyopenagi/agents/interact.py#L41); [pyopenagi/agents/agent_factory.py:43](https://github.com/agiresearch/openagi/blob/26c119e55b8d6ad4bae96cd4e5901c1567a82aaa/pyopenagi/agents/agent_factory.py#L43); [pyopenagi/agents/interact.py:217-223](https://github.com/agiresearch/openagi/blob/26c119e55b8d6ad4bae96cd4e5901c1567a82aaa/pyopenagi/agents/interact.py#L217-L223)
 - Package installs and eval() run directly on the host as the operator with the full environment and every API key; no isolation exists. (ASI05, T11; C4) — [pyopenagi/agents/interact.py:217-223](https://github.com/agiresearch/openagi/blob/26c119e55b8d6ad4bae96cd4e5901c1567a82aaa/pyopenagi/agents/interact.py#L217-L223); [pyopenagi/tools/travel_planner/google_distance_matrix.py:35](https://github.com/agiresearch/openagi/blob/26c119e55b8d6ad4bae96cd4e5901c1567a82aaa/pyopenagi/tools/travel_planner/google_distance_matrix.py#L35)

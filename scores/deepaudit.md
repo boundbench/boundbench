@@ -24,6 +24,25 @@
 
 DeepAudit runs an autonomous orchestrator with recon, analysis and verification sub-agents that feed untrusted repository content to an LLM and let it run code and HTTP requests in per-call Docker containers, with no human approval step anywhere. The container itself is reasonably hardened (non-root, read-only root, no-new-privileges, network off by default), but the HTTP tool and external scanners use an unrestricted bridge network, so a hijacked agent can send data to arbitrary hosts unattended. The shipped deployment also mounts the Docker socket into the backend, and its default credential handling and API access controls are not locked down.
 
+## Safest setup
+
+DeepAudit runs model-written code in hardened per-call containers with networking off for commands, and records every tool call in its database. There is no approval step, the HTTP and scanner containers have open egress, and the deployment's access setup is not locked down, so the safest setup narrows the keys, locks down access and builds containment around the stack.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Give the deployment a model key with a spending limit set at the provider and a read-only Git token limited to the repositories you audit | Whatever an agent does, it reaches only the accounts and spend you chose (C8) |
+| Private access only | Serve the deployment only to trusted users on a private network | Only people you chose can start audits or reach the stored credentials (C1) |
+| All capabilities dropped | Set `SANDBOX_CAP_DROP=ALL` in the backend env file and keep the default `SANDBOX_NO_NEW_PRIVILEGES` of true ([backend/app/core/config.py:117-118](https://github.com/lintsinghua/DeepAudit/blob/630229163f10c9be74317d1edd06d16cfe6c59f0/backend/app/core/config.py#L117-L118)) | Sandbox containers run with no Linux capabilities and can't gain privileges (C4) |
+| A per-task iteration cap | Keep `max_iterations` at the default 50 or lower when creating each audit task ([backend/app/api/v1/endpoints/agent_tasks.py:82](https://github.com/lintsinghua/DeepAudit/blob/630229163f10c9be74317d1edd06d16cfe6c59f0/backend/app/api/v1/endpoints/agent_tasks.py#L82)) | Each agent loop stops after a fixed number of steps (C10) |
+| Prompt logging off | Keep the defaults `log_llm_prompts` and `log_llm_responses` at false ([backend/app/services/agent/config.py:249-256](https://github.com/lintsinghua/DeepAudit/blob/630229163f10c9be74317d1edd06d16cfe6c59f0/backend/app/services/agent/config.py#L249-L256)) | Audited code and any secrets in it stay out of the application logs (C8) |
+| Its own VM | Run the whole stack on a dedicated VM that holds nothing else, since the backend mounts the Docker socket ([docker-compose.yml:46](https://github.com/lintsinghua/DeepAudit/blob/630229163f10c9be74317d1edd06d16cfe6c59f0/docker-compose.yml#L46)) | The backend's host-level reach stays inside a machine with nothing else to lose (C1) |
+| An egress allowlist | Firewall the Docker bridge network on that VM so sandbox and scanner containers reach only the hosts the audit needs | Content planted in an audited repository can't send your code to arbitrary hosts (C5) |
+
+### Handling data
+
+- Audited source goes to the model provider unredacted, secrets in it included; audit only code you are comfortable sending there.
+- The database keeps every tool call's arguments and a result preview; store it and its backups like the code it covers.
+
 ## Critical gaps
 - The most powerful action paths (sandbox command execution, code execution and outbound HTTP) run with no approval gate in the default configuration. (ASI02, ASI09; C2) — [backend/app/api/v1/endpoints/agent_tasks.py:994](https://github.com/lintsinghua/DeepAudit/blob/630229163f10c9be74317d1edd06d16cfe6c59f0/backend/app/api/v1/endpoints/agent_tasks.py#L994); [backend/app/api/v1/endpoints/agent_tasks.py:995](https://github.com/lintsinghua/DeepAudit/blob/630229163f10c9be74317d1edd06d16cfe6c59f0/backend/app/api/v1/endpoints/agent_tasks.py#L995)
 - A hijacked agent can send the audited private code to arbitrary hosts and issue outbound requests unattended, because untrusted repository content is not separated from instructions and egress is unrestricted. (ASI01, LLM01; C5) — [backend/app/services/agent/tools/sandbox_tool.py:408](https://github.com/lintsinghua/DeepAudit/blob/630229163f10c9be74317d1edd06d16cfe6c59f0/backend/app/services/agent/tools/sandbox_tool.py#L408); [backend/app/services/agent/tools/sandbox_tool.py:645](https://github.com/lintsinghua/DeepAudit/blob/630229163f10c9be74317d1edd06d16cfe6c59f0/backend/app/services/agent/tools/sandbox_tool.py#L645); [backend/app/services/agent/agents/verification.py:759](https://github.com/lintsinghua/DeepAudit/blob/630229163f10c9be74317d1edd06d16cfe6c59f0/backend/app/services/agent/agents/verification.py#L759)

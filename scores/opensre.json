@@ -36,6 +36,129 @@
     "external_communication": "opt_in"
   },
   "headline": "As shipped, OpenSRE's interactive agent runs any shell command, GitHub CLI call or chat message the model chooses with no approval prompt, and the code labels this 'alpha mode: allow everything'. Commands execute directly on the host with the operator's full environment, so production cloud, cluster and GitHub credentials are in reach of anything a poisoned log line or alert can talk the model into. Telemetry also sends prompts and tool context to the vendor's analytics by default. Use the headless 'opensre ask' mode, which blocks writes unless explicitly allowed, or set /auto off and run with narrowly scoped, read-only credentials.",
+  "safe_setup": {
+    "intro": "As shipped, the OpenSRE REPL asks for no approval, runs shell commands on the host with your full credentials, and sends prompts and tool context to the vendor's analytics. It does record every tool call per session, and its headless `opensre ask` mode blocks write tools unless you allow them. The safest setup narrows credentials at the provider, turns on the approval and opt-out settings OpenSRE has, and contains the process yourself.",
+    "steps": [
+      {
+        "setup": "Read-only identities",
+        "how": "Run OpenSRE with a read-only cloud role, a read-only Kubernetes context and a read-only GitHub token",
+        "gives_you": "Your cloud, cluster and GitHub providers refuse writes, whatever the shell or an integration tool attempts",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Headless investigations",
+        "how": "Use `opensre ask` for investigations, adding `--allowed-tool <name>` only for a tool the task needs",
+        "gives_you": "Mutating, external and undeclared tools stay blocked unless you named them for that run",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "surfaces/cli/commands/ask.py",
+            "lines": "96-99",
+            "contains": "\"--allowed-tool\",",
+            "url": "https://github.com/Tracer-Cloud/opensre/blob/01ba24f1861965e40fa1213956cb86d254ab5373/surfaces/cli/commands/ask.py#L96-L99"
+          }
+        ]
+      },
+      {
+        "setup": "Approval in the REPL",
+        "how": "Start each REPL session with `/auto med`, or `/auto off` to ask before every tool, and keep the default `/trust off`",
+        "gives_you": "Shell commands and the REPL's own mutating actions wait for your approval",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "surfaces/interactive_shell/command_registry/settings_cmds.py",
+            "lines": "204",
+            "contains": "usage=(\"/auto\", \"/auto med\", \"/auto high\"),",
+            "url": "https://github.com/Tracer-Cloud/opensre/blob/01ba24f1861965e40fa1213956cb86d254ab5373/surfaces/interactive_shell/command_registry/settings_cmds.py#L204"
+          },
+          {
+            "file": "surfaces/interactive_shell/command_registry/settings_cmds.py",
+            "lines": "219",
+            "contains": "usage=(\"/trust\", \"/trust on\", \"/trust off\"),",
+            "url": "https://github.com/Tracer-Cloud/opensre/blob/01ba24f1861965e40fa1213956cb86d254ab5373/surfaces/interactive_shell/command_registry/settings_cmds.py#L219"
+          },
+          {
+            "file": "surfaces/interactive_shell/session/terminal_session.py",
+            "lines": "81",
+            "contains": "trust_mode: bool = False",
+            "url": "https://github.com/Tracer-Cloud/opensre/blob/01ba24f1861965e40fa1213956cb86d254ab5373/surfaces/interactive_shell/session/terminal_session.py#L81"
+          }
+        ]
+      },
+      {
+        "setup": "Content-free telemetry",
+        "how": "Set `OPENSRE_NO_TELEMETRY=1` in the environment",
+        "gives_you": "Prompts, responses and tool context stay out of the vendor's analytics",
+        "criterion": "C8",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "infrastructure/analytics/provider.py",
+            "lines": "174",
+            "contains": "os.getenv(\"OPENSRE_NO_TELEMETRY\", \"0\") == \"1\"",
+            "url": "https://github.com/Tracer-Cloud/opensre/blob/01ba24f1861965e40fa1213956cb86d254ab5373/infrastructure/analytics/provider.py#L174"
+          }
+        ]
+      },
+      {
+        "setup": "Memory off",
+        "how": "Set `OPENSRE_MEMORY_DISABLED=1` unless you need facts carried between sessions",
+        "gives_you": "Content read in one session can't steer tool use in later ones",
+        "criterion": "C6",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "config/constants/memory.py",
+            "lines": "7",
+            "contains": "OPENSRE_MEMORY_DISABLED_ENV = \"OPENSRE_MEMORY_DISABLED\"",
+            "url": "https://github.com/Tracer-Cloud/opensre/blob/01ba24f1861965e40fa1213956cb86d254ab5373/config/constants/memory.py#L7"
+          },
+          {
+            "file": "core/domain/memory/settings.py",
+            "lines": "14",
+            "contains": "_TRUTHY = frozenset({\"1\", \"true\", \"yes\"})",
+            "url": "https://github.com/Tracer-Cloud/opensre/blob/01ba24f1861965e40fa1213956cb86d254ab5373/core/domain/memory/settings.py#L14"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run OpenSRE in a container or VM holding only its own credentials, with outbound access limited to the model provider and the systems you investigate",
+        "gives_you": "An outer boundary around model-written shell commands, which otherwise run as you on your host",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Pinned MCP servers",
+        "how": "Configure each MCP server command with a fixed version you have reviewed, not a latest tag",
+        "gives_you": "The extension code that receives the agent's environment stays the code you chose",
+        "criterion": "C7",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "An off-host session record",
+        "how": "Copy the session files under ~/.opensre/sessions to storage the agent's user can't modify",
+        "gives_you": "A record of every tool call that the shell tool can't edit or delete",
+        "criterion": "C9",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; `/trust on` skips prompts even when `/auto` would ask.",
+      "REPL approval covers shell commands and the REPL's own actions; integration tools such as github_cli and Slack or Telegram sends run without a prompt, so give those integrations read-only or narrowly scoped credentials."
+    ],
+    "handling": [
+      "Session records under ~/.opensre/sessions keep tool arguments and results unredacted; store them like the systems they cover.",
+      "Memories are plain markdown files under ~/.opensre/memory; read and delete any you didn't expect."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

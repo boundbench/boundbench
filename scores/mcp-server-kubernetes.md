@@ -25,6 +25,30 @@ Controls where a risk surface exists: 1.60 / 9.0 (18%); 1 criterion scored SA (s
 
 As shipped, this server gives the model the operator's full kubeconfig authority across every context, with exec into any pod, a generic kubectl tool, Helm installs from any repository, and forced deletes all enabled. It has a careful argv flag denylist and masks Secret values in kubectl_get, but the generic tool can run 'config view --raw', which returns raw credentials to the model, and neither the denylist nor the masking is a complete boundary. The dominant risk is a prompt-injected host agent using cluster-admin-equivalent credentials unattended; the read-only and allowlist modes that would contain it are opt-in.
 
+## Safest setup
+
+As shipped, this server runs every tool, including pod exec and a general-purpose kubectl tool, with your full kubeconfig, and nothing in it asks a person before acting. It does include read-only and tool-allowlist modes, a kubectl flag denylist and Secret masking in kubectl_get, so the safest setup narrows the Kubernetes identity first, turns those modes on and builds containment around the process.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A scoped Kubernetes identity | `KUBECONFIG_PATH=<file>` pointing at a kubeconfig with one context whose ServiceAccount has a namespace-scoped, read-mostly role ([src/utils/kubernetes-manager.ts:259-263](https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/utils/kubernetes-manager.ts#L259-L263)) | The Kubernetes API itself refuses anything outside that role, on that one cluster (C1) |
+| Read-only mode | `ALLOW_ONLY_READONLY_TOOLS=true` in the server's environment ([src/index.ts:84](https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L84)) | The server lists and accepts only its small read-only tool set, checked on every call (C2) |
+| Only the tools needed | When a task needs writes, `ALLOWED_TOOLS=<list>` naming just those tools, or `ALLOW_ONLY_NON_DESTRUCTIVE_TOOLS=true` ([src/index.ts:85-87](https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/index.ts#L85-L87)) | Exec, generic kubectl and delete tools stay off unless the task calls for them (C3) |
+| The kubectl flag denylist | Keep `ALLOW_KUBECTL_UNSAFE_FLAGS` unset ([src/security/kubectl-flags.ts:162-164](https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/security/kubectl-flags.ts#L162-L164)) | Every kubectl and helm call keeps rejecting API server, token, impersonation and kubeconfig flags (C3) |
+| Secret masking | Keep the default `MASK_SECRETS`, leaving it unset ([src/tools/kubectl-get.ts:178-180](https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-get.ts#L178-L180)) | kubectl_get keeps masking Secret values, the one tool output the review found masked (C8) |
+| Its own container or VM | Run the server in a container or VM whose network reaches only the Kubernetes API servers it needs | An outer boundary around host-side kubectl and helm, and a narrow path for data to leave (C5) |
+| Tool-call tracing | `ENABLE_TELEMETRY=true` with `OTEL_EXPORTER_OTLP_ENDPOINT=<url>` pointing at a collector you control ([src/config/telemetry-config.ts:78-81](https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/config/telemetry-config.ts#L78-L81)) | A span for every tool call, with tool name, argument names, context and namespace, kept outside the server (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; kubectl_generic and kubectl_create can change cluster state without a destructive label.
+- Deletes, Helm uninstalls and pod exec have no preview or undo, so check the context, namespace and resource names before approving.
+
+### Handling data
+
+- Output from kubectl_generic, exec_in_pod and logs reaches the model unmasked; treat transcripts like the cluster data they include.
+- Telemetry spans hold argument names, not the commands or manifests; only kubectl_generic also prints its command, to stderr.
+
 ## Critical gaps
 - Default local mode runs every tool with the operator's full kubeconfig across all contexts, with no authorization check. (ASI03, T3; C1) — [src/utils/kubernetes-manager.ts:79-85](https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/utils/kubernetes-manager.ts#L79-L85); [src/models/common-parameters.ts:1-5](https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/models/common-parameters.ts#L1-L5)
 - exec_in_pod and kubectl_generic run model-chosen commands in any pod, and arbitrary pods can be created, with no isolation from the server. (ASI05, T11; C4) — [src/tools/exec_in_pod.ts:105-124](https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/exec_in_pod.ts#L105-L124); [src/tools/kubectl-generic.ts:98-99](https://github.com/Flux159/mcp-server-kubernetes/blob/3d71add204014dcceddebe53e9695ed7d8a6d129/src/tools/kubectl-generic.ts#L98-L99)

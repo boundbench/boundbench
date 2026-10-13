@@ -25,6 +25,29 @@ Controls where a risk surface exists: 2.20 / 7.0 (31%); 3 criteria scored SA (su
 
 Microsoft's local Azure DevOps MCP server signs in as you and, by default, loads every tool group, so an AI assistant can commit code, run pipelines, approve pull requests and edit work items and wikis with your full Azure DevOps rights and no confirmation step of its own. The dominant risk is prompt injection through work items, pull request comments, wiki pages or files written by others: the server labels all returned content as untrusted, but that label is only a hint, and there is no read-only mode to switch off the write side. It runs no code, keeps no memory, loads no plugins and keeps the token away from the model, but it records nothing about the actions it takes.
 
+## Safest setup
+
+Azure DevOps MCP Server keeps its token away from the model, labels every tool as read-only or mutating, and marks everything it returns as untrusted content. As shipped it signs in with your full Azure DevOps rights, loads every tool group with no approval step of its own and records nothing, so the safest setup narrows the identity and tool set and puts approval and records in your host and in Azure DevOps.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A narrowly scoped token | `--authentication pat` with `PERSONAL_ACCESS_TOKEN` holding a token limited to the projects and scopes the task needs, read-only where it allows ([src/index.ts:46-52](https://github.com/microsoft/azure-devops-mcp/blob/2ffa682e2394e961e804a2739d0de62651213365/src/index.ts#L46-L52); [src/auth.ts:45](https://github.com/microsoft/azure-devops-mcp/blob/2ffa682e2394e961e804a2739d0de62651213365/src/auth.ts#L45)) | Azure DevOps itself refuses anything outside that token's scopes, whatever the model asks for (C1) |
+| A read-only entry for reviews | Add a second server entry with a read-only token for sessions that read other people's work items, pull requests or wiki pages | Instructions hidden in that content can't commit, run pipelines or approve pull requests (C5) |
+| Branch and pipeline policies | Require reviews on protected branches and approvals on pipeline environments, and give the agent's identity no permission to bypass policies | Commits and pipeline runs the agent starts still pass the checks your team set (C3) |
+| Only the domains needed | `-d` followed by just the domains the task uses, such as `core` and `work-items`, spelled as listed ([src/index.ts:39-45](https://github.com/microsoft/azure-devops-mcp/blob/2ffa682e2394e961e804a2739d0de62651213365/src/index.ts#L39-L45); [src/shared/domains.ts:12-18](https://github.com/microsoft/azure-devops-mcp/blob/2ffa682e2394e961e804a2739d0de62651213365/src/shared/domains.ts#L12-L18)) | Tool groups the task doesn't use, write tools included, never load (C3) |
+| Per-call approval in your host | Set your MCP host to ask before every tool not marked `readOnlyHint: true` ([src/shared/tool-annotations.ts:7-17](https://github.com/microsoft/azure-devops-mcp/blob/2ffa682e2394e961e804a2739d0de62651213365/src/shared/tool-annotations.ts#L7-L17)) | A person sees each commit, pipeline run and pull request vote before it happens (C2) |
+| Records outside the server | Keep the host's transcript and turn on auditing for the Azure DevOps organization | A trail of what the agent called and changed, since the server records nothing itself (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; pipeline runs, pull request approvals and auto-complete merges can't be taken back.
+- A write the task didn't ask for, right after reading a work item, comment or wiki page, is worth a closer look.
+
+### Handling data
+
+- A personal access token is long-lived; give it a short expiry and revoke it when the work is done.
+- Azure DevOps error text reaches the model as is, and the server logs to standard error at `info` level unless `LOG_LEVEL` says otherwise.
+
 ## Critical gaps
 - In the default configuration a session that reads other people's work items, pull requests and wiki pages also holds the user's full Azure DevOps access and unattended tools that commit files, run pipelines and approve pull requests, so a prompt injection can leak private data and take irreversible actions with no human step in the server. (ASI01, ASI02, LLM01; C5). Evidence: [src/index.ts:44](https://github.com/microsoft/azure-devops-mcp/blob/2ffa682e2394e961e804a2739d0de62651213365/src/index.ts#L44); [src/oauth.ts:8](https://github.com/microsoft/azure-devops-mcp/blob/2ffa682e2394e961e804a2739d0de62651213365/src/oauth.ts#L8); [src/tools/pipelines.ts:52](https://github.com/microsoft/azure-devops-mcp/blob/2ffa682e2394e961e804a2739d0de62651213365/src/tools/pipelines.ts#L52)
 

@@ -36,6 +36,168 @@
     "external_communication": "opt_in"
   },
   "headline": "NeMo Agent Toolkit gives developers solid building blocks (typed tool inputs, explicit per-agent tool lists, a remote-only code sandbox, per-user memory namespaces and rich tracing), but almost every safeguard that limits a misbehaving agent is optional and off by default. As shipped, agents call write-capable tools such as GitHub issue, pull request and commit operations with no human approval, using whatever long-lived tokens are in the environment. The dominant risk is prompt injection through web search, GitHub issues or MCP results steering an agent into leaking data or making changes unattended; the human-in-the-loop, guardrail, timeout and trace-export features have to be added and configured by the developer.",
+  "safe_setup": {
+    "intro": "NeMo Agent Toolkit gives each agent only the tools you name, sends model-written code to a separate sandbox server instead of running it on the host, and stops each agent after 15 tool calls. Approval, injection checks and tracing all ship off, so the safest setup narrows the credentials, turns those features on and puts containment around the process.",
+    "steps": [
+      {
+        "setup": "A scoped, low-limit token",
+        "how": "Export a fine-grained `GITHUB_TOKEN` limited to the task's repository, read-only unless the task writes, and give each model key a spending limit at the provider",
+        "gives_you": "GitHub and the model provider refuse anything outside the access and spend you granted, whatever the agent attempts",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "packages/nvidia_nat_core/src/nat/tool/github_tools.py",
+            "lines": "226",
+            "contains": "for env_var in [\"GITHUB_TOKEN\", \"GITHUB_PAT\", \"GH_TOKEN\"]:",
+            "url": "https://github.com/NVIDIA/NeMo-Agent-Toolkit/blob/c7e1162a1c7ff18bbd797e090a56cad97c281c92/packages/nvidia_nat_core/src/nat/tool/github_tools.py#L226"
+          }
+        ]
+      },
+      {
+        "setup": "Only the tools needed",
+        "how": "List only the task's tools in `tool_names`, and narrow each function group with `include`",
+        "gives_you": "Each agent can call just the tools its task uses, with write tools only where you chose them",
+        "criterion": "C3",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "packages/nvidia_nat_langchain/src/nat/plugins/langchain/agent/react_agent/register.py",
+            "lines": "67-68",
+            "contains": "tool_names: list[FunctionRef | FunctionGroupRef] = Field(",
+            "url": "https://github.com/NVIDIA/NeMo-Agent-Toolkit/blob/c7e1162a1c7ff18bbd797e090a56cad97c281c92/packages/nvidia_nat_langchain/src/nat/plugins/langchain/agent/react_agent/register.py#L67-L68"
+          },
+          {
+            "file": "packages/nvidia_nat_core/src/nat/data_models/function.py",
+            "lines": "50",
+            "contains": "include: list[str] = Field(",
+            "url": "https://github.com/NVIDIA/NeMo-Agent-Toolkit/blob/c7e1162a1c7ff18bbd797e090a56cad97c281c92/packages/nvidia_nat_core/src/nat/data_models/function.py#L50"
+          }
+        ]
+      },
+      {
+        "setup": "Approval before writes",
+        "how": "Subclass `HITLMiddleware`, set its `pre_invoke_prompt`, and list it in `middleware` on the GitHub write and code-execution tools",
+        "gives_you": "A person decides before each of those tools runs",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/nvidia_nat_core/src/nat/middleware/hitl/hitl_middleware.py",
+            "lines": "29",
+            "contains": "class HITLMiddleware(DynamicFunctionMiddleware):",
+            "url": "https://github.com/NVIDIA/NeMo-Agent-Toolkit/blob/c7e1162a1c7ff18bbd797e090a56cad97c281c92/packages/nvidia_nat_core/src/nat/middleware/hitl/hitl_middleware.py#L29"
+          },
+          {
+            "file": "packages/nvidia_nat_core/src/nat/middleware/hitl/hitl_middleware_config.py",
+            "lines": "31",
+            "contains": "pre_invoke_prompt: HumanPrompt | None = Field(",
+            "url": "https://github.com/NVIDIA/NeMo-Agent-Toolkit/blob/c7e1162a1c7ff18bbd797e090a56cad97c281c92/packages/nvidia_nat_core/src/nat/middleware/hitl/hitl_middleware_config.py#L31"
+          },
+          {
+            "file": "packages/nvidia_nat_core/src/nat/data_models/function.py",
+            "lines": "39",
+            "contains": "middleware: list[str] = Field(",
+            "url": "https://github.com/NVIDIA/NeMo-Agent-Toolkit/blob/c7e1162a1c7ff18bbd797e090a56cad97c281c92/packages/nvidia_nat_core/src/nat/data_models/function.py#L39"
+          }
+        ]
+      },
+      {
+        "setup": "Blocking injection checks",
+        "how": "Add `pre_tool_verifier` middleware with `action` set to `refusal` on the tools that write or send",
+        "gives_you": "A call the verifier flags is stopped rather than only logged",
+        "criterion": "C5",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/nvidia_nat_security/src/nat/plugins/security/middleware/defense/defense_middleware_pre_tool_verifier.py",
+            "lines": "43",
+            "contains": "name=\"pre_tool_verifier\"",
+            "url": "https://github.com/NVIDIA/NeMo-Agent-Toolkit/blob/c7e1162a1c7ff18bbd797e090a56cad97c281c92/packages/nvidia_nat_security/src/nat/plugins/security/middleware/defense/defense_middleware_pre_tool_verifier.py#L43"
+          },
+          {
+            "file": "packages/nvidia_nat_security/src/nat/plugins/security/middleware/defense/defense_middleware.py",
+            "lines": "87-88",
+            "contains": "action: Literal[\"partial_compliance\", \"refusal\", \"redirection\"] = Field(",
+            "url": "https://github.com/NVIDIA/NeMo-Agent-Toolkit/blob/c7e1162a1c7ff18bbd797e090a56cad97c281c92/packages/nvidia_nat_security/src/nat/plugins/security/middleware/defense/defense_middleware.py#L87-L88"
+          }
+        ]
+      },
+      {
+        "setup": "A tool-call ceiling",
+        "how": "Keep `max_tool_calls` on react_agent, or `max_iterations` on tool_calling_agent, at the default 15 or lower, and lower still on agents used as tools",
+        "gives_you": "Every agent loop ends after a fixed number of tool calls, with a tighter bound on agents used as tools",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "packages/nvidia_nat_langchain/src/nat/plugins/langchain/agent/react_agent/register.py",
+            "lines": "79",
+            "contains": "max_tool_calls: int = Field(default=15,",
+            "url": "https://github.com/NVIDIA/NeMo-Agent-Toolkit/blob/c7e1162a1c7ff18bbd797e090a56cad97c281c92/packages/nvidia_nat_langchain/src/nat/plugins/langchain/agent/react_agent/register.py#L79"
+          },
+          {
+            "file": "packages/nvidia_nat_langchain/src/nat/plugins/langchain/agent/tool_calling_agent/register.py",
+            "lines": "87",
+            "contains": "max_iterations: int = Field(default=15,",
+            "url": "https://github.com/NVIDIA/NeMo-Agent-Toolkit/blob/c7e1162a1c7ff18bbd797e090a56cad97c281c92/packages/nvidia_nat_langchain/src/nat/plugins/langchain/agent/tool_calling_agent/register.py#L87"
+          }
+        ]
+      },
+      {
+        "setup": "An isolated code sandbox",
+        "how": "Run the Piston server that `uri` points to on its own host or network segment, with a memory limit and no outbound access",
+        "gives_you": "Model-written code stays away from your credentials and has no path for data to leave",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "packages/nvidia_nat_core/src/nat/tool/code_execution/register.py",
+            "lines": "35",
+            "contains": "uri: HttpUrl = Field(",
+            "url": "https://github.com/NVIDIA/NeMo-Agent-Toolkit/blob/c7e1162a1c7ff18bbd797e090a56cad97c281c92/packages/nvidia_nat_core/src/nat/tool/code_execution/register.py#L35"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run `nat` in a container or VM holding only the plugin packages you reviewed, with network access limited to the hosts the workflow needs",
+        "gives_you": "An outer boundary around in-process plugins and stdio MCP servers, and a narrow path for data to leave",
+        "criterion": "C7",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A trace file",
+        "how": "Add a `file` exporter under `tracing` with an `output_path` outside the working directory",
+        "gives_you": "A record of every tool call, with inputs, outputs and timing, that outlives the run",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/nvidia_nat_core/src/nat/data_models/config.py",
+            "lines": "157",
+            "contains": "tracing: dict[str, TelemetryExporterBaseConfig]",
+            "url": "https://github.com/NVIDIA/NeMo-Agent-Toolkit/blob/c7e1162a1c7ff18bbd797e090a56cad97c281c92/packages/nvidia_nat_core/src/nat/data_models/config.py#L157"
+          },
+          {
+            "file": "packages/nvidia_nat_core/src/nat/observability/register.py",
+            "lines": "32-35",
+            "contains": "output_path: str = Field(",
+            "url": "https://github.com/NVIDIA/NeMo-Agent-Toolkit/blob/c7e1162a1c7ff18bbd797e090a56cad97c281c92/packages/nvidia_nat_core/src/nat/observability/register.py#L32-L35"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; the prompt is the fixed text you configured and does not show the call's arguments, so write one that names what the tool does."
+    ],
+    "handling": [
+      "Trace records hold tool inputs and outputs in full, since trace redaction is off by default; store them like the data the agent reads.",
+      "Verbose agent logging prints tool inputs and outputs to the console, so leave `verbose` off where output lands in shared logs.",
+      "Usage telemetry carries no content; set `NAT_TELEMETRY_ENABLED=false` or answer no at the first-run prompt to turn it off."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

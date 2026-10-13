@@ -36,6 +36,130 @@
     "external_communication": "yes"
   },
   "headline": "Skyvern drives a real browser through arbitrary websites using stored logins, and as shipped nothing stands between a prompt-injected page and the agent's actions: there is no human approval, navigation can go to any public site, and credential release on the default engine is not a complete boundary. Workflow code blocks are on by default and run in the server process behind only an AST filter. The codebase contains a sophisticated origin firewall, egress monitor and credential site-binding, but in this open-source build the firewall cannot be enrolled and the site-binding does not cover every path. Secrets are kept out of the model's context via placeholders, which is a real strength.",
+  "safe_setup": {
+    "intro": "Skyvern keeps stored secrets out of the model's view with placeholders, stops each task after 10 steps, and records every action with screenshots. As shipped there is no human approval, navigation reaches any public site and workflow code runs inside the server process, so the safest setup narrows the logins, turns on the gates Skyvern offers and puts containment around the server.",
+    "steps": [
+      {
+        "setup": "Dedicated, low-privilege logins",
+        "how": "Bind only the credentials each workflow needs, using site accounts limited to what that task does",
+        "gives_you": "Each website itself limits what a misled run can do with the login it holds",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A go/no-go checkpoint",
+        "how": "Add a `human_interaction` block before steps that submit, pay or change accounts",
+        "gives_you": "A person decides whether the workflow continues past that point",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "skyvern/schemas/workflows.py",
+            "lines": "517",
+            "contains": "HUMAN_INTERACTION = \"human_interaction\"",
+            "url": "https://github.com/Skyvern-AI/skyvern/blob/19bf399835a029b70a9fcec6dcea347a1c40c033/skyvern/schemas/workflows.py#L517"
+          },
+          {
+            "file": "skyvern/forge/sdk/workflow/models/block.py",
+            "lines": "14648",
+            "contains": "class HumanInteractionBlock(BaseTaskBlock):",
+            "url": "https://github.com/Skyvern-AI/skyvern/blob/19bf399835a029b70a9fcec6dcea347a1c40c033/skyvern/forge/sdk/workflow/models/block.py#L14648"
+          }
+        ]
+      },
+      {
+        "setup": "Code blocks off",
+        "how": "`CODE_BLOCK_MODE=disabled` in the server's environment or .env file",
+        "gives_you": "Code blocks, including planner-written ones, stop running inside the process that holds your keys and vault",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "skyvern/config.py",
+            "lines": "865",
+            "contains": "CODE_BLOCK_MODE: CodeBlockMode = CodeBlockMode.enabled",
+            "url": "https://github.com/Skyvern-AI/skyvern/blob/19bf399835a029b70a9fcec6dcea347a1c40c033/skyvern/config.py#L865"
+          },
+          {
+            "file": "skyvern/config.py",
+            "lines": "77-80",
+            "contains": "disabled = \"disabled\"",
+            "url": "https://github.com/Skyvern-AI/skyvern/blob/19bf399835a029b70a9fcec6dcea347a1c40c033/skyvern/config.py#L77-L80"
+          }
+        ]
+      },
+      {
+        "setup": "Extraction-only tasks",
+        "how": "Leave `navigation_goal` empty for tasks that only read a page",
+        "gives_you": "The agent receives only the extract action, with no clicks, typing or navigation",
+        "criterion": "C3",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "skyvern/forge/agent.py",
+            "lines": "4667",
+            "contains": "is_extraction_task = not task.navigation_goal",
+            "url": "https://github.com/Skyvern-AI/skyvern/blob/19bf399835a029b70a9fcec6dcea347a1c40c033/skyvern/forge/agent.py#L4667"
+          }
+        ]
+      },
+      {
+        "setup": "A short step budget",
+        "how": "Keep the default `MAX_STEPS_PER_RUN` of 10, or lower it for short tasks",
+        "gives_you": "Every task ends after a fixed number of steps",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "skyvern/config.py",
+            "lines": "176",
+            "contains": "MAX_STEPS_PER_RUN: int = 10",
+            "url": "https://github.com/Skyvern-AI/skyvern/blob/19bf399835a029b70a9fcec6dcea347a1c40c033/skyvern/config.py#L176"
+          }
+        ]
+      },
+      {
+        "setup": "Telemetry off",
+        "how": "`SKYVERN_TELEMETRY=false` in the server's environment or .env file",
+        "gives_you": "Task URLs and usage events stay on your machine",
+        "criterion": "C8",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "skyvern/config.py",
+            "lines": "383",
+            "contains": "SKYVERN_TELEMETRY: bool = True",
+            "url": "https://github.com/Skyvern-AI/skyvern/blob/19bf399835a029b70a9fcec6dcea347a1c40c033/skyvern/config.py#L383"
+          }
+        ]
+      },
+      {
+        "setup": "A private API port",
+        "how": "Firewall the server's port so only your own machine or private network can reach it",
+        "gives_you": "Only clients you chose can reach the API and UI, alongside the API key it already requires",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the server and its browser in a container or VM with outbound access limited to the sites and model provider the task needs",
+        "gives_you": "An outer boundary around in-process code and a narrower path for data to leave",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "The checkpoint shows only the instructions the workflow author wrote, so write them to describe the exact step that follows."
+    ],
+    "handling": [
+      "Each run stores screenshots, page HTML and model prompts and responses in the database; store it like the sites the agent logs into.",
+      "The local credential vault's key file sits beside the vault; keep both on storage only the server's account can read.",
+      "Opt-in saved browser profiles and code mode carry cookies and generated scripts into later runs; keep the default fresh profile and agent mode for runs that read untrusted sites."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

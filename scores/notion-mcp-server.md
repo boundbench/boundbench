@@ -25,6 +25,28 @@ Controls where a risk surface exists: 2.38 / 7.0 (34%); 3 criteria scored SA (su
 
 Run as shipped, this server gives the model read and write access to every Notion page the operator's integration can see, through 24 narrow tools that only ever talk to api.notion.com. It runs no code, keeps no memory and loads no plugins, and every write tool is labelled destructive so the MCP host can ask before acting. The dominant risk is prompt injection: page and comment content comes back unmarked, nothing in the server separates reading it from writing pages or comments, and the server keeps no record of what it did. Scope the integration in Notion (for example read-only capabilities) to cut its authority.
 
+## Safest setup
+
+Notion MCP Server talks only to Notion's API, runs no code, keeps no memory and labels every write tool as destructive so your MCP host can ask before it runs. It has no read-only mode, tool selection or call record of its own, so the safest setup narrows the integration in Notion and lets the host handle approval, tool choice and logging.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A read-only integration | Create a Notion integration with only the read content capability and pass its token as `NOTION_TOKEN` ([scripts/server-options.ts:85](https://github.com/makenotion/notion-mcp-server/blob/730ae781ba28beeaf0865025a3f2ed4c25ea2387/scripts/server-options.ts#L85)) | Notion itself refuses page edits, deletions and comments, whatever the model asks for (C1) |
+| Only the pages needed | Share with the integration only the pages and databases the task uses | Everything the agent reads or changes stays inside the pages you chose (C1) |
+| A separate writing integration | For tasks that must write, use a second integration shared only with the pages it should change | Sessions that read pages other people wrote can't write, and writing sessions reach only their target pages (C5) |
+| Host approval on writes | Keep your MCP host asking before tools marked `destructiveHint` ([src/openapi-mcp-server/mcp/proxy.ts:184-186](https://github.com/makenotion/notion-mcp-server/blob/730ae781ba28beeaf0865025a3f2ed4c25ea2387/src/openapi-mcp-server/mcp/proxy.ts#L184-L186)) | A person checks every page edit, deletion and comment before it reaches Notion (C2) |
+| Only the tools needed | Turn off in your MCP host the tools the task doesn't use, write tools first | The model sees a smaller set of tools, with write tools only where you chose them (C3) |
+| A host-side call log | Turn on your MCP host's tool-call logging and keep Notion's page history available | A record of what each session read and changed, which the server itself doesn't keep (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; the search and data-source query tools are also marked destructive, though they only read.
+- Whole-page replacement and schema updates have no preview, so check the target page and new content in the prompt before approving.
+
+### Handling data
+
+- Page content reaches the model as-is, so keep pages that hold passwords or keys unshared with the integration.
+
 ## Critical gaps
 - Unmarked page and comment content, every page shared with the integration, and page-writing and comment tools are all available in one default session with nothing in the server separating them. (ASI01, T6, LLM01; C5). Evidence: [src/openapi-mcp-server/mcp/proxy.ts:214-220](https://github.com/makenotion/notion-mcp-server/blob/730ae781ba28beeaf0865025a3f2ed4c25ea2387/src/openapi-mcp-server/mcp/proxy.ts#L214-L220); [scripts/notion-openapi.json:1515](https://github.com/makenotion/notion-mcp-server/blob/730ae781ba28beeaf0865025a3f2ed4c25ea2387/scripts/notion-openapi.json#L1515)
 - The server records nothing about the tool calls it executes, so writes and deletes leave no server-side trail. (T8, ASI10; C9). Evidence: [src/openapi-mcp-server/mcp/proxy.ts:209-221](https://github.com/makenotion/notion-mcp-server/blob/730ae781ba28beeaf0865025a3f2ed4c25ea2387/src/openapi-mcp-server/mcp/proxy.ts#L209-L221)

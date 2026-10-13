@@ -36,6 +36,132 @@
     "external_communication": "yes"
   },
   "headline": "TaskWeaver runs every piece of model-written Python immediately, with no human approval, so its safety rests almost entirely on the per-session Docker container it uses by default. That container keeps host credentials out and fails closed when Docker is missing, but it is unhardened, has full network egress and no resource limits. A prompt injection in data or tool output can therefore exfiltrate the user's files or call external APIs unattended.",
+  "safe_setup": {
+    "intro": "TaskWeaver runs model-written code in a per-session Docker container by default, keeps host credentials out of it, and refuses to start when Docker is missing. There is no approval step and the container has open network access, so the safest setup keeps container mode, narrows what the session holds and builds the network boundary around it yourself.",
+    "steps": [
+      {
+        "setup": "Dedicated, low-limit keys",
+        "how": "Give the LLM and each plugin config its own key, scoped to the task and with a spending limit set at the provider",
+        "gives_you": "Any key the session can reach opens only the systems and spend you chose for it",
+        "criterion": "C8",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Container mode",
+        "how": "Keep the default `kernel_mode` of `container` under `execution_service`",
+        "gives_you": "Model-written code runs in a container without your host environment or API keys",
+        "criterion": "C4",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "taskweaver/module/execution_service.py",
+            "lines": "13-21",
+            "contains": "\"container\",",
+            "url": "https://github.com/microsoft/taskweaver/blob/d44ddef23f90059fb17999d3095db4240e98f955/taskweaver/module/execution_service.py#L13-L21"
+          }
+        ]
+      },
+      {
+        "setup": "Code verification",
+        "how": "Set `code_interpreter.code_verification_on` to `true` and keep `allowed_modules` to what the task needs",
+        "gives_you": "Generated code is checked against a module allowlist before it reaches the container",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "taskweaver/code_interpreter/code_interpreter/code_interpreter.py",
+            "lines": "31-32",
+            "contains": "code_verification_on",
+            "url": "https://github.com/microsoft/taskweaver/blob/d44ddef23f90059fb17999d3095db4240e98f955/taskweaver/code_interpreter/code_interpreter/code_interpreter.py#L31-L32"
+          },
+          {
+            "file": "website/docs/configurations/overview.md",
+            "lines": "21",
+            "contains": "code_interpreter.code_verification_on",
+            "url": "https://github.com/microsoft/taskweaver/blob/d44ddef23f90059fb17999d3095db4240e98f955/website/docs/configurations/overview.md#L21"
+          }
+        ]
+      },
+      {
+        "setup": "Only plugins you have read",
+        "how": "Set `enabled: true` only in the YAML of plugins whose code you have read, and `false` in the rest",
+        "gives_you": "The shared kernel loads only plugin code and credentials you chose for this task",
+        "criterion": "C7",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "project/plugins/klarna_search.yaml",
+            "lines": "2",
+            "contains": "enabled: true",
+            "url": "https://github.com/microsoft/taskweaver/blob/d44ddef23f90059fb17999d3095db4240e98f955/project/plugins/klarna_search.yaml#L2"
+          }
+        ]
+      },
+      {
+        "setup": "A pinned executor image",
+        "how": "Pull the executor image once and set `custom_image` under `execution_service` to it by digest",
+        "gives_you": "Every session runs the same container image you checked, not whatever the registry holds today",
+        "criterion": "C7",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "taskweaver/module/execution_service.py",
+            "lines": "31-33",
+            "contains": "custom_image",
+            "url": "https://github.com/microsoft/taskweaver/blob/d44ddef23f90059fb17999d3095db4240e98f955/taskweaver/module/execution_service.py#L31-L33"
+          }
+        ]
+      },
+      {
+        "setup": "Experience kept off",
+        "how": "Keep the default `use_experience` of `false` for `planner` and `code_generator`",
+        "gives_you": "What one session reads stays in that session and never shapes later prompts",
+        "criterion": "C6",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "taskweaver/role/role.py",
+            "lines": "50-53",
+            "contains": "use_experience",
+            "url": "https://github.com/microsoft/taskweaver/blob/d44ddef23f90059fb17999d3095db4240e98f955/taskweaver/role/role.py#L50-L53"
+          },
+          {
+            "file": "website/docs/customization/experience/experience.md",
+            "lines": "26",
+            "contains": "code_generator.use_experience",
+            "url": "https://github.com/microsoft/taskweaver/blob/d44ddef23f90059fb17999d3095db4240e98f955/website/docs/customization/experience/experience.md#L26"
+          }
+        ]
+      },
+      {
+        "setup": "An explicit project directory",
+        "how": "Start TaskWeaver with `--project <dir>` pointing at a project you set up",
+        "gives_you": "Config, plugins and examples come only from the directory you named",
+        "criterion": "C6",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "taskweaver/cli/cli.py",
+            "lines": "17-18",
+            "contains": "--project",
+            "url": "https://github.com/microsoft/taskweaver/blob/d44ddef23f90059fb17999d3095db4240e98f955/taskweaver/cli/cli.py#L17-L18"
+          }
+        ]
+      },
+      {
+        "setup": "A firewalled host or VM",
+        "how": "Run TaskWeaver on a host or VM whose firewall lets containers reach only the hosts the task needs and keeps other machines off its ports",
+        "gives_you": "Data the session reads has a narrow path out, even with no approval step",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "handling": [
+      "Each LLM prompt is saved as JSON in the session directory and the kernel writes a DEBUG log, both unredacted; store them like the data the session read."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

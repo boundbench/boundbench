@@ -24,6 +24,31 @@
 
 Orca launches Claude Code, Codex and the other agents it supports with their permission-skipping flags on by default, so every agent runs shell commands, edits files and uses the network without asking, as your user, with your full environment and no sandbox. It also pre-accepts each agent's folder-trust prompt, so repository-controlled agent settings load silently. The dominant risk is a prompt-injected agent acting on all your credentials unattended; switch agent permissions to Manual and turn off workspace trust before pointing Orca at repositories or issues you do not control.
 
+## Safest setup
+
+Orca's defaults are thin: agents start with their approval prompts off, folder trust pre-accepted, your full environment and no sandbox. Orca does include a Manual permissions mode, a workspace-trust switch and an off-by-default plugin system, so the safest setup turns those on and builds containment around the app yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, short-lived credentials | Start Orca from an account or session holding only the tokens these tasks need, each scoped or read-only at the provider | Each service refuses anything outside what you granted, whatever an agent runs (C1) |
+| Manual agent permissions | Set Agent Permissions to Manual in Settings, which empties each agent's entry in `agentDefaultArgs` ([src/shared/default-global-settings.ts:220](https://github.com/stablyai/orca/blob/f873aaac5b2544c02f17d98a188b75dc843a3de7/src/shared/default-global-settings.ts#L220); [src/renderer/src/components/settings/AgentsPane.tsx:135](https://github.com/stablyai/orca/blob/f873aaac5b2544c02f17d98a188b75dc843a3de7/src/renderer/src/components/settings/AgentsPane.tsx#L135)) | Each agent keeps its own approval prompt, so shell commands and file writes wait for you (C2) |
+| A trust decision per folder | Turn off "Trust the folder when Orca starts an agent" (`agentWorkspaceTrustEnabled`) in Settings ([src/shared/default-global-settings.ts:224](https://github.com/stablyai/orca/blob/f873aaac5b2544c02f17d98a188b75dc843a3de7/src/shared/default-global-settings.ts#L224); [src/renderer/src/components/settings/agent-workspace-trust-copy.ts:7](https://github.com/stablyai/orca/blob/f873aaac5b2544c02f17d98a188b75dc843a3de7/src/renderer/src/components/settings/agent-workspace-trust-copy.ts#L7)) | Each agent asks before loading a repository's own hooks, tools and settings (C6) |
+| Reviewed plugins only | Keep the default `pluginSystemEnabled: false`, and turn it on only for plugins you have read ([src/shared/default-global-settings.ts:196](https://github.com/stablyai/orca/blob/f873aaac5b2544c02f17d98a188b75dc843a3de7/src/shared/default-global-settings.ts#L196)) | Plugin code runs only after your consent, hash-checked and with an allowlisted environment (C7) |
+| Its own VM or account | Run Orca in a VM or separate OS account with network access limited to the hosts the tasks need | An outer boundary around agent shells, which otherwise run as you with your home directory and network (C4) |
+| Tasks from sources you control | Point agents at repositories, issues and pages you control, and read outside content before handing it to an agent | Instructions reach your agents only from content you have checked (C5) |
+| An eye on long runs | Watch running agents and close a terminal to stop one | Stopping a terminal ends its whole process group, bounding runs that have no time or spend limit (C10) |
+
+### Approving with confidence
+
+- In Manual mode the prompts come from each agent CLI; read each prompt and approve calls one at a time.
+- The desktop app asks before running orca.yaml setup scripts and commands, and asks again when they change; read the commands before approving.
+- Agents can change launch settings for future agents, so check now and then that Agent Permissions still reads Manual.
+
+### Handling data
+
+- Terminal scrollback and shell history are kept per worktree in Orca's app data folder, unmasked; store them like the secrets agents print.
+- Anonymous usage data is on by default for new installs; turn off "Share anonymous usage data" in Settings if you prefer.
+
 ## Critical gaps
 - Default launch arguments switch off every supported agent's approval prompt, so shell execution runs without any human gate. (ASI09, ASI02; C2) — [src/shared/tui-agent-permissions.ts:6-11](https://github.com/stablyai/orca/blob/f873aaac5b2544c02f17d98a188b75dc843a3de7/src/shared/tui-agent-permissions.ts#L6-L11); [src/shared/default-global-settings.ts:220](https://github.com/stablyai/orca/blob/f873aaac5b2544c02f17d98a188b75dc843a3de7/src/shared/default-global-settings.ts#L220); [src/shared/tui-agent-launch-defaults.ts:131-133](https://github.com/stablyai/orca/blob/f873aaac5b2544c02f17d98a188b75dc843a3de7/src/shared/tui-agent-launch-defaults.ts#L131-L133)
 - In the default configuration a hijacked agent can both exfiltrate credentials and take irreversible actions with no human involved. (ASI01; C5) — [src/shared/tui-agent-permissions.ts:6-11](https://github.com/stablyai/orca/blob/f873aaac5b2544c02f17d98a188b75dc843a3de7/src/shared/tui-agent-permissions.ts#L6-L11); [src/main/providers/local-pty-spawn-environment.ts:26-29](https://github.com/stablyai/orca/blob/f873aaac5b2544c02f17d98a188b75dc843a3de7/src/main/providers/local-pty-spawn-environment.ts#L26-L29)

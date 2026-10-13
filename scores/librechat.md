@@ -24,6 +24,31 @@
 
 LibreChat is a well-structured multi-user service: requests are tied to accounts and roles, outbound actions get SSRF protection, model-written code runs in a separate remote service rather than on the server, and stdio MCP servers can only be added by admins. The dominant risk is that its human-approval gate for tool calls is off by default, so content an agent reads (files, search results, tool outputs) can drive any tool it holds, including outbound HTTP actions and MCP write tools, with nobody approving. Token spending limits are also off by default, and the server process holds every user's stored credentials.
 
+## Safest setup
+
+LibreChat ties every request to an account and role, checks outbound action and MCP addresses, and runs model-written code in a separate remote service. Its tool-approval gate and spending limits ship off, so the safest setup turns them on, narrows each agent's tools and credentials, and keeps the server on its own network.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit credentials | Give actions and MCP connections tokens scoped to the operations each agent needs, read-only where possible, with spending limits set at each model provider | The external systems themselves refuse anything outside that grant, whatever an agent is asked to do (C1) |
+| A separate admin account | Register the administrator account yourself before sharing the site, and chat from an ordinary user account | Everyday chats run without administrator permissions (C1) |
+| Per-call approval | `toolApproval` with `enabled: true` in the agents endpoint of librechat.yaml, with `ask` rules covering action and MCP tools ([librechat.example.yaml:773-777](https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/librechat.example.yaml#L773-L777); [packages/data-provider/src/config.ts:1054-1060](https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/config.ts#L1054-L1060)) | A person sees the exact tool and arguments, and can approve, edit or reject each call before it runs (C2) |
+| Only the capabilities needed | List just the capability families your users need in `capabilities` for the agents endpoint ([packages/data-provider/src/config.ts:1429-1432](https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/config.ts#L1429-L1432)) | Agents get only the tool families you chose, not actions, code, search and sub-agents all at once (C3) |
+| Destination allowlists | `allowedDomains` under `actions` and under `mcpSettings`, naming only the hosts agents should reach ([packages/data-provider/src/config.ts:3206-3208](https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/config.ts#L3206-L3208); [packages/data-provider/src/config.ts:3140-3142](https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/config.ts#L3140-L3142)) | Actions and remote MCP servers can reach only the hosts you listed (C3) |
+| Admin-chosen, pinned MCP servers | Keep the default that ordinary users can't create MCP servers, and pin a package version in each server command you add ([packages/data-provider/src/roles.ts:256-258](https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/roles.ts#L256-L258)) | Only extension code an administrator chose and pinned runs beside LibreChat (C7) |
+| Spend and step ceilings | `balance` with `enabled: true` and a `startBalance`, plus `maxRecursionLimit` for the agents endpoint ([packages/data-provider/src/config.ts:2822-2824](https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/config.ts#L2822-L2824); [packages/data-provider/src/config.ts:1372](https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/config.ts#L1372)) | Each user's token spend is capped, and no agent author can raise the step limit past your ceiling (C10) |
+| Its own network | Run the stack where MongoDB is reachable only by LibreChat and outbound traffic is limited to the hosts agents need | An outer boundary around the stored credentials and a narrower path for data to leave (C5) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; you can edit the arguments before a call runs.
+- An action uses its author's stored credential for everyone who runs the agent, so approve its calls with that account in mind.
+
+### Handling data
+
+- Chats keep tool calls with their arguments and outputs unredacted in MongoDB; protect the database like the conversations it holds.
+- The example environment sets `DEBUG_LOGGING=true`, which writes redacted debug logs to disk; set it to `false` where you don't need them.
+
 ## Critical gaps
 - With tool approval off by default and no provenance controls, injected content can make an agent send data out and take external write actions through actions or MCP tools with no human involved (C5-WORSTCASE). (ASI01, T6, LLM01; C5) — [packages/api/src/agents/hitl/policy.ts:97-101](https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/api/src/agents/hitl/policy.ts#L97-L101); [packages/data-provider/src/config.ts:830-847](https://github.com/LibreChat-AI/LibreChat/blob/f10b1d91f1eee3a2c82d5247bf620351486b7c1b/packages/data-provider/src/config.ts#L830-L847)
 

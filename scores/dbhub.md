@@ -25,6 +25,30 @@ Controls where a risk surface exists: 3.18 / 9.0 (35%); 1 criterion scored SA (s
 
 As shipped in the README's lead command, DBHub gives MCP clients full read-write SQL access to your database, with no row limit or timeout, over an HTTP transport whose access control is not locked down. Its read-only mode is well built (a statement classifier plus a read-only database transaction on every engine), but it is opt-in and can only be enabled through a TOML file. Use a least-privilege database account and set readonly and max_rows in TOML before exposing it; the MCPB bundle and Claude Code plugin already ship read-only.
 
+## Safest setup
+
+DBHub masks database passwords in its logs, sends no telemetry and includes a well-built read-only mode, but as shipped `execute_sql` runs any SQL, writes included, with no row limit or timeout. The safest setup pairs a least-privilege database account with the read-only mode and limits DBHub already offers, all set in a TOML file.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A least-privilege database account | Connect with a dedicated, non-superuser account granted only the schemas and operations the task needs, read-only where the task allows | The database itself refuses anything outside that grant, whatever SQL the model writes (C1) |
+| Read-only mode | `readonly = true` on the `execute_sql` entry under `[[tools]]` in a file passed with `--config <path>` ([src/types/config.ts:82-86](https://github.com/bytebase/dbhub/blob/4ddb26e73c5d8f1d54f5d04351c11c3caeb43cbb/src/types/config.ts#L82-L86); [src/types/config.ts:141](https://github.com/bytebase/dbhub/blob/4ddb26e73c5d8f1d54f5d04351c11c3caeb43cbb/src/types/config.ts#L141); [src/config/toml-loader.ts:69](https://github.com/bytebase/dbhub/blob/4ddb26e73c5d8f1d54f5d04351c11c3caeb43cbb/src/config/toml-loader.ts#L69)) | Non-read statements are rejected and every query runs in a read-only database transaction (C2) |
+| Parameterized custom tools | List only the tools each source needs under `[[tools]]`, using custom tools with a fixed `statement` and typed `parameters` in place of raw SQL ([src/types/config.ts:116-123](https://github.com/bytebase/dbhub/blob/4ddb26e73c5d8f1d54f5d04351c11c3caeb43cbb/src/types/config.ts#L116-L123); [src/types/config.ts:141](https://github.com/bytebase/dbhub/blob/4ddb26e73c5d8f1d54f5d04351c11c3caeb43cbb/src/types/config.ts#L141)) | The model fills in checked values for queries you wrote, against only the tools you listed (C3) |
+| Row and time limits | `max_rows = <n>` on each `[[tools]]` entry and `query_timeout = <seconds>` on each `[[sources]]` entry ([src/types/config.ts:86](https://github.com/bytebase/dbhub/blob/4ddb26e73c5d8f1d54f5d04351c11c3caeb43cbb/src/types/config.ts#L86); [src/types/config.ts:57](https://github.com/bytebase/dbhub/blob/4ddb26e73c5d8f1d54f5d04351c11c3caeb43cbb/src/types/config.ts#L57)) | Each query returns a bounded number of rows and, on engines that support it, stops after a set time (C10) |
+| The stdio transport | Keep the default `stdio` transport whenever one local client is all you need ([src/config/env.ts:319-320](https://github.com/bytebase/dbhub/blob/4ddb26e73c5d8f1d54f5d04351c11c3caeb43cbb/src/config/env.ts#L319-L320)) | Only the host process that launched DBHub can call it (C1) |
+| A private HTTP endpoint | When you need HTTP, serve it only on a private network reachable by your own clients, with access control turned on | Only clients you chose share the database credential DBHub holds (C1) |
+| A clean working directory | Start DBHub from a directory with no .env file you didn't write | The database and transport settings come only from you (C6) |
+
+### Approving with confidence
+
+- Read each prompt and approve `execute_sql` calls one at a time; with writes enabled one tool runs both reads and writes, so the SQL text is what shows which kind a call is.
+- Statements run as soon as they are approved, with no preview or undo, so a call that changes data is worth a careful read.
+
+### Handling data
+
+- The tool-call record holds full SQL text in memory, keeps the last 100 calls per source and is gone on restart; keep your MCP host's own log if you need a lasting record.
+- The README's `--dsn` command puts the database password on the command line; a TOML file readable only by you keeps it out of shell history and process listings.
+
 ## Critical gaps
 - In the default configuration a hijacked host model can run destructive SQL (DROP, DELETE, UPDATE) unattended, so the worst case of a prompt injection from database content is irreversible damage to the database (C5-WORSTCASE). (ASI01, ASI02, LLM01, T6; C5) — [src/utils/sql-access-policy.ts:73-76](https://github.com/bytebase/dbhub/blob/4ddb26e73c5d8f1d54f5d04351c11c3caeb43cbb/src/utils/sql-access-policy.ts#L73-L76); [src/tools/execute-sql.ts:67](https://github.com/bytebase/dbhub/blob/4ddb26e73c5d8f1d54f5d04351c11c3caeb43cbb/src/tools/execute-sql.ts#L67)
 

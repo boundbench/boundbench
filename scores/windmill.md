@@ -24,6 +24,29 @@
 
 A Windmill AI agent step runs every tool call the model makes without human review, using the full workspace permissions of whoever the flow runs as and the author's long-lived service credentials. If content it reads (a webhook payload, an email, a web page, a tool result) carries injected instructions, it can leak data and act on connected systems unattended. Authorization checks, author-pinned tool inputs, SSRF checks on MCP servers and a working cancel path are real strengths, but in the shipped compose file tool code runs as root in a privileged worker with only process-namespace isolation, and the nsjail sandbox and token scoping are opt-in.
 
+## Safest setup
+
+Windmill checks every tool job against the runner's own permissions, lets authors pin tool inputs and records each tool call. Its defaults are weak for an agent: no approval step for tool calls, tool jobs carry the runner's full workspace authority, and the shipped worker runs privileged as root. The safest setup narrows every identity the agent touches, turns on the token scopes and sandbox Windmill offers, and builds containment around the workers.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Narrow downstream credentials | Give the resources attached to agent tools credentials scoped to the task, read-only where possible, with limits set at each provider | The connected systems themselves refuse anything outside that grant, whatever the agent asks for (C1) |
+| A dedicated runner account | Run agent flows as a non-admin user who can read only the folders, resources and secrets the agent needs | A hijacked agent holds that account's small slice of the workspace, not an admin's (C1) |
+| Scoped job tokens | Set `job_token_scopes` on the agent step and on each tool to the API scopes it needs ([backend/windmill-types/src/flows.rs:642](https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-types/src/flows.rs#L642); [backend/windmill-types/src/flows.rs:932](https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-types/src/flows.rs#L932)) | Each tool job's Windmill token reaches only those APIs, and never more than its agent (C1) |
+| Only the tools needed | Attach only the tools the task uses, pin inputs that should stay fixed such as recipients and targets, and list MCP tools in `include_tools` ([backend/windmill-types/src/flows.rs:1016](https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-types/src/flows.rs#L1016)) | The model sees a small tool set and cannot change the values you fixed (C3) |
+| The nsjail sandbox | `DISABLE_NSJAIL=false` on the workers that run agent tools ([backend/windmill-worker/src/worker.rs:370-373](https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/worker.rs#L370-L373)) | Tool jobs get a restricted filesystem, dropped capabilities and resource limits (C4) |
+| Turn and time ceilings | Keep `max_iterations` at its default of 10 or lower, and set `TIMEOUT` on the workers to the longest run you expect ([backend/windmill-worker/src/ai_executor.rs:104](https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai_executor.rs#L104); [backend/windmill-ai/src/types.rs:172](https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-ai/src/types.rs#L172); [backend/windmill-common/src/worker.rs:455](https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/worker.rs#L455)) | Each agent run ends after a few turns and within the time you set, not seven days (C10) |
+| Isolated agent workers | Run the workers that serve agent tools on their own host or VM, with outbound network limited to the hosts the tools need | An outer boundary around tool code running as root in a privileged worker, and a narrow path for data to leave (C4) |
+
+### Approving with confidence
+
+- Agent tool calls run without a prompt, so put a flow approval step after the agent step and read its result before later steps act on it.
+
+### Handling data
+
+- Job results and stored conversation memory are not redacted; store and share them like the data the agent read.
+- Tool jobs can reach the instance's job records with the runner's permissions, so back them up to storage the workers cannot write.
+
 ## Critical gaps
 - Tool jobs carry the runner's full workspace authority and long-lived service credentials, so a hijacked agent holds everything the runner can reach. (ASI03, T3; C1). Evidence: [backend/windmill-worker/src/ai/tools.rs:518-523](https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-worker/src/ai/tools.rs#L518-L523); [backend/windmill-common/src/auth.rs:730](https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/backend/windmill-common/src/auth.rs#L730)
 - In the shipped compose file the worker runs privileged as root and jobs get only PID-namespace isolation. (ASI05, T11; C4). Evidence: [docker-compose.yml:78](https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/docker-compose.yml#L78); [docker-compose.yml:85](https://github.com/windmill-labs/windmill/blob/85248eee786b633def40c42b6007fc7b907fb09e/docker-compose.yml#L85)

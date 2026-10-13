@@ -36,6 +36,141 @@
     "external_communication": "yes"
   },
   "headline": "OpenOps' AI assistant runs its tools with no human approval in the community edition: the approval hook is an empty stub. With a 7-day token minted from the user's session it can re-run any workflow in the project and rewrite stored cloud and AI connections. Its connection-update path is also not locked down and can expose stored credentials. Anything the assistant reads, such as workflow run outputs built from emails, webhooks, tickets or cloud tags, can steer it into these actions, and secret management in the shipped docker-compose defaults is not locked down.",
+  "safe_setup": {
+    "intro": "OpenOps gives its assistant a fixed list of API tools rather than a shell, runs code steps in a V8 isolate, and masks stored secrets in API responses and logs. The community build has no approval step and nothing to turn one on, and the assistant acts with the full project authority of whoever opens the chat. The safest setup narrows the cloud identities behind your connections, tightens the limits OpenOps offers and builds containment around the deployment.",
+    "steps": [
+      {
+        "setup": "Narrowly scoped cloud identities",
+        "how": "Give each cloud connection its own identity, limited to the accounts and actions its workflows need and read-only where they only report",
+        "gives_you": "The cloud provider itself refuses anything outside that grant, whatever a workflow or the assistant triggers",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A dedicated, capped AI key",
+        "how": "Use an AI provider key created only for OpenOps, with a spending limit set at the provider",
+        "gives_you": "Model spend has a ceiling that the chat loop itself does not provide",
+        "criterion": "C10",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A shorter token lifetime",
+        "how": "Lower `OPS_JWT_TOKEN_LIFETIME_HOURS` from 168 to the hours a working session needs",
+        "gives_you": "The token the assistant's tools carry expires sooner",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "deploy/docker-compose/.env.defaults",
+            "lines": "71",
+            "contains": "OPS_JWT_TOKEN_LIFETIME_HOURS=168",
+            "url": "https://github.com/openops-cloud/openops/blob/0e9082b1d0fd7e6cf0c20c0a446afb1ba8402262/deploy/docker-compose/.env.defaults#L71"
+          },
+          {
+            "file": "packages/server/api/src/app/authentication/context/access-token-manager.ts",
+            "lines": "25",
+            "contains": "JWT_TOKEN_LIFETIME_HOURS) ?? 168",
+            "url": "https://github.com/openops-cloud/openops/blob/0e9082b1d0fd7e6cf0c20c0a446afb1ba8402262/packages/server/api/src/app/authentication/context/access-token-manager.ts#L25"
+          }
+        ]
+      },
+      {
+        "setup": "The code-step isolate",
+        "how": "Keep `OPS_EXECUTION_MODE` at its default `SANDBOX_CODE_ONLY`",
+        "gives_you": "Code steps keep running in a memory-limited V8 isolate with no host functions",
+        "criterion": "C4",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "packages/server/shared/src/lib/system/system.ts",
+            "lines": "83",
+            "contains": "'SANDBOX_CODE_ONLY'",
+            "url": "https://github.com/openops-cloud/openops/blob/0e9082b1d0fd7e6cf0c20c0a446afb1ba8402262/packages/server/shared/src/lib/system/system.ts#L83"
+          },
+          {
+            "file": "packages/server/api/src/main.ts",
+            "lines": "63",
+            "contains": "please use OPS_EXECUTION_MODE instead",
+            "url": "https://github.com/openops-cloud/openops/blob/0e9082b1d0fd7e6cf0c20c0a446afb1ba8402262/packages/server/api/src/main.ts#L63"
+          }
+        ]
+      },
+      {
+        "setup": "Tighter run limits",
+        "how": "Set `MAX_LLM_CALLS_WITHOUT_INTERACTION` (default 100) and `FLOW_TIMEOUT_SECONDS` (default 600) lower, each as an `OPS_` env var",
+        "gives_you": "Each chat message, and each workflow it re-runs, stops sooner",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/server/shared/src/lib/system/system.ts",
+            "lines": "109",
+            "contains": "MAX_LLM_CALLS_WITHOUT_INTERACTION]: '100'",
+            "url": "https://github.com/openops-cloud/openops/blob/0e9082b1d0fd7e6cf0c20c0a446afb1ba8402262/packages/server/shared/src/lib/system/system.ts#L109"
+          },
+          {
+            "file": "packages/server/shared/src/lib/system/system.ts",
+            "lines": "69",
+            "contains": "FLOW_TIMEOUT_SECONDS]: '600'",
+            "url": "https://github.com/openops-cloud/openops/blob/0e9082b1d0fd7e6cf0c20c0a446afb1ba8402262/packages/server/shared/src/lib/system/system.ts#L69"
+          },
+          {
+            "file": "packages/server/shared/src/lib/system/system.ts",
+            "lines": "225",
+            "contains": "process.env[`OPS_${prop}`]",
+            "url": "https://github.com/openops-cloud/openops/blob/0e9082b1d0fd7e6cf0c20c0a446afb1ba8402262/packages/server/shared/src/lib/system/system.ts#L225"
+          }
+        ]
+      },
+      {
+        "setup": "Telemetry off",
+        "how": "Set `OPS_TELEMETRY_MODE=DISABLED` in the env file",
+        "gives_you": "Usage events, AI chat error messages included, stay inside your deployment",
+        "criterion": "C8",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "deploy/docker-compose/.env.defaults",
+            "lines": "38",
+            "contains": "OPS_TELEMETRY_MODE=COLLECTOR",
+            "url": "https://github.com/openops-cloud/openops/blob/0e9082b1d0fd7e6cf0c20c0a446afb1ba8402262/deploy/docker-compose/.env.defaults#L38"
+          },
+          {
+            "file": "packages/server/api/src/app/telemetry/telemetry.ts",
+            "lines": "30",
+            "contains": "DISABLED = 'DISABLED'",
+            "url": "https://github.com/openops-cloud/openops/blob/0e9082b1d0fd7e6cf0c20c0a446afb1ba8402262/packages/server/api/src/app/telemetry/telemetry.ts#L30"
+          }
+        ]
+      },
+      {
+        "setup": "A network-limited deployment",
+        "how": "Run the OpenOps containers on a network that reaches only the cloud, AI provider and package endpoints your workflows use",
+        "gives_you": "CLI steps and package installs, which run outside the isolate, have a narrow path for data to leave",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Scheduled database backups",
+        "how": "Back up the OpenOps database on a schedule you can restore from",
+        "gives_you": "A known-good copy of connections and workflows to return to if one is changed without review",
+        "criterion": "C6",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "The community build asks for no approval on the assistant's own calls; the workflow engine's approval blocks are the human check inside a workflow, so place them before steps that change cloud resources.",
+      "After a chat that touched workflows or connections, check the run history and your connections; re-runs appear in the normal run history."
+    ],
+    "handling": [
+      "Chat history, tool outputs included, stays in Redis for 30 days and the user can delete it; keep anything you need for review elsewhere.",
+      "Logs mask secrets by default; leave `OPS_LOG_REDACTION` unset or `true`."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

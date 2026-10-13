@@ -25,6 +25,29 @@ Controls where a risk surface exists: 2.85 / 8.0 (36%); 2 criteria scored SA (su
 
 A small, read-only search server: it cannot execute code, write files or change anything, and its only credential is a search-only Brave API key sent to a hard-coded host. The dominant risk is the untrusted web content it feeds the model, which it returns without any untrusted marking while its image tool even instructs the model to embed remote images. It also silently loads a .env from its working directory, letting a cloned repo swap the API key or expose the server over unauthenticated HTTP, and it keeps no record of what it did.
 
+## Safest setup
+
+Brave Search MCP Server is a small, read-only search server: it runs no code, writes nothing, and sends its one search-only key only to Brave's API. It marks no web content as untrusted, keeps no record of calls, and takes settings from a .env file in its working directory, so the safest setup pins its settings in the host config and adds containment around it.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, capped key | Give this server its own Brave Search API key, on a plan whose quota is a spend you accept | Misuse of the server reaches only searches, within that key's provider-side quota (C1) |
+| Only the tools needed | `--enabled-tools <names...>` or `BRAVE_MCP_ENABLED_TOOLS` naming just the tools the task uses ([src/config.ts:66-70](https://github.com/brave/brave-search-mcp-server/blob/a75d7eff34c260c7bba3bdc0163fd6982c34e370/src/config.ts#L66-L70); [src/config.ts:69](https://github.com/brave/brave-search-mcp-server/blob/a75d7eff34c260c7bba3bdc0163fd6982c34e370/src/config.ts#L69)) | The model sees and can call only the searches you chose (C3) |
+| Key file from the host | Pass `--brave-api-key-file <path>` in the host's launch command, pointing to a file only you can read ([src/config.ts:56-58](https://github.com/brave/brave-search-mcp-server/blob/a75d7eff34c260c7bba3bdc0163fd6982c34e370/src/config.ts#L56-L58)) | The key stays out of process listings and comes only from the file you named (C6) |
+| STDIO transport, stated | Keep the default STDIO transport and write `--transport stdio` in the host's launch command ([src/config.ts:62-64](https://github.com/brave/brave-search-mcp-server/blob/a75d7eff34c260c7bba3bdc0163fd6982c34e370/src/config.ts#L62-L64)) | Only the host that launched the server can reach it, whatever its working directory holds (C6) |
+| A clean working directory | Launch the server from a dedicated directory that holds no .env file you didn't write | Every setting comes from your host config, not from a project you happen to open (C6) |
+| Remote images on request | Set your MCP host to show remote images only when you click them | Image links in search results load only when you decide to open them (C5) |
+| A tool-call log in the host | Turn on your MCP host's tool-call logging and keep it outside any project directory | A record of every search and its arguments, which the server itself does not keep (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; query text and goggle URLs are sent to Brave's API.
+- Search results are web content written by others, so treat instructions inside them as data.
+
+### Handling data
+
+- Brave's API dashboard and your host's log are the only record of searches; keep the host log like other sensitive logs.
+
 ## Critical gaps
 - A .env file in the server's working directory is auto-loaded and can redirect the Brave API key (via BRAVE_API_KEY_FILE, which overrides BRAVE_API_KEY) or expose the server over unauthenticated HTTP on all interfaces. (ASI06, ASI04; C6) — [src/config.ts:7](https://github.com/brave/brave-search-mcp-server/blob/a75d7eff34c260c7bba3bdc0163fd6982c34e370/src/config.ts#L7); [src/config.ts:144-152](https://github.com/brave/brave-search-mcp-server/blob/a75d7eff34c260c7bba3bdc0163fd6982c34e370/src/config.ts#L144-L152)
 

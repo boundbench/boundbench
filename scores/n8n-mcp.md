@@ -25,6 +25,30 @@ Controls where a risk surface exists: 2.33 / 9.0 (26%); 1 criterion scored SA (s
 
 With an n8n API key configured, n8n-MCP hands the model every workflow, credential, execution and agent operation that key allows, including building and running workflows that execute code and call any service the instance has credentials for. The server protects its own outbound connections well and backs up workflows before edits, but it has no read-only default, no confirmation step of its own, and returns instance content to the model without marking it as untrusted, so a hijacked session can both read sensitive data and make irreversible changes. Usage telemetry, including sanitized workflow content, is on by default.
 
+## Safest setup
+
+n8n-MCP guards its own outbound requests with strict URL checks, strips stored credential secrets from responses and backs up workflows before edits. Once an n8n API key is set, though, every management tool is on and the server has no confirmation step or read-only mode, so the safest setup narrows what the key and the instance can do and turns off the tools the task doesn't need.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, scoped key | Create the n8n API key for a dedicated n8n user that holds only the projects and credentials the task needs, with API key scopes set where your n8n edition offers them | n8n itself refuses anything outside that user's reach, whatever the model asks for (C1) |
+| A hardened n8n instance | Point the server at a non-production n8n instance with the Code-node sandbox on and code and command nodes excluded where the task allows | Workflows the model builds and runs stay away from production data and the credentials that matter most (C4) |
+| Only the tools needed | List every management tool the task doesn't use, such as the write, delete and run tools, in `DISABLED_TOOLS` ([src/mcp/tool-policy.ts:37](https://github.com/czlonkowski/n8n-mcp/blob/3a2ec761e006089638d281a27d15ba030ec3ec88/src/mcp/tool-policy.ts#L37)) | The model sees only the tools you chose, and refused tools stay refused at call time (C1) |
+| Per-call approval | Set your MCP host to ask before each n8n-MCP tool call, whatever the tool's risk annotation says | A person decides on every change to the instance before it happens (C2) |
+| Strict URL checks | Keep the default `WEBHOOK_SECURITY_MODE` of strict ([src/utils/ssrf-protection.ts:308](https://github.com/czlonkowski/n8n-mcp/blob/3a2ec761e006089638d281a27d15ba030ec3ec88/src/utils/ssrf-protection.ts#L308)) | The server's own requests keep blocking internal and metadata addresses (C3) |
+| A launch directory you control | Have the host start the server from a directory you control, such as your home directory, holding no .env file you didn't write ([src/config/n8n-api.ts:21-26](https://github.com/czlonkowski/n8n-mcp/blob/3a2ec761e006089638d281a27d15ba030ec3ec88/src/config/n8n-api.ts#L21-L26)) | The server's settings, including which tools it offers, come only from you (C6) |
+| Telemetry off | Set `N8N_MCP_TELEMETRY_DISABLED=true` in the server's environment ([src/telemetry/config-manager.ts:291](https://github.com/czlonkowski/n8n-mcp/blob/3a2ec761e006089638d281a27d15ba030ec3ec88/src/telemetry/config-manager.ts#L291)) | Workflow structures and change intents stay on your machine (C8) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; risk annotations are not accurate on every mutating tool, so check the tool and its action in the prompt.
+- Deletes and workflow or agent runs can't be undone, and runs keep going in n8n after the session ends.
+
+### Handling data
+
+- Workflow and execution content reaches the model unredacted; keep secrets in n8n credentials rather than in node parameters.
+- The server keeps no tool-call log in stdio mode; its local workflow backups are the only record it writes, and the model's own tools can delete them.
+
 ## Critical gaps
 - A hijacked session can both read instance data and make irreversible changes (create, run or delete workflows) with no human step in the server. (ASI01, LLM01; C5). Evidence: [src/mcp/tools-n8n-manager.ts:476-483](https://github.com/czlonkowski/n8n-mcp/blob/3a2ec761e006089638d281a27d15ba030ec3ec88/src/mcp/tools-n8n-manager.ts#L476-L483); [src/mcp/tools-n8n-manager.ts:385-386](https://github.com/czlonkowski/n8n-mcp/blob/3a2ec761e006089638d281a27d15ba030ec3ec88/src/mcp/tools-n8n-manager.ts#L385-L386); [src/mcp/handlers-n8n-manager.ts:1347-1352](https://github.com/czlonkowski/n8n-mcp/blob/3a2ec761e006089638d281a27d15ba030ec3ec88/src/mcp/handlers-n8n-manager.ts#L1347-L1352)
 - The single n8n API key gives the model the whole instance and, through workflows, every connected service's stored credentials. (ASI03, T3; C1). Evidence: [src/services/n8n-api-client.ts:219-221](https://github.com/czlonkowski/n8n-mcp/blob/3a2ec761e006089638d281a27d15ba030ec3ec88/src/services/n8n-api-client.ts#L219-L221); [docs/SECURITY_HARDENING.md:5](https://github.com/czlonkowski/n8n-mcp/blob/3a2ec761e006089638d281a27d15ba030ec3ec88/docs/SECURITY_HARDENING.md#L5)

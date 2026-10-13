@@ -24,6 +24,31 @@
 
 OpenOps' AI assistant runs its tools with no human approval in the community edition: the approval hook is an empty stub. With a 7-day token minted from the user's session it can re-run any workflow in the project and rewrite stored cloud and AI connections. Its connection-update path is also not locked down and can expose stored credentials. Anything the assistant reads, such as workflow run outputs built from emails, webhooks, tickets or cloud tags, can steer it into these actions, and secret management in the shipped docker-compose defaults is not locked down.
 
+## Safest setup
+
+OpenOps gives its assistant a fixed list of API tools rather than a shell, runs code steps in a V8 isolate, and masks stored secrets in API responses and logs. The community build has no approval step and nothing to turn one on, and the assistant acts with the full project authority of whoever opens the chat. The safest setup narrows the cloud identities behind your connections, tightens the limits OpenOps offers and builds containment around the deployment.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Narrowly scoped cloud identities | Give each cloud connection its own identity, limited to the accounts and actions its workflows need and read-only where they only report | The cloud provider itself refuses anything outside that grant, whatever a workflow or the assistant triggers (C1) |
+| A dedicated, capped AI key | Use an AI provider key created only for OpenOps, with a spending limit set at the provider | Model spend has a ceiling that the chat loop itself does not provide (C10) |
+| A shorter token lifetime | Lower `OPS_JWT_TOKEN_LIFETIME_HOURS` from 168 to the hours a working session needs ([deploy/docker-compose/.env.defaults:71](https://github.com/openops-cloud/openops/blob/0e9082b1d0fd7e6cf0c20c0a446afb1ba8402262/deploy/docker-compose/.env.defaults#L71); [packages/server/api/src/app/authentication/context/access-token-manager.ts:25](https://github.com/openops-cloud/openops/blob/0e9082b1d0fd7e6cf0c20c0a446afb1ba8402262/packages/server/api/src/app/authentication/context/access-token-manager.ts#L25)) | The token the assistant's tools carry expires sooner (C1) |
+| The code-step isolate | Keep `OPS_EXECUTION_MODE` at its default `SANDBOX_CODE_ONLY` ([packages/server/shared/src/lib/system/system.ts:83](https://github.com/openops-cloud/openops/blob/0e9082b1d0fd7e6cf0c20c0a446afb1ba8402262/packages/server/shared/src/lib/system/system.ts#L83); [packages/server/api/src/main.ts:63](https://github.com/openops-cloud/openops/blob/0e9082b1d0fd7e6cf0c20c0a446afb1ba8402262/packages/server/api/src/main.ts#L63)) | Code steps keep running in a memory-limited V8 isolate with no host functions (C4) |
+| Tighter run limits | Set `MAX_LLM_CALLS_WITHOUT_INTERACTION` (default 100) and `FLOW_TIMEOUT_SECONDS` (default 600) lower, each as an `OPS_` env var ([packages/server/shared/src/lib/system/system.ts:109](https://github.com/openops-cloud/openops/blob/0e9082b1d0fd7e6cf0c20c0a446afb1ba8402262/packages/server/shared/src/lib/system/system.ts#L109); [packages/server/shared/src/lib/system/system.ts:69](https://github.com/openops-cloud/openops/blob/0e9082b1d0fd7e6cf0c20c0a446afb1ba8402262/packages/server/shared/src/lib/system/system.ts#L69); [packages/server/shared/src/lib/system/system.ts:225](https://github.com/openops-cloud/openops/blob/0e9082b1d0fd7e6cf0c20c0a446afb1ba8402262/packages/server/shared/src/lib/system/system.ts#L225)) | Each chat message, and each workflow it re-runs, stops sooner (C10) |
+| Telemetry off | Set `OPS_TELEMETRY_MODE=DISABLED` in the env file ([deploy/docker-compose/.env.defaults:38](https://github.com/openops-cloud/openops/blob/0e9082b1d0fd7e6cf0c20c0a446afb1ba8402262/deploy/docker-compose/.env.defaults#L38); [packages/server/api/src/app/telemetry/telemetry.ts:30](https://github.com/openops-cloud/openops/blob/0e9082b1d0fd7e6cf0c20c0a446afb1ba8402262/packages/server/api/src/app/telemetry/telemetry.ts#L30)) | Usage events, AI chat error messages included, stay inside your deployment (C8) |
+| A network-limited deployment | Run the OpenOps containers on a network that reaches only the cloud, AI provider and package endpoints your workflows use | CLI steps and package installs, which run outside the isolate, have a narrow path for data to leave (C4) |
+| Scheduled database backups | Back up the OpenOps database on a schedule you can restore from | A known-good copy of connections and workflows to return to if one is changed without review (C6) |
+
+### Approving with confidence
+
+- The community build asks for no approval on the assistant's own calls; the workflow engine's approval blocks are the human check inside a workflow, so place them before steps that change cloud resources.
+- After a chat that touched workflows or connections, check the run history and your connections; re-runs appear in the normal run history.
+
+### Handling data
+
+- Chat history, tool outputs included, stays in Redis for 30 days and the user can delete it; keep anything you need for review elsewhere.
+- Logs mask secrets by default; leave `OPS_LOG_REDACTION` unset or `true`.
+
 ## Critical gaps
 - The assistant can rewrite the AWS connection that supplies its own cost-tool credentials (roles, endpoint) via an unapproved PATCH tool. (ASI03; C1) — [packages/server/api/src/app/mcp/mcp-profile.ts:27](https://github.com/openops-cloud/openops/blob/0e9082b1d0fd7e6cf0c20c0a446afb1ba8402262/packages/server/api/src/app/mcp/mcp-profile.ts#L27); [packages/server/api/src/app/ai/mcp/cost-tools.ts:44-47](https://github.com/openops-cloud/openops/blob/0e9082b1d0fd7e6cf0c20c0a446afb1ba8402262/packages/server/api/src/app/ai/mcp/cost-tools.ts#L44-L47)
 - No approval gate exists in the community build; flow-run retry and connection patch run unattended. (ASI09, ASI02; C2) — [packages/server/api/src/app/ai/mcp/tool-approval-wrapper.ts:3-5](https://github.com/openops-cloud/openops/blob/0e9082b1d0fd7e6cf0c20c0a446afb1ba8402262/packages/server/api/src/app/ai/mcp/tool-approval-wrapper.ts#L3-L5); [packages/server/api/src/app/mcp/mcp-profile.ts:26](https://github.com/openops-cloud/openops/blob/0e9082b1d0fd7e6cf0c20c0a446afb1ba8402262/packages/server/api/src/app/mcp/mcp-profile.ts#L26)

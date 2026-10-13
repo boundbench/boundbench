@@ -24,6 +24,31 @@
 
 Agent Zero gives its model a root shell, a browser, and every configured secret inside one Docker container, with no human approval step and no login on the web UI by default. The container is the only real boundary, and it is unhardened and shared with the agent's own code, settings, and secrets, so a prompt injection from a web page can leak keys and take irreversible actions unattended. Secret masking is a genuine strength, but persistent memory, self-editable behaviour rules, and repository-supplied project extensions let a single injection persist.
 
+## Safest setup
+
+Agent Zero keeps model-run code inside its Docker container and masks stored secrets in what the model sees and in its logs. Beyond that the defaults are thin: no approval step, no web UI login, and a root shell that shares the container with every key, so the safest setup narrows the keys, locks the UI, turns on the tool policy and Infection Check, and builds containment around the container.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Give the instance only the model keys and secrets this task needs, each scoped or read-only with a spending limit set at the provider | Whatever the agent does, it reaches only the systems and spend you chose (C1) |
+| A web UI login | Set `AUTH_LOGIN` and `AUTH_PASSWORD` in usr/.env or in Settings ([helpers/dotenv.py:8-9](https://github.com/agent0ai/agent-zero/blob/e3051fb584b1a36be2b0a0c90606f1c2c2d356ec/helpers/dotenv.py#L8-L9)) | Only people with the login can direct the agent (C1) |
+| A local-only port | Publish the web UI port on 127.0.0.1 only, and reach it remotely through a VPN or SSH tunnel | The agent takes instructions only from your own machine or network (C1) |
+| A per-profile tool list | In the profile's Tool Access config, set `mode: custom`, `default: block` and `mcp_default: block`, and list the tools the task needs in `allowed` ([plugins/_tool_access/default_config.yaml:1-5](https://github.com/agent0ai/agent-zero/blob/e3051fb584b1a36be2b0a0c90606f1c2c2d356ec/plugins/_tool_access/default_config.yaml#L1-L5); [helpers/tool_policy.py:32-36](https://github.com/agent0ai/agent-zero/blob/e3051fb584b1a36be2b0a0c90606f1c2c2d356ec/helpers/tool_policy.py#L32-L36)) | The model sees and can run only the tools you listed for that profile (C3) |
+| The Infection Check | Turn on the Infection Check plugin for each agent profile and project you use ([plugins/_infection_check/plugin.yaml:2](https://github.com/agent0ai/agent-zero/blob/e3051fb584b1a36be2b0a0c90606f1c2c2d356ec/plugins/_infection_check/plugin.yaml#L2)) | A second model reviews each pending tool call and can stop the run before it executes (C5) |
+| Model rate limits | Set `rl_requests`, `rl_input` and `rl_output` on each model in the model settings ([plugins/_model_config/helpers/model_config.py:892-894](https://github.com/agent0ai/agent-zero/blob/e3051fb584b1a36be2b0a0c90606f1c2c2d356ec/plugins/_model_config/helpers/model_config.py#L892-L894)) | A per-minute ceiling on requests and tokens that slows a runaway loop's spend (C10) |
+| Projects and plugins you've read | Clone as projects only repositories whose .a0proj folder you have read, and install only plugins you have reviewed | Tools, extensions and MCP servers that run in the agent come only from code you chose (C6) |
+| Its own VM or host | Run the container in a VM or on a machine with no other data, with outbound access limited to the hosts the task needs, and keep the A0 CLI connector unconnected | An outer boundary around the root shell and its keys, and a narrow path for data to leave (C4) |
+
+### Approving with confidence
+
+- Tool calls run without a prompt, so watch each run in the web UI and stop it when it strays from the task.
+- Stopping a chat ends its task but not shells or scheduled tasks it started; check the scheduler and restart the container to end them.
+
+### Handling data
+
+- Chats under /a0/usr/chats keep every tool call's arguments and results and can be edited from inside the container; copy them off the container for a lasting record.
+- Keys and secrets sit in plaintext under /a0/usr; store that volume and its backups like the credentials they hold.
+
 ## Critical gaps
 - The agent can rewrite its own tool-access policy and secrets store from its root shell (C1-SELFESC). (ASI03, T3; C1) — [helpers/tool_policy.py:43-56](https://github.com/agent0ai/agent-zero/blob/e3051fb584b1a36be2b0a0c90606f1c2c2d356ec/helpers/tool_policy.py#L43-L56); [helpers/plugins.py:838-841](https://github.com/agent0ai/agent-zero/blob/e3051fb584b1a36be2b0a0c90606f1c2c2d356ec/helpers/plugins.py#L838-L841); [docker/run/fs/etc/supervisor/conf.d/supervisord.conf:61-64](https://github.com/agent0ai/agent-zero/blob/e3051fb584b1a36be2b0a0c90606f1c2c2d356ec/docker/run/fs/etc/supervisor/conf.d/supervisord.conf#L61-L64)
 - The root shell code-execution tool runs with no human approval in the default configuration (C2-POWERBYPASS). (ASI02, ASI09, T10; C2) — [agent.py:1498-1505](https://github.com/agent0ai/agent-zero/blob/e3051fb584b1a36be2b0a0c90606f1c2c2d356ec/agent.py#L1498-L1505); [plugins/_code_execution/tools/code_execution_tool.py:563-566](https://github.com/agent0ai/agent-zero/blob/e3051fb584b1a36be2b0a0c90606f1c2c2d356ec/plugins/_code_execution/tools/code_execution_tool.py#L563-L566)

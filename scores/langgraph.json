@@ -36,6 +36,156 @@
     "external_communication": "opt_in"
   },
   "headline": "LangGraph is a low-level runtime: it ships no shell, code-execution or plugin features of its own, which is why two criteria score full marks. Everything else is left to the developer. By default every tool call the model makes runs immediately with the host process's full credentials, tool output flows back to the model unmarked, and the only limit is a 10,007-step cap. The dominant risk is prompt injection through tool results driving the developer's tools; human-in-the-loop interrupts and checkpoint history exist but are opt-in, and the default checkpoint deserializer will execute code stored in a tampered database.",
+  "safe_setup": {
+    "intro": "LangGraph ships no shell, code execution or plugin loading of its own, starts an agent with no tools, and runs only tools you registered, with arguments checked against each tool's schema. Beyond that the defaults are thin: tools run with the process's full credentials and no approval step, nothing is recorded, and the only limit is a very large step cap. The safest setup turns on the pause, checkpoint and limit settings LangGraph offers and builds containment around the process.",
+    "steps": [
+      {
+        "setup": "Scoped, low-limit keys",
+        "how": "Give the process only the credentials this agent's tools need, each scoped or read-only with a spending limit set at the provider",
+        "gives_you": "Whatever the agent does, it reaches only the systems and spend you chose, not everything the host can",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A pause before tools",
+        "how": "Pass `interrupt_before=[\"tools\"]` together with a `checkpointer`",
+        "gives_you": "A person sees each pending tool call with its exact arguments, and can edit it, before it runs",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "libs/prebuilt/langgraph/prebuilt/chat_agent_executor.py",
+            "lines": "300-302",
+            "contains": "interrupt_before: list[str] | None = None",
+            "url": "https://github.com/langchain-ai/langgraph/blob/7dc9195e4141c8fbd8118581b3dd61d158628aa8/libs/prebuilt/langgraph/prebuilt/chat_agent_executor.py#L300-L302"
+          }
+        ]
+      },
+      {
+        "setup": "Only the tools needed",
+        "how": "Pass each agent only the tools its task needs, read-only ones where the task allows",
+        "gives_you": "The model can call only what that task needs, since LangGraph refuses any tool you didn't register",
+        "criterion": "C3",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "libs/prebuilt/langgraph/prebuilt/chat_agent_executor.py",
+            "lines": "290",
+            "contains": "tools: Sequence[BaseTool | Callable | dict[str, Any]] | ToolNode",
+            "url": "https://github.com/langchain-ai/langgraph/blob/7dc9195e4141c8fbd8118581b3dd61d158628aa8/libs/prebuilt/langgraph/prebuilt/chat_agent_executor.py#L290"
+          }
+        ]
+      },
+      {
+        "setup": "Strict checkpoint loading",
+        "how": "Set `LANGGRAPH_STRICT_MSGPACK=true` in the agent's environment",
+        "gives_you": "Loading saved state accepts only a built-in allowlist of safe types",
+        "criterion": "C6",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "libs/checkpoint/langgraph/checkpoint/serde/_msgpack.py",
+            "lines": "12",
+            "contains": "LANGGRAPH_STRICT_MSGPACK",
+            "url": "https://github.com/langchain-ai/langgraph/blob/7dc9195e4141c8fbd8118581b3dd61d158628aa8/libs/checkpoint/langgraph/checkpoint/serde/_msgpack.py#L12"
+          }
+        ]
+      },
+      {
+        "setup": "Task-sized limits",
+        "how": "Set `recursion_limit` to a task-sized value in each graph's run config, sub-agents included, and set `step_timeout` on the compiled graph",
+        "gives_you": "Each run stops after a bounded number of steps, and no step waits indefinitely",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "libs/langgraph/langgraph/_internal/_config.py",
+            "lines": "225-226",
+            "contains": "config[\"recursion_limit\"] = recursion_limit",
+            "url": "https://github.com/langchain-ai/langgraph/blob/7dc9195e4141c8fbd8118581b3dd61d158628aa8/libs/langgraph/langgraph/_internal/_config.py#L225-L226"
+          },
+          {
+            "file": "libs/langgraph/langgraph/pregel/main.py",
+            "lines": "727",
+            "contains": "step_timeout: float | None = None",
+            "url": "https://github.com/langchain-ai/langgraph/blob/7dc9195e4141c8fbd8118581b3dd61d158628aa8/libs/langgraph/langgraph/pregel/main.py#L727"
+          }
+        ]
+      },
+      {
+        "setup": "Encrypted checkpoints",
+        "how": "Use an `EncryptedSerializer` from `from_pycryptodome_aes` as the checkpointer's serializer, with the key in `LANGGRAPH_AES_KEY`",
+        "gives_you": "Conversation state, tool output included, is stored encrypted at rest",
+        "criterion": "C8",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "libs/checkpoint/langgraph/checkpoint/serde/encrypted.py",
+            "lines": "8",
+            "contains": "class EncryptedSerializer",
+            "url": "https://github.com/langchain-ai/langgraph/blob/7dc9195e4141c8fbd8118581b3dd61d158628aa8/libs/checkpoint/langgraph/checkpoint/serde/encrypted.py#L8"
+          },
+          {
+            "file": "libs/checkpoint/langgraph/checkpoint/serde/encrypted.py",
+            "lines": "39",
+            "contains": "def from_pycryptodome_aes(",
+            "url": "https://github.com/langchain-ai/langgraph/blob/7dc9195e4141c8fbd8118581b3dd61d158628aa8/libs/checkpoint/langgraph/checkpoint/serde/encrypted.py#L39"
+          },
+          {
+            "file": "libs/checkpoint/langgraph/checkpoint/serde/encrypted.py",
+            "lines": "54",
+            "contains": "LANGGRAPH_AES_KEY",
+            "url": "https://github.com/langchain-ai/langgraph/blob/7dc9195e4141c8fbd8118581b3dd61d158628aa8/libs/checkpoint/langgraph/checkpoint/serde/encrypted.py#L54"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the agent in a container or VM whose network reaches only the hosts the task needs",
+        "gives_you": "An outer boundary around your tools and a narrow path for data to leave",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A durable step record",
+        "how": "Pass a database-backed `checkpointer` and run with `durability=\"sync\"`",
+        "gives_you": "Every step's tool calls, arguments and results are saved before the next step runs",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "libs/langgraph/langgraph/graph/state.py",
+            "lines": "1179",
+            "contains": "checkpointer: Checkpointer = None",
+            "url": "https://github.com/langchain-ai/langgraph/blob/7dc9195e4141c8fbd8118581b3dd61d158628aa8/libs/langgraph/langgraph/graph/state.py#L1179"
+          },
+          {
+            "file": "libs/langgraph/langgraph/types.py",
+            "lines": "98",
+            "contains": "Durability = Literal[\"sync\", \"async\", \"exit\"]",
+            "url": "https://github.com/langchain-ai/langgraph/blob/7dc9195e4141c8fbd8118581b3dd61d158628aa8/libs/langgraph/langgraph/types.py#L98"
+          },
+          {
+            "file": "libs/langgraph/langgraph/pregel/main.py",
+            "lines": "2576",
+            "contains": "durability: Durability | None = None",
+            "url": "https://github.com/langchain-ai/langgraph/blob/7dc9195e4141c8fbd8118581b3dd61d158628aa8/libs/langgraph/langgraph/pregel/main.py#L2576"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; the pause holds every pending tool call of that step, so check each one's arguments before resuming.",
+      "A sub-agent's own tool calls run under its own graph, so give each sub-agent its own pause before tools.",
+      "Whoever holds a thread's config can resume it, so keep thread ids to the people who approve."
+    ],
+    "handling": [
+      "Checkpoints and store items hold full conversation state, tool output and any secrets in it; keep that database writable only by the agent's own service and store it like the data the agent reads.",
+      "Leave `debug` off where output lands in shared logs, since it prints state unredacted."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

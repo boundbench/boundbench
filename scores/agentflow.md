@@ -25,6 +25,24 @@ Controls where a risk surface exists: 1.08 / 9.0 (12%); 1 criterion scored SA (s
 
 As shipped, AgentFlow runs model-written Python directly inside its own process for every tool call, with no sandbox, no approval step and no argument validation. Web pages and search results are fed into the prompt that writes that code, so a malicious page can steer it to read the provider API keys from the environment and send them anywhere, or damage the host. Only step and time caps exist, and timed-out code keeps running.
 
+## Safest setup
+
+AgentFlow keeps agent memory to a single run, leaves its response cache off and ends the solve loop after 10 steps or 300 seconds. Beyond that the defaults are weak: model-written Python runs inside the agent's own process with every provider key, with no sandbox or approval step to turn on, so the safest setup narrows the tools and builds the boundaries around the process yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Dedicated, low-limit keys | Put only the provider keys this task needs in the .env file, each a dedicated key with a spending limit set at the provider | Whatever runs in the process reaches only the services and spend you chose (C1) |
+| Only the tools needed | Pass `enabled_tools` to `construct_solver` naming just the tools the task uses, leaving out the Python and web tools where you can ([agentflow/agentflow/solver.py:198-199](https://github.com/lupantech/agentflow/blob/b94006436b8712ab8682846fb0d886a5f174f2d4/agentflow/agentflow/solver.py#L198-L199)) | Web content and the Python tool stay out of runs that have no use for them (C3) |
+| The response cache off | Keep the default `use_cache=False` on the LLM engines ([agentflow/agentflow/engine/factory.py:5](https://github.com/lupantech/agentflow/blob/b94006436b8712ab8682846fb0d886a5f174f2d4/agentflow/agentflow/engine/factory.py#L5)) | Each run starts from fresh model output, with nothing replayed from earlier sessions (C6) |
+| Step and time limits | Keep the default `max_steps=10` and `max_time=300`, or lower them for short tasks ([agentflow/agentflow/solver.py:203-204](https://github.com/lupantech/agentflow/blob/b94006436b8712ab8682846fb0d886a5f174f2d4/agentflow/agentflow/solver.py#L203-L204)) | Every run stops planning new steps after a fixed count and time (C10) |
+| Its own container or VM | Run the agent in a container or VM holding no other credentials or files, with network access limited to the hosts the task needs | An outer boundary around model-written code and a narrow path for data to leave (C4) |
+| Quiet console output | Pass `verbose=False` to `construct_solver` where output lands in shared logs ([agentflow/agentflow/solver.py:198](https://github.com/lupantech/agentflow/blob/b94006436b8712ab8682846fb0d886a5f174f2d4/agentflow/agentflow/solver.py#L198); [agentflow/agentflow/solver.py:207](https://github.com/lupantech/agentflow/blob/b94006436b8712ab8682846fb0d886a5f174f2d4/agentflow/agentflow/solver.py#L207)) | Prompts, commands and tool results stay out of shared console logs (C8) |
+| A saved run record | Write the dict that `solve` returns to storage outside the container after each run | A record of every command and tool result that outlives the process (C9) |
+
+### Handling data
+
+- The returned run record and verbose output hold prompts, commands and tool results unredacted; store them like the data the agent read.
+
 ## Critical gaps
 - Model-generated Python (including code written after reading web content) is exec()'d in-process with no sandbox and no approval, with all API keys in the environment. (ASI05; C4) — [agentflow/agentflow/models/executor.py:226](https://github.com/lupantech/agentflow/blob/b94006436b8712ab8682846fb0d886a5f174f2d4/agentflow/agentflow/models/executor.py#L226); [agentflow/agentflow/models/executor.py:206](https://github.com/lupantech/agentflow/blob/b94006436b8712ab8682846fb0d886a5f174f2d4/agentflow/agentflow/models/executor.py#L206)
 - Content from fetched web pages flows into the prompt that writes executed Python, so a hijacking page can leak keys and run arbitrary code unattended. (ASI01, LLM01; C5) — [agentflow/agentflow/tools/web_search/tool.py:149](https://github.com/lupantech/agentflow/blob/b94006436b8712ab8682846fb0d886a5f174f2d4/agentflow/agentflow/tools/web_search/tool.py#L149); [agentflow/agentflow/models/executor.py:91](https://github.com/lupantech/agentflow/blob/b94006436b8712ab8682846fb0d886a5f174f2d4/agentflow/agentflow/models/executor.py#L91); [agentflow/agentflow/models/executor.py:226](https://github.com/lupantech/agentflow/blob/b94006436b8712ab8682846fb0d886a5f174f2d4/agentflow/agentflow/models/executor.py#L226)

@@ -36,6 +36,121 @@
     "external_communication": "yes"
   },
   "headline": "The AI assistant itself is tightly bounded: its default tool set is four read-only knowledge/skill tools plus four read-only built-in ticket and asset lookups, so a manipulated model cannot change state or reach the network by design. The larger risks sit around it. The SOAR workflow engine runs containment, email and generic HTTP actions with no per-run approval step, shared skill instructions that steer the assistant can be edited by any non-readonly user, and one assistant endpoint forwards the caller's platform token to caller-chosen MCP endpoints. Access control is flat (any authenticated user), and self-registration is auto-approved with read access by default.",
+  "safe_setup": {
+    "intro": "Argus keeps its AI assistant to read-only lookups, encrypts and redacts workflow credentials, and limits the HTTP workflow action to an admin allowlist. Access is otherwise flat and published workflows run every step without a per-run approval, so the safest setup narrows who can write, what workflows can reach and where the backend can connect.",
+    "steps": [
+      {
+        "setup": "Narrowly scoped device accounts",
+        "how": "Give the firewall, directory and email accounts that workflow actions use only the rights those actions need",
+        "gives_you": "The systems themselves refuse anything beyond those rights, whatever a workflow run asks for",
+        "criterion": "C8",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Admin-approved registration",
+        "how": "Turn off `auto_approve_enabled` in the system settings",
+        "gives_you": "Every new account waits for an administrator before it can read SOC data",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "backend/accounts/models.py",
+            "lines": "161",
+            "contains": "auto_approve_enabled = models.BooleanField(default=True)",
+            "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/accounts/models.py#L161"
+          }
+        ]
+      },
+      {
+        "setup": "Read-only accounts by default",
+        "how": "Keep registered users on the read-only role (`is_readonly`) and grant write access only to people who build workflows and skills",
+        "gives_you": "Workflows, skills and MCP server records can be changed only by the few accounts you trust with them",
+        "criterion": "C1",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "backend/accounts/models.py",
+            "lines": "68",
+            "contains": "is_readonly = models.BooleanField",
+            "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/accounts/models.py#L68"
+          },
+          {
+            "file": "backend/accounts/services.py",
+            "lines": "443",
+            "contains": "profile.is_readonly = True",
+            "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/accounts/services.py#L443"
+          }
+        ]
+      },
+      {
+        "setup": "A short HTTP allowlist",
+        "how": "List in `workflow_http_allowlist` only the hosts your workflows call",
+        "gives_you": "The generic HTTP action reaches only those hosts",
+        "criterion": "C3",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "backend/accounts/models.py",
+            "lines": "162",
+            "contains": "workflow_http_allowlist = models.JSONField(default=list, blank=True)",
+            "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/accounts/models.py#L162"
+          }
+        ]
+      },
+      {
+        "setup": "Request rate limits",
+        "how": "Keep `DRF_THROTTLE_USER_RATE` and `TICKET_PLAYBOOK_INVOKE_RATE` at their defaults or lower",
+        "gives_you": "Each account can start only a bounded number of requests and ticket playbook runs per minute",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "backend/siem_project/settings.py",
+            "lines": "249",
+            "contains": "DRF_THROTTLE_USER_RATE",
+            "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/siem_project/settings.py#L249"
+          },
+          {
+            "file": "backend/siem_project/settings.py",
+            "lines": "253",
+            "contains": "TICKET_PLAYBOOK_INVOKE_RATE",
+            "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/siem_project/settings.py#L253"
+          }
+        ]
+      },
+      {
+        "setup": "A restricted backend network",
+        "how": "Run the backend and workflow worker in a network that reaches only the model provider and the systems your workflows act on",
+        "gives_you": "Platform tokens, ticket text and workflow requests travel only to hosts you chose",
+        "criterion": "C7",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Retained, exported audit records",
+        "how": "Set `AUDIT_LOG_RETENTION_DAYS` to your retention policy and copy audit and tool-call records to storage the platform can't modify",
+        "gives_you": "A record of logins, tool calls and workflow runs that outlives the retention job and the service itself",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "backend/siem_project/settings.py",
+            "lines": "294",
+            "contains": "AUDIT_LOG_RETENTION_DAYS = int(os.getenv('AUDIT_LOG_RETENTION_DAYS', '90'))",
+            "url": "https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/siem_project/settings.py#L294"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each workflow before publishing it; publishing once authorises every later run, including containment, email and HTTP steps.",
+      "Read changes to shared skills the same way, since skill text reaches every user's assistant."
+    ],
+    "handling": [
+      "Tool-call records keep raw arguments and workflow runs keep step inputs and outputs; store database backups like the SOC data they cover."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

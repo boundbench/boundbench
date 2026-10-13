@@ -24,6 +24,31 @@
 
 DeepSeek Harness runs a capable coding agent inside a real but loose OS sandbox: writes are confined to the workspace, while the whole host filesystem stays readable and the network stays open. Its approval prompts are precise and fail closed, but they fire only when a command needs to write outside the workspace, so a hijacked agent can read your credentials and push, upload or delete over the network with no prompt. The sandbox is also not a complete boundary. Run it in a disposable VM or container without real credentials.
 
+## Safest setup
+
+DeepSeek Harness keeps shell writes inside the workspace, asks before any command needs more than that, and logs every tool call before it runs. Its sandbox still leaves the host filesystem readable and the network open, and nothing else gates a networked command, so the safest setup runs it in a disposable VM or container that holds no real credentials.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A disposable VM or container | Run the harness in a VM or container that holds only the workspace and a dedicated DeepSeek key with a spending limit, and none of your SSH keys, agent socket or cloud credential files | Whatever the agent reads or runs, it finds only the one key you chose to give it (C1) |
+| A narrow outbound network | Limit the VM or container's outbound traffic to the DeepSeek API and the hosts the task needs | Data and pushes can only reach destinations you picked, even when no prompt appears (C5) |
+| Per-call approval | Keep the default `workspace-write` mode, which pairs with the `ask` approval policy ([packages/bundle/base/cordis.patch.yml:232](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/bundle/base/cordis.patch.yml#L232); [packages/bundle/base/cordis.patch.yml:248](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/bundle/base/cordis.patch.yml#L248)) | A person decides on each command or edit that needs access beyond the workspace, one call at a time (C2) |
+| Read-only mode for reviews | Start with `DSH_PERMISSION_MODE=read-only` for tasks that only read and explain code ([packages/bundle/base/cordis.patch.yml:232](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/bundle/base/cordis.patch.yml#L232); [packages/bundle/base/cordis.patch.yml:254-256](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/bundle/base/cordis.patch.yml#L254-L256)) | The sandbox keeps every file unchanged, and each write becomes a call you approve (C3) |
+| A clean launch directory | Start from a directory with no .env file you didn't write, and read any AGENTS.md, CLAUDE.md and .agents/skills in a repository before starting | Settings, keys and standing instructions come only from you (C6) |
+| Reviewed plugins only | Keep the plugin tool off as shipped (`disabled: true` under `tool-plugin-manager`) and add only plugins you have read ([packages/bundle/web-app/presets/standard.patch.yml:160-162](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/bundle/web-app/presets/standard.patch.yml#L160-L162)) | Only code you chose runs inside the harness process, which sits outside the sandbox (C7) |
+| Session uploads off | `DSH_TELEMETRY_MODE=DISABLED` ([packages/bundle/base/cordis.patch.yml:207](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/bundle/base/cordis.patch.yml#L207); [packages/session/session-telemetry-otel/src/index.ts:35](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/session/session-telemetry-otel/src/index.ts#L35)) | Session logs stay on your machine, even when you send feedback (C8) |
+| A time limit on the VM | Stop or discard the VM or container when the task ends | Background commands and scheduled reminders end with it, since stopping a turn leaves them running (C10) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; each approval grants only that one call.
+- Networked commands such as a push or an upload run without a prompt, so check the session's tool calls when the task touches remote systems.
+
+### Handling data
+
+- Session logs in the harness home keep tool arguments and output unredacted; store them like the data the agent read.
+- The stored DeepSeek key sits in a plaintext file readable by the agent, so use a dedicated key you can revoke.
+
 ## Critical gaps
 - The agent runs with the user's ambient authority: all credential files and the SSH agent socket are reachable from the default session, with open network egress. (ASI03, T3; C1) — [packages/sandbox/sandbox-local/src/profiles.ts:17](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/sandbox/sandbox-local/src/profiles.ts#L17); [packages/subprocess/subprocess/src/index.ts:47](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/subprocess/subprocess/src/index.ts#L47)
 - The default approval gate only covers sandbox escalation: bash commands that push code or send data over the network run with no human approval. (ASI02, ASI09, T10; C2) — [packages/shell/tool-bash/src/index.ts:527](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/shell/tool-bash/src/index.ts#L527); [packages/sandbox/sandbox/src/escalation.ts:173](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/sandbox/sandbox/src/escalation.ts#L173); searched `rg -n 'unshare-net|--share-net|network'` in `packages/sandbox/sandbox-local/src/profiles.ts` → 0 hits (No network namespace or network rule in any runner profile (bwrap, Landlock, Seatbelt).)

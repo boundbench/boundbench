@@ -24,6 +24,30 @@
 
 An Activepieces agent step runs unattended: every tool the author attaches executes without human approval, using the author's broadly scoped app accounts. If the content it processes (an email, a webhook payload, a web page) carries injected instructions, the agent can leak data through its built-in web fetch and send, post or write on the author's behalf. The tool layer is better than average, with author-pinned fields, credentials kept away from the model and an address-filtered fetch, but there is no way to stop a running step. In the shipped execution mode, pieces and code run in the worker container that holds the key to every stored credential.
 
+## Safest setup
+
+Activepieces gives each agent step only the tools its author attaches, keeps stored credentials away from the model and records every tool call. Agent steps run unattended, and as shipped pieces and code run as root in the worker that holds the key to every stored credential, so the safest setup narrows the connected accounts, turns on the sandbox and strict network modes, and leaves sending to a later step behind a flow approval.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Narrow app connections | Connect each agent tool to a dedicated app account that holds only the mailboxes, channels and records the task needs | A misled agent reaches only that account's data, not your own full mailbox or workspace (C1) |
+| Sending behind an approval | Give the agent read tools only, and send its draft from a later flow step placed after an approval step | A person checks each email, post or record change before it leaves (C2) |
+| Pinned tool fields | Attach only the tools the task needs and pin recipients, channels and targets in each tool's fields ([packages/server/api/src/app/ee/agent/tools/piece-input-filler.ts:32](https://github.com/activepieces/activepieces/blob/33cb8438d94808ab66d0fd391b1d68d7f2b44506/packages/server/api/src/app/ee/agent/tools/piece-input-filler.ts#L32)) | The values you pinned always win over what the model writes (C3) |
+| The full sandbox mode | `AP_EXECUTION_MODE=SANDBOX_CODE_AND_PROCESS` in the environment file ([.env.example:23](https://github.com/activepieces/activepieces/blob/33cb8438d94808ab66d0fd391b1d68d7f2b44506/.env.example#L23); [packages/core/execution/src/lib/engine/index.ts:11](https://github.com/activepieces/activepieces/blob/33cb8438d94808ab66d0fd391b1d68d7f2b44506/packages/core/execution/src/lib/engine/index.ts#L11)) | Pieces and code steps run as an unprivileged user in a minimal read-only filesystem, not as root in the worker (C4) |
+| Strict network mode | `AP_NETWORK_MODE=STRICT` in the environment file ([packages/server/api/src/app/helper/system/system.ts:68](https://github.com/activepieces/activepieces/blob/33cb8438d94808ab66d0fd391b1d68d7f2b44506/packages/server/api/src/app/helper/system/system.ts#L68); [packages/server/engine/src/lib/network/ssrf-guard.ts:47](https://github.com/activepieces/activepieces/blob/33cb8438d94808ab66d0fd391b1d68d7f2b44506/packages/server/engine/src/lib/network/ssrf-guard.ts#L47)) | Requests made by pieces and code can't reach private, loopback or cloud-metadata addresses (C3) |
+| A small step budget | Keep the Run Agent step's `Max Steps` at the default 20, or lower it for short tasks ([packages/pieces/community/ai/src/lib/actions/agents/run-agent.ts:89-94](https://github.com/activepieces/activepieces/blob/33cb8438d94808ab66d0fd391b1d68d7f2b44506/packages/pieces/community/ai/src/lib/actions/agents/run-agent.ts#L89-L94)) | Every agent run ends after a fixed number of model steps (C10) |
+| A fenced-in worker | Run the worker in its own container or VM with outbound access limited to the model provider and the services your flows use | An outer boundary around pieces and code, and a narrow path for data to leave (C5) |
+
+### Approving with confidence
+
+- Read each draft in the approval step and approve them one at a time; the agent's own tool calls run without a prompt.
+- A running agent step can't be stopped before its two-hour limit, so try new flows with a low `Max Steps` first.
+
+### Handling data
+
+- Each agent step's transcript keeps every tool call's inputs and outputs in the database; store database backups like the connected accounts' data.
+- Product telemetry is on by default and drops names and emails on self-hosted installs; `AP_TELEMETRY_ENABLED=false` turns it off.
+
 ## Critical gaps
 - Agent tools act with long-lived, broadly scoped OAuth grants (for example Gmail send/modify), so a hijacked agent controls the connected accounts. (ASI03, T3; C1). Evidence: [packages/pieces/community/gmail/src/lib/auth.ts:10-17](https://github.com/activepieces/activepieces/blob/33cb8438d94808ab66d0fd391b1d68d7f2b44506/packages/pieces/community/gmail/src/lib/auth.ts#L10-L17); [packages/pieces/community/slack/src/lib/auth.ts:15](https://github.com/activepieces/activepieces/blob/33cb8438d94808ab66d0fd391b1d68d7f2b44506/packages/pieces/community/slack/src/lib/auth.ts#L15)
 - In the shipped unsandboxed mode, pieces and code steps run as root in the worker container whose environment holds the credential encryption key and database password. (ASI05, T11; C4). Evidence: [.env.example:23](https://github.com/activepieces/activepieces/blob/33cb8438d94808ab66d0fd391b1d68d7f2b44506/.env.example#L23); [docker-compose.yml:21-25](https://github.com/activepieces/activepieces/blob/33cb8438d94808ab66d0fd391b1d68d7f2b44506/docker-compose.yml#L21-L25); [.env.example:9-12](https://github.com/activepieces/activepieces/blob/33cb8438d94808ab66d0fd391b1d68d7f2b44506/.env.example#L9-L12)

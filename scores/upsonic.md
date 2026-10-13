@@ -24,6 +24,30 @@
 
 Upsonic's headline AutonomousAgent runs whatever shell commands the model writes directly on your machine, with your full environment (API keys, cloud credentials) and no approval step; the 'dangerous commands are blocked' claim is a five-entry substring denylist. The framework has a real per-call approval primitive and an E2B remote sandbox, but both are opt-in. It also auto-loads a .env and AGENTS.md from the working directory, so a cloned repo can steer endpoints and instructions. Treat the default as unsandboxed host execution and add confirmation flags, E2B, and a scrubbed environment before pointing it at anything untrusted.
 
+## Safest setup
+
+Upsonic ships a tool-call cap and an in-memory record of each run, and its file tools stay inside the workspace. As shipped, the AutonomousAgent runs model-written shell commands on your machine with your full environment and no approval step, so the safest setup turns off the host tools, moves code into the E2B sandbox, turns on per-call approval and builds containment around the process.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, low-limit environment | Run the agent in an environment that holds only the model key and tool credentials this agent needs, each scoped with a spending limit at the provider | Whatever the agent runs, it reaches only the systems and spend you gave it, not every key in your shell (C1) |
+| Host tools off | `enable_shell=False` on `AutonomousAgent`, and `enable_filesystem=False` unless the task edits workspace files ([src/upsonic/agent/autonomous_agent/autonomous_agent.py:106-107](https://github.com/upsonic/upsonic/blob/101f0313b0ddb96cd4078354879b2ff57005db29/src/upsonic/agent/autonomous_agent/autonomous_agent.py#L106-L107)) | The model has no general command line on your machine, only the tools you chose (C3) |
+| A remote code sandbox | Add `E2BTools` to `tools` for any code the task needs to run ([src/upsonic/tools/custom_tools/e2b.py:45](https://github.com/upsonic/upsonic/blob/101f0313b0ddb96cd4078354879b2ff57005db29/src/upsonic/tools/custom_tools/e2b.py#L45)) | Model-written code and commands run in a remote E2B sandbox, away from your keys and files (C4) |
+| Per-call approval | Pass `requires_confirmation=True` to each toolkit you add, such as `E2BTools`, and mark your own consequential tools with `@tool(requires_confirmation=True)` ([src/upsonic/tools/base.py:231](https://github.com/upsonic/upsonic/blob/101f0313b0ddb96cd4078354879b2ff57005db29/src/upsonic/tools/base.py#L231); [src/upsonic/tools/base.py:205](https://github.com/upsonic/upsonic/blob/101f0313b0ddb96cd4078354879b2ff57005db29/src/upsonic/tools/base.py#L205)) | The run pauses before each call and hands your code the exact tool and arguments to approve (C2) |
+| A clean workspace | Launch from, and set `workspace=<dir>` to, a directory holding only the task's files, with no .env or AGENTS.md you didn't write ([src/upsonic/agent/autonomous_agent/autonomous_agent.py:85](https://github.com/upsonic/upsonic/blob/101f0313b0ddb96cd4078354879b2ff57005db29/src/upsonic/agent/autonomous_agent/autonomous_agent.py#L85)) | Instructions, endpoints and keys come only from you, not from a repository you happen to run in (C6) |
+| Reviewed, pinned extensions | Add only MCP servers and skills you have read, pinned to a fixed version or commit | Only code you have checked runs alongside the agent, and it can't change after you checked it (C7) |
+| A tool-call budget | Keep the default `tool_call_limit=100`, or lower it for short tasks ([src/upsonic/agent/autonomous_agent/autonomous_agent.py:135](https://github.com/upsonic/upsonic/blob/101f0313b0ddb96cd4078354879b2ff57005db29/src/upsonic/agent/autonomous_agent/autonomous_agent.py#L135)) | Every run stops calling tools after a fixed number of calls (C10) |
+| Its own container or VM | Run the agent in a container or VM whose network reaches only the hosts the task needs, with `instrument=True` sending traces to a collector outside it ([src/upsonic/agent/autonomous_agent/autonomous_agent.py:161](https://github.com/upsonic/upsonic/blob/101f0313b0ddb96cd4078354879b2ff57005db29/src/upsonic/agent/autonomous_agent/autonomous_agent.py#L161)) | An outer boundary around everything the agent runs, a narrow path for data to leave, and a record that outlives the process (C5) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; the pause shows the exact tool name and arguments.
+- E2B file uploads and downloads name a path on your machine, so check that path before approving.
+
+### Handling data
+
+- Tool calls and results print to the console by default; treat console output like the data the agent read.
+
 ## Critical gaps
 - Default AutonomousAgent runs model-chosen shell commands on the host with the full environment and no approval. (ASI05, T11; C4) — [src/upsonic/agent/autonomous_agent/shell_toolkit.py:140-153](https://github.com/upsonic/upsonic/blob/101f0313b0ddb96cd4078354879b2ff57005db29/src/upsonic/agent/autonomous_agent/shell_toolkit.py#L140-L153)
 - Every tool and subprocess inherits the user's full ambient credentials. (ASI03, T3; C1) — [src/upsonic/agent/autonomous_agent/shell_toolkit.py:140](https://github.com/upsonic/upsonic/blob/101f0313b0ddb96cd4078354879b2ff57005db29/src/upsonic/agent/autonomous_agent/shell_toolkit.py#L140)

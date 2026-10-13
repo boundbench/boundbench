@@ -24,6 +24,30 @@
 
 PostHog MCP gives an AI client the user's full PostHog authority across every organization and project: around 1,060 tools, about half of them writes, all behind one 'exec' tool that tells the host it is not destructive. Per-tool scopes, typed schemas and an opt-in read-only mode are real controls, but by default a session that reads visitor-supplied event data can also delete persons, change production feature flags and send data out through Hog functions or alerts, with no server-side human step. Model-written skills and scout notes also persist and steer other members' agents. Connect with readonly=true or a narrow features list unless writes are needed.
 
+## Safest setup
+
+PostHog MCP checks every call against a typed schema, hides tools your key's scopes don't cover and rate-limits each token. As shipped, a session holds your full PostHog access with write tools on and no server-side human step, so the safest setup narrows the key and turns on the read-only, pinning and filtering options the server already includes.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A narrowly scoped key | Create a personal API key limited to one project and to read scopes, adding write scopes only where the task needs them | PostHog itself refuses anything outside that grant, whatever the model asks for (C1) |
+| Read-only mode | `readonly=true` on the server URL, or the `x-posthog-read-only: true` header ([services/mcp/src/index.ts:246-247](https://github.com/PostHog/posthog/blob/282f536aa98f6de6f03d92ec719ba2e25cab0239/services/mcp/src/index.ts#L246-L247)) | Write tools leave the session, so it reads and analyses without changing or deleting anything in your projects (C5) |
+| A pinned organization and project | `organization_id` and `project_id` on the URL, or the `x-posthog-organization-id` and `x-posthog-project-id` headers ([services/mcp/src/index.ts:173-174](https://github.com/PostHog/posthog/blob/282f536aa98f6de6f03d92ec719ba2e25cab0239/services/mcp/src/index.ts#L173-L174)) | The session starts in the project you chose and cannot switch to another organization (C1) |
+| Only the tool groups needed | `features=<list>` naming just the groups the task uses, with `tools=<names>` for single extra tools ([services/mcp/src/index.ts:234-237](https://github.com/PostHog/posthog/blob/282f536aa98f6de6f03d92ec719ba2e25cab0239/services/mcp/src/index.ts#L234-L237)) | The model sees fewer PostHog tools, with write groups only where you chose them (C3) |
+| Per-tool risk labels | `mode=tools` on the URL, or the `x-posthog-mcp-mode: tools` header ([services/mcp/src/index.ts:251](https://github.com/PostHog/posthog/blob/282f536aa98f6de6f03d92ec719ba2e25cab0239/services/mcp/src/index.ts#L251)) | Your host sees each tool's own read-only and destructive flags and can ask before writes (C2) |
+| A check of background work | After a session, review the Hog functions, alerts and scheduled jobs it created and turn off any you didn't intend | Nothing the session started keeps running or sending data after you disconnect (C10) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; in the default mode every call goes through one general tool, so read the command it carries.
+- The model fills in the confirmation for two-step actions itself, so your host's prompt is the human step.
+- Skills and scout notes the agent writes are read by other members' agents, so read their content before approving.
+
+### Handling data
+
+- Tool arguments and results go to PostHog's own analytics with credential-like values redacted; keep secrets out of prompts and queries.
+- A personal API key lasts until you revoke it; sign in with OAuth where your client supports it, and revoke keys when the work ends.
+
 ## Critical gaps
 - The server forwards the client's PostHog bearer token unchanged to the PostHog API, so a session acts with the user's whole PostHog authority. (ASI03, T3, T9; C1) — [services/mcp/src/api/client.ts:253-256](https://github.com/PostHog/posthog/blob/282f536aa98f6de6f03d92ec719ba2e25cab0239/services/mcp/src/api/client.ts#L253-L256); [services/mcp/src/index.ts:162](https://github.com/PostHog/posthog/blob/282f536aa98f6de6f03d92ec719ba2e25cab0239/services/mcp/src/index.ts#L162)
 - The two-step confirmation for sensitive actions is satisfied by a model-supplied 'confirm' argument, so it is not a human approval. (ASI09, ASI02, T10; C2) — [services/mcp/src/tools/confirmed-action-runtime.ts:17-20](https://github.com/PostHog/posthog/blob/282f536aa98f6de6f03d92ec719ba2e25cab0239/services/mcp/src/tools/confirmed-action-runtime.ts#L17-L20); [services/mcp/src/tools/confirmed-action-runtime.ts:259-261](https://github.com/PostHog/posthog/blob/282f536aa98f6de6f03d92ec719ba2e25cab0239/services/mcp/src/tools/confirmed-action-runtime.ts#L259-L261)

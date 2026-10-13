@@ -25,6 +25,30 @@ Controls where a risk surface exists: 2.70 / 9.0 (30%); 1 criterion scored SA (s
 
 In its default configuration this server lets the model start any Actor from Apify Store, including third-party code, on the user's account and bill, using one account-wide API token, and read the web through Actor tools in the same session. Argument checking, URL and origin gates and tool annotations are careful, and nothing runs on the local machine, but there is no allowlist of Actors, no spend ceiling the operator sets, and no local record of tool calls. Deploy it with an explicit --tools list and a scoped Apify token.
 
+## Safest setup
+
+Apify MCP Server runs nothing on your machine, validates every tool call against its schema, and leaves account-changing tools out of the default set. As shipped, though, the model can start any Actor in Apify Store on your account with one account-wide token, so the safest setup narrows the token and the Actor list and puts approval and records around the server.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A scoped Apify token | Create a scoped token in Apify Console with only the access the task needs, and pass it as `APIFY_TOKEN` ([src/stdio.ts:151](https://github.com/apify/apify-mcp-server/blob/47a6c9fe4f9e96445316285fb4dfcfaee4cb28c6/src/stdio.ts#L151)) | Apify itself refuses anything outside that token's scope, whatever the model asks for (C1) |
+| Only the Actors you name | `--tools docs,<owner>/<actor>` listing just the Actors the task uses, leaving out the `actors` category ([src/stdio.ts:93-98](https://github.com/apify/apify-mcp-server/blob/47a6c9fe4f9e96445316285fb4dfcfaee4cb28c6/src/stdio.ts#L93-L98); [src/tools/registry.ts:61-62](https://github.com/apify/apify-mcp-server/blob/47a6c9fe4f9e96445316285fb4dfcfaee4cb28c6/src/tools/registry.ts#L61-L62)) | The model can run only the Actors you chose, since the open-ended call-actor tool is not served (C7) |
+| Account tools left off | Keep `tasks`, `schedules`, `builds` and `delete-actor` out of the list unless the task needs them ([src/tools/registry.ts:74-76](https://github.com/apify/apify-mcp-server/blob/47a6c9fe4f9e96445316285fb4dfcfaee4cb28c6/src/tools/registry.ts#L74-L76); [src/tools/registry.ts:110-112](https://github.com/apify/apify-mcp-server/blob/47a6c9fe4f9e96445316285fb4dfcfaee4cb28c6/src/tools/registry.ts#L110-L112)) | Tasks, schedules, builds and your own Actors stay out of the model's reach (C2) |
+| Per-call approval in the host | Use an MCP host that asks before each tool call and honours the server's destructive and read-only hints | A person sees each paid Actor run and its input before it starts (C2) |
+| A spend limit on the account | Set a usage limit on the Apify account the token belongs to, at a level you are comfortable with | A ceiling on what runs can spend, which the server itself does not set (C10) |
+| Telemetry off | `--telemetry-enabled=false` or `TELEMETRY_ENABLED=false` ([src/stdio.ts:100-105](https://github.com/apify/apify-mcp-server/blob/47a6c9fe4f9e96445316285fb4dfcfaee4cb28c6/src/stdio.ts#L100-L105); [src/instrument.ts:16-19](https://github.com/apify/apify-mcp-server/blob/47a6c9fe4f9e96445316285fb4dfcfaee4cb28c6/src/instrument.ts#L16-L19)) | Tool names, run IDs and error details stay with you, not with usage and crash reporting services (C8) |
+| A record you keep | Keep the MCP host's tool-call log and the server's stderr, and check runs in Apify Console's run history | A record of every call and run, since the server logs only errors locally (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve Actor runs one at a time, checking the Actor name and the URLs in its input.
+- Before approving a run, check its `memory` and `timeout` and that `maxTotalChargeUsd` is set where the Actor supports it; a `timeout` of 0 means no limit.
+
+### Handling data
+
+- Stopping the client leaves started runs going in Apify's cloud; abort any you no longer need from Apify Console.
+- Web pages and Actor output reach the model unmarked; treat any session that reads the web as handling untrusted input.
+
 ## Critical gaps
 - A default session can read untrusted web content, read the account's data, send it to any URL through a fetch Actor and start irreversible paid runs, with nothing in the server requiring a human. (ASI01, T6, LLM01; C5). Evidence: [src/const.ts:162-164](https://github.com/apify/apify-mcp-server/blob/47a6c9fe4f9e96445316285fb4dfcfaee4cb28c6/src/const.ts#L162-L164); [src/tools/actors/call_actor.ts:670](https://github.com/apify/apify-mcp-server/blob/47a6c9fe4f9e96445316285fb4dfcfaee4cb28c6/src/tools/actors/call_actor.ts#L670)
 - By default the model can run any third-party Actor from Apify Store on the user's account, unpinned and without consent. (ASI04, T17, LLM03; C7). Evidence: [src/tools/actors/call_actor.ts:145](https://github.com/apify/apify-mcp-server/blob/47a6c9fe4f9e96445316285fb4dfcfaee4cb28c6/src/tools/actors/call_actor.ts#L145); [src/tools/registry.ts:97](https://github.com/apify/apify-mcp-server/blob/47a6c9fe4f9e96445316285fb4dfcfaee4cb28c6/src/tools/registry.ts#L97)

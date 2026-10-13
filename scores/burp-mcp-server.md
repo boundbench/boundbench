@@ -25,6 +25,31 @@ Controls where a risk surface exists: 2.75 / 9.0 (31%); 1 criterion scored SA (s
 
 The server has no client authentication of its own and relies on loopback binding, Host/Origin checks and two Swing approval dialogs. Sending HTTP requests and reading proxy history, WebSocket history and Organizer items require a per-call human decision by default, and the dialog shows the exact request. Several other state-changing tools (intercept toggle, task engine state, editor contents, Repeater and Intruder tabs) are ungated, outputs carry no provenance, and there are no timeouts or rate limits. Controls are meaningful for a local single-user tool but thin on validation, logging and limits.
 
+## Safest setup
+
+Burp MCP Server listens only on this machine by default, asks before it sends an HTTP request or reads project history, keeps its code-capable config tools off and filters credentials from config exports. It has no client authentication, several tools that change Burp's state run without a prompt, and nothing limits request volume, so the safest setup keeps those defaults on and adds containment around Burp yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A single-user machine or VM | Run the MCP-connected Burp on a machine or VM where you are the only user and no untrusted local software runs | The endpoint, which has no client authentication of its own, is reachable only by software you chose to run (C1) |
+| A dedicated Burp project | Use a Burp project that holds only the current engagement's traffic | History the model can read carries only that engagement's data and session material (C8) |
+| Loopback binding | Keep the default host `127.0.0.1` ([src/main/kotlin/net/portswigger/mcp/config/McpConfig.kt:16](https://github.com/PortSwigger/mcp-server/blob/642e6fa31c63db3886a353fcd7ed62037e0ceed5/src/main/kotlin/net/portswigger/mcp/config/McpConfig.kt#L16)) | The MCP endpoint is reachable only from this machine (C1) |
+| HTTP request approval | Keep `Require approval for HTTP requests` ticked ([src/main/kotlin/net/portswigger/mcp/config/components/ServerConfigurationPanel.kt:60](https://github.com/PortSwigger/mcp-server/blob/642e6fa31c63db3886a353fcd7ed62037e0ceed5/src/main/kotlin/net/portswigger/mcp/config/components/ServerConfigurationPanel.kt#L60); [src/main/kotlin/net/portswigger/mcp/config/McpConfig.kt:18](https://github.com/PortSwigger/mcp-server/blob/642e6fa31c63db3886a353fcd7ed62037e0ceed5/src/main/kotlin/net/portswigger/mcp/config/McpConfig.kt#L18)) | A person sees the target and the exact request before anything is sent (C2) |
+| Project data approval | Keep `Require approval for project data access` ticked, with the `Always allow` boxes under it clear ([src/main/kotlin/net/portswigger/mcp/config/components/ServerConfigurationPanel.kt:117](https://github.com/PortSwigger/mcp-server/blob/642e6fa31c63db3886a353fcd7ed62037e0ceed5/src/main/kotlin/net/portswigger/mcp/config/components/ServerConfigurationPanel.kt#L117); [src/main/kotlin/net/portswigger/mcp/config/components/ServerConfigurationPanel.kt:70](https://github.com/PortSwigger/mcp-server/blob/642e6fa31c63db3886a353fcd7ed62037e0ceed5/src/main/kotlin/net/portswigger/mcp/config/components/ServerConfigurationPanel.kt#L70); [src/main/kotlin/net/portswigger/mcp/config/McpConfig.kt:19](https://github.com/PortSwigger/mcp-server/blob/642e6fa31c63db3886a353fcd7ed62037e0ceed5/src/main/kotlin/net/portswigger/mcp/config/McpConfig.kt#L19)) | Each read of proxy, WebSocket or Organizer history waits for your decision (C2) |
+| Config-editing tools off | Keep `Enable tools that can edit your config` unticked ([src/main/kotlin/net/portswigger/mcp/config/components/ServerConfigurationPanel.kt:52](https://github.com/PortSwigger/mcp-server/blob/642e6fa31c63db3886a353fcd7ed62037e0ceed5/src/main/kotlin/net/portswigger/mcp/config/components/ServerConfigurationPanel.kt#L52); [src/main/kotlin/net/portswigger/mcp/config/McpConfig.kt:15](https://github.com/PortSwigger/mcp-server/blob/642e6fa31c63db3886a353fcd7ed62037e0ceed5/src/main/kotlin/net/portswigger/mcp/config/McpConfig.kt#L15)) | The one tool path that can execute code or change Burp settings stays unavailable (C4) |
+| Credential filtering | Keep `Filter config credentials` ticked ([src/main/kotlin/net/portswigger/mcp/config/components/ServerConfigurationPanel.kt:92](https://github.com/PortSwigger/mcp-server/blob/642e6fa31c63db3886a353fcd7ed62037e0ceed5/src/main/kotlin/net/portswigger/mcp/config/components/ServerConfigurationPanel.kt#L92); [src/main/kotlin/net/portswigger/mcp/config/McpConfig.kt:51](https://github.com/PortSwigger/mcp-server/blob/642e6fa31c63db3886a353fcd7ed62037e0ceed5/src/main/kotlin/net/portswigger/mcp/config/McpConfig.kt#L51)) | Passwords and keys stay masked in config exports (C8) |
+| Egress to in-scope hosts | Limit the outbound network of Burp's machine or VM to the hosts in scope for the engagement | Requests the model sends land only on systems you are testing (C3) |
+
+### Approving with confidence
+
+- Read each prompt and approve requests one at a time; an Always Allow choice persists for that target with no expiry.
+- Intercept, task-engine, editor and Repeater or Intruder tools run without a prompt, so check Burp's state after a session.
+
+### Handling data
+
+- History the model reads is returned unredacted, session tokens included; treat the model client's transcripts like the proxy history.
+- Burp's extension output records HTTP sends, approval decisions and history access as free text; intercept, task-engine, editor and tab tools leave no record.
+
 ## Critical gaps
 - The MCP HTTP endpoint has no authentication or per-client identity; any local process that passes the Host/Origin/User-Agent checks can invoke every tool. (ASI03, T9, LLM06; C1) — [src/main/kotlin/net/portswigger/mcp/KtorServerManager.kt:44](https://github.com/PortSwigger/mcp-server/blob/642e6fa31c63db3886a353fcd7ed62037e0ceed5/src/main/kotlin/net/portswigger/mcp/KtorServerManager.kt#L44); [src/main/kotlin/net/portswigger/mcp/KtorServerManager.kt:61-67](https://github.com/PortSwigger/mcp-server/blob/642e6fa31c63db3886a353fcd7ed62037e0ceed5/src/main/kotlin/net/portswigger/mcp/KtorServerManager.kt#L61-L67)
 

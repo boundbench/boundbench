@@ -24,6 +24,30 @@
 
 Buttercup is a fully autonomous pipeline with no human approval step: LLM agents explore target code, write test scripts and patches, and the results are submitted to the competition API on their own. The dominant risk is execution of model-written shell commands and test scripts in --privileged containers on a Docker-in-Docker daemon that is itself a privileged pod, with unrestricted network and no per-command timeout. There are real controls elsewhere: a WASI sandbox for model-written seed generators, an Argon2-authenticated task API, a per-key LLM budget, and bounded patch-retry and recursion limits. Defaults still ship unauthenticated Redis, DEBUG logging, and a UI without authentication.
 
+## Safest setup
+
+Buttercup gives its agents a budget-capped LLM key, sandboxes model-written seed generators in WASI, and bounds patch retries and recursion. It runs fully unattended, and its shell tool and test scripts run in privileged containers with open network and no switch to turn them off, so the safest setup keeps the budget and loop limits tight and builds the containment around the whole deployment yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Narrowly scoped credentials | Give each GitHub token and service credential the deployment uses only the permissions and lifetime its job needs | Whatever a hijacked agent reaches, the provider limits what those credentials can do (C1) |
+| A small LLM budget | Keep the budgeted virtual key and set `LITELLM_MAX_BUDGET` to the smallest amount the run needs ([deployment/env.template:67](https://github.com/trailofbits/buttercup/blob/298c01fbff3bf0bf166c87856acd7e42f94f7157/deployment/env.template#L67); [deployment/k8s/templates/litellm-user-keys-setup-script.yaml:39](https://github.com/trailofbits/buttercup/blob/298c01fbff3bf0bf166c87856acd7e42f94f7157/deployment/k8s/templates/litellm-user-keys-setup-script.yaml#L39)) | LiteLLM itself stops model spend at that amount, for every service sharing the key (C10) |
+| Tight patch-loop limits | Keep `maxPatchRetries`, `maxContextRetrieverRecursionLimit` and `maxMinutesRunPOVs` at their defaults or lower ([deployment/k8s/templates/common-env.yaml:305-310](https://github.com/trailofbits/buttercup/blob/298c01fbff3bf0bf166c87856acd7e42f94f7157/deployment/k8s/templates/common-env.yaml#L305-L310)) | Each patch attempt ends after a fixed number of retries, steps and minutes (C10) |
+| A dedicated, disposable VM | Run the cluster on its own VM that holds no other data or credentials, and rebuild it between campaigns | An escape from the privileged exec containers lands on a machine with nothing else to reach (C4) |
+| Limited outbound network | Allow the VM outbound access only to the model providers, image registries and competition API the run uses | Commands the agents run have a narrow path for task data to leave (C5) |
+| Cluster-internal services | Keep Redis and the UI on cluster-internal addresses and reach the UI only through a local port-forward | Only the Buttercup pods and you can reach the shared queue and the dashboard (C1) |
+| INFO-level logging | Set `logLevel: "INFO"` for the patcher and build-bot charts ([deployment/k8s/charts/patcher/values.yaml:3](https://github.com/trailofbits/buttercup/blob/298c01fbff3bf0bf166c87856acd7e42f94f7157/deployment/k8s/charts/patcher/values.yaml#L3); [deployment/k8s/values.yaml:181](https://github.com/trailofbits/buttercup/blob/298c01fbff3bf0bf166c87856acd7e42f94f7157/deployment/k8s/values.yaml#L181)) | Fewer command details and settings land in the logs on the shared scratch volume (C8) |
+| Telemetry off the cluster | Set `OTEL_ENDPOINT` to a collector outside the cluster ([deployment/env.template:83](https://github.com/trailofbits/buttercup/blob/298c01fbff3bf0bf166c87856acd7e42f94f7157/deployment/env.template#L83)) | Submission spans are kept where the agent pods can't alter them (C9) |
+
+### Approving with confidence
+
+- Nothing pauses for approval and patches go out automatically, so the budget, limits and containment above are what bound an unattended run.
+
+### Handling data
+
+- Logs on the shared scratch volume and in /tmp carry command text without redaction; store them like the task sources they cover.
+- The telemetry library may capture prompt content once an endpoint is set; treat the collector like the task data.
+
 ## Critical gaps
 - Patcher shell commands and LLM-written test scripts run in docker containers started with --privileged on a Docker-in-Docker daemon in a privileged pod, with no network or resource restrictions (C4-HOSTROOT, C4 B at L0). (ASI05, T11, LLM05; C4) — [common/src/buttercup/common/challenge_task.py:538](https://github.com/trailofbits/buttercup/blob/298c01fbff3bf0bf166c87856acd7e42f94f7157/common/src/buttercup/common/challenge_task.py#L538); [deployment/k8s/charts/dind-daemon/templates/daemonset.yaml:27](https://github.com/trailofbits/buttercup/blob/298c01fbff3bf0bf166c87856acd7e42f94f7157/deployment/k8s/charts/dind-daemon/templates/daemonset.yaml#L27)
 - The most powerful action path (arbitrary shell via the sh tool and automatic test-script runs) has no approval gate, and generated patches are submitted without review (C2-POWERBYPASS). (ASI09, ASI02, T10; C2) — [patcher/src/buttercup/patcher/agents/context_retriever.py:528](https://github.com/trailofbits/buttercup/blob/298c01fbff3bf0bf166c87856acd7e42f94f7157/patcher/src/buttercup/patcher/agents/context_retriever.py#L528); [patcher/src/buttercup/patcher/patcher.py:161](https://github.com/trailofbits/buttercup/blob/298c01fbff3bf0bf166c87856acd7e42f94f7157/patcher/src/buttercup/patcher/patcher.py#L161)

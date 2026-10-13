@@ -24,6 +24,30 @@
 
 Prime Agent runs model-written Python and shell commands directly on your machine with your full user permissions and environment, with no approval step and no sandbox; its README says as much. Anything it reads, including files in the repository it is pointed at, can steer it into leaking credentials or making irreversible changes. A repository can also add MCP servers, packages and executable skills through its project settings file without any trust prompt. Use it only on trusted repositories, ideally inside an external sandbox.
 
+## Safest setup
+
+Prime Agent has no approval step and no sandbox: model-written Python and shell commands run on your machine with your full permissions and environment, as its README says. It does keep a durable transcript of every session and offers turn, token and time budgets in autonomous mode, so the safest setup is mostly containment you build around it.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Run it in an environment holding only the model key and credentials this task needs, each scoped or read-only with a spending limit set at the provider | Whatever model-written code does, it reaches only the accounts and spend you chose (C1) |
+| A trusted working directory | Start it only in repositories you trust, whose project settings, packages and skills you have read | MCP servers, packages and skills come only from sources you chose (C6) |
+| No auto-loaded instruction files | `--no-context-files` when the repository's instruction files are not your own ([crates/pa-cli/src/command_registry.rs:395-396](https://github.com/PrimeIntellect-ai/prime-agent/blob/41e1f41c072e8f31ac6a79ad1b7fe19920c6d61f/crates/pa-cli/src/command_registry.rs#L395-L396); [crates/pa-cli/src/args.rs:371](https://github.com/PrimeIntellect-ai/prime-agent/blob/41e1f41c072e8f31ac6a79ad1b7fe19920c6d61f/crates/pa-cli/src/args.rs#L371)) | AGENTS.md and CLAUDE.md files from the repository stay out of the model's context (C6) |
+| Pinned packages | Add packages pinned to an exact version, such as `npm:<package>@<version>`, or a git source at a fixed ref ([crates/pa-core/src/packages/source.rs:6-7](https://github.com/PrimeIntellect-ai/prime-agent/blob/41e1f41c072e8f31ac6a79ad1b7fe19920c6d61f/crates/pa-core/src/packages/source.rs#L6-L7); [crates/pa-core/src/packages/source.rs:75-76](https://github.com/PrimeIntellect-ai/prime-agent/blob/41e1f41c072e8f31ac6a79ad1b7fe19920c6d61f/crates/pa-core/src/packages/source.rs#L75-L76)) | Extension code stays the version you reviewed and never auto-updates (C7) |
+| Budgets for long runs | Start unattended runs with `--autonomous`, keeping or lowering `--autonomous-max-turns`, `--autonomous-max-tokens` and `--autonomous-timeout-ms` ([crates/pa-cli/src/command_registry.rs:418-446](https://github.com/PrimeIntellect-ai/prime-agent/blob/41e1f41c072e8f31ac6a79ad1b7fe19920c6d61f/crates/pa-cli/src/command_registry.rs#L418-L446); [crates/pa-core/src/autonomous/mod.rs:27-29](https://github.com/PrimeIntellect-ai/prime-agent/blob/41e1f41c072e8f31ac6a79ad1b7fe19920c6d61f/crates/pa-core/src/autonomous/mod.rs#L27-L29)) | The run stops at a turn, token and wall-clock ceiling (C10) |
+| Its own container or VM | Run it in a container or VM with network access limited to the model provider and the hosts the task needs | An outer boundary around model-written code, and stopping the container ends any background work (C4) |
+| A disposable clone | Point it at a disposable clone or clean worktree you can inspect and restore ([README.md:76](https://github.com/PrimeIntellect-ai/prime-agent/blob/41e1f41c072e8f31ac6a79ad1b7fe19920c6d61f/README.md#L76)) | Changes to the project can be reviewed and rolled back (C2) |
+| Transcripts kept elsewhere | Copy session transcripts to storage the agent cannot modify | A copy of each session's record outside the agent's reach (C9) |
+
+### Approving with confidence
+
+- Nothing asks before a call runs, so review the diff in the clone before you keep any change.
+
+### Handling data
+
+- Session transcripts hold the code and output of every cell unredacted; store them like the data the agent read.
+- Telemetry is on by default and carries no prompt or tool content; setting `PRIME_AGENT_TELEMETRY=0` or `DO_NOT_TRACK` turns it off.
+
 ## Critical gaps
 - Model-written code runs with the user's full authority and every credential in the environment. (ASI03, T3, LLM06; C1). Evidence: [crates/pa-core/src/kernel/manager/startup.rs:173](https://github.com/PrimeIntellect-ai/prime-agent/blob/41e1f41c072e8f31ac6a79ad1b7fe19920c6d61f/crates/pa-core/src/kernel/manager/startup.rs#L173); [crates/pa-core/src/kernel/manager/startup.rs:194](https://github.com/PrimeIntellect-ai/prime-agent/blob/41e1f41c072e8f31ac6a79ad1b7fe19920c6d61f/crates/pa-core/src/kernel/manager/startup.rs#L194)
 - Every tool call, including arbitrary shell commands through the Python REPL, runs without human approval. (ASI09, ASI02, T10, LLM06; C2). Evidence: [crates/pa-core/src/tools/ipython.rs:365](https://github.com/PrimeIntellect-ai/prime-agent/blob/41e1f41c072e8f31ac6a79ad1b7fe19920c6d61f/crates/pa-core/src/tools/ipython.rs#L365); [crates/pa-daemon/src/agent_engine/lifecycle.rs:1160-1162](https://github.com/PrimeIntellect-ai/prime-agent/blob/41e1f41c072e8f31ac6a79ad1b7fe19920c6d61f/crates/pa-daemon/src/agent_engine/lifecycle.rs#L1160-L1162)

@@ -25,6 +25,29 @@ Controls where a risk surface exists: 3.17 / 8.0 (40%); 2 criteria scored SA (su
 
 InkOS has no shell or code execution and routes every tool through one harness that logs each call before it runs and hides destructive deletion from the model. The main risk: a prompt-injected session can read the project's plaintext API-key file and send it to any URL through the material-ingestion tool, with no approval, because outbound fetches and all non-destructive writes run unattended. There are also no turn or spend limits.
 
+## Safest setup
+
+InkOS gives the model no shell, logs every tool call before it runs and keeps deletion out of the model's reach. As shipped, writes and URL fetches run without asking, provider keys sit in plaintext inside the project, and nothing caps turns or spend, so the safest setup turns on confirmation for the model's own writes and builds limits around the process.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Dedicated, low-limit keys | Give InkOS its own provider keys, each with a spending limit set at the provider | A key that leaves the project, or a session that loops, costs only what you allowed (C8) |
+| Confirmation for model writes | Copy the Profile you use into `.inkos/profiles` with `inferredMutation` set to `confirm` ([packages/core/src/harness/builtin-profiles.ts:97](https://github.com/narcooo/inkos/blob/8fc2ae57080b9821257dee3e37cc677e2b6f389a/packages/core/src/harness/builtin-profiles.ts#L97); [packages/core/src/harness/contracts.ts:111](https://github.com/narcooo/inkos/blob/8fc2ae57080b9821257dee3e37cc677e2b6f389a/packages/core/src/harness/contracts.ts#L111)) | Writes and URL ingestion the model starts from chat wait for you to request them (C2) |
+| Project-scoped reads | Keep `INKOS_AGENT_ALLOW_SYSTEM_READ` unset ([packages/core/src/agent/agent-session.ts:842](https://github.com/narcooo/inkos/blob/8fc2ae57080b9821257dee3e37cc677e2b6f389a/packages/core/src/agent/agent-session.ts#L842)) | The read tool's scope stays the project rather than your whole filesystem (C1) |
+| Reviewed project skills | Open projects whose skills and .agents/skills folders hold only SKILL.md files you have read | Profiles activate the skills InkOS ships, not ones a project replaced (C6) |
+| Its own container or VM | Run InkOS in a container or VM whose network reaches only your model provider and the sources you research | An outer boundary that narrows where fetched pages and data can go (C3) |
+| A copy of the ledger | Copy .inkos/harness.sqlite and .inkos/sessions regularly to storage the InkOS process can't write | A record of every tool call that outlives the project folder (C9) |
+
+### Approving with confidence
+
+- A new-work card shows a model-written title and summary; read its structured details before clicking.
+- Nothing ends a session on its own, so stop it from Studio once it runs past what the task needs.
+
+### Handling data
+
+- Studio saves provider keys in plaintext in .inkos/secrets.json with default file permissions; keep the project folder readable only by you and out of shared sync.
+- Session transcripts and the ledger keep tool parameters unredacted; store them like the manuscripts they cover.
+
 ## Critical gaps
 - Unattended exfiltration chain: the read tool can open .inkos/secrets.json and ingest_material will GET any attacker URL without confirmation. (ASI01, LLM01, LLM02; C5) — [packages/core/src/harness/production-capabilities.ts:212](https://github.com/narcooo/inkos/blob/8fc2ae57080b9821257dee3e37cc677e2b6f389a/packages/core/src/harness/production-capabilities.ts#L212); [packages/core/src/llm/secrets.ts:17-22](https://github.com/narcooo/inkos/blob/8fc2ae57080b9821257dee3e37cc677e2b6f389a/packages/core/src/llm/secrets.ts#L17-L22); [packages/core/src/harness/production-capabilities.ts:220](https://github.com/narcooo/inkos/blob/8fc2ae57080b9821257dee3e37cc677e2b6f389a/packages/core/src/harness/production-capabilities.ts#L220); [packages/core/src/materials/ingest.ts:124-134](https://github.com/narcooo/inkos/blob/8fc2ae57080b9821257dee3e37cc677e2b6f389a/packages/core/src/materials/ingest.ts#L124-L134)
 

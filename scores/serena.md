@@ -24,6 +24,29 @@
 
 As shipped, Serena gives the connected model an unrestricted shell that runs as your user with your full environment. It adds file-editing tools whose project-folder boundary the model can move with activate_project. The server provides no sandbox, approval step, or provenance marking, so safety rests on the MCP client's approval prompts and on trusting the repository. A repository's committed .serena/project.yml and memories can inject instructions and enable tools without a trust decision. The maintainers say this openly: their security docs assume the repository and LLM are trusted and recommend a container for real isolation.
 
+## Safest setup
+
+As shipped, Serena gives the model a shell that runs as your user, with no sandbox or approval step of its own, and its own security docs assume a trusted repository and model. The safest setup narrows the identity Serena runs as, removes the shell, runs it in its container and keeps repository settings under your review.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated low-privilege account | Run Serena as an OS account or environment that holds only the project and the credentials the task needs | Commands the model starts reach only what that account can, not your whole home directory and keys (C1) |
+| The Docker container | Run the shipped experimental Docker Compose setup, mounting only the project you work on under /workspace ([compose.yaml:4-6](https://github.com/oraios/serena/blob/d0f7f92631c23dc4c5ed0b5ccd35bc623b19a809/compose.yaml#L4-L6)) | Shell commands and language servers run inside a container that holds none of your host credentials (C4) |
+| A context without the shell | `--context ide` on `start-mcp-server`, or add `execute_shell_command` to `excluded_tools` in serena_config.yml ([src/serena/cli.py:236-241](https://github.com/oraios/serena/blob/d0f7f92631c23dc4c5ed0b5ccd35bc623b19a809/src/serena/cli.py#L236-L241); [src/serena/resources/config/contexts/ide.yml:11-14](https://github.com/oraios/serena/blob/d0f7f92631c23dc4c5ed0b5ccd35bc623b19a809/src/serena/resources/config/contexts/ide.yml#L11-L14); [src/serena/resources/serena_config.template.yml:157](https://github.com/oraios/serena/blob/d0f7f92631c23dc4c5ed0b5ccd35bc623b19a809/src/serena/resources/serena_config.template.yml#L157)) | The model works through Serena's project-scoped code tools rather than an open shell (C3) |
+| Read-only mode for reading tasks | `read_only: true` in the project's .serena/project.yml when the task only needs to read code ([src/serena/resources/project.template.yml:121-123](https://github.com/oraios/serena/blob/d0f7f92631c23dc4c5ed0b5ccd35bc623b19a809/src/serena/resources/project.template.yml#L121-L123)) | Serena's editing tools are turned off for that project (C5) |
+| Read-only global memories | `read_only_memory_patterns: ["global/.*"]` in serena_config.yml ([src/serena/resources/serena_config.template.yml:139-142](https://github.com/oraios/serena/blob/d0f7f92631c23dc4c5ed0b5ccd35bc623b19a809/src/serena/resources/serena_config.template.yml#L139-L142)) | Memories shared across all your projects stay as you wrote them (C6) |
+| Reviewed project settings | Read a repository's .serena/project.yml and .serena/memories before activating a project you didn't write | Tools, language servers and instructions the model sees come only from settings you have read (C6) |
+| Limited network access | Give the host or container outbound access only to the hosts the task needs | A narrow path for data to leave if the session is steered by repository content (C5) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; Serena relies on your MCP client for approval and asks for none itself.
+
+### Handling data
+
+- The log under ~/.serena/logs holds every tool's arguments and results, file contents included; store it like the code it covers.
+- A content-free usage ping is on by default; `SERENA_USAGE_REPORTING=false` turns it off.
+
 ## Critical gaps
 - The default-on shell tool runs any model-supplied command on the host as the OS user with the full inherited environment. (ASI03, ASI02; C1) — [src/serena/util/shell.py:30-43](https://github.com/oraios/serena/blob/d0f7f92631c23dc4c5ed0b5ccd35bc623b19a809/src/serena/util/shell.py#L30-L43); [src/serena/tools/cmd_tools.py:27](https://github.com/oraios/serena/blob/d0f7f92631c23dc4c5ed0b5ccd35bc623b19a809/src/serena/tools/cmd_tools.py#L27)
 - No execution isolation by default: shell commands are same-user host subprocesses; the Docker setup is opt-in and experimental. (ASI05; C4) — [src/serena/util/shell.py:30-43](https://github.com/oraios/serena/blob/d0f7f92631c23dc4c5ed0b5ccd35bc623b19a809/src/serena/util/shell.py#L30-L43); [src/serena/resources/config/contexts/desktop-app.yml:11](https://github.com/oraios/serena/blob/d0f7f92631c23dc4c5ed0b5ccd35bc623b19a809/src/serena/resources/config/contexts/desktop-app.yml#L11)

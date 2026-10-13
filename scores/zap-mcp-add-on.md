@@ -25,6 +25,31 @@ Controls where a risk surface exists: 1.83 / 8.0 (23%); 2 criteria scored SA (su
 
 The server is off until enabled and, once on, requires a random key over HTTPS, but it then exposes ZAP's full capability to any key holder: unrestricted active scans and spidering of any URL, report writes to any path, and unredacted target traffic. It gives the host no risk annotations, previews or limits to gate on, and it returns target-controlled content with no provenance. Treat it as a localhost-only tool for a trusted client that must be approved at the host.
 
+## Safest setup
+
+The ZAP MCP add-on is off until you enable it, and once on it asks every caller for a random 32-character key over HTTPS. Beyond that the defaults are thin: any key holder gets every ZAP tool, with no risk labels, target limits or default record of calls. The safest setup keeps the key and HTTPS on, approves each call at the host and contains where ZAP can reach.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| The security key | Keep the default `securityKeyEnabled` on, and give any `mcp-config` job a non-empty `securityKey` ([addOns/mcp/src/main/java/org/zaproxy/addon/mcp/McpParam.java:50](https://github.com/zaproxy/zap-extensions/blob/a7f2fcf19557a6b455aa7f1d4fe1ad218179fade/addOns/mcp/src/main/java/org/zaproxy/addon/mcp/McpParam.java#L50); [addOns/mcp/src/main/java/org/zaproxy/addon/mcp/automation/McpConfigJob.java:43](https://github.com/zaproxy/zap-extensions/blob/a7f2fcf19557a6b455aa7f1d4fe1ad218179fade/addOns/mcp/src/main/java/org/zaproxy/addon/mcp/automation/McpConfigJob.java#L43); [addOns/mcp/src/main/java/org/zaproxy/addon/mcp/automation/McpConfigJob.java:171](https://github.com/zaproxy/zap-extensions/blob/a7f2fcf19557a6b455aa7f1d4fe1ad218179fade/addOns/mcp/src/main/java/org/zaproxy/addon/mcp/automation/McpConfigJob.java#L171)) | Only clients holding the key can call ZAP's tools (C1) |
+| HTTPS only | Keep the default `secureOnly` on ([addOns/mcp/src/main/java/org/zaproxy/addon/mcp/McpParam.java:53](https://github.com/zaproxy/zap-extensions/blob/a7f2fcf19557a6b455aa7f1d4fe1ad218179fade/addOns/mcp/src/main/java/org/zaproxy/addon/mcp/McpParam.java#L53)) | The key and tool traffic travel only over HTTPS (C1) |
+| Per-call approval | Set the MCP client to ask before every ZAP tool call | A person decides on each scan, spider, context change and report write (C2) |
+| A session per engagement | Run MCP work in its own ZAP instance and session, holding only the contexts and traffic of that engagement | Contexts you set up elsewhere, and traffic from other targets, stay out of the model's reach (C6) |
+| Its own container or VM | Run ZAP in a container or VM that accepts connections only from the local MCP client and sends traffic only to targets you may test | Scans and spidering stay within your authorized scope, whatever the model asks for (C5) |
+| A call record | Turn on `recordInHistory` (Record MCP requests in ZAP history) ([addOns/mcp/src/main/java/org/zaproxy/addon/mcp/McpParam.java:52](https://github.com/zaproxy/zap-extensions/blob/a7f2fcf19557a6b455aa7f1d4fe1ad218179fade/addOns/mcp/src/main/java/org/zaproxy/addon/mcp/McpParam.java#L52)) | Each MCP request and response is kept in ZAP history with its timestamp (C9) |
+| A fresh key per engagement | Generate a new security key in the MCP options when each engagement ends | A copied key stops working once the work it was issued for is done (C8) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; active scans and spidering send traffic to the URL in the call and can't be undone, so check it is a target you may test.
+- zap_generate_report writes a file at the path in its arguments, and zap_create_context replaces any context with the same name; check both before approving.
+- If a scan goes further than you meant, the stop tools for spider, AJAX spider and active scan cancel the running job.
+
+### Handling data
+
+- Tool results and recorded history carry target requests and responses unredacted, session headers included; store the ZAP session like the target's own data.
+- The security key is kept in plain text in ZAP's configuration; keep that file readable only by you.
+
 ## Critical gaps
 - A hijacked model can drive unattended scans or spidering of any URL and write report files, with no server-side gate, annotations or egress limits. (ASI01, ASI02, LLM01; C5) — [addOns/mcp/src/main/java/org/zaproxy/addon/mcp/tools/ZapStartScanTool.java:88-104](https://github.com/zaproxy/zap-extensions/blob/a7f2fcf19557a6b455aa7f1d4fe1ad218179fade/addOns/mcp/src/main/java/org/zaproxy/addon/mcp/tools/ZapStartScanTool.java#L88-L104); [addOns/mcp/src/main/java/org/zaproxy/addon/mcp/tools/ZapGenerateReportTool.java:96](https://github.com/zaproxy/zap-extensions/blob/a7f2fcf19557a6b455aa7f1d4fe1ad218179fade/addOns/mcp/src/main/java/org/zaproxy/addon/mcp/tools/ZapGenerateReportTool.java#L96)
 

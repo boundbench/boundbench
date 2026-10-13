@@ -24,6 +24,29 @@
 
 As shipped, Forge runs every shell command, file change and web request the model chooses on your machine with your full permissions and environment, without asking first. There is no sandbox, and the opt-in restricted mode allows everything until you write your own rules. Content read from the web, the repository or MCP servers can therefore steer it to leak credentials and make irreversible changes, and opening an untrusted repository can change its configuration and agent behaviour. Telemetry in release builds also sends prompt text to a third party by default.
 
+## Safest setup
+
+Forge caps each turn at 100 model requests, times out tool calls after 300 seconds and records every tool call. Beyond that the defaults are thin: commands, file changes and web requests run on your machine with your full environment and no approval step, and there is no sandbox to turn on. The safest setup narrows what the process can reach, turns on the opt-in approval mode with your own rules, and builds containment around it.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A scoped environment | Start Forge from a shell holding only the credentials this task needs, using scoped or read-only tokens and a provider key with a spending limit | Whatever a command does, it reaches only the systems and spend you handed it, not every credential in your shell (C1) |
+| Per-call approval | Set `restricted = true` in your global config and change the rules in `permissions.yaml` to `permission: confirm` for `command`, `write` and `url` ([crates/forge_config/src/config.rs:267-269](https://github.com/tailcallhq/forgecode/blob/8eb3e243307b2a84e882f919a1ce1082715ba63f/crates/forge_config/src/config.rs#L267-L269); [crates/forge_domain/src/env.rs:97-98](https://github.com/tailcallhq/forgecode/blob/8eb3e243307b2a84e882f919a1ce1082715ba63f/crates/forge_domain/src/env.rs#L97-L98); [crates/forge_services/src/permissions.default.yaml:1-13](https://github.com/tailcallhq/forgecode/blob/8eb3e243307b2a84e882f919a1ce1082715ba63f/crates/forge_services/src/permissions.default.yaml#L1-L13); [crates/forge_domain/src/policies/types.rs:8-15](https://github.com/tailcallhq/forgecode/blob/8eb3e243307b2a84e882f919a1ce1082715ba63f/crates/forge_domain/src/policies/types.rs#L8-L15)) | Shell commands, file writes and web fetches wait for your decision before they run (C2) |
+| No write-capable sub-agents | Set `subagents = false` in your global config ([crates/forge_config/src/config.rs:319-324](https://github.com/tailcallhq/forgecode/blob/8eb3e243307b2a84e882f919a1ce1082715ba63f/crates/forge_config/src/config.rs#L319-L324); [crates/forge_repo/src/agent.rs:163-171](https://github.com/tailcallhq/forgecode/blob/8eb3e243307b2a84e882f919a1ce1082715ba63f/crates/forge_repo/src/agent.rs#L163-L171)) | The default agent loses the task tool, so it can't start sub-agents with shell or write tools on a fresh budget (C10) |
+| Per-turn limits | Keep the defaults `max_requests_per_turn = 100`, `tool_timeout_secs = 300` and `max_tool_failure_per_turn = 3`, or lower them ([crates/forge_config/.forge.toml:12](https://github.com/tailcallhq/forgecode/blob/8eb3e243307b2a84e882f919a1ce1082715ba63f/crates/forge_config/.forge.toml#L12); [crates/forge_config/.forge.toml:20](https://github.com/tailcallhq/forgecode/blob/8eb3e243307b2a84e882f919a1ce1082715ba63f/crates/forge_config/.forge.toml#L20); [crates/forge_config/.forge.toml:27](https://github.com/tailcallhq/forgecode/blob/8eb3e243307b2a84e882f919a1ce1082715ba63f/crates/forge_config/.forge.toml#L27)) | Each turn ends after a fixed number of requests or repeated failures, and stuck tool calls are cut off (C10) |
+| A reviewed working directory | Open repositories you trust, and read their .env files, AGENTS.md, .mcp.json and .forge folder before starting Forge in them | Settings, instructions, agents and limits come only from you, not from the repository you happen to open (C6) |
+| Its own container or VM | Run Forge in a container or VM with only the workspace mounted and outbound access limited to the model provider and the hosts the task needs | An outer boundary around model-written commands and MCP servers, and a narrow path for data to leave (C4) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; Accept-and-Remember widens to a command prefix, so keep it for commands you would run yourself.
+- MCP tools and sub-agent calls run without a prompt, so add MCP servers you have read and trust.
+
+### Handling data
+
+- Release builds send usage telemetry, including prompt text, to a third-party analytics service by default; keep secrets out of prompts.
+- Tool-call logs and saved conversations in the Forge config directory hold full arguments and results; store them like other sensitive logs.
+
 ## Critical gaps
 - Shell commands run on the host as the user with the full inherited environment, so any credential the user holds is in reach. (ASI03, T3, LLM06; C1). Evidence: [crates/forge_infra/src/executor.rs:35-44](https://github.com/tailcallhq/forgecode/blob/8eb3e243307b2a84e882f919a1ce1082715ba63f/crates/forge_infra/src/executor.rs#L35-L44)
 - The permission rules for the opt-in approval mode can be rewritten by the agent's own tools and are re-read on every check. (ASI09, ASI02, T10; C2). Evidence: [crates/forge_services/src/policy.rs:135-146](https://github.com/tailcallhq/forgecode/blob/8eb3e243307b2a84e882f919a1ce1082715ba63f/crates/forge_services/src/policy.rs#L135-L146)

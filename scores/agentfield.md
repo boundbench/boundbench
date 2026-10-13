@@ -24,6 +24,30 @@
 
 As shipped, access control on the AgentField control plane is not locked down in the default configuration. Agents and coding-agent harnesses run unsandboxed on the host with the operator's full environment, and installed agent packages auto-update from upstream every six hours by default. Strong pieces exist (DID identities, access policies with argument constraints, fail-closed execution records, an encrypted secret store), but most are opt-in and the policy layer does not cover every route.
 
+## Safest setup
+
+AgentField records every call routed through the control plane before it runs, caps each tool loop, and keeps declared secrets encrypted. Access control, approvals and sandboxing are opt-in or absent, so the safest setup turns on the access controls it offers and builds containment around agents that run with your environment.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit credentials | Run the control plane and agents under an account whose environment holds only the keys these agents need, each scoped with a spending limit set at the provider | Agent nodes and harness CLIs inherit only the reach you chose, not every key in your shell (C1) |
+| Control-plane authentication | Set `AGENTFIELD_API_KEY` to a long random value before starting `af server` ([control-plane/cmd/af/main.go:294](https://github.com/agent-field/agentfield/blob/68cadab38de019896b1cbc710a852562ac3f5b8c/control-plane/cmd/af/main.go#L294)) | Only callers holding the key reach the control plane (C1) |
+| Operator-approved agent tags | Set `AGENTFIELD_AUTHORIZATION_ENABLED=true` and `default_mode: manual` under `tag_approval_rules` ([control-plane/internal/config/config.go:939](https://github.com/agent-field/agentfield/blob/68cadab38de019896b1cbc710a852562ac3f5b8c/control-plane/internal/config/config.go#L939); [control-plane/internal/config/config.go:505](https://github.com/agent-field/agentfield/blob/68cadab38de019896b1cbc710a852562ac3f5b8c/control-plane/internal/config/config.go#L505); [control-plane/internal/config/config.go:518](https://github.com/agent-field/agentfield/blob/68cadab38de019896b1cbc710a852562ac3f5b8c/control-plane/internal/config/config.go#L518)) | Each agent gets a DID identity and only the tags, and so the policies, you approve (C1) |
+| Deny-by-default access policies | Set `AGENTFIELD_AUTHORIZATION_DEFAULT_DENY=true` and list each caller's `allow_functions` in `access_policies` ([control-plane/internal/config/config.go:954](https://github.com/agent-field/agentfield/blob/68cadab38de019896b1cbc710a852562ac3f5b8c/control-plane/internal/config/config.go#L954); [control-plane/internal/config/config.go:507](https://github.com/agent-field/agentfield/blob/68cadab38de019896b1cbc710a852562ac3f5b8c/control-plane/internal/config/config.go#L507); [control-plane/internal/config/config.go:534](https://github.com/agent-field/agentfield/blob/68cadab38de019896b1cbc710a852562ac3f5b8c/control-plane/internal/config/config.go#L534)) | On the routes the policy layer covers, agents call only the functions and argument ranges you allowed (C3) |
+| A pause before consequential steps | Have each reasoner await the agent's `pause` method before an irreversible action ([sdk/python/agentfield/agent.py:5104](https://github.com/agent-field/agentfield/blob/68cadab38de019896b1cbc710a852562ac3f5b8c/sdk/python/agentfield/agent.py#L5104)) | Those runs wait for an approve, reject or request-changes decision before going ahead (C2) |
+| Package updates you choose | Set `AGENTFIELD_PACKAGE_AUTO_UPDATE=false` for the control plane ([control-plane/internal/services/packagemaint/service.go:240](https://github.com/agent-field/agentfield/blob/68cadab38de019896b1cbc710a852562ac3f5b8c/control-plane/internal/services/packagemaint/service.go#L240)) | Installed agent packages change only when you update them (C7) |
+| Tool-loop limits | Keep the default `max_turns` of 10 and `max_tool_calls` of 25, or lower them for short tasks ([sdk/python/agentfield/tool_calling.py:47-48](https://github.com/agent-field/agentfield/blob/68cadab38de019896b1cbc710a852562ac3f5b8c/sdk/python/agentfield/tool_calling.py#L47-L48)) | Each app.ai tool loop ends after a fixed number of turns and calls (C10) |
+| Its own container or VM | Run the control plane, agent nodes and harness CLIs in a container or VM whose network reaches only the hosts the task needs | An outer boundary around agent code and coding CLIs, which otherwise run on your host as your user (C4) |
+
+### Approving with confidence
+
+- Read each approval request and decide runs one at a time; the request shows what the agent code put in it, so check the target and arguments yourself.
+
+### Handling data
+
+- Execution inputs and outputs are stored unencrypted in the local database; protect it like the data your agents handle.
+- Keep the default `redact_payloads` setting so execution payloads stay out of structured logs.
+
 ## Critical gaps
 - Agents and harness subprocesses inherit the operator's full environment, so a hijack holds the operator's account. (ASI03, T3; C1) — [sdk/python/agentfield/harness/_cli.py:290](https://github.com/agent-field/agentfield/blob/68cadab38de019896b1cbc710a852562ac3f5b8c/sdk/python/agentfield/harness/_cli.py#L290)
 - With authorization enabled, agents self-declare tags that are auto-approved by default, which lets them choose their own access-policy authority. (ASI03, T3; C1) — [control-plane/internal/services/tag_approval_service.go:59](https://github.com/agent-field/agentfield/blob/68cadab38de019896b1cbc710a852562ac3f5b8c/control-plane/internal/services/tag_approval_service.go#L59)

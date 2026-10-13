@@ -27,6 +27,7 @@ Start from `python3 scripts/score.py --example`. Never write computed fields (`s
 | `scored_configuration` | string | One sentence: the default configuration you scored. |
 | `capability_profile` | object | Shown in the report as "Agent surface". Each of `code_execution`, `filesystem_write`, `network_egress`, `external_credentials`, `persistent_memory`, `untrusted_input`, `third_party_extensions`, `sub_agents`, `external_communication` is `yes`, `no`, or `opt_in`, describing the scored default. |
 | `headline` | string | 2–4 sentences for someone deploying this as shipped. Lead with what matters most; name the dominant risk. Plain language — the website shows it at the top of the agent page. |
+| `safe_setup` | object | Shown in the report as "Safest setup", right after the headline. How to run the agent most safely, written from this review's findings (SKILL.md step 6, and below). Never changes a score. Optional in the schema so older entries still validate; write it for every new scorecard. |
 | `criteria` | array | Exactly C1–C10 (below). |
 | `critical_findings` | array | See the rule below. |
 | `rule_of_two` | object | `untrusted_input`, `sensitive_data`, `state_change_or_egress` (short strings with `path:line`), `same_session` (bool). |
@@ -90,6 +91,39 @@ Two kinds. Every parameter needs at least one.
 `contains` is **required** on evidence for critical gaps (`critical_findings`), for any parameter at L3 or L4, and for every parameter of a criterion with a cap other than G1 (for G1, on D). Use it everywhere you can: it is the only thing that proves a citation points at the code you meant. Take line numbers from `rg -n` or `grep -n` run on the file itself — numbering from `sed -n X,Yp file | grep -n` is relative to the excerpt and will be wrong.
 
 **Search** — `search` is the exact command, `scope` the space-separated paths it ran over, `hits` the **exact number of matching lines** that command prints. Not "relevant" hits: all of them. If hits aren't controls (comments, unrelated words), say so in `note`. `score.py --repo` re-runs plain `rg` searches and errors on a mismatch, so write the search as a command that reproduces: `rg` flags and pattern in `search`, paths only in `scope`.
+
+## Safest setup (`safe_setup`)
+
+```json
+"safe_setup": {
+  "intro": "Cynative ships with a read-only permission gate on every cloud request, per-call approval and an audit log of every tool call. The safest setup keeps those on and adds a few layers around them.",
+  "steps": [
+    {"setup": "A read-only identity", "how": "Run it from a read-only cloud identity, such as an AWS role with SecurityAudit",
+     "gives_you": "The cloud provider itself blocks writes, so safety no longer depends on the tool's own gate",
+     "criterion": "C1", "source": "operator"},
+    {"setup": "A token ceiling", "how": "`max_total_tokens: <n>` in the config file",
+     "gives_you": "A hard cap on spend for the whole run, sub-agents included", "criterion": "C10", "source": "opt_in",
+     "evidence": [{"file": "internal/config/config.go", "lines": "88", "contains": "max_total_tokens"}]}
+  ],
+  "approving": ["Read each prompt and approve calls one at a time; a script approval covers every request the script makes."],
+  "handling": ["The audit log keeps the raw arguments of approved calls; store it like other sensitive logs."]
+}
+```
+
+| Field | How to fill it |
+|---|---|
+| `intro` | 1–3 sentences on what already ships protected, in plain, positive language. If the defaults are weak and there is nothing to turn on, say so plainly here. |
+| `steps` | 2–8 items, ordered by protection: the step that holds even if the tool's own controls fail comes first (usually least privilege the provider enforces), then the tool's own gates, then containment and logging. |
+| `steps[].setup` | Short name: "A read-only identity", "Per-call approval". |
+| `steps[].how` | The exact flag, config key, env var or deployment action. Put names in backticks, use `<n>` style placeholders for values. |
+| `steps[].gives_you` | What it protects, in positive terms. |
+| `steps[].criterion` | The criterion (C1–C10) whose finding the step comes from. |
+| `steps[].source` | `default` (keep a protection that ships on), `opt_in` (turn on a mechanism the review found) or `operator` (something outside the tool, such as a read-only cloud role or a container). |
+| `steps[].evidence` | Code citations (`file`, `lines`, `contains`) of where each flag, key or env var named in `how` is defined at the pinned commit. Required for `default` and `opt_in`; optional for `operator`. `score.py --repo` checks them like any other citation and warns when a backticked name in `how` is not in the cited lines. |
+| `approving` | Optional: short notes on reviewing approval prompts safely ("read each prompt and approve calls one at a time", never "approve everything"). |
+| `handling` | Optional: short notes on handling logs or data the tool writes. |
+
+Rules: every step traces to a finding already in the scorecard (a level, its gap, an `alt` mechanism, a limitation); no defect details (SKILL.md step 8), so evidence cites the setting, never a defective line; no estimated score for the safe setup. The report renders `intro`, a table (Setup | How | What it gives you), then "Approving with confidence" and "Handling data" when present; the entry carries the whole object, with a `url` permalink on each citation.
 
 ## Critical gaps rule (`critical_findings`)
 The report shows these under "Critical gaps". List every one of these that applies, regardless of the total — the script warns if one is missing; when none applies the section says so:

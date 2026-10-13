@@ -25,6 +25,29 @@ Controls where a risk surface exists: 2.80 / 9.0 (31%); 1 criterion scored SA (s
 
 As the Claude Code plugin launches it, IDA Pro MCP is a local stdio server with no authentication and no per-call gating: the code-execution and debugger tools are withheld, but the database-editing and file-saving tools are on, and nothing separates attacker-controlled binary strings from instructions. Enforcement of that tier does not cover every path, and workers keep running after the supervisor exits. A read-only profile exists but is opt-in; the legacy GUI plugin enables every tool, including in-process Python, by default.
 
+## Safest setup
+
+As the Claude Code plugin launches it, IDA Pro MCP leaves Python execution and the debugger out of its tool set and records every tool call in the database. Beyond that the defaults are weak: no authentication, no per-call gating, no isolation, and the editing tools are on. The safest setup adds the read-only profile and builds containment around the server.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated analysis VM | Run the server as a dedicated user in a VM that holds only this job's samples and databases | Opening and saving files reaches only that VM, not the rest of your files (C1) |
+| An environment without secrets | Launch it from a shell with no API keys, tokens or cloud credentials set | The workers, and any code they run, inherit nothing worth taking (C4) |
+| The headless default tool set | Launch `idalib-mcp` with `--stdio` and without `--unsafe`, as the Claude Code plugin does ([.claude-plugin/plugin.json:12](https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/.claude-plugin/plugin.json#L12); [src/ida_pro_mcp/idalib_supervisor.py:1478](https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L1478); [src/ida_pro_mcp/idalib_supervisor.py:1481](https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L1481)) | The model is not offered in-process Python or the debugger (C4) |
+| The read-only profile | Add `--profile` with the shipped read-only profile file, profiles/readonly.txt ([src/ida_pro_mcp/idalib_supervisor.py:1483](https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L1483); [profiles/readonly.txt:1](https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/profiles/readonly.txt#L1)) | Only analysis tools are offered, so patching, renaming and saving stay out of the model's tool list (C2) |
+| Databases you built | Open the binary and let IDA build a fresh database, rather than opening a database someone sent you | Names, comments and settings in the database come only from your own analysis (C6) |
+| Workers stopped after use | When a session ends, stop any IDA worker processes still running | Nothing keeps serving tools after you are done (C10) |
+| A saved call trace | Save the database at the end of each session and keep a copy outside the analysis VM | The built-in record of every tool call, stored in the database, survives for later review (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; no tool is marked read-only or destructive, so patch, put_int, patch_asm and idb_save look like any other call.
+- An idb_open or idb_save path outside the analysis folder is worth a closer look before approving.
+
+### Handling data
+
+- The database stores every tool call with its full arguments and results; share it like the analysis data it holds.
+
 ## Critical gaps
 - Python execution tools run model code in-process with no isolation, and spawned workers inherit the full environment. (ASI05; C4) — [src/ida_pro_mcp/ida_mcp/api_python.py:189](https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/ida_mcp/api_python.py#L189); [src/ida_pro_mcp/idalib_supervisor.py:279](https://github.com/mrexodia/ida-pro-mcp/blob/c133c3853faa111a9b00ee615c013b720d0c4acd/src/ida_pro_mcp/idalib_supervisor.py#L279)
 

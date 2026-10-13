@@ -25,6 +25,29 @@ Controls where a risk surface exists: 2.68 / 8.0 (34%); 2 criteria scored SA (su
 
 With no flags this server is read-only: every tool that could change a cluster, deploy a CloudFormation stack, or edit IAM refuses in code, and logs, events and Secret reads are withheld. But it runs on the operator's full ambient AWS identity, its tools carry no risk annotations, and the README's own install buttons switch on both --allow-write and --allow-sensitive-data-access. Once they're on, the model can delete Kubernetes objects, deploy any CloudFormation template with IAM capability, and attach any IAM policy to any role, with no confirmation. Even in the default, the sensitive-data gate does not cover every path.
 
+## Safest setup
+
+With no flags, Amazon EKS MCP Server is read-only and withholds logs and events, but it acts with your full ambient AWS identity, and the README's install examples turn both protections off. The safest setup keeps the code defaults and gives the server a narrow, read-only identity of its own.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A read-only AWS identity | Point `AWS_PROFILE` at a dedicated role that holds only read permissions for EKS, CloudWatch and IAM ([src/eks-mcp-server/awslabs/eks_mcp_server/aws_helper.py:49](https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/eks-mcp-server/awslabs/eks_mcp_server/aws_helper.py#L49)) | AWS itself refuses writes, so safety no longer rests on the server's own read-only check (C1) |
+| Narrow Kubernetes access | Map that role to a view-only Kubernetes access entry on just the clusters and namespaces the task needs | Reads stay inside the namespaces you chose instead of every cluster your account reaches (C3) |
+| Read-only mode | Keep the default `--allow-write` off, leaving it out of the install config the README suggests ([src/eks-mcp-server/awslabs/eks_mcp_server/server.py:135-137](https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/eks-mcp-server/awslabs/eks_mcp_server/server.py#L135-L137)) | Every tool that could change a cluster, a CloudFormation stack or IAM refuses in code (C1) |
+| Sensitive data access off | Keep the default `--allow-sensitive-data-access` off ([src/eks-mcp-server/awslabs/eks_mcp_server/server.py:141-143](https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/eks-mcp-server/awslabs/eks_mcp_server/server.py#L141-L143)) | Pod logs, events and CloudWatch logs stay out of the model's context (C8) |
+| Provider-side audit logs | Turn on CloudTrail for the account and control-plane audit logging for each cluster the role reaches | A durable record of every call the server's identity makes, kept outside the server (C9) |
+| Server output kept | Have your MCP host write the server's stderr to a file outside the workspace | The server's per-request action lines and refusals outlive the session (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; `manage_k8s_resource` and `manage_eks_stacks` handle reads and writes under one name, so check the operation before approving.
+- If you turn on `--allow-write`, deletes, stack deploys and IAM policy changes run with no confirmation of their own, so the host prompt is the only check.
+
+### Handling data
+
+- Results can carry ConfigMaps, pod specs and IAM role policies; treat session transcripts like the cluster data they hold.
+- The server logs to stderr at the library's debug default, including any proxy URL; keep that stream out of shared logs.
+
 ## Critical gaps
 - Every AWS and Kubernetes call uses the operator's full ambient identity (README recommends IAMFullAccess for writes), so once the read-only check is off or bypassed nothing confines what the server can do, including adding arbitrary IAM policies to any role. (ASI03, T3; C1) — [src/eks-mcp-server/awslabs/eks_mcp_server/aws_helper.py:89-100](https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/eks-mcp-server/awslabs/eks_mcp_server/aws_helper.py#L89-L100); [src/eks-mcp-server/README.md:65](https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/eks-mcp-server/README.md#L65); [src/eks-mcp-server/awslabs/eks_mcp_server/iam_handler.py:338](https://github.com/awslabs/mcp/blob/93991b85acfe8d139abc069547973241f88c12e2/src/eks-mcp-server/awslabs/eks_mcp_server/iam_handler.py#L338)
 

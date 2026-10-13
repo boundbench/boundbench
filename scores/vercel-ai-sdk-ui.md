@@ -25,6 +25,31 @@ Controls where a risk surface exists: 2.60 / 9.0 (29%); 1 criterion scored SA (s
 
 AI SDK UI ships a careful tool-approval design, with exact-input approval prompts, schema re-validation and optional HMAC-signed approvals, but approval is off by default: in the documented chat route every tool the model calls runs immediately with the server's full credentials. The server also trusts the message history the browser posts, so without the experimental approval secret a modified client can replay fabricated tool calls and approvals to run any registered tool. Prompt injection through tool results is the dominant risk; deployers should enable toolApproval and experimental_toolApprovalSecret, authenticate the route, forward req.signal, and cap automatic resubmissions.
 
+## Safest setup
+
+AI SDK UI ships a careful approval flow, schema checks on every tool call, generic error messages to the browser and one model step per request, and it rejects system messages posted by the browser. Approval, signing, logging and limits are all off in the documented route, so the safest setup turns them on and scopes what the server can reach.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Give the server only the provider key and tool credentials this app needs, each scoped with a spending limit at the provider | Whatever a tool call does, it reaches only the systems and spend you chose (C1) |
+| An authenticated chat route | Put your own authentication in front of the chat route and tie stored chats to the signed-in user | Only your users can reach the tools, and each sees only their own history (C1) |
+| Per-call approval | `toolApproval` on `streamText`, requiring approval for every tool with side effects ([packages/ai/src/generate-text/stream-text.ts:426](https://github.com/vercel/ai/blob/08d7f0a75e1466d28c3b71c2be4c0d89d552acf9/packages/ai/src/generate-text/stream-text.ts#L426)) | A person sees the exact tool input and decides before each consequential call runs (C2) |
+| Signed approvals | `experimental_toolApprovalSecret: <secret>` on `streamText`, from your secret store ([packages/ai/src/generate-text/stream-text.ts:428](https://github.com/vercel/ai/blob/08d7f0a75e1466d28c3b71c2be4c0d89d552acf9/packages/ai/src/generate-text/stream-text.ts#L428)) | Only approvals your server issued are accepted when the browser sends them back (C2) |
+| Only the tools needed | Register only the tools the app uses and narrow each step with `activeTools` ([packages/ai/src/generate-text/stream-text.ts:433](https://github.com/vercel/ai/blob/08d7f0a75e1466d28c3b71c2be4c0d89d552acf9/packages/ai/src/generate-text/stream-text.ts#L433)) | The model can call only the tools the current task needs (C3) |
+| Server-side stop and timeout | Pass `abortSignal: req.signal` and `timeout: <ms>` to `streamText` ([packages/ai/src/generate-text/stream-text.ts:420-421](https://github.com/vercel/ai/blob/08d7f0a75e1466d28c3b71c2be4c0d89d552acf9/packages/ai/src/generate-text/stream-text.ts#L420-L421)) | Stopping in the browser also ends the model call on the server, and long requests end on their own (C10) |
+| A capped resubmit loop | Keep the default `stopWhen` and have `sendAutomaticallyWhen` return false after <n> rounds ([packages/ai/src/generate-text/stream-text.ts:423](https://github.com/vercel/ai/blob/08d7f0a75e1466d28c3b71c2be4c0d89d552acf9/packages/ai/src/generate-text/stream-text.ts#L423); [packages/ai/src/ui/chat.ts:238](https://github.com/vercel/ai/blob/08d7f0a75e1466d28c3b71c2be4c0d89d552acf9/packages/ai/src/ui/chat.ts#L238)) | Each request runs one step and the browser-driven loop ends after a fixed number of rounds (C10) |
+| A tool-call record | `registerTelemetry(<integration>)` with an integration that writes to storage the app can't modify ([packages/ai/src/telemetry/telemetry-registry.ts:6](https://github.com/vercel/ai/blob/08d7f0a75e1466d28c3b71c2be4c0d89d552acf9/packages/ai/src/telemetry/telemetry-registry.ts#L6)) | A durable record of every server tool execution, with its arguments and result (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; the prompt shows the exact tool input.
+- Client-side tools run in the browser through your own callbacks, so add your own confirmation to any that act.
+
+### Handling data
+
+- A telemetry integration receives tool arguments and results; store its output like the data your tools read.
+- A custom `onError` replaces the default generic error message, so keep it from returning raw error text.
+
 ## Critical gaps
 - Server tools run with the server's ambient credentials for any caller, and a client-fabricated tool call plus approval in the posted history executes any registered tool unless the opt-in approval secret is set. (ASI03, T3, ASI02; C1) — [packages/ai/src/generate-text/collect-tool-approvals.ts:54](https://github.com/vercel/ai/blob/08d7f0a75e1466d28c3b71c2be4c0d89d552acf9/packages/ai/src/generate-text/collect-tool-approvals.ts#L54); [packages/ai/src/generate-text/validate-tool-approvals.ts:68](https://github.com/vercel/ai/blob/08d7f0a75e1466d28c3b71c2be4c0d89d552acf9/packages/ai/src/generate-text/validate-tool-approvals.ts#L68); [packages/ai/src/generate-text/validate-tool-approvals.ts:158-168](https://github.com/vercel/ai/blob/08d7f0a75e1466d28c3b71c2be4c0d89d552acf9/packages/ai/src/generate-text/validate-tool-approvals.ts#L158-L168); [content/docs/04-ai-sdk-ui/03-chatbot-tool-usage.mdx:568](https://github.com/vercel/ai/blob/08d7f0a75e1466d28c3b71c2be4c0d89d552acf9/content/docs/04-ai-sdk-ui/03-chatbot-tool-usage.mdx#L568)
 - Approval is off by default, so content injected through a tool result can drive any registered tool, including exfiltration and irreversible actions, with no human involved. (ASI01, LLM01, T6; C5) — [packages/ai/src/generate-text/resolve-tool-approval.ts:109-110](https://github.com/vercel/ai/blob/08d7f0a75e1466d28c3b71c2be4c0d89d552acf9/packages/ai/src/generate-text/resolve-tool-approval.ts#L109-L110); [packages/ai/src/generate-text/stream-text.ts:547](https://github.com/vercel/ai/blob/08d7f0a75e1466d28c3b71c2be4c0d89d552acf9/packages/ai/src/generate-text/stream-text.ts#L547)

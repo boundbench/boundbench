@@ -36,6 +36,104 @@
     "external_communication": "yes"
   },
   "headline": "The HTTP API server has no authorization, approval step, or sandbox in front of a generic shell-execution endpoint, and its default network exposure and authentication are not locked down. Any client driving the MCP bridge runs commands with the full authority of the server's OS user. Tool argument handling is not strict either, and the only bounds are a 5-minute per-command timeout and a log file. It should only run in a disposable, network-isolated VM.",
+  "safe_setup": {
+    "intro": "HexStrike AI ships no authentication, approval step, sandbox or tool selection of its own, and its only built-in bounds are a 5-minute per-command timeout and a log file. The safest setup builds every boundary around it: a disposable, network-isolated VM, a low-privilege account and per-call approval in your MCP host.",
+    "steps": [
+      {
+        "setup": "A dedicated low-privilege account",
+        "how": "Run the server as its own OS user that holds no keys, tokens or files beyond what the engagement needs",
+        "gives_you": "Every command and subprocess reaches only that account's files and environment, not yours",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A firewalled API port",
+        "how": "Use a host firewall so only the MCP bridge on the same machine can reach the API port",
+        "gives_you": "Only your own MCP host can drive the server",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Per-call approval in the host",
+        "how": "Keep the sample MCP config's `alwaysAllow` list empty so your host asks before each tool call",
+        "gives_you": "A person sees each tool call and its arguments before it runs",
+        "criterion": "C2",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "hexstrike-ai-mcp.json",
+            "lines": "12",
+            "contains": "\"alwaysAllow\": []",
+            "url": "https://github.com/0x4m4/hexstrike-ai/blob/d689933ff579d839c676c82b231f8e98326c5f04/hexstrike-ai-mcp.json#L12"
+          }
+        ]
+      },
+      {
+        "setup": "The per-command timeout",
+        "how": "Keep the built-in `COMMAND_TIMEOUT` of 300 seconds",
+        "gives_you": "Each command on the main executor ends after five minutes",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "hexstrike_server.py",
+            "lines": "6664",
+            "contains": "COMMAND_TIMEOUT = 300",
+            "url": "https://github.com/0x4m4/hexstrike-ai/blob/d689933ff579d839c676c82b231f8e98326c5f04/hexstrike_server.py#L6664"
+          }
+        ]
+      },
+      {
+        "setup": "A disposable, isolated VM",
+        "how": "Run both processes in a throwaway VM with no host mounts and egress limited to the in-scope targets",
+        "gives_you": "An outer boundary around every command, script and package, and a narrow path for data to leave",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A fresh snapshot per engagement",
+        "how": "Revert the VM to a clean snapshot after each engagement",
+        "gives_you": "Files, cached results and installed packages from one session never carry into the next",
+        "criterion": "C6",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A log kept off the VM",
+        "how": "Ship `hexstrike.log` to storage outside the VM as it is written",
+        "gives_you": "A record of every command that the tools themselves can't alter or delete",
+        "criterion": "C9",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "hexstrike_server.py",
+            "lines": "79",
+            "contains": "logging.FileHandler('hexstrike.log')",
+            "url": "https://github.com/0x4m4/hexstrike-ai/blob/d689933ff579d839c676c82b231f8e98326c5f04/hexstrike_server.py#L79"
+          }
+        ]
+      },
+      {
+        "setup": "A whole-VM stop",
+        "how": "Halt runaway work by stopping the VM or the server's whole process tree",
+        "gives_you": "Child processes that outlive the timeout end too",
+        "criterion": "C10",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; the generic command and Python-script tools can run anything the account can.",
+      "A package-install call fetches and runs code from the package index, so approve it only for a package you chose."
+    ],
+    "handling": [
+      "`hexstrike.log` and the console keep every command line and its output unredacted, credentials included; store them like the engagement data.",
+      "Leave the bridge's `--debug` off where its output is shared, since it logs complete request bodies."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

@@ -24,6 +24,32 @@
 
 These are thin tool servers over powerful security-operations APIs, and the code itself adds almost no safety layer: no read-only mode, no risk annotations, no confirmation or dry-run for deletes and alert changes, no per-call audit record, and no limits beyond a few page-size caps. Every call runs with whatever Google credential, SOAR key or VirusTotal key the operator supplied, and the model can choose the target project, customer and region. The strongest control is that SOAR integrations (including remote command, email and containment actions) are off unless the operator names them. A hijacked session can delete feeds, rewrite alerts and upload any local file to VirusTotal with no server-side check.
 
+## Safest setup
+
+These servers add almost no safety layer of their own: every tool, deletes included, runs with whatever credential you supply, and nothing marks or confirms the tools that change data. The one protection that ships on is that SOAR integrations stay off until you name them. The safest setup therefore rests on narrow credentials at Google, SOAR and VirusTotal, an approving host and containment around the process.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Read-only provider roles | Give the Google identity, SOAR app key and VirusTotal key only the projects, customers and read access the task needs | Google, SOAR and VirusTotal refuse writes and other tenants themselves, whatever the model asks for (C1) |
+| A dedicated service account | Set `SECOPS_SA_PATH` to the key of a service account made for this agent, in place of your own gcloud login ([server/secops/secops_mcp/server.py:71](https://github.com/google/mcp-security/blob/9885ec6856ec72333091cf1a3b2ac1bb26abe149/server/secops/secops_mcp/server.py#L71)) | The SecOps server acts as an identity you scoped for it, not with your personal access (C1) |
+| Your own tenant settings | Set `CHRONICLE_PROJECT_ID`, `CHRONICLE_CUSTOMER_ID` and `CHRONICLE_REGION` to your instance ([server/secops/secops_mcp/server.py:38-42](https://github.com/google/mcp-security/blob/9885ec6856ec72333091cf1a3b2ac1bb26abe149/server/secops/secops_mcp/server.py#L38-L42)) | Calls that name no tenant go to the instance you chose, not the built-in fallback IDs (C1) |
+| Only the integrations needed | Start the SOAR server without `--integrations`, or name only the integrations the task uses ([server/secops-soar/secops_soar_mcp/server.py:34-37](https://github.com/google/mcp-security/blob/9885ec6856ec72333091cf1a3b2ac1bb26abe149/server/secops-soar/secops_soar_mcp/server.py#L34-L37)) | Remote command, email and containment actions stay unregistered unless you chose them (C3) |
+| Per-call approval in the host | Run the servers under an MCP host that asks before each tool call | A person sees every delete, alert change, mute and file upload before it runs (C2) |
+| Its own container or VM | Run each server in a container or VM holding only the files the task needs, with outbound access limited to the Google, SOAR and VirusTotal endpoints you use | An outer boundary on which local files can be read and where data can go (C5) |
+| A pinned release | Launch a specific package version you have reviewed rather than the latest one uvx resolves | The code that runs stays the code you checked (C7) |
+| Logs kept outside reach | Send each server's stderr to storage the agent cannot modify | The SecOps and SCC call records outlive the session (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; no tool is marked as read-only or destructive, so the tool name and arguments are your guide.
+- Feed, data-table row and watchlist deletions can't be undone by the server, so check the target before approving.
+- A GTI file analysis uploads the named local file to VirusTotal, where it is shared with the community; check the path before approving.
+
+### Handling data
+
+- The feed secret tool returns a newly generated secret into the model's context; treat the transcript as holding that secret.
+- The SOAR server's `--verbose` adds debug output with unscrubbed error text; leave it off where logs are shared.
+
 ## Critical gaps
 - GTI analyse_file opens any local path the process can read and uploads it to VirusTotal, where it is shared with the community, with no path validation or confirmation. (ASI01, ASI02, LLM02; C5) — [server/gti/gti_mcp/tools/files.py:263](https://github.com/google/mcp-security/blob/9885ec6856ec72333091cf1a3b2ac1bb26abe149/server/gti/gti_mcp/tools/files.py#L263)
 - In the default configuration one session can read private SIEM data and untrusted text and also run irreversible deletes, with no approval, annotation or dry-run in the servers. (ASI01, ASI09, LLM06; C5) — [server/secops/secops_mcp/tools/feed_management.py:500](https://github.com/google/mcp-security/blob/9885ec6856ec72333091cf1a3b2ac1bb26abe149/server/secops/secops_mcp/tools/feed_management.py#L500)

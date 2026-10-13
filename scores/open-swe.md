@@ -24,6 +24,29 @@
 
 Open SWE runs its shell in a remote cloud sandbox and keeps GitHub tokens out of the sandbox, and only registered users can start runs. But there is no approval step for ordinary actions: a coding thread holds write access to every repository in the GitHub App installation, sandboxes have open network egress, and only workflow-file pushes ask a human, through a guard that does not cover every path. A prompt injection from a web page, repository file or integration result can therefore push code across repositories and send data out without anyone confirming.
 
+## Safest setup
+
+Open SWE runs every shell command in a remote cloud sandbox, keeps GitHub tokens out of that sandbox, and lets only registered users start runs. Ordinary actions run without an approval step and there is little to turn on, so the safest setup narrows what the GitHub App and model keys can reach and builds review and containment around the deployment.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A narrowly installed GitHub App | Install the GitHub App on only the repositories Open SWE should work on, granting Workflows write only if the team needs CI changes from it ([docs/INSTALLATION.md:84-91](https://github.com/langchain-ai/open-swe/blob/8e0e13e33a94da2266e180b0ffeb7c6264832457/docs/INSTALLATION.md#L84-L91)) | GitHub itself refuses writes outside those repositories, whatever a thread runs (C1) |
+| A capped model key | Give the deployment model keys with a spending limit set at the provider | A hard ceiling on spend, which Open SWE itself does not set (C10) |
+| The remote sandbox | Keep the default `SANDBOX_TYPE=langsmith`, or another remote provider ([agent/config.py:388-392](https://github.com/langchain-ai/open-swe/blob/8e0e13e33a94da2266e180b0ffeb7c6264832457/agent/config.py#L388-L392)) | Model-run commands execute on a separate machine from the server that holds your keys (C4) |
+| Only trusted MCP tools | Connect only MCP servers your team runs or trusts, allowing just the tools each one needs ([agent/mcp/runtime.py:254](https://github.com/langchain-ai/open-swe/blob/8e0e13e33a94da2266e180b0ffeb7c6264832457/agent/mcp/runtime.py#L254)) | The agent sees only the integration tools you picked; none are connected by default (C7) |
+| A limited server network | Run the Open SWE server where outbound traffic reaches only GitHub, Slack, LangSmith, your model provider and the integrations you use | The server's own web and HTTP tools can reach only the hosts you chose (C5) |
+| LangSmith tracing on | Keep `LANGSMITH_TRACING=true`, which LangGraph Platform sets for you ([agent/config.py:217-220](https://github.com/langchain-ai/open-swe/blob/8e0e13e33a94da2266e180b0ffeb7c6264832457/agent/config.py#L217-L220)) | A record of each run's model and tool calls, kept outside the sandbox (C9) |
+| Reviewed saved instructions | Check the audit log for `save_user_instructions` calls and have that user read their personal instructions in settings ([docs/reference/audit-logs.md:10](https://github.com/langchain-ai/open-swe/blob/8e0e13e33a94da2266e180b0ffeb7c6264832457/docs/reference/audit-logs.md#L10)) | Standing guidance that shapes every later session stays text a person has read (C6) |
+
+### Approving with confidence
+
+- Workflow-change prompts show the exact diff; read each one and approve pushes one at a time.
+
+### Handling data
+
+- Tool output, transcripts and LangSmith traces are not redacted; give access to them as you would to the repositories they cover.
+- Usage telemetry to Segment stays off while `SEGMENT_WRITE_KEY` is empty.
+
 ## Critical gaps
 - The shell tool runs without human approval; the only gate covers workflow-file pushes, and it does not cover every path. (ASI02, ASI09; C2) — [agent/middleware/workflow_push_guard.py:574-584](https://github.com/langchain-ai/open-swe/blob/8e0e13e33a94da2266e180b0ffeb7c6264832457/agent/middleware/workflow_push_guard.py#L574-L584)
 - A hijacked session can both exfiltrate (open sandbox egress, http_request, Slack) and push to every installation repository unattended (C5 worst case). (ASI01, LLM01; C5) — [agent/server.py:1679-1683](https://github.com/langchain-ai/open-swe/blob/8e0e13e33a94da2266e180b0ffeb7c6264832457/agent/server.py#L1679-L1683); [docs/reference/workspaces.md:175-176](https://github.com/langchain-ai/open-swe/blob/8e0e13e33a94da2266e180b0ffeb7c6264832457/docs/reference/workspaces.md#L175-L176); [agent/github/comments.py:149-159](https://github.com/langchain-ai/open-swe/blob/8e0e13e33a94da2266e180b0ffeb7c6264832457/agent/github/comments.py#L149-L159)

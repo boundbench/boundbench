@@ -36,6 +36,131 @@
     "external_communication": "yes"
   },
   "headline": "Grafana's MCP server is carefully engineered around its credentials: the token never reaches the model, redirects cannot carry it elsewhere, and every tool is annotated so hosts can tell reads from writes. But it ships with write tools on, including a general-purpose Grafana API tool that takes any method and path and can run raw SQL through datasources, plus a plugin installer the model can drive. Nothing in the server marks untrusted log or dashboard content or records what tools did, so a prompt-injected session can read sensitive telemetry, send it out through a new contact point, and delete resources. Run it with --disable-write and a narrowly scoped, read-only service account unless writes are really needed.",
+  "safe_setup": {
+    "intro": "Grafana MCP Server keeps its token away from the model and on the Grafana host, and labels every tool as read-only or destructive. As shipped it turns on write tools, a general API tool and plugin installs, and records nothing, so the safest setup narrows the Grafana identity and turns on the read-only mode, tool selection and limits the server already includes.",
+    "steps": [
+      {
+        "setup": "A read-only service account",
+        "how": "Give the service account the Viewer role, or a custom role covering only the folders and datasources the task needs",
+        "gives_you": "Grafana itself refuses writes, role changes and plugin installs, whatever the model asks for",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Read-only datasource users",
+        "how": "Connect SQL datasources in Grafana with database users that can only read",
+        "gives_you": "Queries the model writes can read data but cannot change or drop it",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Read-only mode",
+        "how": "`--disable-write`",
+        "gives_you": "The server registers no write tools, so content the model reads cannot steer it into changing or deleting Grafana resources",
+        "criterion": "C5",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "cmd/mcp-grafana/main.go",
+            "lines": "229",
+            "contains": "\"disable-write\", false",
+            "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L229"
+          }
+        ]
+      },
+      {
+        "setup": "Only the tools needed",
+        "how": "`--disable-api` and `--disable-plugin`, or `--enabled-tools <list>` naming just the categories the task uses",
+        "gives_you": "The model sees typed Grafana tools only, without the general API tool or plugin installs",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "cmd/mcp-grafana/main.go",
+            "lines": "210",
+            "contains": "\"enabled-tools\"",
+            "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L210"
+          },
+          {
+            "file": "cmd/mcp-grafana/main.go",
+            "lines": "245-246",
+            "contains": "\"disable-api\", false",
+            "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L245-L246"
+          }
+        ]
+      },
+      {
+        "setup": "A Loki query guardrail",
+        "how": "`--loki-guardrail-mode enforce`",
+        "gives_you": "Log queries that would scan too much data or too long a time range are rejected before they run",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "cmd/mcp-grafana/main.go",
+            "lines": "268",
+            "contains": "\"loki-guardrail-mode\"",
+            "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L268"
+          }
+        ]
+      },
+      {
+        "setup": "Same-origin redirects",
+        "how": "Keep the default `--allow-cross-origin-redirects` off",
+        "gives_you": "The token stays on the Grafana origin you configured",
+        "criterion": "C8",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "cmd/mcp-grafana/main.go",
+            "lines": "259",
+            "contains": "\"allow-cross-origin-redirects\", false",
+            "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/cmd/mcp-grafana/main.go#L259"
+          }
+        ]
+      },
+      {
+        "setup": "A rotated token file",
+        "how": "`GRAFANA_SERVICE_ACCOUNT_TOKEN_FILE` pointing at a token you rotate on a schedule",
+        "gives_you": "A token that leaks stops working at the next rotation",
+        "criterion": "C8",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "mcpgrafana.go",
+            "lines": "43",
+            "contains": "GRAFANA_SERVICE_ACCOUNT_TOKEN_FILE",
+            "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/mcpgrafana.go#L43"
+          }
+        ]
+      },
+      {
+        "setup": "A tool-call trace",
+        "how": "`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` or `OTEL_EXPORTER_OTLP_ENDPOINT` set to a collector you control",
+        "gives_you": "A span for every tool call, with its name, session and outcome, kept off the host",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "observability/logs.go",
+            "lines": "36-41",
+            "contains": "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+            "url": "https://github.com/grafana/mcp-grafana/blob/9dbfe137a5d3c3bc930ab7d9565e7917dac1cc0f/observability/logs.go#L36-L41"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve write calls one at a time; every tool carries read-only and destructive hints your host can prompt on.",
+      "New contact points and plugin installs reach beyond this session, so approve them when you asked for that change."
+    ],
+    "handling": [
+      "Anonymous, content-free usage statistics go to Grafana Labs by default; `--usage-stats=disabled` or `DO_NOT_TRACK=1` turns them off.",
+      "`--include-args-in-spans` adds tool arguments to trace spans, so leave it off where traces reach shared storage."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

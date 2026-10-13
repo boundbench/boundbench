@@ -36,6 +36,132 @@
     "external_communication": "yes"
   },
   "headline": "LiteLLM's gateway puts strong authentication and per-key authorization in front of every model and MCP tool call: it refuses to boot without a real master key, MCP servers are deny-by-default per key, and model-written code only runs in a remote sandbox. The dominant risk is what happens once tools run server-side: the README's lead example sets require_approval to never, after which the gateway executes model-chosen MCP calls with shared upstream credentials, for up to five rounds on streaming, with no taint tracking and no default spend cap. Config-named plugins and callbacks load in-process with no integrity check, and the shipped docker-compose defaults are not locked down.",
+  "safe_setup": {
+    "intro": "LiteLLM checks every model and MCP tool call against the calling key, keeps MCP servers off for a key until you grant them, and hands tool calls back to your application unless a request asks it to run them. Credentials behind the gateway are shared, spend has no ceiling by default and the shipped docker-compose defaults are not locked down, so the safest setup starts from your own deployment settings, narrows each identity and turns on the limits LiteLLM already includes.",
+    "steps": [
+      {
+        "setup": "Scoped upstream credentials",
+        "how": "Give each provider key and MCP server credential only the access its tools need, read-only where possible, with a spending limit set at the provider",
+        "gives_you": "The upstream services themselves refuse anything outside that grant, whatever a caller or the model asks for",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Per-user MCP credentials",
+        "how": "Set `auth_type` to `oauth2_token_exchange` on each MCP server that supports it",
+        "gives_you": "Each tool call acts with the requesting user's own grants instead of one shared credential",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "litellm/proxy/_experimental/mcp_server/mcp_server_manager.py",
+            "lines": "2479",
+            "contains": "auth_type=server_config.get(\"auth_type\", None)",
+            "url": "https://github.com/BerriAI/litellm/blob/a2bf67a03707e474be41e07806ee4fd9791ca7cd/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2479"
+          },
+          {
+            "file": "litellm/types/mcp.py",
+            "lines": "50",
+            "contains": "oauth2_token_exchange = \"oauth2_token_exchange\"",
+            "url": "https://github.com/BerriAI/litellm/blob/a2bf67a03707e474be41e07806ee4fd9791ca7cd/litellm/types/mcp.py#L50"
+          }
+        ]
+      },
+      {
+        "setup": "A model list per key",
+        "how": "Set `models` on every virtual key to the models its caller needs",
+        "gives_you": "Each key reaches only the models you chose, not every model the gateway serves",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "litellm/proxy/_types.py",
+            "lines": "1300",
+            "contains": "models: list | None = []",
+            "url": "https://github.com/BerriAI/litellm/blob/a2bf67a03707e474be41e07806ee4fd9791ca7cd/litellm/proxy/_types.py#L1300"
+          }
+        ]
+      },
+      {
+        "setup": "Approval in your app",
+        "how": "Keep `require_approval` unset on MCP tool references in requests",
+        "gives_you": "The gateway returns each tool call to your application, so it runs only after your app or a person approves it",
+        "criterion": "C2",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "litellm/responses/mcp/litellm_proxy_mcp_handler.py",
+            "lines": "559",
+            "contains": "tool.get(\"require_approval\")",
+            "url": "https://github.com/BerriAI/litellm/blob/a2bf67a03707e474be41e07806ee4fd9791ca7cd/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L559"
+          }
+        ]
+      },
+      {
+        "setup": "Read-only tool lists",
+        "how": "Set `allowed_tools` on each MCP server to the tools the task needs, read tools where the task allows",
+        "gives_you": "Keys granted a server see and call only the tools you listed",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "litellm/proxy/_experimental/mcp_server/mcp_server_manager.py",
+            "lines": "2658",
+            "contains": "allowed_tools=server_config.get(\"allowed_tools\", None)",
+            "url": "https://github.com/BerriAI/litellm/blob/a2bf67a03707e474be41e07806ee4fd9791ca7cd/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2658"
+          }
+        ]
+      },
+      {
+        "setup": "Pinned tool catalogs",
+        "how": "Set `pinned_tools` on each MCP server to the tool definitions you reviewed",
+        "gives_you": "The model sees the definitions you approved, unpinned tools stay blocked, and changes upstream raise an alert",
+        "criterion": "C7",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "litellm/proxy/_experimental/mcp_server/mcp_server_manager.py",
+            "lines": "2661",
+            "contains": "pinned_tools=server_config.get(\"pinned_tools\", None)",
+            "url": "https://github.com/BerriAI/litellm/blob/a2bf67a03707e474be41e07806ee4fd9791ca7cd/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2661"
+          }
+        ]
+      },
+      {
+        "setup": "Reviewed plugin modules",
+        "how": "Name only callback, guardrail and router-plugin modules you have read, pinned to a version and shipped inside your own image",
+        "gives_you": "Only code you reviewed runs inside the process that holds the gateway's keys",
+        "criterion": "C7",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Spend and rate ceilings",
+        "how": "Set `max_budget`, `rpm_limit` and `tpm_limit` on every virtual key",
+        "gives_you": "Each key stops at a spend ceiling and a request and token rate you chose",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "litellm/proxy/_types.py",
+            "lines": "1302-1309",
+            "contains": "max_budget: float | None = None",
+            "url": "https://github.com/BerriAI/litellm/blob/a2bf67a03707e474be41e07806ee4fd9791ca7cd/litellm/proxy/_types.py#L1302-L1309"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each tool call your application receives and approve calls one at a time.",
+      "Reserve `require_approval: never` for servers whose allowed tools only read; on streaming Responses the gateway then runs up to five rounds of model-chosen calls on its own."
+    ],
+    "handling": [
+      "Spend logs record each tool call's arguments with the key, user and team; store them like the data those tools reach.",
+      "Set `LITELLM_SALT_KEY` so stored credentials are encrypted under a key separate from the master key.",
+      "Leave `LITELLM_DISABLE_REDACT_SECRETS` unset, and set `turn_off_message_logging` when third-party logging callbacks are on."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

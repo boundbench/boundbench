@@ -36,6 +36,115 @@
     "external_communication": "yes"
   },
   "headline": "An Activepieces agent step runs unattended: every tool the author attaches executes without human approval, using the author's broadly scoped app accounts. If the content it processes (an email, a webhook payload, a web page) carries injected instructions, the agent can leak data through its built-in web fetch and send, post or write on the author's behalf. The tool layer is better than average, with author-pinned fields, credentials kept away from the model and an address-filtered fetch, but there is no way to stop a running step. In the shipped execution mode, pieces and code run in the worker container that holds the key to every stored credential.",
+  "safe_setup": {
+    "intro": "Activepieces gives each agent step only the tools its author attaches, keeps stored credentials away from the model and records every tool call. Agent steps run unattended, and as shipped pieces and code run as root in the worker that holds the key to every stored credential, so the safest setup narrows the connected accounts, turns on the sandbox and strict network modes, and leaves sending to a later step behind a flow approval.",
+    "steps": [
+      {
+        "setup": "Narrow app connections",
+        "how": "Connect each agent tool to a dedicated app account that holds only the mailboxes, channels and records the task needs",
+        "gives_you": "A misled agent reaches only that account's data, not your own full mailbox or workspace",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Sending behind an approval",
+        "how": "Give the agent read tools only, and send its draft from a later flow step placed after an approval step",
+        "gives_you": "A person checks each email, post or record change before it leaves",
+        "criterion": "C2",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Pinned tool fields",
+        "how": "Attach only the tools the task needs and pin recipients, channels and targets in each tool's fields",
+        "gives_you": "The values you pinned always win over what the model writes",
+        "criterion": "C3",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "packages/server/api/src/app/ee/agent/tools/piece-input-filler.ts",
+            "lines": "32",
+            "contains": "...pinned }",
+            "url": "https://github.com/activepieces/activepieces/blob/33cb8438d94808ab66d0fd391b1d68d7f2b44506/packages/server/api/src/app/ee/agent/tools/piece-input-filler.ts#L32"
+          }
+        ]
+      },
+      {
+        "setup": "The full sandbox mode",
+        "how": "`AP_EXECUTION_MODE=SANDBOX_CODE_AND_PROCESS` in the environment file",
+        "gives_you": "Pieces and code steps run as an unprivileged user in a minimal read-only filesystem, not as root in the worker",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": ".env.example",
+            "lines": "23",
+            "contains": "AP_EXECUTION_MODE=UNSANDBOXED",
+            "url": "https://github.com/activepieces/activepieces/blob/33cb8438d94808ab66d0fd391b1d68d7f2b44506/.env.example#L23"
+          },
+          {
+            "file": "packages/core/execution/src/lib/engine/index.ts",
+            "lines": "11",
+            "contains": "SANDBOX_CODE_AND_PROCESS = 'SANDBOX_CODE_AND_PROCESS'",
+            "url": "https://github.com/activepieces/activepieces/blob/33cb8438d94808ab66d0fd391b1d68d7f2b44506/packages/core/execution/src/lib/engine/index.ts#L11"
+          }
+        ]
+      },
+      {
+        "setup": "Strict network mode",
+        "how": "`AP_NETWORK_MODE=STRICT` in the environment file",
+        "gives_you": "Requests made by pieces and code can't reach private, loopback or cloud-metadata addresses",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/server/api/src/app/helper/system/system.ts",
+            "lines": "68",
+            "contains": "NetworkMode.UNRESTRICTED",
+            "url": "https://github.com/activepieces/activepieces/blob/33cb8438d94808ab66d0fd391b1d68d7f2b44506/packages/server/api/src/app/helper/system/system.ts#L68"
+          },
+          {
+            "file": "packages/server/engine/src/lib/network/ssrf-guard.ts",
+            "lines": "47",
+            "contains": "process.env['AP_NETWORK_MODE'] === NetworkMode.STRICT",
+            "url": "https://github.com/activepieces/activepieces/blob/33cb8438d94808ab66d0fd391b1d68d7f2b44506/packages/server/engine/src/lib/network/ssrf-guard.ts#L47"
+          }
+        ]
+      },
+      {
+        "setup": "A small step budget",
+        "how": "Keep the Run Agent step's `Max Steps` at the default 20, or lower it for short tasks",
+        "gives_you": "Every agent run ends after a fixed number of model steps",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "packages/pieces/community/ai/src/lib/actions/agents/run-agent.ts",
+            "lines": "89-94",
+            "contains": "defaultValue: 20",
+            "url": "https://github.com/activepieces/activepieces/blob/33cb8438d94808ab66d0fd391b1d68d7f2b44506/packages/pieces/community/ai/src/lib/actions/agents/run-agent.ts#L89-L94"
+          }
+        ]
+      },
+      {
+        "setup": "A fenced-in worker",
+        "how": "Run the worker in its own container or VM with outbound access limited to the model provider and the services your flows use",
+        "gives_you": "An outer boundary around pieces and code, and a narrow path for data to leave",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Read each draft in the approval step and approve them one at a time; the agent's own tool calls run without a prompt.",
+      "A running agent step can't be stopped before its two-hour limit, so try new flows with a low `Max Steps` first."
+    ],
+    "handling": [
+      "Each agent step's transcript keeps every tool call's inputs and outputs in the database; store database backups like the connected accounts' data.",
+      "Product telemetry is on by default and drops names and emails on self-hosted installs; `AP_TELEMETRY_ENABLED=false` turns it off."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

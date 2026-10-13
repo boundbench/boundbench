@@ -24,6 +24,29 @@
 
 Steel Browser gives whoever drives it full control of a browser that holds logged-in sessions, and the network exposure and access control of its REST API and Chrome DevTools port in the shipped configuration are not locked down. Inside the root-run container, Chrome's own sandbox and site isolation are switched off, and the API will load Chrome extensions from arbitrary paths. Only run it on a private network behind your own authenticating proxy.
 
+## Safest setup
+
+Steel Browser keeps network request bodies and typed values out of its logs and records requests and browser events, but the network exposure and access control of its API in the shipped configuration are not locked down, nothing asks before a browser action, and Chrome runs without its own sandbox. With few protections to turn on, the safest setup narrows what the browser is logged into and builds the boundaries around the container yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Low-privilege site accounts | Log the browser in only to the accounts the task needs, using dedicated low-privilege accounts where the site offers them | Whoever drives the browser can act only as those accounts, not as every account you use (C1) |
+| A private, authenticated entry | Reach the API and DevTools port only over a private network, through your own proxy that requires authentication | Only callers you have authenticated can drive the browser and its logged-in sessions (C1) |
+| Bundled extensions only | Have your client request extensions only by name in `extensions`, from the set bundled in the image ([api/src/modules/sessions/sessions.schema.ts:68](https://github.com/steel-dev/steel-browser/blob/e5902fc50f767702894902916ecf5489de7de457/api/src/modules/sessions/sessions.schema.ts#L68)) | The browser runs only extension code that shipped with the image (C7) |
+| A hardened container | Run the container with dropped capabilities, no-new-privileges, memory and CPU limits, and outbound access limited to the sites the task needs | An outer boundary around page code running in a browser whose own sandbox is off (C4) |
+| A fresh container per task | Recreate the container for each task or user, with no browser profile kept on a volume | Cookies and site data planted during one task don't carry into the next (C6) |
+| Sessions with an end | Have your client release each session when its task finishes, and recreate the container on a fixed schedule | No browser session keeps running after the work it was started for (C10) |
+| A kept event log | Keep the shipped `LOG_STORAGE_ENABLED=true` and copy the log volume regularly to storage the API can't reach ([docker-compose.yml:14](https://github.com/steel-dev/steel-browser/blob/e5902fc50f767702894902916ecf5489de7de457/docker-compose.yml#L14); [api/src/env.ts:73](https://github.com/steel-dev/steel-browser/blob/e5902fc50f767702894902916ecf5489de7de457/api/src/env.ts#L73)) | A record of API requests and browser events that outlives anything an API client does to it (C9) |
+
+### Approving with confidence
+
+- Steel has no confirmation step of its own, so gate form submissions, purchases and posts in the agent host: read each prompt and approve calls one at a time.
+
+### Handling data
+
+- Cookies the browser holds are long-lived logins; treat the browser profile and the session material the API returns like the passwords of those accounts.
+- The stored event log records the URLs of every navigation and request; store it like browsing history.
+
 ## Critical gaps
 - Untrusted web content driving or reaching the browser can exfiltrate data and take irreversible logged-in actions with no human involved. (ASI01, T6, LLM01; C5) — [api/src/modules/actions/actions.controller.ts:111-113](https://github.com/steel-dev/steel-browser/blob/e5902fc50f767702894902916ecf5489de7de457/api/src/modules/actions/actions.controller.ts#L111-L113)
 

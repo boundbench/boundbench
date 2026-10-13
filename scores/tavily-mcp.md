@@ -25,6 +25,24 @@ Controls where a risk surface exists: 1.88 / 8.0 (24%); 2 criteria scored SA (su
 
 A small, read-mostly web search server: it runs no code, touches no files and only ever talks to Tavily's API, so it cannot do much damage on its own. Its gaps in posture are around that core: web content comes back unmarked and mixed with the server's own instructions to the model, there are no risk labels for hosts and no audit log, and the extract and feedback tools give a hijacked model an outbound channel. Its configuration loading is also not integrity-protected.
 
+## Safest setup
+
+Tavily MCP runs no code, touches no files and only talks to Tavily's own API, so its reach is small by design. It ships few controls of its own to turn on: no read-only mode, no tool selection and no call log. The safest setup therefore leans on your Tavily account and your MCP client.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated API key | Create a Tavily key used only by this server, pass it as `TAVILY_API_KEY` in the client's own server config, and rotate it regularly | A misused key reaches only one Tavily account you can revoke at any time (C1) |
+| Per-call approval in the client | Set your MCP client to ask before each Tavily tool call | A person decides on every query, URL fetch and feedback message before it leaves (C2) |
+| Only the tools needed | Where your client lets you switch off individual tools, enable just search and leave extract, crawl and feedback off unless the task needs them | Content the agent reads has fewer ways to send data out (C5) |
+| A pinned release | Launch a specific reviewed version of the npm package rather than `@latest` | The server code changes only when you choose to update it (C7) |
+| Records outside the server | Keep your MCP client's tool-call history and check usage in your Tavily dashboard | A trail of what the agent searched and fetched, and early sight of unusual credit spend (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; the URLs in an extract or crawl call are sent to Tavily to fetch.
+- A feedback call sends its free text to Tavily, so read it before approving.
+- Research and large crawls can spend many credits; check the model and limits in the call first.
+
 ## Critical gaps
 - None: no criterion is capped and no blast radius is at the worst level.
 

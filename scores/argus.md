@@ -25,6 +25,29 @@ Controls where a risk surface exists: 3.18 / 9.0 (35%); 1 criterion scored SA (s
 
 The AI assistant itself is tightly bounded: its default tool set is four read-only knowledge/skill tools plus four read-only built-in ticket and asset lookups, so a manipulated model cannot change state or reach the network by design. The larger risks sit around it. The SOAR workflow engine runs containment, email and generic HTTP actions with no per-run approval step, shared skill instructions that steer the assistant can be edited by any non-readonly user, and one assistant endpoint forwards the caller's platform token to caller-chosen MCP endpoints. Access control is flat (any authenticated user), and self-registration is auto-approved with read access by default.
 
+## Safest setup
+
+Argus keeps its AI assistant to read-only lookups, encrypts and redacts workflow credentials, and limits the HTTP workflow action to an admin allowlist. Access is otherwise flat and published workflows run every step without a per-run approval, so the safest setup narrows who can write, what workflows can reach and where the backend can connect.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Narrowly scoped device accounts | Give the firewall, directory and email accounts that workflow actions use only the rights those actions need | The systems themselves refuse anything beyond those rights, whatever a workflow run asks for (C8) |
+| Admin-approved registration | Turn off `auto_approve_enabled` in the system settings ([backend/accounts/models.py:161](https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/accounts/models.py#L161)) | Every new account waits for an administrator before it can read SOC data (C1) |
+| Read-only accounts by default | Keep registered users on the read-only role (`is_readonly`) and grant write access only to people who build workflows and skills ([backend/accounts/models.py:68](https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/accounts/models.py#L68); [backend/accounts/services.py:443](https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/accounts/services.py#L443)) | Workflows, skills and MCP server records can be changed only by the few accounts you trust with them (C1) |
+| A short HTTP allowlist | List in `workflow_http_allowlist` only the hosts your workflows call ([backend/accounts/models.py:162](https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/accounts/models.py#L162)) | The generic HTTP action reaches only those hosts (C3) |
+| Request rate limits | Keep `DRF_THROTTLE_USER_RATE` and `TICKET_PLAYBOOK_INVOKE_RATE` at their defaults or lower ([backend/siem_project/settings.py:249](https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/siem_project/settings.py#L249); [backend/siem_project/settings.py:253](https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/siem_project/settings.py#L253)) | Each account can start only a bounded number of requests and ticket playbook runs per minute (C10) |
+| A restricted backend network | Run the backend and workflow worker in a network that reaches only the model provider and the systems your workflows act on | Platform tokens, ticket text and workflow requests travel only to hosts you chose (C7) |
+| Retained, exported audit records | Set `AUDIT_LOG_RETENTION_DAYS` to your retention policy and copy audit and tool-call records to storage the platform can't modify ([backend/siem_project/settings.py:294](https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/siem_project/settings.py#L294)) | A record of logins, tool calls and workflow runs that outlives the retention job and the service itself (C9) |
+
+### Approving with confidence
+
+- Read each workflow before publishing it; publishing once authorises every later run, including containment, email and HTTP steps.
+- Read changes to shared skills the same way, since skill text reaches every user's assistant.
+
+### Handling data
+
+- Tool-call records keep raw arguments and workflow runs keep step inputs and outputs; store database backups like the SOC data they cover.
+
 ## Critical gaps
 - The ticket mention endpoint attaches the caller's platform token to requests sent to MCP endpoints named by the caller. (ASI03, T9; C1) — [backend/tickets/views.py:859-862](https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/tickets/views.py#L859-L862); [backend/ai_assistant/mcp_gateway.py:231-240](https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/ai_assistant/mcp_gateway.py#L231-L240)
 - The generic HTTP and containment workflow actions run without any approval gate in the default configuration. (ASI02, ASI09; C2) — [backend/workflows/prefect/actions/registry.py:27-33](https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/actions/registry.py#L27-L33); [backend/workflows/prefect/flow.py:197](https://github.com/Sec-Link/Argus-Agentic-SOC-Platform/blob/dd803f061b24fa010ba0f2901b1902c42537ba8d/backend/workflows/prefect/flow.py#L197)

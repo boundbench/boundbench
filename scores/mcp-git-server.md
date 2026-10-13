@@ -25,6 +25,28 @@ Controls where a risk surface exists: 2.88 / 9.0 (32%); 1 criterion scored SA (s
 
 A small, narrowly built git server: no shell, no network tools, no credentials, accurate read/write annotations on every tool, and careful checks against flag injection and path traversal. Its weak points are defaults and visibility: with no --repository flag it can act on every git repository the user owns, it keeps no record of what it did, and it bounds none of its output. The dominant risk is indirect: git_commit and git_checkout run the repository's git hooks on the host as the user, so a repository whose hooks execute tracked code can turn a routine commit into arbitrary code execution.
 
+## Safest setup
+
+MCP Git server has no shell or network tools, holds no credentials, and labels every tool as read-only or not so your host can gate writes. Its defaults are broad: it reaches every repository you can open, runs the repository's git hooks on commit and checkout, and keeps no record, so the safest setup narrows it to one repository and contains it.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A credential-free environment | Launch the server from an environment with no SSH agent, git credential helper or cloud keys loaded | Git and any hooks it runs find no credentials to use beyond the local repository (C1) |
+| One repository only | `--repository <path>` naming the project you are working on ([src/git/src/mcp_server_git/__init__.py:8](https://github.com/modelcontextprotocol/servers/blob/f46d9578190b476b3501923ea8977d899e8db2cb/src/git/src/mcp_server_git/__init__.py#L8)) | Every tool call stays inside that one repository instead of any repository on disk (C1) |
+| Per-call approval for writes | Keep your host's approval prompt on for tools marked `readOnlyHint=False` ([src/git/src/mcp_server_git/server.py:356](https://github.com/modelcontextprotocol/servers/blob/f46d9578190b476b3501923ea8977d899e8db2cb/src/git/src/mcp_server_git/server.py#L356)) | A person decides on every stage, commit, branch, checkout and reset before it runs (C2) |
+| Hooks you have read | Use it on repositories whose installed git hooks you have reviewed, or point the repository's hooks path at an empty directory | Commits and checkouts run only hook code you know about (C4) |
+| Its own container | Build the `mcp/git` image and run it as a non-root user, mounting only the project repository, with networking off ([src/git/README.md:343](https://github.com/modelcontextprotocol/servers/blob/f46d9578190b476b3501923ea8977d899e8db2cb/src/git/README.md#L343)) | Git and its hooks run away from your home directory, credentials and network (C4) |
+| A host-side tool log | Turn on your MCP host's tool-call logging and keep the log outside the repository | A record of every call and its arguments, which the server itself does not keep (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve write calls one at a time; git_commit and git_checkout also run any hooks installed in the repository.
+- git_add with '.' stages the whole working tree, so check which files are changed before approving it.
+
+### Handling data
+
+- Diffs and git_show return repository content unfiltered, including any secrets committed to it.
+
 ## Critical gaps
 - git_commit and git_checkout run the repository's git hooks on the host as the OS user with the full environment; nothing isolates them or disables hooks (impact inferred from GitPython/git behaviour). (ASI05; C4) — [src/git/src/mcp_server_git/server.py:128-130](https://github.com/modelcontextprotocol/servers/blob/f46d9578190b476b3501923ea8977d899e8db2cb/src/git/src/mcp_server_git/server.py#L128-L130); [src/git/src/mcp_server_git/server.py:197-204](https://github.com/modelcontextprotocol/servers/blob/f46d9578190b476b3501923ea8977d899e8db2cb/src/git/src/mcp_server_git/server.py#L197-L204)
 

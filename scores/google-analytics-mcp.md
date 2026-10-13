@@ -25,6 +25,28 @@ Controls where a risk surface exists: 3.38 / 7.0 (48%); 3 criteria scored SA (su
 
 A small, read-only server: every tool is a Google Analytics read call, and the credential is requested with the analytics read-only scope only, so a misused session can read analytics data but cannot change anything. It runs no code, loads no workspace files and keeps no memory. Its gaps are around visibility: tools carry no read-only labels for the host, report values that outsiders can write into a property come back unmarked, and the server keeps no record of the calls it makes and sets no limits of its own.
 
+## Safest setup
+
+Google Analytics MCP only reads: every tool is a Google Analytics read call, and it asks for credentials with the analytics read-only scope alone. It keeps no record of calls and sets no limits of its own, so the safest setup narrows the Google identity behind it and adds logging and containment in the host.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated read-only identity | Point `GOOGLE_APPLICATION_CREDENTIALS` at a dedicated account granted Viewer on only the properties the task needs ([README.md:143](https://github.com/googleanalytics/google-analytics-mcp/blob/75c0e1be8322e5eaa5c2e3ef7e79cf4760060f9a/README.md#L143)) | Google itself limits the server to those properties, read-only, whatever the model asks for (C1) |
+| A narrow sign-in grant | Create the credentials with the analytics read-only scope only, leaving out the cloud-platform scope in the README sample | The long-lived grant on disk reaches only analytics data, not the rest of your Google Cloud (C8) |
+| The built-in read-only scope | Run the released server as is; `_READ_ONLY_ANALYTICS_SCOPE` is fixed in code with no setting to widen it ([analytics_mcp/tools/client.py:49-52](https://github.com/googleanalytics/google-analytics-mcp/blob/75c0e1be8322e5eaa5c2e3ef7e79cf4760060f9a/analytics_mcp/tools/client.py#L49-L52)) | Every call uses a credential that can read analytics data and change nothing (C1) |
+| A read-only host session | Use it in a host session whose other tools only read and stay on your machine | Text planted in report values has no path to move analytics data elsewhere (C5) |
+| A host-side call log | Turn on your MCP host's tool-call logging and keep the server's stderr | A record of which reports were run, with which arguments, that the server itself doesn't keep (C9) |
+| A host timeout | Set a per-call timeout for this server in your MCP host | A stuck or very large report ends instead of running on (C10) |
+
+### Approving with confidence
+
+- Every tool only reads, but none is labelled read-only for the host; read each prompt and approve calls one at a time, checking the property ID and row limit.
+
+### Handling data
+
+- Tool errors go to the model and stderr as raw exception text; store host logs like the analytics data they cover.
+- The credentials file is a long-lived grant; keep it readable only by you.
+
 ## Critical gaps
 - None: no criterion is capped and no blast radius is at the worst level.
 

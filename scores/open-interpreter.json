@@ -36,6 +36,128 @@
     "external_communication": "yes"
   },
   "headline": "Open Interpreter inherits Codex's real OS sandbox (Seatbelt on macOS, bubblewrap+seccomp on Linux): model commands can write only inside the project, have no network, and need your approval, with the exact command shown, to leave the sandbox. Protection of the project settings folder is not tamper-resistant. Every command also inherits your full environment (API keys, cloud tokens) and can read your whole disk, and there are no turn, time or spend limits.",
+  "safe_setup": {
+    "intro": "Open Interpreter runs model commands in a real OS sandbox with writes limited to the project and network off, and asks you before any command leaves it. Those commands still see your whole environment and disk, and there are no turn, time or spend limits, so the safest setup keeps credentials out of reach and puts containment around the process.",
+    "steps": [
+      {
+        "setup": "A dedicated, low-limit key",
+        "how": "Start it from a shell that holds only the model key this work needs, with a spending limit set at the provider",
+        "gives_you": "Commands can reach only the credentials and spend you chose, not every token in your shell",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Credential-free commands",
+        "how": "Set `inherit` to `core` in the `shell_environment_policy` table of your user config",
+        "gives_you": "Shell commands start without your API keys, cloud credentials and tokens",
+        "criterion": "C8",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "codex-rs/config/src/config_toml.rs",
+            "lines": "206",
+            "contains": "pub shell_environment_policy: ShellEnvironmentPolicyToml",
+            "url": "https://github.com/openinterpreter/openinterpreter/blob/2767e5f20d6927500b8f1938c773c61afb823245/codex-rs/config/src/config_toml.rs#L206"
+          },
+          {
+            "file": "codex-rs/config/src/shell_environment_policy.rs",
+            "lines": "16",
+            "contains": "pub inherit: Option<ShellEnvironmentPolicyInherit>",
+            "url": "https://github.com/openinterpreter/openinterpreter/blob/2767e5f20d6927500b8f1938c773c61afb823245/codex-rs/config/src/shell_environment_policy.rs#L16"
+          },
+          {
+            "file": "codex-rs/protocol/src/config_types.rs",
+            "lines": "206-210",
+            "contains": "rename_all = \"kebab-case\"",
+            "url": "https://github.com/openinterpreter/openinterpreter/blob/2767e5f20d6927500b8f1938c773c61afb823245/codex-rs/protocol/src/config_types.rs#L206-L210"
+          }
+        ]
+      },
+      {
+        "setup": "Login in the OS keyring",
+        "how": "`cli_auth_credentials_store = \"keyring\"` in your user config",
+        "gives_you": "Your login token is kept out of the plaintext auth.json file that sandboxed commands can read",
+        "criterion": "C8",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "codex-rs/config/src/config_toml.rs",
+            "lines": "280-285",
+            "contains": "pub cli_auth_credentials_store: Option<AuthCredentialsStoreMode>",
+            "url": "https://github.com/openinterpreter/openinterpreter/blob/2767e5f20d6927500b8f1938c773c61afb823245/codex-rs/config/src/config_toml.rs#L280-L285"
+          }
+        ]
+      },
+      {
+        "setup": "The OS sandbox",
+        "how": "Keep the default `workspace-write` `sandbox_mode`, which trusted folders get with network off",
+        "gives_you": "Model commands write only inside the project and /tmp and cannot reach the network on their own",
+        "criterion": "C4",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "codex-rs/config/src/config_toml.rs",
+            "lines": "219",
+            "contains": "pub sandbox_mode: Option<SandboxMode>",
+            "url": "https://github.com/openinterpreter/openinterpreter/blob/2767e5f20d6927500b8f1938c773c61afb823245/codex-rs/config/src/config_toml.rs#L219"
+          },
+          {
+            "file": "codex-rs/protocol/src/config_types.rs",
+            "lines": "109",
+            "contains": "#[serde(rename = \"workspace-write\")]",
+            "url": "https://github.com/openinterpreter/openinterpreter/blob/2767e5f20d6927500b8f1938c773c61afb823245/codex-rs/protocol/src/config_types.rs#L109"
+          }
+        ]
+      },
+      {
+        "setup": "Per-call approval",
+        "how": "Keep the default `approval_policy`, which asks you on request, with prompts coming to you",
+        "gives_you": "Every command that needs to leave the sandbox waits for you, with the exact command on screen",
+        "criterion": "C2",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "codex-rs/config/src/config_toml.rs",
+            "lines": "190",
+            "contains": "pub approval_policy: Option<AskForApproval>",
+            "url": "https://github.com/openinterpreter/openinterpreter/blob/2767e5f20d6927500b8f1938c773c61afb823245/codex-rs/config/src/config_toml.rs#L190"
+          },
+          {
+            "file": "codex-rs/protocol/src/protocol.rs",
+            "lines": "994-996",
+            "contains": "OnRequest,",
+            "url": "https://github.com/openinterpreter/openinterpreter/blob/2767e5f20d6927500b8f1938c773c61afb823245/codex-rs/protocol/src/protocol.rs#L994-L996"
+          }
+        ]
+      },
+      {
+        "setup": "Folders you have read",
+        "how": "Trust a folder only after reading its project config, rules and AGENTS.md, and read them again after pulling changes",
+        "gives_you": "Approval settings, sandbox settings, MCP servers and instructions come only from content you have reviewed",
+        "criterion": "C6",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run it in a container or VM that holds only the project and the keys this work needs",
+        "gives_you": "An outer boundary around whole-disk reads and the MCP servers that run outside the sandbox",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve commands one at a time; a \"don't ask again\" answer approves a command prefix, and later commands matching it run outside the sandbox.",
+      "MCP tools that their server labels read-only run without a prompt, so add only servers you trust."
+    ],
+    "handling": [
+      "Session transcripts under ~/.openinterpreter/sessions keep every command and its output unredacted; store them like the data the agent read.",
+      "Usage analytics are on by default; `enabled = false` in the `analytics` table turns them off.",
+      "Interrupting a turn leaves background terminals running; `/stop` ends them."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

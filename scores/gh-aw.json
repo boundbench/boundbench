@@ -36,6 +36,187 @@
     "external_communication": "yes"
   },
   "headline": "gh-aw is built around separating the agent from write access. The agent runs read-only inside a firewalled container with no tokens of its own, and its requested writes are typed, counted and applied by a separate job only after an AI threat check. The main gaps are that no human approves what gets posted by default, and that a manipulated agent can still read repository data and may be able to send it out through allowlisted domains. Keep integrity filtering on, and turn on manual approval or staged mode for sensitive repositories.",
+  "safe_setup": {
+    "intro": "gh-aw already keeps the agent read-only inside a firewalled container with no tokens of its own, and applies its requested writes in a separate job after a threat check. What it leaves to you is a human review of what gets posted and integrity filtering on private repositories, so the safest setup keeps the defaults and turns those on.",
+    "steps": [
+      {
+        "setup": "The per-job GitHub token",
+        "how": "Leave the `GH_AW_GITHUB_TOKEN` secret unset, or make it a fine-grained token scoped to this one repository",
+        "gives_you": "GitHub itself limits reads and writes to one repository with a token that expires with the job",
+        "criterion": "C1",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "pkg/workflow/github_token.go",
+            "lines": "45",
+            "contains": "secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN",
+            "url": "https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/github_token.go#L45"
+          }
+        ]
+      },
+      {
+        "setup": "Only the outputs needed",
+        "how": "List under `safe-outputs:` only the output types the workflow needs, each with a low `max`",
+        "gives_you": "The write job gets only those permissions and applies a bounded number of typed writes",
+        "criterion": "C3",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "pkg/workflow/safe_outputs_config_extraction.go",
+            "lines": "52",
+            "contains": "frontmatter[\"safe-outputs\"]",
+            "url": "https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/safe_outputs_config_extraction.go#L52"
+          },
+          {
+            "file": "pkg/workflow/safe_outputs_config_types.go",
+            "lines": "23",
+            "contains": "yaml:\"max,omitempty\"",
+            "url": "https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/safe_outputs_config_types.go#L23"
+          }
+        ]
+      },
+      {
+        "setup": "A human approves each run",
+        "how": "`manual-approval: <environment>` under `on:`, with required reviewers set on that GitHub environment",
+        "gives_you": "No run starts until a person you chose approves it",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "pkg/workflow/manual_approval.go",
+            "lines": "27",
+            "contains": "on[\"manual-approval\"]",
+            "url": "https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/manual_approval.go#L27"
+          }
+        ]
+      },
+      {
+        "setup": "Staged preview",
+        "how": "`staged: true` under `safe-outputs:`",
+        "gives_you": "Issues, comments and pull requests appear as a preview for you to read before anything is published",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "pkg/workflow/safe_outputs_config_extraction.go",
+            "lines": "52",
+            "contains": "frontmatter[\"safe-outputs\"]",
+            "url": "https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/safe_outputs_config_extraction.go#L52"
+          },
+          {
+            "file": "pkg/workflow/safe_outputs_config_types.go",
+            "lines": "117",
+            "contains": "yaml:\"staged,omitempty\"",
+            "url": "https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/safe_outputs_config_types.go#L117"
+          }
+        ]
+      },
+      {
+        "setup": "Integrity filtering everywhere",
+        "how": "`min-integrity: approved` under `tools:` `github:`, private repositories included",
+        "gives_you": "Content from authors without write access stays out of the model's context on every repository",
+        "criterion": "C5",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "pkg/workflow/compiler_orchestrator_tools.go",
+            "lines": "402",
+            "contains": "frontmatter[\"tools\"]",
+            "url": "https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/compiler_orchestrator_tools.go#L402"
+          },
+          {
+            "file": "pkg/workflow/tools_parser.go",
+            "lines": "130",
+            "contains": "toolsMap[\"github\"]",
+            "url": "https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/tools_parser.go#L130"
+          },
+          {
+            "file": "pkg/workflow/tools_parser.go",
+            "lines": "322",
+            "contains": "configMap[\"min-integrity\"]",
+            "url": "https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/tools_parser.go#L322"
+          },
+          {
+            "file": "pkg/workflow/tools_types.go",
+            "lines": "321",
+            "contains": "GitHubIntegrityApproved GitHubIntegrityLevel = \"approved\"",
+            "url": "https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/tools_types.go#L321"
+          }
+        ]
+      },
+      {
+        "setup": "Strict mode and the sandbox",
+        "how": "Keep the default `strict: true` and leave `sandbox:` `agent` on",
+        "gives_you": "Everything the agent runs stays inside the firewalled container, and the compiler keeps refusing weaker settings",
+        "criterion": "C4",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "pkg/workflow/compiler_yaml_policy.go",
+            "lines": "21-29",
+            "contains": "frontmatter[\"strict\"]",
+            "url": "https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/compiler_yaml_policy.go#L21-L29"
+          },
+          {
+            "file": "pkg/workflow/sandbox_validation.go",
+            "lines": "87-89",
+            "contains": "sandbox.agent: false",
+            "url": "https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/sandbox_validation.go#L87-L89"
+          }
+        ]
+      },
+      {
+        "setup": "A narrow network allowlist",
+        "how": "List under `network:` `allowed:` only the ecosystems and domains the task needs",
+        "gives_you": "Fewer hosts the agent can reach, and so fewer paths for repository data to leave",
+        "criterion": "C5",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "pkg/workflow/frontmatter_extraction_security.go",
+            "lines": "16",
+            "contains": "frontmatter[\"network\"]",
+            "url": "https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/frontmatter_extraction_security.go#L16"
+          },
+          {
+            "file": "pkg/workflow/engine.go",
+            "lines": "177-178",
+            "contains": "yaml:\"allowed,omitempty\"",
+            "url": "https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/workflow/engine.go#L177-L178"
+          }
+        ]
+      },
+      {
+        "setup": "The run budget",
+        "how": "Keep the default 20-minute agent timeout and 1,000-credit per-run budget",
+        "gives_you": "Every run ends within a fixed time and spend, sub-agents included",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "pkg/constants/constants.go",
+            "lines": "388",
+            "contains": "DefaultAgenticWorkflowTimeout = 20 * time.Minute",
+            "url": "https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/constants/constants.go#L388"
+          },
+          {
+            "file": "pkg/constants/constants.go",
+            "lines": "410",
+            "contains": "DefaultMaxAICredits int64 = 1000",
+            "url": "https://github.com/github/gh-aw/blob/84ebcfe6d35181cc7f0ae2df1220584ed3d92afb/pkg/constants/constants.go#L410"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "A `manual-approval` covers the whole run before the agent starts, so pair it with staged mode to see the exact outputs.",
+      "Read each staged preview before turning staged mode off for that output type."
+    ],
+    "handling": [
+      "Run logs and artifacts are redacted but not encrypted, and some are written from a directory the agent can reach; keep download access to people who need it.",
+      "Telemetry export stays off until you set an OpenTelemetry endpoint; send it only to a collector you control."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

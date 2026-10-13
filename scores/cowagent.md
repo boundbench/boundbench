@@ -24,6 +24,25 @@
 
 As shipped, CowAgent is an unsandboxed shell-and-browser agent running as your user, in full-access mode, with no human approval for any action and every API key and chat-app secret in the environment of the commands it runs. Anything it reads, whether a web page, a file or a message from someone in a connected chat, can make it leak those keys and act irreversibly. The agent can also give itself new MCP servers and persistent instructions through files in its own workspace. The optional workspace-write and read-only modes and the Docker deployment help, but the modes are not a complete boundary.
 
+## Safest setup
+
+CowAgent caps each run at 30 steps, times out shell commands and keeps a step-by-step record of every run. As shipped it runs shell commands on your host in full-access mode, with every key in their environment and no approval step, so the safest setup narrows its keys and audience, turns on the opt-in modes and guards it includes, and puts it in a container.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated account and keys | Run it under its own OS user or machine, holding only the model key and chat-app secrets it needs, each with a spending limit at the provider | A hijacked agent reaches only that account and those keys, not your own files and credentials (C1) |
+| Trusted chat audiences | Connect chat channels only to private chats or groups where you trust every member | Only people you trust can give the agent instructions (C5) |
+| A narrower permission mode | `agent_permission_mode` set to `workspace-write` or `read-only` in config.json, or `AGENT_PERMISSION_MODE` in Docker ([config.py:311-315](https://github.com/zhayujie/CowAgent/blob/2b2d11270ae6472358242e4926fbf1d8f0d21b11/config.py#L311-L315); [docker/docker-compose.yml:46](https://github.com/zhayujie/CowAgent/blob/2b2d11270ae6472358242e4926fbf1d8f0d21b11/docker/docker-compose.yml#L46)) | File writes and edits stay inside the workspace, as one layer alongside the container (C3) |
+| Public-only web fetches | `web_security_ssrf_protection: true` in config.json, or `WEB_SECURITY_SSRF_PROTECTION=true` ([agent/tools/utils/url_safety.py:4-7](https://github.com/zhayujie/CowAgent/blob/2b2d11270ae6472358242e4926fbf1d8f0d21b11/agent/tools/utils/url_safety.py#L4-L7)) | Fetches of model-supplied URLs reach only public addresses, not your local network (C3) |
+| An MCP command allowlist | `mcp_stdio_command_allowlist: [<commands>]` in config.json, naming only the executables your MCP servers use ([agent/tools/mcp/mcp_client.py:327-332](https://github.com/zhayujie/CowAgent/blob/2b2d11270ae6472358242e4926fbf1d8f0d21b11/agent/tools/mcp/mcp_client.py#L327-L332)) | MCP servers start only from executables you chose (C7) |
+| A step budget | Keep the default `agent_max_steps` of 30, or lower it for short tasks ([config.py:309](https://github.com/zhayujie/CowAgent/blob/2b2d11270ae6472358242e4926fbf1d8f0d21b11/config.py#L309)) | Every run ends after a fixed number of decision steps (C10) |
+| Its own container | Run it through the shipped Docker Compose deployment, with outbound network limited to the model provider and chat platforms you use ([docker/docker-compose.yml:3-4](https://github.com/zhayujie/CowAgent/blob/2b2d11270ae6472358242e4926fbf1d8f0d21b11/docker/docker-compose.yml#L3-L4)) | Shell commands, MCP servers and the browser run inside the container, with a narrow path for data to leave (C4) |
+
+### Handling data
+
+- The conversation store and run.log record every tool call with its arguments inside the agent's own data folders; copy them somewhere the agent can't write if you need a lasting record.
+- API keys sit in plaintext in config.json and ~/.cow/.env; keep both readable only by the account that runs the agent.
+
 ## Critical gaps
 - A hijacked agent holds the user's whole local account plus every model and chat-platform credential, which config.py exports into the environment of every shell command. (ASI03, T3; C1) — [agent/tools/bash/bash.py:167](https://github.com/zhayujie/CowAgent/blob/2b2d11270ae6472358242e4926fbf1d8f0d21b11/agent/tools/bash/bash.py#L167); [config.py:698-702](https://github.com/zhayujie/CowAgent/blob/2b2d11270ae6472358242e4926fbf1d8f0d21b11/config.py#L698-L702)
 - Model-written shell commands run on the host as the user with shell=True and the full credential-bearing environment. (ASI05, T11; C4) — [agent/tools/bash/bash.py:456-465](https://github.com/zhayujie/CowAgent/blob/2b2d11270ae6472358242e4926fbf1d8f0d21b11/agent/tools/bash/bash.py#L456-L465); [agent/tools/bash/bash.py:167](https://github.com/zhayujie/CowAgent/blob/2b2d11270ae6472358242e4926fbf1d8f0d21b11/agent/tools/bash/bash.py#L167)

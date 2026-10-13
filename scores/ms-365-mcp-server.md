@@ -25,6 +25,31 @@ Controls where a risk surface exists: 2.98 / 8.0 (37%); 2 criteria scored SA (su
 
 As shipped, this server gives the model one delegated token that can read, write and send across the user's mail, OneDrive, calendar, contacts and notes, and it applies no approval of its own. The biggest risk is prompt injection through inbound email: one malicious message can lead the model to send private data out by email or delete items, and the only checks are the host client's prompts. Engineering hygiene is strong (encrypted token cache, log redaction, a structured audit log, a .env allowlist), but one tool's risk annotation is inaccurate and read-only mode does not cover every path. For least privilege, run with --read-only or a preset.
 
+## Safest setup
+
+MS 365 MCP Server encrypts its token cache, scrubs tokens and email addresses from its logs, and keeps an audit log of tool calls, all on by default. As shipped it gives the model read, write and send access across your Microsoft 365 account with no approval step of its own, so the safest setup narrows the account and the tool set with the modes the server already includes and builds containment around it.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated account | Sign in with a Microsoft account that holds only the mail, files and calendars the task needs | Microsoft itself limits what the token can reach, whatever the model asks for (C1) |
+| Read-only mode | `--read-only` on the server command ([src/cli.ts:34](https://github.com/Softeria/ms-365-mcp-server/blob/c47197109dcf8ea6cea91ee08f7417adfbeac72b/src/cli.ts#L34)) | Send, delete and other Graph write tools are left out, and the sign-in asks for no write permissions they would need (C1) |
+| Only the tools needed | `--preset <names>` or `--enabled-tools <pattern>` naming just the categories the task uses ([src/cli.ts:81](https://github.com/Softeria/ms-365-mcp-server/blob/c47197109dcf8ea6cea91ee08f7417adfbeac72b/src/cli.ts#L81); [src/cli.ts:65](https://github.com/Softeria/ms-365-mcp-server/blob/c47197109dcf8ea6cea91ee08f7417adfbeac72b/src/cli.ts#L65)) | The model sees a smaller tool set, and the token covers only the permissions those tools need (C3) |
+| A clean launch directory | Start the server from a directory holding no .env file you didn't write | The app registration, tenant and cloud you sign in to come only from you (C6) |
+| A sign-off on sent messages | `--message-signoff-prefix <text>` or `--message-signoff-suffix <text>` ([src/cli.ts:36-41](https://github.com/Softeria/ms-365-mcp-server/blob/c47197109dcf8ea6cea91ee08f7417adfbeac72b/src/cli.ts#L36-L41)) | Recipients can tell which mail and Teams messages the agent sent (C2) |
+| Its own container or VM | Run the server in a container or VM with only a scratch directory writable and network access limited to Microsoft's sign-in and Graph hosts | An outer boundary around files the server writes to local disk and a narrower path for data to leave (C3) |
+| The audit log | Keep the default by leaving `MS365_MCP_AUDIT_LOG` unset ([src/audit-log.ts:121](https://github.com/Softeria/ms-365-mcp-server/blob/c47197109dcf8ea6cea91ee08f7417adfbeac72b/src/audit-log.ts#L121)) | A record of each tool call with its target and recipient domains, outside the workspace (C9) |
+| Log redaction | Keep the default by leaving `MS365_MCP_REDACT_PII` unset ([src/lib/log-redactor.ts:62](https://github.com/Softeria/ms-365-mcp-server/blob/c47197109dcf8ea6cea91ee08f7417adfbeac72b/src/lib/log-redactor.ts#L62)) | Tokens and email addresses stay out of the server's log files (C8) |
+
+### Approving with confidence
+
+- The server has no approval step of its own, so turn on your MCP client's prompts, read each one and approve calls one at a time.
+- A graph-batch call can mix reads and writes, so read every sub-request before approving it.
+
+### Handling data
+
+- The operational log records every tool's full arguments, message bodies included; store it like the mailbox it covers.
+- get-download-url hands the model a pre-authenticated download link, so treat the conversation like the files it points to.
+
 ## Critical gaps
 - Default stdio mode holds one delegated token with write access across the user's mail (including send), OneDrive, calendar, contacts, tasks and notes; a hijacked model inherits the whole account. (ASI03, T3; C1) — [src/endpoints.json:80-85](https://github.com/Softeria/ms-365-mcp-server/blob/c47197109dcf8ea6cea91ee08f7417adfbeac72b/src/endpoints.json#L80-L85); [src/auth.ts:437-476](https://github.com/Softeria/ms-365-mcp-server/blob/c47197109dcf8ea6cea91ee08f7417adfbeac72b/src/auth.ts#L437-L476)
 - Default session reads attacker-controllable email and files, holds private data, and can send mail or delete items with no server-side gate (Rule of Two violated). (ASI01, T6, LLM01; C5) — [src/endpoints.json:12](https://github.com/Softeria/ms-365-mcp-server/blob/c47197109dcf8ea6cea91ee08f7417adfbeac72b/src/endpoints.json#L12); [src/endpoints.json:83](https://github.com/Softeria/ms-365-mcp-server/blob/c47197109dcf8ea6cea91ee08f7417adfbeac72b/src/endpoints.json#L83); [src/graph-tools.ts:487-489](https://github.com/Softeria/ms-365-mcp-server/blob/c47197109dcf8ea6cea91ee08f7417adfbeac72b/src/graph-tools.ts#L487-L489)

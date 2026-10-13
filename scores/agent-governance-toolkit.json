@@ -36,6 +36,152 @@
     "external_communication": "yes"
   },
   "headline": "AGT's govern() wrapper is a real, deterministic, deny-by-default policy gate with careful fail-closed handling, but almost every other safety primitive in the toolkit is opt-in. With default arguments there is no human approval, no sandbox, no untrusted-input handling, no budgets, and an audit log that lives only in memory and omits call arguments. The README's lead policy sets default_action: allow, which turns the gate into a denylist. The main risk is assuming the toolkit's broad feature list is active when only the policy check is.",
+  "safe_setup": {
+    "intro": "AGT's govern() wrapper puts a deterministic, deny-by-default policy check in front of every wrapped tool and logs each decision before the tool runs. Approval, sandboxing, budgets and a durable audit log are all opt-in, and the README's lead example switches the policy to allow by default. The safest setup keeps the deny default, turns on those mechanisms and builds containment around the host process.",
+    "steps": [
+      {
+        "setup": "Scoped, low-limit credentials",
+        "how": "Give the host process only the credentials its wrapped tools need, each scoped or read-only with a spending limit set at the provider",
+        "gives_you": "Whatever a governed tool does, it reaches only the systems and spend you chose, even if a policy rule is too broad",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A deny-by-default policy",
+        "how": "Keep the default `default_action: deny` and write an `allow` rule for each action the task needs",
+        "gives_you": "Any action you didn't list is refused, so new tools and unexpected calls stay blocked",
+        "criterion": "C3",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "agent-governance-python/agent-mesh/src/agentmesh/governance/policy.py",
+            "lines": "451",
+            "contains": "default_action: Literal[\"allow\", \"deny\"] = Field(default=\"deny\")",
+            "url": "https://github.com/microsoft/agent-governance-toolkit/blob/c3e8229dfb19c697468cfb790495d7174ef8bc45/agent-governance-python/agent-mesh/src/agentmesh/governance/policy.py#L451"
+          },
+          {
+            "file": "agent-governance-python/agent-mesh/src/agentmesh/governance/policy.py",
+            "lines": "109",
+            "contains": "action: Literal[\"allow\", \"deny\", \"warn\", \"require_approval\", \"log\"]",
+            "url": "https://github.com/microsoft/agent-governance-toolkit/blob/c3e8229dfb19c697468cfb790495d7174ef8bc45/agent-governance-python/agent-mesh/src/agentmesh/governance/policy.py#L109"
+          }
+        ]
+      },
+      {
+        "setup": "Per-call approval",
+        "how": "Add `require_approval` rules for send, write and delete actions, and pass an `approval_handler` to govern()",
+        "gives_you": "A person decides on each consequential call before it runs, and unanswered requests are rejected",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "agent-governance-python/agent-mesh/src/agentmesh/governance/policy.py",
+            "lines": "109",
+            "contains": "require_approval",
+            "url": "https://github.com/microsoft/agent-governance-toolkit/blob/c3e8229dfb19c697468cfb790495d7174ef8bc45/agent-governance-python/agent-mesh/src/agentmesh/governance/policy.py#L109"
+          },
+          {
+            "file": "agent-governance-python/agent-mesh/src/agentmesh/governance/govern.py",
+            "lines": "1049",
+            "contains": "approval_handler: Optional[ApprovalHandler] = None",
+            "url": "https://github.com/microsoft/agent-governance-toolkit/blob/c3e8229dfb19c697468cfb790495d7174ef8bc45/agent-governance-python/agent-mesh/src/agentmesh/governance/govern.py#L1049"
+          }
+        ]
+      },
+      {
+        "setup": "A hardened code sandbox",
+        "how": "Run model-written code through `DockerSandboxProvider` with `require_hardened_image=True` and `require_apparmor_profile=True`, leaving `network_enabled` at its default of off",
+        "gives_you": "That code runs in a locked-down container with no network, and the sandbox refuses to start rather than fall back to a weaker image",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "agent-governance-python/agent-sandbox/src/agent_sandbox/docker_provider/provider.py",
+            "lines": "166",
+            "contains": "class DockerSandboxProvider",
+            "url": "https://github.com/microsoft/agent-governance-toolkit/blob/c3e8229dfb19c697468cfb790495d7174ef8bc45/agent-governance-python/agent-sandbox/src/agent_sandbox/docker_provider/provider.py#L166"
+          },
+          {
+            "file": "agent-governance-python/agent-sandbox/src/agent_sandbox/docker_provider/provider.py",
+            "lines": "207-208",
+            "contains": "require_apparmor_profile: bool = False",
+            "url": "https://github.com/microsoft/agent-governance-toolkit/blob/c3e8229dfb19c697468cfb790495d7174ef8bc45/agent-governance-python/agent-sandbox/src/agent_sandbox/docker_provider/provider.py#L207-L208"
+          },
+          {
+            "file": "agent-governance-python/agent-sandbox/src/agent_sandbox/sandbox_provider.py",
+            "lines": "81",
+            "contains": "network_enabled: bool = False",
+            "url": "https://github.com/microsoft/agent-governance-toolkit/blob/c3e8229dfb19c697468cfb790495d7174ef8bc45/agent-governance-python/agent-sandbox/src/agent_sandbox/sandbox_provider.py#L81"
+          }
+        ]
+      },
+      {
+        "setup": "Spend and rate limits",
+        "how": "Call `check_budget` on a `BudgetTracker` before each model call, and set `limit: \"<n>/hour\"` on rules for busy tools",
+        "gives_you": "A ceiling on tokens, cost and call rate, so a runaway loop stops on its own",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "agent-governance-python/agent-mesh/src/agentmesh/governance/budget.py",
+            "lines": "62",
+            "contains": "class BudgetTracker",
+            "url": "https://github.com/microsoft/agent-governance-toolkit/blob/c3e8229dfb19c697468cfb790495d7174ef8bc45/agent-governance-python/agent-mesh/src/agentmesh/governance/budget.py#L62"
+          },
+          {
+            "file": "agent-governance-python/agent-mesh/src/agentmesh/governance/budget.py",
+            "lines": "96",
+            "contains": "def check_budget",
+            "url": "https://github.com/microsoft/agent-governance-toolkit/blob/c3e8229dfb19c697468cfb790495d7174ef8bc45/agent-governance-python/agent-mesh/src/agentmesh/governance/budget.py#L96"
+          },
+          {
+            "file": "agent-governance-python/agent-mesh/src/agentmesh/governance/policy.py",
+            "lines": "114",
+            "contains": "limit: Optional[str]",
+            "url": "https://github.com/microsoft/agent-governance-toolkit/blob/c3e8229dfb19c697468cfb790495d7174ef8bc45/agent-governance-python/agent-mesh/src/agentmesh/governance/policy.py#L114"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the host process in a container or VM whose network reaches only the hosts the task needs",
+        "gives_you": "An outer boundary around governed tools, which otherwise run in-process with your files and network, and a narrow path for data to leave",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A signed audit file",
+        "how": "Pass `audit_file=<path>` to govern() with `AGT_AUDIT_SECRET_KEY` set, on storage the agent process can't modify",
+        "gives_you": "A hash-chained, HMAC-signed record of every policy and approval decision that outlives the process",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "agent-governance-python/agent-mesh/src/agentmesh/governance/govern.py",
+            "lines": "1045-1046",
+            "contains": "audit_file: Optional[str] = None",
+            "url": "https://github.com/microsoft/agent-governance-toolkit/blob/c3e8229dfb19c697468cfb790495d7174ef8bc45/agent-governance-python/agent-mesh/src/agentmesh/governance/govern.py#L1045-L1046"
+          },
+          {
+            "file": "agent-governance-python/agent-mesh/src/agentmesh/governance/govern.py",
+            "lines": "78",
+            "contains": "AUDIT_SECRET_KEY_ENV_VAR = \"AGT_AUDIT_SECRET_KEY\"",
+            "url": "https://github.com/microsoft/agent-governance-toolkit/blob/c3e8229dfb19c697468cfb790495d7174ef8bc45/agent-governance-python/agent-mesh/src/agentmesh/governance/govern.py#L78"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time.",
+      "The built-in console and webhook approvers show the rule, agent and action label but not the call's arguments; a custom handler can show the full call before you approve it."
+    ],
+    "handling": [
+      "Audit entries record the action label, outcome and matching rule, not arguments; without `audit_file` they live in memory and are lost when the process exits.",
+      "A custom approval handler receives the full call context; store whatever it keeps like the data the agent handled."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

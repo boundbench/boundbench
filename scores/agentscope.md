@@ -24,6 +24,31 @@
 
 AgentScope 2.0 ships a real permission engine: by default it asks before writes and most shell commands and shows the exact call. But the shell runs directly on the host with the full environment, reads of any file are auto-approved, and MCP servers can exempt their own tools by labelling them read-only. Neither the shell auto-allow nor approval in the bundled agent service is a strict boundary. Use a sandboxed workspace and treat auto-approval as a convenience, not a boundary.
 
+## Safest setup
+
+AgentScope ships with per-call approval on by default, showing the exact tool and arguments before writes and most shell commands, and an agent starts with no tools. Shell commands otherwise run on your host with your full environment, so the safest setup moves tool execution into a sandbox, narrows the identity and builds containment around the process.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, low-privilege account | Run the agent under its own OS account and environment holding only the model key and credentials the task needs, with a spending limit set at the provider | Commands the agent runs reach only what that account can reach, not everything your own login can (C1) |
+| A remote sandbox | Build an `E2BWorkspace`, passing only the `env` values the task needs, and register the tools from its `list_tools()` ([src/agentscope/workspace/_e2b/_e2b_workspace.py:62](https://github.com/agentscope-ai/agentscope/blob/72f3f6fa0b2fc38b8517f408ab616f0f2bd229e6/src/agentscope/workspace/_e2b/_e2b_workspace.py#L62); [src/agentscope/workspace/_e2b/_e2b_workspace.py:84](https://github.com/agentscope-ai/agentscope/blob/72f3f6fa0b2fc38b8517f408ab616f0f2bd229e6/src/agentscope/workspace/_e2b/_e2b_workspace.py#L84); [src/agentscope/workspace/_base.py:554](https://github.com/agentscope-ai/agentscope/blob/72f3f6fa0b2fc38b8517f408ab616f0f2bd229e6/src/agentscope/workspace/_base.py#L554)) | Shell and file tools run in a remote sandbox away from your host files and credentials (C4) |
+| Per-call approval | Keep the default `PermissionMode.DEFAULT` as the agent's permission `mode` ([src/agentscope/permission/_context.py:31](https://github.com/agentscope-ai/agentscope/blob/72f3f6fa0b2fc38b8517f408ab616f0f2bd229e6/src/agentscope/permission/_context.py#L31)) | A person sees the exact tool and arguments before writes and most shell commands run (C2) |
+| Only the tools needed | Start from the empty default `Toolkit` and register only the tools the task uses ([src/agentscope/agent/_agent.py:201](https://github.com/agentscope-ai/agentscope/blob/72f3f6fa0b2fc38b8517f408ab616f0f2bd229e6/src/agentscope/agent/_agent.py#L201)) | The model can call only the tools you chose for this task (C3) |
+| Reviewed, pinned MCP servers | Connect only MCP servers you have reviewed, with an exact version in each launch command | Third-party tools, and the read-only labels that decide which of them need approval, come only from code you chose (C7) |
+| A token budget | Add `ReplyBudgetControlMiddleware` with `token_budget=<n>` to the agent's `middlewares` ([src/agentscope/middleware/_budget.py:21](https://github.com/agentscope-ai/agentscope/blob/72f3f6fa0b2fc38b8517f408ab616f0f2bd229e6/src/agentscope/middleware/_budget.py#L21); [src/agentscope/middleware/_budget.py:65](https://github.com/agentscope-ai/agentscope/blob/72f3f6fa0b2fc38b8517f408ab616f0f2bd229e6/src/agentscope/middleware/_budget.py#L65); [src/agentscope/agent/_agent.py:126](https://github.com/agentscope-ai/agentscope/blob/72f3f6fa0b2fc38b8517f408ab616f0f2bd229e6/src/agentscope/agent/_agent.py#L126)) | Once a reply reaches the budget, the agent stops calling tools and wraps up (C10) |
+| Its own container or VM | Run the agent process in a container or VM whose network reaches only the hosts the task needs | An outer boundary around host-side tools and a narrow path for data to leave (C5) |
+| A tool-call trace | Add `TracingMiddleware` to `middlewares`, with an OpenTelemetry SDK tracer provider exporting to a collector outside the agent's reach ([src/agentscope/middleware/_tracing/_trace.py:117](https://github.com/agentscope-ai/agentscope/blob/72f3f6fa0b2fc38b8517f408ab616f0f2bd229e6/src/agentscope/middleware/_tracing/_trace.py#L117); [src/agentscope/agent/_agent.py:126](https://github.com/agentscope-ai/agentscope/blob/72f3f6fa0b2fc38b8517f408ab616f0f2bd229e6/src/agentscope/agent/_agent.py#L126)) | A record of every model call and tool execution that outlives the process (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; the console shows the exact tool and arguments that will run.
+- File reads, MCP tools their server labels read-only, and shell commands treated as read-only run without a prompt, so treat that auto-approval as a convenience and rely on the sandbox and account for the boundary.
+
+### Handling data
+
+- Tool output reaches the model and any exported trace without redaction; store traces like the data the agent read.
+- Approvals and denials are not part of the trace, so keep your own note of what you approved when that matters.
+
 ## Critical gaps
 - Default Bash tool runs on the host as the OS user with the full process environment, so a hijacked or wrongly approved command reaches the user's entire account. (ASI03, T3; C1) — [src/agentscope/tool/_builtin/_bash.py:177](https://github.com/agentscope-ai/agentscope/blob/72f3f6fa0b2fc38b8517f408ab616f0f2bd229e6/src/agentscope/tool/_builtin/_bash.py#L177); [src/agentscope/tool/_builtin/_backend.py:799-804](https://github.com/agentscope-ai/agentscope/blob/72f3f6fa0b2fc38b8517f408ab616f0f2bd229e6/src/agentscope/tool/_builtin/_backend.py#L799-L804)
 - Model-chosen shell commands run on the host as the OS user with the agent's full environment by default; sandboxed workspaces are opt-in. (ASI05, T11; C4) — [src/agentscope/tool/_builtin/_bash.py:177](https://github.com/agentscope-ai/agentscope/blob/72f3f6fa0b2fc38b8517f408ab616f0f2bd229e6/src/agentscope/tool/_builtin/_bash.py#L177); [src/agentscope/tool/_builtin/_backend.py:799-804](https://github.com/agentscope-ai/agentscope/blob/72f3f6fa0b2fc38b8517f408ab616f0f2bd229e6/src/agentscope/tool/_builtin/_backend.py#L799-L804)

@@ -36,6 +36,130 @@
     "external_communication": "opt_in"
   },
   "headline": "NemoClaw puts a strong box around the agent: every command runs in a hardened, non-root OpenShell sandbox, egress is deny-by-default with operator approval for new hosts, and API keys never enter the sandbox. Inside the box it adds little: no approval for commands, no integrity protection for the agent's self-writable config, hooks, memory and cron jobs, and no cost cap. The dominant risk is that the default Balanced tier still leaves unattended outbound channels (POST to clawhub.ai/openclaw.ai, uninspected npm traffic) and lets the agent install arbitrary packages, so a prompt-injected agent can exfiltrate sandbox data and persist itself.",
+  "safe_setup": {
+    "intro": "NemoClaw runs the agent in a hardened OpenShell sandbox with deny-by-default egress, operator approval for new hosts, and provider keys held outside the sandbox. Inside the sandbox it adds no command approval, no protection for the agent's own config and no spend cap, so the safest setup closes the package registries, bounds resources, and keeps records and clean rebuilds on the host side.",
+    "steps": [
+      {
+        "setup": "A dedicated, low-limit key",
+        "how": "Onboard with a provider key used only by this sandbox, with a spending limit set at the provider",
+        "gives_you": "Inference spend and any misuse of the key stay within the budget you chose for this agent",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "The Restricted tier",
+        "how": "Choose Restricted at the onboarding tier prompt, or set `NEMOCLAW_POLICY_TIER` to `restricted` for non-interactive installs",
+        "gives_you": "npm, PyPI and Homebrew stay closed, so the agent can't install packages from them at runtime",
+        "criterion": "C7",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/lib/onboard/policy-tier-env.ts",
+            "lines": "15",
+            "contains": "process.env.NEMOCLAW_POLICY_TIER",
+            "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/onboard/policy-tier-env.ts#L15"
+          },
+          {
+            "file": "nemoclaw-blueprint/policies/tiers.yaml",
+            "lines": "18-21",
+            "contains": "name: restricted",
+            "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/tiers.yaml#L18-L21"
+          }
+        ]
+      },
+      {
+        "setup": "Approval for new hosts",
+        "how": "Keep the shipped deny-by-default network policy and add messaging, mail or GitHub presets only for tasks that need them",
+        "gives_you": "Every new destination waits for your decision in the OpenShell TUI",
+        "criterion": "C2",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "nemoclaw-blueprint/policies/openclaw-sandbox.yaml",
+            "lines": "5",
+            "contains": "deny by default",
+            "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/nemoclaw-blueprint/policies/openclaw-sandbox.yaml#L5"
+          }
+        ]
+      },
+      {
+        "setup": "Only the task's files",
+        "how": "Put only the files and data the task needs into the sandbox",
+        "gives_you": "Anything that leaves through the allowed endpoints is limited to what you chose to share",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "CPU and memory caps",
+        "how": "Set `NEMOCLAW_CPU` and `NEMOCLAW_RAM` before onboarding, as a share of the host such as 25%",
+        "gives_you": "A runaway agent stays within a fixed share of the host",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/lib/onboard/resource-profile-selection.ts",
+            "lines": "35-36",
+            "contains": "if (env.NEMOCLAW_CPU) nextProfile.cpu = env.NEMOCLAW_CPU;",
+            "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/src/lib/onboard/resource-profile-selection.ts#L35-L36"
+          }
+        ]
+      },
+      {
+        "setup": "Transcripts kept on the host",
+        "how": "Run `nemoclaw <name> sessions export` on a schedule and store the copies outside the sandbox",
+        "gives_you": "A record of what the agent did that the agent can no longer edit",
+        "criterion": "C9",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "docs/reference/commands.mdx",
+            "lines": "2962",
+            "contains": "nemoclaw <name> sessions export",
+            "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/docs/reference/commands.mdx#L2962"
+          }
+        ]
+      },
+      {
+        "setup": "A one-command stop",
+        "how": "`nemoclaw <name> stop` whenever the agent should pause",
+        "gives_you": "Every process in the sandbox ends, scheduled jobs included, with its state kept for inspection",
+        "criterion": "C10",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "docs/reference/commands.mdx",
+            "lines": "1564",
+            "contains": "nemoclaw <name> stop",
+            "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/docs/reference/commands.mdx#L1564"
+          }
+        ]
+      },
+      {
+        "setup": "Regular clean rebuilds",
+        "how": "Run `nemoclaw <name> destroy` and onboard again when a task ends or behaviour changes unexpectedly",
+        "gives_you": "Hooks, skills, cron jobs and config the agent wrote are cleared, and the sandbox starts again from the blueprint",
+        "criterion": "C6",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "docs/reference/commands.mdx",
+            "lines": "2020",
+            "contains": "nemoclaw <name> destroy",
+            "url": "https://github.com/NVIDIA/NemoClaw/blob/e68bcacd808a916b6b7e07334d1256ce51f9c6ef/docs/reference/commands.mdx#L2020"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each network approval prompt and approve hosts one at a time; an approved host stays in the policy until the sandbox is rebuilt.",
+      "Commands, file writes and calls to hosts already in the policy run without a prompt, so the network prompt is your main checkpoint."
+    ],
+    "handling": [
+      "Session transcripts live inside the sandbox, where the agent can change them; exported copies hold full conversations, so store them like the data the agent read."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

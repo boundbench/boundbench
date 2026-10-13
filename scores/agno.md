@@ -24,6 +24,31 @@
 
 Agno gives developers powerful toolkits (shell, in-process Python, files, web, MCP) but few guardrails switched on. Out of the box no tool needs approval, code runs on the host with every API key in the environment, and there is no step, time or cost limit. Its human-in-the-loop confirmation and remote sandbox toolkits are well built but opt-in, so safety depends on the developer turning them on.
 
+## Safest setup
+
+Agno starts every agent with no tools and memory off, and its file tools keep paths inside a base directory. Beyond that the defaults are thin: no approval step, no sandbox, no run limit and no durable record, and code tools run on the host with every key in the environment. The safest setup turns on the confirmation, sandbox, limit and storage options Agno includes and builds containment around the process.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Give the process only the API keys this agent needs, each scoped or read-only with a spending limit set at the provider | Whatever the agent does, it reaches only the systems and spend you chose, not every key in your shell (C1) |
+| Per-call approval | List shell, code, write and web functions in `requires_confirmation_tools` on each toolkit, and set `requires_confirmation=True` on your own tools ([libs/agno/agno/tools/toolkit.py:125](https://github.com/agno-agi/agno/blob/3ca74c272fa5017fae4fab234e988378c8f14c63/libs/agno/agno/tools/toolkit.py#L125); [libs/agno/agno/tools/function.py:1263](https://github.com/agno-agi/agno/blob/3ca74c272fa5017fae4fab234e988378c8f14c63/libs/agno/agno/tools/function.py#L1263)) | The run pauses with the exact tool and arguments until a person confirms each consequential call (C2) |
+| Only the functions needed | Turn off unused write and exec functions, such as `enable_save_file=False` or `enable_run_shell_command=False`, or list them in `exclude_tools` ([libs/agno/agno/tools/file/file.py:98](https://github.com/agno-agi/agno/blob/3ca74c272fa5017fae4fab234e988378c8f14c63/libs/agno/agno/tools/file/file.py#L98); [libs/agno/agno/tools/shell.py:12](https://github.com/agno-agi/agno/blob/3ca74c272fa5017fae4fab234e988378c8f14c63/libs/agno/agno/tools/shell.py#L12); [libs/agno/agno/tools/toolkit.py:124](https://github.com/agno-agi/agno/blob/3ca74c272fa5017fae4fab234e988378c8f14c63/libs/agno/agno/tools/toolkit.py#L124)) | The model sees only the tool functions the task uses (C3) |
+| A remote code sandbox | Run model-written code through `E2BTools` with its default `timeout`, and list `set_sandbox_timeout` in `exclude_tools` ([libs/agno/agno/tools/e2b.py:24-28](https://github.com/agno-agi/agno/blob/3ca74c272fa5017fae4fab234e988378c8f14c63/libs/agno/agno/tools/e2b.py#L24-L28); [libs/agno/agno/tools/e2b.py:75](https://github.com/agno-agi/agno/blob/3ca74c272fa5017fae4fab234e988378c8f14c63/libs/agno/agno/tools/e2b.py#L75); [libs/agno/agno/tools/toolkit.py:124](https://github.com/agno-agi/agno/blob/3ca74c272fa5017fae4fab234e988378c8f14c63/libs/agno/agno/tools/toolkit.py#L124)) | That code runs in a remote sandbox, away from your keys and files, and ends on your schedule (C4) |
+| Per-user memory | Keep the default `enable_agentic_memory=False`; when you turn memory on, pass a `user_id` on every run ([libs/agno/agno/agent/agent.py:132](https://github.com/agno-agi/agno/blob/3ca74c272fa5017fae4fab234e988378c8f14c63/libs/agno/agno/agent/agent.py#L132); [libs/agno/agno/agent/agent.py:91](https://github.com/agno-agi/agno/blob/3ca74c272fa5017fae4fab234e988378c8f14c63/libs/agno/agno/agent/agent.py#L91)) | Each user's memories stay in their own namespace (C6) |
+| A tool-call limit | `tool_call_limit=<n>` on each agent ([libs/agno/agno/agent/agent.py:193](https://github.com/agno-agi/agno/blob/3ca74c272fa5017fae4fab234e988378c8f14c63/libs/agno/agno/agent/agent.py#L193)) | Calls past the limit are not executed, which bounds what one run can do (C10) |
+| Its own container or VM | Run the agent in a container or VM with a wall-clock limit and network access only to the hosts the task needs | An outer boundary around host tools, a narrow path for data to leave, and a hard stop for long runs (C5) |
+| A durable run record | Set `db=<database>` with `checkpoint="tool-batch"` ([libs/agno/agno/agent/agent.py:140](https://github.com/agno-agi/agno/blob/3ca74c272fa5017fae4fab234e988378c8f14c63/libs/agno/agno/agent/agent.py#L140); [libs/agno/agno/agent/agent.py:151-154](https://github.com/agno-agi/agno/blob/3ca74c272fa5017fae4fab234e988378c8f14c63/libs/agno/agno/agent/agent.py#L151-L154)) | Each run's tool calls, arguments and results are saved after every model turn (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; the paused run shows the exact tool name and arguments.
+- Approving a shell or Python call approves everything that command or code does, so read it in full first.
+
+### Handling data
+
+- Telemetry is on by default and sends run metadata, not content; `telemetry=False` or `AGNO_TELEMETRY=false` turns it off.
+- `debug_mode` prints full messages unredacted, and stored runs keep tool arguments and results; treat both like the data the agent read.
+
 ## Critical gaps
 - A hijacked Agno agent holds every credential in the host process environment: tools read keys from env and ShellTools passes the full environment to subprocesses. (ASI03, T3, LLM06; C1) — [libs/agno/agno/tools/shell.py:55-59](https://github.com/agno-agi/agno/blob/3ca74c272fa5017fae4fab234e988378c8f14c63/libs/agno/agno/tools/shell.py#L55-L59); [libs/agno/agno/tools/github.py:23](https://github.com/agno-agi/agno/blob/3ca74c272fa5017fae4fab234e988378c8f14c63/libs/agno/agno/tools/github.py#L23)
 - Shell and Python-exec tools run without any approval by default; the confirmation gate is opt-in per tool. (ASI02, ASI09, T10, LLM06; C2) — [libs/agno/agno/tools/function.py:1263](https://github.com/agno-agi/agno/blob/3ca74c272fa5017fae4fab234e988378c8f14c63/libs/agno/agno/tools/function.py#L1263); [libs/agno/agno/tools/shell.py:55-59](https://github.com/agno-agi/agno/blob/3ca74c272fa5017fae4fab234e988378c8f14c63/libs/agno/agno/tools/shell.py#L55-L59)

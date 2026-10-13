@@ -36,6 +36,152 @@
     "external_communication": "opt_in"
   },
   "headline": "As shipped, DeerFlow gives the model no shell: host bash is off unless an operator enables it, file tools are confined to each user's thread directories, and secrets are kept out of prompts and logs. The main risk is that no tool call ever needs human approval, and web_fetch can send data to any URL, so a malicious web page can make the agent leak the user's uploads, workspace files, or memory without anyone noticing. Enabling host bash removes most of the isolation, so use the AIO container sandbox for code execution; plugins an operator installs run inside the gateway process.",
+  "safe_setup": {
+    "intro": "DeerFlow ships with host shell access off, file tools confined to each user's thread directories, login required and secrets kept out of prompts and logs. No tool call waits for a person and web fetches can reach any address, so the safest setup turns on the authorization, tool policy, sandbox and limits DeerFlow already includes and narrows the keys it holds.",
+    "steps": [
+      {
+        "setup": "Scoped, low-limit keys",
+        "how": "Put only the model and service keys this deployment needs in the .env file, each scoped where the provider allows and with a spending limit set at the provider",
+        "gives_you": "The provider caps what the gateway's keys can reach and spend, whatever happens inside it",
+        "criterion": "C8",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Per-user authorization",
+        "how": "Set `enabled: true` under `authorization:` and give each role only the tools, models and sandbox access it needs",
+        "gives_you": "Each signed-in user reaches only the tools and resources their role allows",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "config.example.yaml",
+            "lines": "3146-3147",
+            "contains": "enabled: true",
+            "url": "https://github.com/bytedance/deer-flow/blob/59b051b0fd3147af852411c0ea759bcbd10f09d4/config.example.yaml#L3146-L3147"
+          },
+          {
+            "file": "config.example.yaml",
+            "lines": "3198-3199",
+            "contains": "authorization:",
+            "url": "https://github.com/bytedance/deer-flow/blob/59b051b0fd3147af852411c0ea759bcbd10f09d4/config.example.yaml#L3198-L3199"
+          }
+        ]
+      },
+      {
+        "setup": "A tool allowlist",
+        "how": "Under `guardrails:` set `enabled: true` with the built-in `AllowlistProvider`, listing in `allowed_tools` only the tools the task uses",
+        "gives_you": "Every tool call is checked against your list before it runs, so file writes and web fetches happen only where you chose them",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "config.example.yaml",
+            "lines": "3047-3050",
+            "contains": "AllowlistProvider",
+            "url": "https://github.com/bytedance/deer-flow/blob/59b051b0fd3147af852411c0ea759bcbd10f09d4/config.example.yaml#L3047-L3050"
+          },
+          {
+            "file": "backend/packages/harness/deerflow/config/guardrails_config.py",
+            "lines": "21",
+            "contains": "enabled: bool = Field(default=False",
+            "url": "https://github.com/bytedance/deer-flow/blob/59b051b0fd3147af852411c0ea759bcbd10f09d4/backend/packages/harness/deerflow/config/guardrails_config.py#L21"
+          },
+          {
+            "file": "backend/packages/harness/deerflow/guardrails/builtin.py",
+            "lines": "13",
+            "contains": "allowed_tools: list[str] | None = None",
+            "url": "https://github.com/bytedance/deer-flow/blob/59b051b0fd3147af852411c0ea759bcbd10f09d4/backend/packages/harness/deerflow/guardrails/builtin.py#L13"
+          }
+        ]
+      },
+      {
+        "setup": "No host shell",
+        "how": "Keep the default `allow_host_bash: false`",
+        "gives_you": "The model has no way to run commands on the host or inside the gateway container",
+        "criterion": "C4",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "config.example.yaml",
+            "lines": "1614",
+            "contains": "allow_host_bash: false",
+            "url": "https://github.com/bytedance/deer-flow/blob/59b051b0fd3147af852411c0ea759bcbd10f09d4/config.example.yaml#L1614"
+          }
+        ]
+      },
+      {
+        "setup": "A container sandbox",
+        "how": "When tasks need code execution, set `use: deerflow.community.aio_sandbox:AioSandboxProvider` under `sandbox:`, with `mode:` under `network:` set to isolated or allowlist",
+        "gives_you": "Commands run in a per-thread container that sees only that thread's files and reaches only the hosts you allow",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "config.example.yaml",
+            "lines": "1655-1656",
+            "contains": "use: deerflow.community.aio_sandbox:AioSandboxProvider",
+            "url": "https://github.com/bytedance/deer-flow/blob/59b051b0fd3147af852411c0ea759bcbd10f09d4/config.example.yaml#L1655-L1656"
+          },
+          {
+            "file": "config.example.yaml",
+            "lines": "1685-1686",
+            "contains": "mode: allowlist",
+            "url": "https://github.com/bytedance/deer-flow/blob/59b051b0fd3147af852411c0ea759bcbd10f09d4/config.example.yaml#L1685-L1686"
+          }
+        ]
+      },
+      {
+        "setup": "Strict memory scoping",
+        "how": "Set `strict_user_scope: true` in the memory backend settings",
+        "gives_you": "Every memory read and write stays in the requesting user's own store",
+        "criterion": "C6",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "config.example.yaml",
+            "lines": "2329",
+            "contains": "strict_user_scope: false",
+            "url": "https://github.com/bytedance/deer-flow/blob/59b051b0fd3147af852411c0ea759bcbd10f09d4/config.example.yaml#L2329"
+          }
+        ]
+      },
+      {
+        "setup": "A token ceiling",
+        "how": "Under `token_budget:` set `enabled` to true and `max_tokens: <n>`",
+        "gives_you": "Each run is stopped and forced to a final answer once it reaches your token limit",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "config.example.yaml",
+            "lines": "105-107",
+            "contains": "max_tokens: 200000",
+            "url": "https://github.com/bytedance/deer-flow/blob/59b051b0fd3147af852411c0ea759bcbd10f09d4/config.example.yaml#L105-L107"
+          }
+        ]
+      },
+      {
+        "setup": "A durable run journal",
+        "how": "Set `backend: db` or `backend: jsonl` under `run_events:`",
+        "gives_you": "The attributed record of each run, sub-agents included, survives a restart",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "config.example.yaml",
+            "lines": "2646-2655",
+            "contains": "backend: jsonl",
+            "url": "https://github.com/bytedance/deer-flow/blob/59b051b0fd3147af852411c0ea759bcbd10f09d4/config.example.yaml#L2646-L2655"
+          }
+        ]
+      }
+    ],
+    "handling": [
+      "Thread checkpoints and the run journal keep tool arguments and results; store the database like the user data it covers.",
+      "Saved memory facts shape later conversations; review them in the memory view and delete any you didn't intend."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

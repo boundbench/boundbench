@@ -24,6 +24,24 @@
 
 This framework executes model tool calls immediately with no approval, validation, sandbox, or run limit. Its flagship code-interpreter tool runs Open Interpreter on the host as your user, with your OpenAI key, so a hijacked or runaway agent has your whole machine. Importing it also loads a .env file and passes two environment values to Python eval, and persisted artifacts do not protect the API key. Treat it as research code, not something to run on untrusted input.
 
+## Safest setup
+
+Agents gives each agent only the tools its config lists, and nothing else is protected by default: there is no approval step, sandbox or run limit, and the code interpreter runs on your host with your OpenAI key. The safest setup keeps the tool list short and builds the boundaries around the process yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, low-limit key | Give the process its own OpenAI key with a spending limit set at the provider, and no other credentials in its environment | Whatever an agent does, it reaches only that key and the spend you allowed (C8) |
+| Only the tools needed | List in each agent's `toolkit` only the tools the task needs, adding `code_interpreter` only when the task must run code ([src/agents/agents/agent.py:49](https://github.com/aiwaves-cn/agents/blob/e8c4e3c2d19739d3dff59e577d1c97090cc15f59/src/agents/agents/agent.py#L49); [src/agents/tools/__init__.py:33](https://github.com/aiwaves-cn/agents/blob/e8c4e3c2d19739d3dff59e577d1c97090cc15f59/src/agents/tools/__init__.py#L33)) | Agents without a listed tool can't call it, so code runs only where you chose it (C3) |
+| Its own container or VM | Run the whole pipeline in a container or VM whose network reaches only your model provider and the hosts the task needs | An outer boundary around model-written code and anything it installs, and a narrow path for data to leave (C4) |
+| A fresh working directory | Start each project from an empty directory with no .env you didn't write, and set `OPENAI_BASE_URL` yourself if you use one ([src/agents/agents/llm.py:27](https://github.com/aiwaves-cn/agents/blob/e8c4e3c2d19739d3dff59e577d1c97090cc15f59/src/agents/agents/llm.py#L27); [src/agents/agents/llm.py:35](https://github.com/aiwaves-cn/agents/blob/e8c4e3c2d19739d3dff59e577d1c97090cc15f59/src/agents/agents/llm.py#L35)) | The model endpoint and settings come only from you, and memory files from earlier runs stay out of new ones (C6) |
+| An outside time limit | Run each job under a wall-clock timeout from your shell, scheduler or container runtime | Every run ends at a time you set, even if the pipeline keeps looping (C10) |
+| Logs kept off the host | Set `SAVE_LOGS: true` and a `log_path` in each agent's LLM config, and copy that directory to storage the agents can't write ([src/agents/agents/llm.py:59](https://github.com/aiwaves-cn/agents/blob/e8c4e3c2d19739d3dff59e577d1c97090cc15f59/src/agents/agents/llm.py#L59); [src/agents/agents/llm.py:68](https://github.com/aiwaves-cn/agents/blob/e8c4e3c2d19739d3dff59e577d1c97090cc15f59/src/agents/agents/llm.py#L68)) | A record of every model call that survives the 20-file rotation and the run itself (C9) |
+
+### Handling data
+
+- Saved logs hold full prompt messages in plaintext; store them like the data the agents read.
+- The chatbot example turns on `litellm.set_verbose`; leave verbose logging off where output lands in shared logs.
+
 ## Critical gaps
 - The registered code_interpreter tool runs Open Interpreter on the host as the OS user with the API key, so a hijacked agent holds the user's full local authority. (ASI03, T3; C1) — [src/agents/tools/code_interpreter.py:23-34](https://github.com/aiwaves-cn/agents/blob/e8c4e3c2d19739d3dff59e577d1c97090cc15f59/src/agents/tools/code_interpreter.py#L23-L34); [src/agents/tools/code_interpreter.py:25-27](https://github.com/aiwaves-cn/agents/blob/e8c4e3c2d19739d3dff59e577d1c97090cc15f59/src/agents/tools/code_interpreter.py#L25-L27)
 - Model-written code (code_interpreter, sympify, eval of env vars) executes on the host with the user's files, network, and API key; the only guard is documented as not a sandbox. (ASI05, T11; C4) — [src/agents/tools/code_interpreter.py:23-34](https://github.com/aiwaves-cn/agents/blob/e8c4e3c2d19739d3dff59e577d1c97090cc15f59/src/agents/tools/code_interpreter.py#L23-L34); [src/agents/utils/execution.py:88](https://github.com/aiwaves-cn/agents/blob/e8c4e3c2d19739d3dff59e577d1c97090cc15f59/src/agents/utils/execution.py#L88); [src/agents/agents/memory.py:73](https://github.com/aiwaves-cn/agents/blob/e8c4e3c2d19739d3dff59e577d1c97090cc15f59/src/agents/agents/memory.py#L73)

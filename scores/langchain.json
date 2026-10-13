@@ -36,6 +36,166 @@
     "external_communication": "opt_in"
   },
   "headline": "LangChain gives you a tool-calling agent loop and leaves almost every safety control to you. As shipped, create_agent runs every tool call with no approval, no untrusted-input containment, no authorization layer and a 9,999-step limit, so a prompt-injected agent can do anything its tools allow. Good controls exist as opt-in middleware (per-call human approval showing exact arguments, call limits, PII redaction, a Docker shell policy), but the bundled shell tool defaults to unisolated host execution.",
+  "safe_setup": {
+    "intro": "LangChain agents get only the tools you pass, model keys are masked when objects are serialized, and the shell tool stops each command after 30 seconds. Beyond that the defaults are thin: no approval step, no sandbox, no spend limit and no durable record, so the safest setup turns on the middleware LangChain offers and builds containment around the process.",
+    "steps": [
+      {
+        "setup": "Scoped, low-limit keys",
+        "how": "Give the process only the credentials this agent needs, each scoped or read-only with a spending limit set at the provider",
+        "gives_you": "Whatever the agent does, it reaches only the systems and spend you chose, not everything your shell can",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Per-call approval",
+        "how": "Add `HumanInTheLoopMiddleware` with every tool, MCP tools included, listed in `interrupt_on`",
+        "gives_you": "A person sees the exact tool name and arguments, and can edit or reject them, before each call runs",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "libs/langchain_v1/langchain/agents/middleware/human_in_the_loop.py",
+            "lines": "240",
+            "contains": "class HumanInTheLoopMiddleware",
+            "url": "https://github.com/langchain-ai/langchain/blob/57236d55d9ffc8634bda987861e6fce460aff268/libs/langchain_v1/langchain/agents/middleware/human_in_the_loop.py#L240"
+          },
+          {
+            "file": "libs/langchain_v1/langchain/agents/middleware/human_in_the_loop.py",
+            "lines": "247",
+            "contains": "interrupt_on: dict[str, bool | InterruptOnConfig]",
+            "url": "https://github.com/langchain-ai/langchain/blob/57236d55d9ffc8634bda987861e6fce460aff268/libs/langchain_v1/langchain/agents/middleware/human_in_the_loop.py#L247"
+          }
+        ]
+      },
+      {
+        "setup": "A hardened Docker shell",
+        "how": "Pass `execution_policy=DockerExecutionPolicy(...)` to `ShellToolMiddleware`, keeping `network_enabled=False` and setting `user`, `read_only_rootfs=True`, `memory_bytes` and `cpus`",
+        "gives_you": "Model-written commands run in a throwaway, offline, non-root container with resource limits, away from your host files and keys",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "libs/langchain_v1/langchain/agents/middleware/shell_tool.py",
+            "lines": "518",
+            "contains": "class ShellToolMiddleware",
+            "url": "https://github.com/langchain-ai/langchain/blob/57236d55d9ffc8634bda987861e6fce460aff268/libs/langchain_v1/langchain/agents/middleware/shell_tool.py#L518"
+          },
+          {
+            "file": "libs/langchain_v1/langchain/agents/middleware/shell_tool.py",
+            "lines": "543",
+            "contains": "execution_policy: BaseExecutionPolicy | None = None",
+            "url": "https://github.com/langchain-ai/langchain/blob/57236d55d9ffc8634bda987861e6fce460aff268/libs/langchain_v1/langchain/agents/middleware/shell_tool.py#L543"
+          },
+          {
+            "file": "libs/langchain_v1/langchain/agents/middleware/_execution.py",
+            "lines": "267",
+            "contains": "class DockerExecutionPolicy",
+            "url": "https://github.com/langchain-ai/langchain/blob/57236d55d9ffc8634bda987861e6fce460aff268/libs/langchain_v1/langchain/agents/middleware/_execution.py#L267"
+          },
+          {
+            "file": "libs/langchain_v1/langchain/agents/middleware/_execution.py",
+            "lines": "287-293",
+            "contains": "network_enabled: bool = False",
+            "url": "https://github.com/langchain-ai/langchain/blob/57236d55d9ffc8634bda987861e6fce460aff268/libs/langchain_v1/langchain/agents/middleware/_execution.py#L287-L293"
+          }
+        ]
+      },
+      {
+        "setup": "PII redaction",
+        "how": "Add a `PIIMiddleware` for each data type you handle, with `apply_to_tool_results=True`",
+        "gives_you": "Matching personal data is redacted before it reaches the model, including data that tools return",
+        "criterion": "C8",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "libs/langchain_v1/langchain/agents/middleware/pii.py",
+            "lines": "492",
+            "contains": "class PIIMiddleware",
+            "url": "https://github.com/langchain-ai/langchain/blob/57236d55d9ffc8634bda987861e6fce460aff268/libs/langchain_v1/langchain/agents/middleware/pii.py#L492"
+          },
+          {
+            "file": "libs/langchain_v1/langchain/agents/middleware/pii.py",
+            "lines": "566",
+            "contains": "apply_to_tool_results: bool = False",
+            "url": "https://github.com/langchain-ai/langchain/blob/57236d55d9ffc8634bda987861e6fce460aff268/libs/langchain_v1/langchain/agents/middleware/pii.py#L566"
+          }
+        ]
+      },
+      {
+        "setup": "Call limits per run",
+        "how": "Add `ModelCallLimitMiddleware` and `ToolCallLimitMiddleware` with `run_limit=<n>` and `thread_limit=<n>`, in sub-agents too",
+        "gives_you": "Each run stops after a number of model and tool calls you chose, well below the 9,999-step default",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "libs/langchain_v1/langchain/agents/middleware/model_call_limit.py",
+            "lines": "94",
+            "contains": "class ModelCallLimitMiddleware",
+            "url": "https://github.com/langchain-ai/langchain/blob/57236d55d9ffc8634bda987861e6fce460aff268/libs/langchain_v1/langchain/agents/middleware/model_call_limit.py#L94"
+          },
+          {
+            "file": "libs/langchain_v1/langchain/agents/middleware/model_call_limit.py",
+            "lines": "129-130",
+            "contains": "run_limit: int | None = None",
+            "url": "https://github.com/langchain-ai/langchain/blob/57236d55d9ffc8634bda987861e6fce460aff268/libs/langchain_v1/langchain/agents/middleware/model_call_limit.py#L129-L130"
+          },
+          {
+            "file": "libs/langchain_v1/langchain/agents/middleware/tool_call_limit.py",
+            "lines": "141",
+            "contains": "class ToolCallLimitMiddleware",
+            "url": "https://github.com/langchain-ai/langchain/blob/57236d55d9ffc8634bda987861e6fce460aff268/libs/langchain_v1/langchain/agents/middleware/tool_call_limit.py#L141"
+          },
+          {
+            "file": "libs/langchain_v1/langchain/agents/middleware/tool_call_limit.py",
+            "lines": "206-207",
+            "contains": "thread_limit: int | None = None",
+            "url": "https://github.com/langchain-ai/langchain/blob/57236d55d9ffc8634bda987861e6fce460aff268/libs/langchain_v1/langchain/agents/middleware/tool_call_limit.py#L206-L207"
+          }
+        ]
+      },
+      {
+        "setup": "Reviewed, pinned MCP servers",
+        "how": "Connect only MCP servers you have read, pinned to a fixed version or image you control",
+        "gives_you": "The tools and descriptions the model sees stay the ones you reviewed between runs",
+        "criterion": "C7",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the agent process, and any local MCP servers, in a container or VM whose network reaches only the hosts the task needs",
+        "gives_you": "An outer boundary around in-process tools and a narrow path for data to leave",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "LangSmith tracing",
+        "how": "Turn on LangSmith tracing through its environment settings, sending runs to a project only your team can read",
+        "gives_you": "A structured, off-machine record of every model and tool call that outlives the process",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "libs/core/langchain_core/tracers/context.py",
+            "lines": "132-135",
+            "contains": "ls_utils.tracing_is_enabled()",
+            "url": "https://github.com/langchain-ai/langchain/blob/57236d55d9ffc8634bda987861e6fce460aff268/libs/core/langchain_core/tracers/context.py#L132-L135"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; tools left out of `interrupt_on` run without a prompt.",
+      "Tool results from web pages, files and MCP servers can steer the model, so give calls that send data out or change state a closer look."
+    ],
+    "handling": [
+      "LangSmith traces hold the full inputs and outputs of every call; store and share them like the data the agent read.",
+      "With a checkpointer, saved conversations, tool output included, reload as-is in that thread; start a fresh thread for unrelated work."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

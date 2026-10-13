@@ -25,6 +25,28 @@ Controls where a risk surface exists: 2.60 / 8.0 (32%); 2 criteria scored SA (su
 
 Run as shipped, this server gives the model your whole Supabase account: any SQL on any project's database (read-write by default), migrations, edge-function deploys, branch merges and paid project creation, all through one long-lived personal access token. Destructive actions are clearly labelled for the MCP host, and the server has good opt-in controls (--read-only, --project-ref, and HTTP-mode confirmations bound to the exact query), but none are on by default. A prompt injection in database rows can lead to data theft and irreversible changes unless the host stops it. Run it with --read-only and --project-ref against a development project.
 
+## Safest setup
+
+Supabase MCP keeps its token out of logs and model context, labels every tool as read-only or destructive, and wraps database rows and logs as untrusted data. As shipped it gives the model read-write SQL on every project in your account, so the safest setup narrows the account and turns on the read-only, project and feature flags the server already includes.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A development-only account | Use a personal access token from a Supabase account whose only projects are the development ones the task needs | Supabase itself keeps production databases and other organizations out of reach, whatever the model asks for (C1) |
+| Read-only mode | `--read-only` on the server command ([packages/mcp-server-supabase/src/cli.ts:36-39](https://github.com/supabase/mcp/blob/4602ee9ebf025611741cc127cee2a3c6a4f73854/packages/mcp-server-supabase/src/cli.ts#L36-L39)) | SQL is sent to run read-only and every write tool is removed, so the agent works with reads alone (C4) |
+| One pinned project | `--project-ref <ref>` naming the development project ([packages/mcp-server-supabase/src/cli.ts:33-35](https://github.com/supabase/mcp/blob/4602ee9ebf025611741cc127cee2a3c6a4f73854/packages/mcp-server-supabase/src/cli.ts#L33-L35)) | Most tools act only on that project, and account tools such as project creation are removed (C1) |
+| Only the features needed | `--features <list>` naming just the feature groups the task uses ([packages/mcp-server-supabase/src/cli.ts:52-54](https://github.com/supabase/mcp/blob/4602ee9ebf025611741cc127cee2a3c6a4f73854/packages/mcp-server-supabase/src/cli.ts#L52-L54)) | The model sees a smaller set of tools, with SQL and deploy tools only where you chose them (C3) |
+| The stdio transport | Keep the default stdio transport, with `--http` left off ([packages/mcp-server-supabase/src/cli.ts:55-58](https://github.com/supabase/mcp/blob/4602ee9ebf025611741cc127cee2a3c6a4f73854/packages/mcp-server-supabase/src/cli.ts#L55-L58)) | The server uses only the token you configured, never one forwarded by an HTTP client (C1) |
+| A tool-call record | When you embed the server, pass an `onToolCall` callback that writes each call to storage the agent can't modify ([packages/mcp-server-supabase/src/server.ts:68](https://github.com/supabase/mcp/blob/4602ee9ebf025611741cc127cee2a3c6a4f73854/packages/mcp-server-supabase/src/server.ts#L68)) | A record of every tool call, with its arguments and result, that outlives the session (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; `execute_sql` carries both reads and writes, so read the SQL itself before approving.
+- SQL, migrations and function deploys act on the live project with no undo, and a deployed function gets a public URL, so read the code before approving a deploy.
+
+### Handling data
+
+- SQL results and logs reach the model unredacted; keep secrets out of the project the agent works on.
+
 ## Critical gaps
 - The default configuration uses an account-wide personal access token for every tool, so a hijacked session controls every organization and project the user can reach. (ASI03, T3; C1) — [packages/mcp-server-supabase/src/cli.ts:98](https://github.com/supabase/mcp/blob/4602ee9ebf025611741cc127cee2a3c6a4f73854/packages/mcp-server-supabase/src/cli.ts#L98); [packages/mcp-server-supabase/src/server.ts:46-52](https://github.com/supabase/mcp/blob/4602ee9ebf025611741cc127cee2a3c6a4f73854/packages/mcp-server-supabase/src/server.ts#L46-L52)
 - Rule of Two violated by default: untrusted database rows enter the same session that can run destructive SQL and deploy public edge functions, with no server-side human step (C5-WORSTCASE). (ASI01, LLM01, T6; C5) — [packages/mcp-server-supabase/src/tools/database-operation-tools.ts:518](https://github.com/supabase/mcp/blob/4602ee9ebf025611741cc127cee2a3c6a4f73854/packages/mcp-server-supabase/src/tools/database-operation-tools.ts#L518); [packages/mcp-server-supabase/src/tools/database-operation-tools.ts:512-515](https://github.com/supabase/mcp/blob/4602ee9ebf025611741cc127cee2a3c6a4f73854/packages/mcp-server-supabase/src/tools/database-operation-tools.ts#L512-L515); [packages/mcp-server-supabase/src/tools/edge-function-tools.ts:124-146](https://github.com/supabase/mcp/blob/4602ee9ebf025611741cc127cee2a3c6a4f73854/packages/mcp-server-supabase/src/tools/edge-function-tools.ts#L124-L146)

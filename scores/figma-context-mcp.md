@@ -25,6 +25,30 @@ Controls where a risk surface exists: 2.80 / 8.0 (35%); 2 criteria scored SA (su
 
 A small, read-mostly design server: it runs no code, talks only to Figma's API, and validates its arguments tightly, so a misused call mostly reads designs or writes image files. Its weak spots are around that core: Figma text comes back unmarked as part of the design data, the image tool writes and overwrites files with no explicit destructive label and no limits on how much it downloads, and there is no audit log. It also auto-loads a .env file from its working directory with no trust decision, and usage telemetry is on by default.
 
+## Safest setup
+
+Framelink Figma MCP runs no code, sends its token only to Figma's API, only reads from Figma and checks every tool argument tightly. Around that core the defaults are looser: the image tool writes files without asking, a .env file in the working directory shapes every launch, and usage telemetry is on. The safest setup narrows the token, keeps to the data tool where it can, and adds the rest of the boundary around the server.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, narrow Figma token | Create a Figma token used only for this server, with read-only access to file content and the shortest expiry that suits your work | Figma itself limits what the token can reach and for how long, whatever the host asks for (C1) |
+| The stdio transport | Launch it with `--stdio`, as the README shows ([src/bin.ts:54-56](https://github.com/GLips/Figma-Context-MCP/blob/c083d65c7e002923e7cb98f4e3bdafb105e90f6d/src/bin.ts#L54-L56); [README.md:66](https://github.com/GLips/Figma-Context-MCP/blob/c083d65c7e002923e7cb98f4e3bdafb105e90f6d/README.md#L66)) | The server answers only the host that started it, with no listening port (C1) |
+| The data tool only | Add `--skip-image-downloads` when the task needs design data but no image files ([src/bin.ts:40-42](https://github.com/GLips/Figma-Context-MCP/blob/c083d65c7e002923e7cb98f4e3bdafb105e90f6d/src/bin.ts#L40-L42); [CLAUDE.md:92](https://github.com/GLips/Figma-Context-MCP/blob/c083d65c7e002923e7cb98f4e3bdafb105e90f6d/CLAUDE.md#L92)) | The server offers only its read-only data tool, so nothing is written to your disk (C3) |
+| A dedicated image folder | Pass `--image-dir <path>` naming a folder used only for downloaded images ([src/bin.ts:44-47](https://github.com/GLips/Figma-Context-MCP/blob/c083d65c7e002923e7cb98f4e3bdafb105e90f6d/src/bin.ts#L44-L47); [src/server.ts:83](https://github.com/GLips/Figma-Context-MCP/blob/c083d65c7e002923e7cb98f4e3bdafb105e90f6d/src/server.ts#L83)) | Image writes stay inside that one folder instead of the server's working directory (C3) |
+| A clean working directory | Have the host start the server from a directory holding no .env file you didn't write | The Figma credentials, proxy, image folder and tool set come only from you (C6) |
+| Telemetry off | Set `FRAMELINK_TELEMETRY=off` in the host's environment for the server ([src/telemetry/client.ts:83](https://github.com/GLips/Figma-Context-MCP/blob/c083d65c7e002923e7cb98f4e3bdafb105e90f6d/src/telemetry/client.ts#L83)) | Error messages with Figma file identifiers and local paths stay on your machine (C8) |
+| A kept call log | Have the host save the server's stderr to a log file outside the project | A lasting record of which files and nodes were fetched and where each image was saved (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve image downloads one at a time; the image tool writes and can overwrite files, and its label doesn't say so.
+- Design data carries text written by the file's author, so a design from outside your team is worth a closer look before approving the calls that follow it.
+
+### Handling data
+
+- The README places the token on the command line in the host's config file; keep that file readable only by you.
+- Downloaded images can replace files of the same name, so keep the image folder under version control or separate from source files.
+
 ## Critical gaps
 - A .env file in the server's working directory is auto-loaded with no trust decision and can set the Figma credentials, the proxy, the image directory and the tool set. (ASI06, ASI04, T1; C6) — [src/config.ts:88-89](https://github.com/GLips/Figma-Context-MCP/blob/c083d65c7e002923e7cb98f4e3bdafb105e90f6d/src/config.ts#L88-L89); [src/config.ts:167](https://github.com/GLips/Figma-Context-MCP/blob/c083d65c7e002923e7cb98f4e3bdafb105e90f6d/src/config.ts#L167)
 

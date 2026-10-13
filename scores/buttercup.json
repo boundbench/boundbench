@@ -36,6 +36,122 @@
     "external_communication": "yes"
   },
   "headline": "Buttercup is a fully autonomous pipeline with no human approval step: LLM agents explore target code, write test scripts and patches, and the results are submitted to the competition API on their own. The dominant risk is execution of model-written shell commands and test scripts in --privileged containers on a Docker-in-Docker daemon that is itself a privileged pod, with unrestricted network and no per-command timeout. There are real controls elsewhere: a WASI sandbox for model-written seed generators, an Argon2-authenticated task API, a per-key LLM budget, and bounded patch-retry and recursion limits. Defaults still ship unauthenticated Redis, DEBUG logging, and a UI without authentication.",
+  "safe_setup": {
+    "intro": "Buttercup gives its agents a budget-capped LLM key, sandboxes model-written seed generators in WASI, and bounds patch retries and recursion. It runs fully unattended, and its shell tool and test scripts run in privileged containers with open network and no switch to turn them off, so the safest setup keeps the budget and loop limits tight and builds the containment around the whole deployment yourself.",
+    "steps": [
+      {
+        "setup": "Narrowly scoped credentials",
+        "how": "Give each GitHub token and service credential the deployment uses only the permissions and lifetime its job needs",
+        "gives_you": "Whatever a hijacked agent reaches, the provider limits what those credentials can do",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A small LLM budget",
+        "how": "Keep the budgeted virtual key and set `LITELLM_MAX_BUDGET` to the smallest amount the run needs",
+        "gives_you": "LiteLLM itself stops model spend at that amount, for every service sharing the key",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "deployment/env.template",
+            "lines": "67",
+            "contains": "LITELLM_MAX_BUDGET",
+            "url": "https://github.com/trailofbits/buttercup/blob/298c01fbff3bf0bf166c87856acd7e42f94f7157/deployment/env.template#L67"
+          },
+          {
+            "file": "deployment/k8s/templates/litellm-user-keys-setup-script.yaml",
+            "lines": "39",
+            "contains": "LITELLM_MAX_BUDGET",
+            "url": "https://github.com/trailofbits/buttercup/blob/298c01fbff3bf0bf166c87856acd7e42f94f7157/deployment/k8s/templates/litellm-user-keys-setup-script.yaml#L39"
+          }
+        ]
+      },
+      {
+        "setup": "Tight patch-loop limits",
+        "how": "Keep `maxPatchRetries`, `maxContextRetrieverRecursionLimit` and `maxMinutesRunPOVs` at their defaults or lower",
+        "gives_you": "Each patch attempt ends after a fixed number of retries, steps and minutes",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "deployment/k8s/templates/common-env.yaml",
+            "lines": "305-310",
+            "contains": "maxPatchRetries",
+            "url": "https://github.com/trailofbits/buttercup/blob/298c01fbff3bf0bf166c87856acd7e42f94f7157/deployment/k8s/templates/common-env.yaml#L305-L310"
+          }
+        ]
+      },
+      {
+        "setup": "A dedicated, disposable VM",
+        "how": "Run the cluster on its own VM that holds no other data or credentials, and rebuild it between campaigns",
+        "gives_you": "An escape from the privileged exec containers lands on a machine with nothing else to reach",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Limited outbound network",
+        "how": "Allow the VM outbound access only to the model providers, image registries and competition API the run uses",
+        "gives_you": "Commands the agents run have a narrow path for task data to leave",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Cluster-internal services",
+        "how": "Keep Redis and the UI on cluster-internal addresses and reach the UI only through a local port-forward",
+        "gives_you": "Only the Buttercup pods and you can reach the shared queue and the dashboard",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "INFO-level logging",
+        "how": "Set `logLevel: \"INFO\"` for the patcher and build-bot charts",
+        "gives_you": "Fewer command details and settings land in the logs on the shared scratch volume",
+        "criterion": "C8",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "deployment/k8s/charts/patcher/values.yaml",
+            "lines": "3",
+            "contains": "logLevel",
+            "url": "https://github.com/trailofbits/buttercup/blob/298c01fbff3bf0bf166c87856acd7e42f94f7157/deployment/k8s/charts/patcher/values.yaml#L3"
+          },
+          {
+            "file": "deployment/k8s/values.yaml",
+            "lines": "181",
+            "contains": "logLevel",
+            "url": "https://github.com/trailofbits/buttercup/blob/298c01fbff3bf0bf166c87856acd7e42f94f7157/deployment/k8s/values.yaml#L181"
+          }
+        ]
+      },
+      {
+        "setup": "Telemetry off the cluster",
+        "how": "Set `OTEL_ENDPOINT` to a collector outside the cluster",
+        "gives_you": "Submission spans are kept where the agent pods can't alter them",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "deployment/env.template",
+            "lines": "83",
+            "contains": "OTEL_ENDPOINT",
+            "url": "https://github.com/trailofbits/buttercup/blob/298c01fbff3bf0bf166c87856acd7e42f94f7157/deployment/env.template#L83"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Nothing pauses for approval and patches go out automatically, so the budget, limits and containment above are what bound an unattended run."
+    ],
+    "handling": [
+      "Logs on the shared scratch volume and in /tmp carry command text without redaction; store them like the task sources they cover.",
+      "The telemetry library may capture prompt content once an endpoint is set; treat the collector like the task data."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

@@ -36,6 +36,147 @@
     "external_communication": "yes"
   },
   "headline": "Symphony polls a tracker and runs one fully autonomous Codex agent per ticket with no human approval anywhere: the shipped workflow auto-accepts approval requests, enables network inside the sandbox, and gives the agent a raw Linear API tool using your personal key. Codex's sandbox keeps writes inside each ticket's workspace, but commands can read your whole disk and environment and send data anywhere, and setup and cleanup hooks run on the host. The dominant risk is prompt injection through ticket text or PR comments leading to credential leaks and irreversible pushes or tracker changes. The project calls itself an engineering preview for trusted environments, and that is the only safe way to run it.",
+  "safe_setup": {
+    "intro": "Symphony is built to run unattended, and its shipped workflow accepts approval requests automatically, turns network on in the sandbox and hands every command your full environment, so the defaults offer little protection. Its built-in settings are stricter, and the safest setup returns to them, narrows the identities it holds and puts a container around the whole process.",
+    "steps": [
+      {
+        "setup": "Dedicated, narrow accounts",
+        "how": "Give Symphony its own Linear member and API key limited to the team it works on, and a Git credential for its one repository",
+        "gives_you": "Linear and your Git host refuse anything outside those accounts, whatever the agent asks for",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A trimmed environment",
+        "how": "Start Symphony from a shell holding only `LINEAR_API_KEY` and what the task needs, and remove `shell_environment_policy.inherit=all` from the `command` under `codex:`",
+        "gives_you": "Agent commands and hooks reach only the credentials you chose for this run",
+        "criterion": "C1",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "elixir/lib/symphony_elixir/config/schema.ex",
+            "lines": "412",
+            "contains": "LINEAR_API_KEY",
+            "url": "https://github.com/openai/symphony/blob/be10a1b79df723d6d7612b5651c8522704dafb2e/elixir/lib/symphony_elixir/config/schema.ex#L412"
+          },
+          {
+            "file": "elixir/WORKFLOW.md",
+            "lines": "33-34",
+            "contains": "shell_environment_policy.inherit=all",
+            "url": "https://github.com/openai/symphony/blob/be10a1b79df723d6d7612b5651c8522704dafb2e/elixir/WORKFLOW.md#L33-L34"
+          }
+        ]
+      },
+      {
+        "setup": "Escalations stop the run",
+        "how": "Remove `approval_policy: never` so the built-in default `reject` policy applies",
+        "gives_you": "A request to go beyond the sandbox parks the ticket as blocked for you to look at",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "elixir/WORKFLOW.md",
+            "lines": "35",
+            "contains": "approval_policy: never",
+            "url": "https://github.com/openai/symphony/blob/be10a1b79df723d6d7612b5651c8522704dafb2e/elixir/WORKFLOW.md#L35"
+          },
+          {
+            "file": "elixir/lib/symphony_elixir/config/schema.ex",
+            "lines": "183-186",
+            "contains": "\"reject\" => %{",
+            "url": "https://github.com/openai/symphony/blob/be10a1b79df723d6d7612b5651c8522704dafb2e/elixir/lib/symphony_elixir/config/schema.ex#L183-L186"
+          }
+        ]
+      },
+      {
+        "setup": "Network off in the sandbox",
+        "how": "Set `networkAccess: false` in `turn_sandbox_policy`, as the built-in default does",
+        "gives_you": "Sandboxed commands cannot send data out or fetch packages the model picks",
+        "criterion": "C4",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "elixir/WORKFLOW.md",
+            "lines": "37-39",
+            "contains": "networkAccess: true",
+            "url": "https://github.com/openai/symphony/blob/be10a1b79df723d6d7612b5651c8522704dafb2e/elixir/WORKFLOW.md#L37-L39"
+          },
+          {
+            "file": "elixir/lib/symphony_elixir/config/schema.ex",
+            "lines": "575",
+            "contains": "\"networkAccess\" => false",
+            "url": "https://github.com/openai/symphony/blob/be10a1b79df723d6d7612b5651c8522704dafb2e/elixir/lib/symphony_elixir/config/schema.ex#L575"
+          }
+        ]
+      },
+      {
+        "setup": "Only chosen tickets",
+        "how": "Set `required_labels` or `assignee` under `tracker:` so only tickets you marked start a run",
+        "gives_you": "Agents start only on work you picked, not on any ticket someone files",
+        "criterion": "C5",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "elixir/WORKFLOW.md",
+            "lines": "2",
+            "contains": "tracker:",
+            "url": "https://github.com/openai/symphony/blob/be10a1b79df723d6d7612b5651c8522704dafb2e/elixir/WORKFLOW.md#L2"
+          },
+          {
+            "file": "elixir/lib/symphony_elixir/config/schema.ex",
+            "lines": "55-58",
+            "contains": "field(:required_labels, {:array, :string}, default: [])",
+            "url": "https://github.com/openai/symphony/blob/be10a1b79df723d6d7612b5651c8522704dafb2e/elixir/lib/symphony_elixir/config/schema.ex#L55-L58"
+          }
+        ]
+      },
+      {
+        "setup": "Turn and agent limits",
+        "how": "Keep the default `max_turns: 20`, lower `max_concurrent_agents`, and set a spending limit with your model provider",
+        "gives_you": "Each invocation ends after a fixed number of turns, and total spend has a ceiling you set",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "elixir/lib/symphony_elixir/config/schema.ex",
+            "lines": "152-153",
+            "contains": "field(:max_turns, :integer, default: 20)",
+            "url": "https://github.com/openai/symphony/blob/be10a1b79df723d6d7612b5651c8522704dafb2e/elixir/lib/symphony_elixir/config/schema.ex#L152-L153"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run Symphony and its workspaces in a container or VM holding no other credentials, with network limited to the tracker, Git host and model provider",
+        "gives_you": "An outer boundary around host-side hooks and full-disk reads, away from your home directory",
+        "criterion": "C4",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A log outside the run",
+        "how": "`--logs-root <path>` on a volume you back up or forward off the machine",
+        "gives_you": "A lifecycle record of every run that outlasts log rotation and the host",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "elixir/lib/symphony_elixir/cli.ex",
+            "lines": "81",
+            "contains": "--logs-root <path>",
+            "url": "https://github.com/openai/symphony/blob/be10a1b79df723d6d7612b5651c8522704dafb2e/elixir/lib/symphony_elixir/cli.ex#L81"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Require a human review on the Git host before anything merges; the Human Review ticket state is a prompt convention the agent can move past."
+    ],
+    "handling": [
+      "The log file keeps raw Codex stream lines at debug level with no secret filtering; store it like the credentials the run holds."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

@@ -24,6 +24,31 @@
 
 AnythingLLM ships a real per-call approval step for its file, email and calendar tools, keeps opt-in filesystem access inside an allowlisted folder, and blocks Community Hub code downloads unless the operator enables them. The default agent can still store anything in the workspace's shared vector memory and fetch arbitrary URLs without asking, so injected content can persist across users and send document contents out. MCP servers and imported skills run with the server's full credentials, and MCP tools are never gated.
 
+## Safest setup
+
+AnythingLLM asks before its file, email and calendar tools act, keeps Community Hub code downloads off, and caps each agent response at 10 tool calls. The shipped setup runs without a password, and memory stores, web fetches and MCP tools run without asking, so the safest setup adds a login, keeps the skill set small and builds containment around the server.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit provider keys | Put only the provider and connector keys this instance needs in its .env file, each scoped with a spending limit set at the provider | Whatever the agent or an extension does, it reaches only the accounts and spend you chose (C8) |
+| A password on the instance | Set `AUTH_TOKEN` and `JWT_SECRET` in .env, or switch to multi-user mode with per-user roles ([docker/.env.example:7](https://github.com/Mintplex-Labs/anything-llm/blob/feb04ca0a57cda6d0b3a69c62578f0af44d388fc/docker/.env.example#L7); [docker/.env.example:411](https://github.com/Mintplex-Labs/anything-llm/blob/feb04ca0a57cda6d0b3a69c62578f0af44d388fc/docker/.env.example#L411)) | Only people you let in can chat with the agent and reach the stored keys and documents (C1) |
+| Per-call approval | Keep `AGENT_AUTO_APPROVED_SKILLS` unset ([server/utils/helpers/agents.js:12](https://github.com/Mintplex-Labs/anything-llm/blob/feb04ca0a57cda6d0b3a69c62578f0af44d388fc/server/utils/helpers/agents.js#L12)) | A person sees the arguments of every file, email and calendar action before it runs (C2) |
+| Only the skills needed | In the agent skills settings, keep on only the skills a workspace uses, including memory and web scraping ([server/utils/agents/defaults.js:10-15](https://github.com/Mintplex-Labs/anything-llm/blob/feb04ca0a57cda6d0b3a69c62578f0af44d388fc/server/utils/agents/defaults.js#L10-L15)) | The agent can store memories and fetch URLs only where a task calls for it (C3) |
+| Reviewed extensions only | Keep `COMMUNITY_HUB_BUNDLE_DOWNLOADS_ENABLED` unset, and add MCP servers and skills only after reading their code ([server/utils/middleware/communityHubDownloadsEnabled.js:23](https://github.com/Mintplex-Labs/anything-llm/blob/feb04ca0a57cda6d0b3a69c62578f0af44d388fc/server/utils/middleware/communityHubDownloadsEnabled.js#L23)) | Only code you have checked runs with the server's keys (C7) |
+| A tool-call ceiling | Keep the default `AGENT_MAX_TOOL_CALLS` of 10, or lower it ([server/utils/agents/aibitat/index.js:89-91](https://github.com/Mintplex-Labs/anything-llm/blob/feb04ca0a57cda6d0b3a69c62578f0af44d388fc/server/utils/agents/aibitat/index.js#L89-L91)) | Every agent response ends after a fixed number of tool calls (C10) |
+| A narrow container network | Run the container on a network that reaches only the model provider and the sites the agent needs, not your internal hosts | Web fetches and extensions have a narrow path out and no route to internal services (C3) |
+| Retained server logs | Ship the container's console output to log storage the server can't modify | A lasting record of every tool call and its arguments (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; 'always allow' keeps approving that skill for you in later chats.
+- Scheduled jobs approve every call on their own, so give them only skills you would run unattended.
+
+### Handling data
+
+- The server console prints every tool call with its full arguments; store those logs like the workspace documents.
+- Telemetry is on by default and reports events such as tool names, not prompts; `DISABLE_TELEMETRY="true"` in .env turns it off.
+
 ## Critical gaps
 - Imported agent skills are loaded into the server process and MCP servers inherit the server's full environment, so a malicious extension gets every stored provider key. (ASI04, T17, LLM03; C7) — [server/utils/agents/imported.js:23](https://github.com/Mintplex-Labs/anything-llm/blob/feb04ca0a57cda6d0b3a69c62578f0af44d388fc/server/utils/agents/imported.js#L23); [server/utils/MCP/hypervisor/index.js:311](https://github.com/Mintplex-Labs/anything-llm/blob/feb04ca0a57cda6d0b3a69c62578f0af44d388fc/server/utils/MCP/hypervisor/index.js#L311)
 - The single most powerful default actions (memory store and arbitrary-URL fetch) and all MCP tools are outside the approval gate by design (C2-POWERBYPASS). (ASI02, ASI09, T10; C2) — [server/utils/MCP/index.js:94](https://github.com/Mintplex-Labs/anything-llm/blob/feb04ca0a57cda6d0b3a69c62578f0af44d388fc/server/utils/MCP/index.js#L94); [server/utils/agents/aibitat/plugins/memory.js:75](https://github.com/Mintplex-Labs/anything-llm/blob/feb04ca0a57cda6d0b3a69c62578f0af44d388fc/server/utils/agents/aibitat/plugins/memory.js#L75)

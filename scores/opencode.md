@@ -24,6 +24,31 @@
 
 Out of the box, OpenCode's default agent runs shell commands, edits files and fetches any URL without asking, on the host with no sandbox and with the full environment, so a prompt injection can both leak secrets and take irreversible actions unattended. Worse, opening it in a cloned repository silently loads that repo's opencode.json and .opencode directory, which can import and run custom tools and plugins in-process and launch MCP servers, with no trust prompt. A capable permission engine exists, but you have to configure it to ask.
 
+## Safest setup
+
+OpenCode ships a capable permission engine and git-based snapshots of file edits, but out of the box its default agent runs shell commands, edits and web fetches without asking, on the host with your full environment, and it loads a repository's own config and plugins without a trust prompt. The safest setup turns on the permission prompts and the project-config switch OpenCode already has, and puts the identity and sandbox boundaries around it yourself.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A minimal shell environment | Launch OpenCode from a shell or account that holds only the model key and the credentials the task needs, with no cloud CLI sessions or SSH agent | Shell commands and MCP servers inherit only what you chose, not every login on your machine (C1) |
+| Ask before every tool | Set `"permission": "ask"` in your global config file ([packages/core/src/v1/config/config.ts:128](https://github.com/anomalyco/opencode/blob/907b3bc518fa48e90e8ec24dd327d13eee71c36c/packages/core/src/v1/config/config.ts#L128); [packages/core/src/v1/config/permission.ts:5](https://github.com/anomalyco/opencode/blob/907b3bc518fa48e90e8ec24dd327d13eee71c36c/packages/core/src/v1/config/permission.ts#L5); [packages/core/src/v1/config/permission.ts:41](https://github.com/anomalyco/opencode/blob/907b3bc518fa48e90e8ec24dd327d13eee71c36c/packages/core/src/v1/config/permission.ts#L41)) | A person sees each shell command, file diff, web fetch and MCP call before it runs (C2) |
+| Your config only | Set `OPENCODE_DISABLE_PROJECT_CONFIG=1` in the environment that starts OpenCode ([packages/core/src/flag/flag.ts:54-55](https://github.com/anomalyco/opencode/blob/907b3bc518fa48e90e8ec24dd327d13eee71c36c/packages/core/src/flag/flag.ts#L54-L55)) | A repository's opencode.json, .opencode tools and plugins, and instruction files stay unloaded, so only your own settings apply (C6) |
+| Sharing switched off | Set `OPENCODE_DISABLE_SHARE=1` in the environment ([packages/opencode/src/share/share-next.ts:23](https://github.com/anomalyco/opencode/blob/907b3bc518fa48e90e8ec24dd327d13eee71c36c/packages/opencode/src/share/share-next.ts#L23)) | Session transcripts stay on your machine whatever any config file says (C8) |
+| A step cap | Set `steps` on the `build` agent under `agent` in your global config ([packages/core/src/v1/config/agent.ts:34](https://github.com/anomalyco/opencode/blob/907b3bc518fa48e90e8ec24dd327d13eee71c36c/packages/core/src/v1/config/agent.ts#L34); [packages/core/src/v1/config/config.ts:96-100](https://github.com/anomalyco/opencode/blob/907b3bc518fa48e90e8ec24dd327d13eee71c36c/packages/core/src/v1/config/config.ts#L96-L100)) | The main agent loop ends after a fixed number of iterations (C10) |
+| File snapshots | Keep the default `snapshot` setting on ([packages/core/src/v1/config/config.ts:52-54](https://github.com/anomalyco/opencode/blob/907b3bc518fa48e90e8ec24dd327d13eee71c36c/packages/core/src/v1/config/config.ts#L52-L54)) | File edits the agent makes can be reverted from snapshots stored outside the project (C2) |
+| Its own container or VM | Run OpenCode in a container or VM that mounts only the project and reaches only the model provider and the hosts the task needs | An outer boundary around shell commands, MCP servers and plugins, and a narrow path for data to leave (C4) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; an 'always' answer for a shell command covers every later command with the same prefix.
+- MCP tool prompts carry less detail than shell and edit prompts, so approve MCP calls only for servers you trust.
+- Plugins and custom tools you add yourself show a prompt only when their own code asks for one, so read them before installing.
+
+### Handling data
+
+- Every tool call's input is stored in the session database in your data directory; store it like the code and data the agent read.
+- Provider keys sit in a plaintext auth.json readable only by you; treat it like any other credential file.
+
 ## Critical gaps
 - The agent acts with the user's full ambient authority: every shell command and MCP server receives the entire process environment. (ASI03, T3; C1) — [packages/opencode/src/tool/shell.ts:416-426](https://github.com/anomalyco/opencode/blob/907b3bc518fa48e90e8ec24dd327d13eee71c36c/packages/opencode/src/tool/shell.ts#L416-L426); [packages/opencode/src/mcp/index.ts:347-356](https://github.com/anomalyco/opencode/blob/907b3bc518fa48e90e8ec24dd327d13eee71c36c/packages/opencode/src/mcp/index.ts#L347-L356)
 - The default build agent allows every tool, so the shell runs without human approval. (ASI02, ASI09; C2) — [packages/opencode/src/agent/agent.ts:119-121](https://github.com/anomalyco/opencode/blob/907b3bc518fa48e90e8ec24dd327d13eee71c36c/packages/opencode/src/agent/agent.ts#L119-L121); [packages/opencode/src/tool/shell.ts:283-290](https://github.com/anomalyco/opencode/blob/907b3bc518fa48e90e8ec24dd327d13eee71c36c/packages/opencode/src/tool/shell.ts#L283-L290)

@@ -25,6 +25,29 @@ Controls where a risk surface exists: 3.03 / 9.0 (34%); 1 criterion scored SA (s
 
 These servers act on your Cloudflare account with your own OAuth grant or API token, and each server asks only for the scopes its domain needs. The main risk is that the server gives your MCP client little help in deciding what needs approval: the bindings server can irreversibly delete databases and buckets, the D1 SQL tool is labelled non-destructive, and the container and remote-capture tools carry no risk labels. Every server also accepts and forwards raw API tokens, and the container server runs model-chosen shell commands and packages as root with open internet and no timeout.
 
+## Safest setup
+
+Cloudflare's MCP servers keep your credentials on the server side, and each server asks Cloudflare only for the OAuth scopes its domain needs, read-only for most of them. The servers offer no read-only mode, approval step or switch to turn on, and risk labels are missing on several write tools, so the safest setup narrows the identity, limits which servers you connect and relies on your MCP client and account for the rest.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A narrowly scoped grant | Sign in with OAuth, or if you use an API token, create one limited to one account and to read permissions unless the task needs writes | Cloudflare itself refuses anything outside that grant, whatever token or request the client sends (C1) |
+| Read-scoped servers first | Connect read-scoped servers such as observability, which asks only for `workers_observability:read` and similar, and add the bindings server only for tasks that change resources ([apps/workers-observability/src/workers-observability.app.ts:12-18](https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/workers-observability/src/workers-observability.app.ts#L12-L18)) | Most sessions hold no write or delete access at all (C1) |
+| Client approval for writes | Set your MCP client to ask before every call from the bindings, container and DEX servers, whatever the tool labels say | A person sees each delete, query, shell command and packet capture before it runs (C2) |
+| Separate sessions per source | Use the bindings server in sessions that don't also read web pages, Workers logs or AI Gateway logs | Text written by outsiders can't steer a session that can delete your databases and buckets (C5) |
+| Production container settings | If you deploy the container server yourself, deploy its `production` environment, which sets `ENVIRONMENT` to `prod` ([apps/sandbox-container/wrangler.jsonc:128](https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/wrangler.jsonc#L128); [apps/sandbox-container/wrangler.jsonc:156](https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/wrangler.jsonc#L156)) | Model-written commands run in a per-user container, away from the server itself (C4) |
+| Short-lived access | Revoke the server's OAuth grant or API token in the Cloudflare dashboard when the task ends | A stored refresh token or API token stops working once the task is done (C1) |
+| Your account's audit log | Check your Cloudflare account's audit log for changes made during agent sessions | A record of which resources changed, which the server's own usage metric doesn't keep (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; `d1_database_query` is labelled non-destructive but runs any SQL, so read the statement before approving.
+- Container commands can install pip and npm packages that then run with internet access, so check package names before approving.
+
+### Handling data
+
+- Tool results and error messages can carry your account data and upstream error text; treat chat transcripts like the data the servers read.
+
 ## Critical gaps
 - Every authenticated server accepts a client-supplied Cloudflare API token and forwards it unchanged to the Cloudflare API (token passthrough). (ASI03, T3, T9; C1) — [packages/mcp-common/src/oauth-router.ts:108-111](https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/oauth-router.ts#L108-L111); [packages/mcp-common/src/api-token-mode.ts:99-104](https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/packages/mcp-common/src/api-token-mode.ts#L99-L104)
 - The container server has the model install and run unverified pip/npm packages, as root with full internet, without user consent. (ASI04, T17, LLM03; C7) — [apps/sandbox-container/server/prompts.ts:16-20](https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/prompts.ts#L16-L20); [apps/sandbox-container/server/containerHelpers.ts:25-27](https://github.com/cloudflare/mcp-server-cloudflare/blob/ab883e51663df955316ec3191afb5b718bf4b54c/apps/sandbox-container/server/containerHelpers.ts#L25-L27)

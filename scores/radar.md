@@ -24,6 +24,31 @@
 
 Radar's MCP server gives an AI agent the full authority of your kubeconfig, with no authentication on the local /mcp endpoint and write tools on by default, including apply_resource, which creates any Kubernetes object, privileged pods among them. Risk labelling for agent hosts is good (accurate read-only and destructive hints, dry-run for apply and patch, a separate read-only endpoint), and Secret values are kept out of model context. The dominant risk is that a prompt-injected agent reading pod logs or annotations can deploy arbitrary workloads with cluster-admin reach. Point agents at /mcp-readonly unless you need writes.
 
+## Safest setup
+
+Radar labels every MCP tool as read-only or destructive, serves a separate read-only endpoint, keeps Secret values out of model context and listens only on localhost. As shipped, the default /mcp endpoint gives an agent your full kubeconfig identity and the write tools with no authentication, so the safest setup narrows the identity, points agents at the read-only endpoint and lets the cluster limit what gets created.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A read-only cluster identity | Pass `--kubeconfig <path>` to a context bound to a read-only or namespace-scoped Kubernetes role ([cmd/explorer/main.go:101](https://github.com/skyhook-io/radar/blob/09719d88ba15c66b5b772b4c483b028c3c2f55ab/cmd/explorer/main.go#L101)) | Kubernetes RBAC itself refuses anything outside that role, whatever the agent asks for (C1) |
+| Cluster-enforced pod security | Enforce Pod Security Admission at the restricted level, or an equivalent admission policy, on every namespace the identity can write | Workloads an agent creates cannot run privileged, share host namespaces or mount the host (C4) |
+| The read-only endpoint | Point your agent at `/mcp-readonly` instead of `/mcp` ([internal/server/server.go:918](https://github.com/skyhook-io/radar/blob/09719d88ba15c66b5b772b4c483b028c3c2f55ab/internal/server/server.go#L918)) | Write tools are never listed, so cluster content the agent reads cannot lead to changes (C5) |
+| Signed-in shared installs | For an in-cluster install, set `--auth-mode` to `oidc`, or to `proxy` behind an authenticating proxy ([cmd/explorer/main.go:163](https://github.com/skyhook-io/radar/blob/09719d88ba15c66b5b772b4c483b028c3c2f55ab/cmd/explorer/main.go#L163)) | Writes run as the signed-in person, so Kubernetes RBAC checks each one against their own rights (C1) |
+| A local-only listener | Keep the default `--listen-address` of 127.0.0.1 ([cmd/explorer/main.go:106](https://github.com/skyhook-io/radar/blob/09719d88ba15c66b5b772b4c483b028c3c2f55ab/cmd/explorer/main.go#L106); [internal/server/listen_address.go:15](https://github.com/skyhook-io/radar/blob/09719d88ba15c66b5b772b4c483b028c3c2f55ab/internal/server/listen_address.go#L15)) | Only processes on your own machine can reach the MCP endpoints (C1) |
+| Per-call approval in your host | Set your agent host to ask before every tool marked `destructiveHint` ([internal/mcp/tools.go:69-72](https://github.com/skyhook-io/radar/blob/09719d88ba15c66b5b772b4c483b028c3c2f55ab/internal/mcp/tools.go#L69-L72)) | A person decides on each restart, scale, apply, patch, drain or rollback (C2) |
+| Safeguarded investigations | Run in-app investigations with Claude Code or Codex in the default `safeguarded` profile ([internal/ai/agent.go:36](https://github.com/skyhook-io/radar/blob/09719d88ba15c66b5b772b4c483b028c3c2f55ab/internal/ai/agent.go#L36)) | The investigating CLI gets a scrubbed environment and only Radar's tools (C7) |
+| A kept tool-call log | Capture Radar's standard output to a file the agent's identity cannot modify | A per-call record of tool, arguments and status that outlives the terminal (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve write calls one at a time; apply and patch offer a dry-run preview, while restart, scale, rollback, drain and CronJob actions have none.
+- On `/mcp`, diagnose with in_cluster creates short-lived probe pods and carries neither hint, so have your host also ask for tools not marked read-only.
+
+### Handling data
+
+- The tool-call log prints full arguments, including manifests sent to apply_resource; store captured output like the Secrets it may hold.
+- In-app investigation transcripts are kept in ~/.radar/ai-runs.db for up to 30 days; `--ai-history=false` turns that off.
+
 ## Critical gaps
 - In default local mode MCP tools act with the operator's full kubeconfig identity, typically cluster-admin, over an unauthenticated localhost endpoint. (ASI03; C1) — [internal/k8s/context_client.go:47-61](https://github.com/skyhook-io/radar/blob/09719d88ba15c66b5b772b4c483b028c3c2f55ab/internal/k8s/context_client.go#L47-L61); [cmd/explorer/main.go:163](https://github.com/skyhook-io/radar/blob/09719d88ba15c66b5b772b4c483b028c3c2f55ab/cmd/explorer/main.go#L163)
 - apply_resource applies model-written manifests of any kind with no pod-security or kind policy, so the model chooses privileged/host-mounted workloads in the cluster. (ASI05; C4) — [pkg/k8score/workload.go:286-321](https://github.com/skyhook-io/radar/blob/09719d88ba15c66b5b772b4c483b028c3c2f55ab/pkg/k8score/workload.go#L286-L321); searched `rg -n -i 'privileged|hostPath|hostNetwork|PodSecurity|allowedKinds|kindAllow|denyKind'` in `internal/mcp/tools_apply.go internal/mcp/tools_patch.go pkg/k8score/workload.go` → 0 hits (no kind allowlist or pod-security check on the apply/patch path)

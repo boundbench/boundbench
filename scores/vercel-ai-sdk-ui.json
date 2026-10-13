@@ -36,6 +36,131 @@
     "external_communication": "yes"
   },
   "headline": "AI SDK UI ships a careful tool-approval design, with exact-input approval prompts, schema re-validation and optional HMAC-signed approvals, but approval is off by default: in the documented chat route every tool the model calls runs immediately with the server's full credentials. The server also trusts the message history the browser posts, so without the experimental approval secret a modified client can replay fabricated tool calls and approvals to run any registered tool. Prompt injection through tool results is the dominant risk; deployers should enable toolApproval and experimental_toolApprovalSecret, authenticate the route, forward req.signal, and cap automatic resubmissions.",
+  "safe_setup": {
+    "intro": "AI SDK UI ships a careful approval flow, schema checks on every tool call, generic error messages to the browser and one model step per request, and it rejects system messages posted by the browser. Approval, signing, logging and limits are all off in the documented route, so the safest setup turns them on and scopes what the server can reach.",
+    "steps": [
+      {
+        "setup": "Scoped, low-limit keys",
+        "how": "Give the server only the provider key and tool credentials this app needs, each scoped with a spending limit at the provider",
+        "gives_you": "Whatever a tool call does, it reaches only the systems and spend you chose",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "An authenticated chat route",
+        "how": "Put your own authentication in front of the chat route and tie stored chats to the signed-in user",
+        "gives_you": "Only your users can reach the tools, and each sees only their own history",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Per-call approval",
+        "how": "`toolApproval` on `streamText`, requiring approval for every tool with side effects",
+        "gives_you": "A person sees the exact tool input and decides before each consequential call runs",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/ai/src/generate-text/stream-text.ts",
+            "lines": "426",
+            "contains": "toolApproval",
+            "url": "https://github.com/vercel/ai/blob/08d7f0a75e1466d28c3b71c2be4c0d89d552acf9/packages/ai/src/generate-text/stream-text.ts#L426"
+          }
+        ]
+      },
+      {
+        "setup": "Signed approvals",
+        "how": "`experimental_toolApprovalSecret: <secret>` on `streamText`, from your secret store",
+        "gives_you": "Only approvals your server issued are accepted when the browser sends them back",
+        "criterion": "C2",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/ai/src/generate-text/stream-text.ts",
+            "lines": "428",
+            "contains": "experimental_toolApprovalSecret",
+            "url": "https://github.com/vercel/ai/blob/08d7f0a75e1466d28c3b71c2be4c0d89d552acf9/packages/ai/src/generate-text/stream-text.ts#L428"
+          }
+        ]
+      },
+      {
+        "setup": "Only the tools needed",
+        "how": "Register only the tools the app uses and narrow each step with `activeTools`",
+        "gives_you": "The model can call only the tools the current task needs",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/ai/src/generate-text/stream-text.ts",
+            "lines": "433",
+            "contains": "activeTools",
+            "url": "https://github.com/vercel/ai/blob/08d7f0a75e1466d28c3b71c2be4c0d89d552acf9/packages/ai/src/generate-text/stream-text.ts#L433"
+          }
+        ]
+      },
+      {
+        "setup": "Server-side stop and timeout",
+        "how": "Pass `abortSignal: req.signal` and `timeout: <ms>` to `streamText`",
+        "gives_you": "Stopping in the browser also ends the model call on the server, and long requests end on their own",
+        "criterion": "C10",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/ai/src/generate-text/stream-text.ts",
+            "lines": "420-421",
+            "contains": "abortSignal,",
+            "url": "https://github.com/vercel/ai/blob/08d7f0a75e1466d28c3b71c2be4c0d89d552acf9/packages/ai/src/generate-text/stream-text.ts#L420-L421"
+          }
+        ]
+      },
+      {
+        "setup": "A capped resubmit loop",
+        "how": "Keep the default `stopWhen` and have `sendAutomaticallyWhen` return false after <n> rounds",
+        "gives_you": "Each request runs one step and the browser-driven loop ends after a fixed number of rounds",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "packages/ai/src/generate-text/stream-text.ts",
+            "lines": "423",
+            "contains": "stopWhen = isStepCount(1)",
+            "url": "https://github.com/vercel/ai/blob/08d7f0a75e1466d28c3b71c2be4c0d89d552acf9/packages/ai/src/generate-text/stream-text.ts#L423"
+          },
+          {
+            "file": "packages/ai/src/ui/chat.ts",
+            "lines": "238",
+            "contains": "sendAutomaticallyWhen",
+            "url": "https://github.com/vercel/ai/blob/08d7f0a75e1466d28c3b71c2be4c0d89d552acf9/packages/ai/src/ui/chat.ts#L238"
+          }
+        ]
+      },
+      {
+        "setup": "A tool-call record",
+        "how": "`registerTelemetry(<integration>)` with an integration that writes to storage the app can't modify",
+        "gives_you": "A durable record of every server tool execution, with its arguments and result",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "packages/ai/src/telemetry/telemetry-registry.ts",
+            "lines": "6",
+            "contains": "registerTelemetry",
+            "url": "https://github.com/vercel/ai/blob/08d7f0a75e1466d28c3b71c2be4c0d89d552acf9/packages/ai/src/telemetry/telemetry-registry.ts#L6"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; the prompt shows the exact tool input.",
+      "Client-side tools run in the browser through your own callbacks, so add your own confirmation to any that act."
+    ],
+    "handling": [
+      "A telemetry integration receives tool arguments and results; store its output like the data your tools read.",
+      "A custom `onError` replaces the default generic error message, so keep it from returning raw error text."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

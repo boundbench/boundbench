@@ -36,6 +36,88 @@
     "external_communication": "no"
   },
   "headline": "As shipped, Postgres MCP Pro runs in unrestricted mode: the model can execute any SQL, including multi-statement DROP/DELETE batches, with the operator's database login, and every statement is committed immediately with no timeout, record or undo. Risk annotations on some read-only-labelled tools are not accurate. The opt-in restricted mode is a genuinely strong parser allowlist plus read-only transaction with a 30-second timeout; deployers should always use it and a read-only database role.",
+  "safe_setup": {
+    "intro": "Postgres MCP Pro keeps no memory, loads no plugins and runs over stdio by default, but as shipped it runs any SQL the model writes with your login and commits it at once. The safest setup gives it a read-only database role, turns on its restricted mode and adds limits and logging on the database side.",
+    "steps": [
+      {
+        "setup": "A read-only database role",
+        "how": "Put a login in `DATABASE_URI` that can only read the schemas the task needs and is neither owner nor superuser",
+        "gives_you": "Postgres itself refuses writes and host-level features, whatever SQL the model sends",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "src/postgres_mcp/server.py",
+            "lines": "629",
+            "contains": "os.environ.get(\"DATABASE_URI\", args.database_url)",
+            "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L629"
+          }
+        ]
+      },
+      {
+        "setup": "Restricted mode",
+        "how": "`--access-mode=restricted` on the server command line",
+        "gives_you": "Every tool runs SQL through a parser allowlist in a read-only transaction with a 30-second timeout",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/postgres_mcp/server.py",
+            "lines": "561-566",
+            "contains": "\"--access-mode\",",
+            "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L561-L566"
+          }
+        ]
+      },
+      {
+        "setup": "The local stdio transport",
+        "how": "Keep the default `--transport` of `stdio`",
+        "gives_you": "Only the host that launched the server can talk to it",
+        "criterion": "C1",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "src/postgres_mcp/server.py",
+            "lines": "568-573",
+            "contains": "default=\"stdio\",",
+            "url": "https://github.com/crystaldba/postgres-mcp/blob/15c8e33353546148acc2d8bd784551cf3905d1e2/src/postgres_mcp/server.py#L568-L573"
+          }
+        ]
+      },
+      {
+        "setup": "A role-level timeout",
+        "how": "Set a statement timeout and connection limit on the database role",
+        "gives_you": "Postgres ends runaway queries even when the server sets no limit of its own",
+        "criterion": "C10",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Index tuning kept local",
+        "how": "Start the server with no OpenAI API key in its environment",
+        "gives_you": "Query text and plans stay on your network, since the 'llm' tuning method can't reach OpenAI",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A database-side record",
+        "how": "Turn on Postgres statement logging or auditing for the role, written where the agent can't reach",
+        "gives_you": "A record of every statement the agent ran, which the server itself doesn't keep",
+        "criterion": "C9",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; in the default mode a single `execute_sql` call can run several statements and commit them immediately.",
+      "Restricted mode makes every tool's read-only label accurate; in the default mode, rely on reading each call rather than on the labels."
+    ],
+    "handling": [
+      "Failed queries are logged with their full SQL text and errors return to the model as-is; treat the server's stderr like the data it queries.",
+      "The connection string carries a long-lived password; keep it in your host's secret store rather than in shared config files."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

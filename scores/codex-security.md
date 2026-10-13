@@ -24,6 +24,28 @@
 
 Codex Security is a thin wrapper that drives Codex agents against code it is asked to review, under a filesystem profile that allows reading the whole machine and writing only to workspace roots. Execution approvals are decided by an automatic LLM reviewer rather than a person, and the agent's shell inherits the operator's environment, including unrelated cloud and API tokens. Its own tool-calling surface is Codex's, so most criteria depend on upstream behaviour; the wrapper adds careful path, executable and credential-home checks but no default cost or time ceiling in standard mode and, by repository policy, no secret redaction. Scan only repositories you trust, and start scans with only the credentials they need.
 
+## Safest setup
+
+Codex Security runs every scan inside Codex's sandbox with writes limited to workspace roots, and it loads project settings only from a file you name. Escalations are approved by an automatic reviewer and the scan can read your whole disk and inherited tokens, so the safest setup narrows what the scan can reach and denies escalations.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Only the credentials needed | Start scans from a shell or account that holds only the model credentials the scan needs, with no unrelated cloud or API tokens | Whatever the scan reads or runs, the only secrets in reach are the ones you gave it (C1) |
+| Deny-all escalations | `--codex 'approval_policy="never"'` on each scan ([sdk/typescript/src/cli.ts:3670-3671](https://github.com/openai/codex-security/blob/455544132aa06808b2a19cb48f01f6107d4c6b94/sdk/typescript/src/cli.ts#L3670-L3671); [sdk/typescript/src/config.ts:176](https://github.com/openai/codex-security/blob/455544132aa06808b2a19cb48f01f6107d4c6b94/sdk/typescript/src/config.ts#L176)) | Requests for extra permissions are refused, so commands stay inside the shipped sandbox profile (C2) |
+| The Codex sandbox for patching | Keep the default `--external-sandbox` off when you run patch ([sdk/typescript/src/cli.ts:5167-5169](https://github.com/openai/codex-security/blob/455544132aa06808b2a19cb48f01f6107d4c6b94/sdk/typescript/src/cli.ts#L5167-L5169); [sdk/typescript/src/cli.ts:5288](https://github.com/openai/codex-security/blob/455544132aa06808b2a19cb48f01f6107d4c6b94/sdk/typescript/src/cli.ts#L5288)) | Patch runs keep the same sandbox enforcement as scans (C4) |
+| Settings from your own file | Load project settings only through `--config` or `CODEX_SECURITY_PROJECT_CONFIG` pointing at a file you wrote ([sdk/typescript/src/cli.ts:334-337](https://github.com/openai/codex-security/blob/455544132aa06808b2a19cb48f01f6107d4c6b94/sdk/typescript/src/cli.ts#L334-L337)) | Scan settings come from you, never from the repository being scanned (C6) |
+| A cost ceiling | `--max-cost <usd>` on each scan ([sdk/typescript/src/cli.ts:385](https://github.com/openai/codex-security/blob/455544132aa06808b2a19cb48f01f6107d4c6b94/sdk/typescript/src/cli.ts#L385); [sdk/typescript/src/cli.ts:3688](https://github.com/openai/codex-security/blob/455544132aa06808b2a19cb48f01f6107d4c6b94/sdk/typescript/src/cli.ts#L3688)) | The scan and its workers stop once estimated spend passes your limit (C10) |
+| A lean Codex config | Keep the Codex configuration that scans inherit free of MCP servers and plugins the scan doesn't need | Only extensions you chose for scanning run alongside it, with your environment (C7) |
+| Its own container or VM | Run scans in a container or VM holding only the target repository, with network limited to the model provider | Whole-disk reads and any granted escalation reach only that machine, not your workstation (C4) |
+
+### Approving with confidence
+
+- Pushes and draft pull requests happen only with `--create-pr`; read the verified patches before adding it.
+
+### Handling data
+
+- Scan output shows raw agent reasoning and nothing is redacted; store scan logs and saved results like the code and secrets the scan could read.
+
 ## Critical gaps
 - Scan permission escalations are approved by a forced automatic LLM reviewer, not a human principal. (ASI09, ASI02; C2) — [sdk/typescript/src/api.ts:4594](https://github.com/openai/codex-security/blob/455544132aa06808b2a19cb48f01f6107d4c6b94/sdk/typescript/src/api.ts#L4594); [sdk/typescript/src/api.ts:4576](https://github.com/openai/codex-security/blob/455544132aa06808b2a19cb48f01f6107d4c6b94/sdk/typescript/src/api.ts#L4576)
 - The model can obtain extra permissions from the automatic reviewer, so the sandbox can be widened at runtime without a human. (ASI05; C4) — [sdk/typescript/src/config.ts:56-57](https://github.com/openai/codex-security/blob/455544132aa06808b2a19cb48f01f6107d4c6b94/sdk/typescript/src/config.ts#L56-L57); [sdk/typescript/README.md:2778-2781](https://github.com/openai/codex-security/blob/455544132aa06808b2a19cb48f01f6107d4c6b94/sdk/typescript/README.md#L2778-L2781)

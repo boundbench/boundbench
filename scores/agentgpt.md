@@ -25,6 +25,25 @@ Controls where a risk surface exists: 2.33 / 6.0 (39%); 4 criteria scored SA (su
 
 AgentGPT is mostly safe because it can do so little: it runs no code, writes nothing, and loads no plugins, so a hijacked run can't damage outside systems. The main risk is prompt injection from search results: nothing separates untrusted snippets from instructions. Output handling, authentication and secret management in the default install are also not locked down. The repository is archived and no longer maintained.
 
+## Safest setup
+
+AgentGPT is safe mostly by design: it runs no code, writes nothing and loads no plugins. Elsewhere its defaults are weak: sign-in, secret handling and output rendering in the default install are not locked down, there are no per-user budgets, and the repository is archived, so these gaps won't be fixed upstream. The safest setup keeps it private and small and builds the boundaries around it.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Dedicated, low-limit vendor keys | Give the backend OpenAI, Serper and Replicate keys used only by this install, each with a spending limit set at the provider | Whatever runs are started, spend and access stop at the limits the providers enforce (C1) |
+| Real sign-in, private network | Configure a real identity provider for sign-in and keep the app reachable only from your own network | Only people you know can reach the app and start runs (C1) |
+| Sid left unconfigured | Keep the default empty `sid_client_id`, `sid_client_secret` and `sid_redirect_uri` ([platform/reworkd_platform/settings.py:105-107](https://github.com/reworkd/agentgpt/blob/18b073ab05b2902e1d052c3d2799786d8623b5e5/platform/reworkd_platform/settings.py#L105-L107)) | Runs that read web content never hold users' private Notion, Drive or email data (C5) |
+| A lower loop cap | Set `REWORKD_PLATFORM_MAX_LOOPS=<n>`, 25 or lower, in the generated .env ([platform/reworkd_platform/settings.py:102](https://github.com/reworkd/agentgpt/blob/18b073ab05b2902e1d052c3d2799786d8623b5e5/platform/reworkd_platform/settings.py#L102); [cli/src/envGenerator.js:48](https://github.com/reworkd/agentgpt/blob/18b073ab05b2902e1d052c3d2799786d8623b5e5/cli/src/envGenerator.js#L48)) | Each run ends after a small, fixed number of steps (C10) |
+| Quieter backend logs | Set `REWORKD_PLATFORM_LOG_LEVEL=WARNING` in the backend .env ([platform/reworkd_platform/constants.py:1](https://github.com/reworkd/agentgpt/blob/18b073ab05b2902e1d052c3d2799786d8623b5e5/platform/reworkd_platform/constants.py#L1); [platform/reworkd_platform/settings.py:13-20](https://github.com/reworkd/agentgpt/blob/18b073ab05b2902e1d052c3d2799786d8623b5e5/platform/reworkd_platform/settings.py#L13-L20); [platform/reworkd_platform/settings.py:48](https://github.com/reworkd/agentgpt/blob/18b073ab05b2902e1d052c3d2799786d8623b5e5/platform/reworkd_platform/settings.py#L48)) | Search and summarization text stays out of the server's console output (C8) |
+| A per-user run limit | Put a reverse proxy in front of the backend that limits how many runs each user can start | Spend stays bounded across runs, not only within one (C10) |
+| Its own container, narrow egress | Run the backend in a container whose outbound access reaches only the model, search and image providers | A narrow path for data to leave the server, whatever a web page steers the model to do (C5) |
+
+### Handling data
+
+- At the default INFO level the backend logs the search text it summarizes; store those logs like the data the agent reads.
+- Server-side records hold only each run's user, goal and step types; keep your own proxy logs if you need a fuller trail.
+
 ## Critical gaps
 - None: no criterion is capped and no blast radius is at the worst level.
 

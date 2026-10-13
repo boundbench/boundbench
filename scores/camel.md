@@ -24,6 +24,32 @@
 
 CAMEL gives agents powerful bundled tools (shell, code execution, browser, email, MCP) but almost no guardrails on by default. Model-chosen shell commands and code run on the host as your user with your full environment, the agent loop has no approval gate or step/time limit, and nothing limits what injected web or email content can make an agent do. The one default prompt (host code execution) asks y/N without showing the code at the default log level. Treat any CAMEL agent with execution or messaging toolkits as fully trusted with your machine and accounts unless you add isolation (E2B/Docker) and approvals yourself.
 
+## Safest setup
+
+CAMEL ships few protections on by default: shell commands and code run on your host with your full environment, and agent loops have no step or time limit. It does include a shell approval callback, a remote code sandbox and loop limits you can turn on, so the safest setup enables those and builds containment around the process.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A minimal, scoped environment | Start the agent with only the model key and the credentials this task needs, each scoped or read-only with a spending limit set at the provider | Model-written commands can reach only the systems and spend you chose, not every key in your shell (C1) |
+| A dedicated mailbox | Connect the Gmail toolkit only to an account created for this agent, holding just the mail the task needs | Its single read, send and modify grant covers that mailbox alone (C1) |
+| A remote code sandbox | `sandbox="e2b"` on `CodeExecutionToolkit` ([camel/toolkits/code_execution.py:33](https://github.com/camel-ai/camel/blob/0106b76830c707effe48cd3da384dda38cbed92e/camel/toolkits/code_execution.py#L33); [camel/toolkits/code_execution.py:58-65](https://github.com/camel-ai/camel/blob/0106b76830c707effe48cd3da384dda38cbed92e/camel/toolkits/code_execution.py#L58-L65)) | Model-written code runs in a remote sandbox that never sees your host files or environment (C4) |
+| Shell command approval | `require_approval=_default_console_approval` on `TerminalToolkit` ([camel/toolkits/terminal_toolkit/terminal_toolkit.py:69](https://github.com/camel-ai/camel/blob/0106b76830c707effe48cd3da384dda38cbed92e/camel/toolkits/terminal_toolkit/terminal_toolkit.py#L69); [camel/toolkits/terminal_toolkit/terminal_toolkit.py:91](https://github.com/camel-ai/camel/blob/0106b76830c707effe48cd3da384dda38cbed92e/camel/toolkits/terminal_toolkit/terminal_toolkit.py#L91); [camel/toolkits/terminal_toolkit/terminal_toolkit.py:148](https://github.com/camel-ai/camel/blob/0106b76830c707effe48cd3da384dda38cbed92e/camel/toolkits/terminal_toolkit/terminal_toolkit.py#L148)) | A person sees and approves each exact shell command before it starts (C2) |
+| Host code confirmation | Keep `require_confirm` unset on `CodeExecutionToolkit` whenever it runs code on the host ([camel/toolkits/code_execution.py:69](https://github.com/camel-ai/camel/blob/0106b76830c707effe48cd3da384dda38cbed92e/camel/toolkits/code_execution.py#L69); [camel/toolkits/code_execution.py:79-83](https://github.com/camel-ai/camel/blob/0106b76830c707effe48cd3da384dda38cbed92e/camel/toolkits/code_execution.py#L79-L83)) | Host code runs only after a yes at the terminal, and is refused when no terminal is attached (C2) |
+| Step and time limits | Set `max_iteration=<n>` and `step_timeout=<seconds>` on `ChatAgent`, and pass a `stop_event` you control ([camel/agents/chat_agent.py:376](https://github.com/camel-ai/camel/blob/0106b76830c707effe48cd3da384dda38cbed92e/camel/agents/chat_agent.py#L376); [camel/agents/chat_agent.py:522](https://github.com/camel-ai/camel/blob/0106b76830c707effe48cd3da384dda38cbed92e/camel/agents/chat_agent.py#L522); [camel/agents/chat_agent.py:524](https://github.com/camel-ai/camel/blob/0106b76830c707effe48cd3da384dda38cbed92e/camel/agents/chat_agent.py#L524); [camel/agents/chat_agent.py:532](https://github.com/camel-ai/camel/blob/0106b76830c707effe48cd3da384dda38cbed92e/camel/agents/chat_agent.py#L532)) | Each agent loop ends after a set number of steps, and you can halt it between steps (C10) |
+| Its own container or VM | Run the agent process in a container or VM whose network reaches only the hosts the task needs | An outer boundary around host shell and code, and a narrow path for data to leave (C5) |
+| A tool-call record | Write the tool-call records each agent response returns to storage outside the agent's working directory | A record of every tool call and its arguments that outlives the process (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve commands one at a time; the shell prompt shows the exact command.
+- The shell approval covers commands and process input, while the terminal toolkit's file writes and other toolkits run without a prompt.
+- At the default log level the host code prompt shows only y/N, so the remote sandbox suits code you haven't read.
+
+### Handling data
+
+- `CAMEL_LOGGING_LEVEL=INFO` logs every model request in full and unredacted; keep the default WARNING wherever logs are shared.
+- Tool-call records hold raw arguments and results; store them like the data the agent read.
+
 ## Critical gaps
 - Shell and code-execution subprocesses inherit the full host environment, so any credential in the developer's shell is reachable by model-written commands. (ASI03, T3; C1) — [camel/toolkits/terminal_toolkit/terminal_toolkit.py:486](https://github.com/camel-ai/camel/blob/0106b76830c707effe48cd3da384dda38cbed92e/camel/toolkits/terminal_toolkit/terminal_toolkit.py#L486); [camel/interpreters/subprocess_interpreter.py:467](https://github.com/camel-ai/camel/blob/0106b76830c707effe48cd3da384dda38cbed92e/camel/interpreters/subprocess_interpreter.py#L467)
 - The most powerful bundled tool (TerminalToolkit.shell_exec) runs model-chosen shell commands with no approval by default. (ASI02, ASI09, T10; C2) — [camel/toolkits/terminal_toolkit/terminal_toolkit.py:148](https://github.com/camel-ai/camel/blob/0106b76830c707effe48cd3da384dda38cbed92e/camel/toolkits/terminal_toolkit/terminal_toolkit.py#L148)

@@ -24,6 +24,31 @@
 
 DeepCode asks before it runs commands or changes files by default, and runs shell commands in a bubblewrap or Seatbelt sandbox that keeps writes inside the workspace. That sandbox leaves the network open, the home directory readable and the full environment (provider keys included) visible, and commands run without it when no backend is installed. Reading files outside a short credential denylist and fetching any public URL need no approval, so a hijacked session can read local data and send it out without a human. Approval and sandbox settings can be loosened without an explicit operator decision, and there is no default cap on steps or spend.
 
+## Safest setup
+
+DeepCode asks before it runs commands or changes files, and fences shell writes to the workspace with bubblewrap or Seatbelt. That sandbox still reads your home directory, sees your provider keys and reaches the network, and there is no default step or spend cap, so the safest setup narrows what the process holds and adds containment around it.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated, low-limit key | Give DeepCode its own provider key with a spending limit, and launch it from a shell that holds no other credentials | Anything that sees the agent's environment finds only that key, and spend stays within the provider's limit (C1) |
+| Ask access | Keep the default Ask preset for coding sessions ([core/application/execution_security_policy.py:140](https://github.com/HKUDS/DeepCode/blob/84c37f79c726bd12e74e39541adceb8b5e47b0d5/core/application/execution_security_policy.py#L140)) | Every write, shell, MCP and sub-agent call waits for your decision (C2) |
+| Read-only access for reviews | `--access read-only` when the task only needs to read ([cli/execution_options.py:62-63](https://github.com/HKUDS/DeepCode/blob/84c37f79c726bd12e74e39541adceb8b5e47b0d5/cli/execution_options.py#L62-L63)) | Write, edit and shell calls are refused for that session (C3) |
+| Trust only reviewed folders | Answer yes to the folder-trust prompt only for repositories whose instruction files and project settings you have read | Standing guidance, project MCP servers, hooks and settings come only from files you have looked at (C6) |
+| A working command sandbox | On Linux install bubblewrap so `bwrap` is found, and keep `DEEPCODE_SANDBOX` unset ([core/harness/sandbox.py:80](https://github.com/HKUDS/DeepCode/blob/84c37f79c726bd12e74e39541adceb8b5e47b0d5/core/harness/sandbox.py#L80); [core/harness/sandbox.py:372](https://github.com/HKUDS/DeepCode/blob/84c37f79c726bd12e74e39541adceb8b5e47b0d5/core/harness/sandbox.py#L372)) | Shell commands and code mode write only inside the workspace and temporary directories (C4) |
+| A scrubbed command environment | `DEEPCODE_BASH_SCRUB_ENV=1`, with `DEEPCODE_BASH_FULL_ENV` left unset ([core/harness/env_sanitize.py:58](https://github.com/HKUDS/DeepCode/blob/84c37f79c726bd12e74e39541adceb8b5e47b0d5/core/harness/env_sanitize.py#L58); [core/harness/env_sanitize.py:54](https://github.com/HKUDS/DeepCode/blob/84c37f79c726bd12e74e39541adceb8b5e47b0d5/core/harness/env_sanitize.py#L54)) | Variables named like keys, tokens and passwords stay out of the shell, hooks and code mode (C8) |
+| A Goal token budget | Run long tasks with `deepcode loop` and `--token-budget <n>` ([deepcode.py:193](https://github.com/HKUDS/DeepCode/blob/84c37f79c726bd12e74e39541adceb8b5e47b0d5/deepcode.py#L193); [cli/loop_cli.py:217](https://github.com/HKUDS/DeepCode/blob/84c37f79c726bd12e74e39541adceb8b5e47b0d5/cli/loop_cli.py#L217)) | The Goal stops once it has used that many tokens (C10) |
+| Its own container or VM | Run DeepCode in a container or VM with no personal credentials in its home directory and outbound access limited to your model provider | The sandbox's readable home and open network no longer reach your own files and accounts (C4) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; a session grant covers every later call of that tool.
+- The TUI clips commands to the terminal width, so widen the terminal until the whole command shows before approving.
+- URL fetches and file reads outside the credential denylist run without a prompt, so narrow egress matters most after the agent has read untrusted pages or repositories.
+
+### Handling data
+
+- The LLM log keeps request and response previews and the MCP log can hold credential arguments; store ~/.deepcode like other sensitive data.
+
 ## Critical gaps
 - The agent's own tools are not prevented from changing settings that govern its permissions on later turns. (ASI03, T3; C1). Evidence: [core/harness/sandbox.py:254-256](https://github.com/HKUDS/DeepCode/blob/84c37f79c726bd12e74e39541adceb8b5e47b0d5/core/harness/sandbox.py#L254-L256)
 - Approval settings can be loosened without an explicit operator decision in the default configuration. (ASI09, ASI02, T10; C2). Evidence: [core/config.py:396-403](https://github.com/HKUDS/DeepCode/blob/84c37f79c726bd12e74e39541adceb8b5e47b0d5/core/config.py#L396-L403)

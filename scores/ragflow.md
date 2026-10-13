@@ -24,6 +24,31 @@
 
 RAGFlow lets anyone who can build an agent give it web, SQL, email, HTTP and MCP tools that run on every model decision with no human approval, while the same sessions read uploaded documents, web pages and messages from visitors of shared agent links. The strongest controls are a pinned-IP SSRF guard on the URL tools, a tenant-scoped tool binding, and code execution that stays off until an operator deploys a sandbox; nothing limits what a prompt-injected agent does with the tools it was given. Credentials are stored in plaintext and agent tool calls leave no durable audit record. Treat every agent that combines document or web input with email, HTTP or MCP write tools as exposed to whoever can get text into its context.
 
+## Safest setup
+
+RAGFlow starts every agent with no tools, checks the addresses its URL tools reach, and runs no model-written code until you deploy its sandbox. Beyond that the defaults are thin: no approval step, credentials stored in plaintext and no lasting record of tool calls, so the safest setup narrows each tool's credentials, keeps outside users on agents that only read, and contains the server's network.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Narrow tool credentials | Give each tool its own scoped credential, such as a read-only database account limited to the needed tables and an SMTP account for one sender | Each service refuses anything outside its grant, whatever the agent asks for (C1) |
+| Accounts you create | `ENABLE_REGISTER=0` in docker/.env ([docker/.env:373](https://github.com/infiniflow/ragflow/blob/2400ca8eb51432b1d304266d0de9ca232d9b53fa/docker/.env#L373); [internal/common/environments.go:227](https://github.com/infiniflow/ragflow/blob/2400ca8eb51432b1d304266d0de9ca232d9b53fa/internal/common/environments.go#L227)) | Only people you add can build agents and paste credentials into them (C1) |
+| Tools per agent | Give each agent node only the tools its task needs, starting from none ([internal/agent/tool/registry.go:104-106](https://github.com/infiniflow/ragflow/blob/2400ca8eb51432b1d304266d0de9ca232d9b53fa/internal/agent/tool/registry.go#L104-L106)) | Each agent can call only the tools you chose for it (C3) |
+| Sandboxed code execution | Keep `SANDBOX_PROVIDER_TYPE` at its default `self_managed` and turn code on only through the `sandbox` compose profile ([internal/agent/sandbox/manager.go:278-285](https://github.com/infiniflow/ragflow/blob/2400ca8eb51432b1d304266d0de9ca232d9b53fa/internal/agent/sandbox/manager.go#L278-L285); [internal/agent/sandbox/provider.go:47](https://github.com/infiniflow/ragflow/blob/2400ca8eb51432b1d304266d0de9ca232d9b53fa/internal/agent/sandbox/provider.go#L47); [docker/.env:383](https://github.com/infiniflow/ragflow/blob/2400ca8eb51432b1d304266d0de9ca232d9b53fa/docker/.env#L383)) | Model-written code runs in a separate container with no network, never on the server itself (C4) |
+| A round limit | Keep `max_rounds` at its default of 5, or lower it for short tasks ([internal/agent/component/agent.go:860-862](https://github.com/infiniflow/ragflow/blob/2400ca8eb51432b1d304266d0de9ca232d9b53fa/internal/agent/component/agent.go#L860-L862)) | Each agent loop stops after a fixed number of tool rounds (C10) |
+| Read-only shared agents | Offer shared links and chat-channel connectors only for agents whose tools retrieve, not send | Outside visitors reach your knowledge, never your email, HTTP or MCP write tools (C5) |
+| Reading apart from sending | Keep agents that read documents, web pages or MCP results separate from agents that hold email, HTTP or MCP write tools | Text planted in what an agent reads cannot reach a tool that sends data out (C5) |
+| A limited outbound network | Allow the RAGFlow server outbound access only to the model provider and the hosts your tools need | A narrow path for data to leave, whatever an agent is told to do (C5) |
+
+### Approving with confidence
+
+- Agents call their tools without a prompt; place a human-input step in the workflow wherever a person should review content before a later step runs.
+
+### Handling data
+
+- Provider and tool credentials are kept unencrypted in the database; store database backups like the credentials themselves.
+- `LLM_DEBUG` logs full model requests and responses unredacted; keep it off outside debugging.
+- Tool calls are not kept after a run; collect server logs and conversation history where you need a record.
+
 ## Critical gaps
 - A hijacked agent can read private knowledge-base or database content and send it out or take irreversible sends with no human involved. (ASI01, LLM01, T6; C5) — [internal/agent/tool/email.go:97](https://github.com/infiniflow/ragflow/blob/2400ca8eb51432b1d304266d0de9ca232d9b53fa/internal/agent/tool/email.go#L97); [internal/agent/component/agent.go:185-187](https://github.com/infiniflow/ragflow/blob/2400ca8eb51432b1d304266d0de9ca232d9b53fa/internal/agent/component/agent.go#L185-L187)
 

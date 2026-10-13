@@ -24,6 +24,30 @@
 
 HolmesGPT's shell gate is better than most: commands are parsed, only a read-only allowlist runs without approval, and anything else waits for the user. But the CLI runs with the user's full kubeconfig and cloud credentials on the host with no sandbox, and its auto-allowed commands can read Kubernetes secrets, raw kubeconfig credentials and local credential files while the default web-fetch tool can reach any public host. The dominant risk is unattended credential exfiltration after prompt injection through logs, events or web pages; destructive changes still need a human, but the approval screen truncates long commands.
 
+## Safest setup
+
+HolmesGPT ships a parser-based shell gate that is on by default: only a read-only command list runs on its own, and anything else waits for your approval. The CLI otherwise runs with your full kubeconfig, cloud logins and environment on the host, with no sandbox, so the safest setup narrows the identity it runs as and builds containment around it.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A read-only cluster identity | Run it with a kubeconfig context and cloud login that can only read, and that cannot read Secrets | The cluster and cloud provider themselves refuse writes and secret reads, whatever the model asks for (C1) |
+| Per-call shell approval | Run interactively, without `--bash-always-allow` ([holmes/main.py:257-261](https://github.com/HolmesGPT/holmesgpt/blob/8e0fa1ddaaba590d9e38e0db57fee8974e97da10/holmes/main.py#L257-L261)) | A person decides on every shell command outside the read-only list (C2) |
+| Approval for extension tools | Set `approval_required_tools` on each MCP server and custom toolset you add, `'*'` for all its tools ([holmes/core/tools.py:805-808](https://github.com/HolmesGPT/holmesgpt/blob/8e0fa1ddaaba590d9e38e0db57fee8974e97da10/holmes/core/tools.py#L805-L808)) | Extension tools wait for your approval like shell commands do (C2) |
+| Web fetch switched off | Under `toolsets:` in ~/.holmes/config.yaml, set `internet` to `enabled: false` unless the task needs web pages ([holmes/config.py:163](https://github.com/HolmesGPT/holmesgpt/blob/8e0fa1ddaaba590d9e38e0db57fee8974e97da10/holmes/config.py#L163); [holmes/plugins/toolsets/internet/internet.py:389](https://github.com/HolmesGPT/holmesgpt/blob/8e0fa1ddaaba590d9e38e0db57fee8974e97da10/holmes/plugins/toolsets/internet/internet.py#L389); [holmes/core/tools.py:782](https://github.com/HolmesGPT/holmesgpt/blob/8e0fa1ddaaba590d9e38e0db57fee8974e97da10/holmes/core/tools.py#L782)) | No unattended requests to public hosts, which closes the main path for data to leave (C5) |
+| A step budget | Keep the default `--max-steps` of 100, or lower it for short questions ([holmes/main.py:107-110](https://github.com/HolmesGPT/holmesgpt/blob/8e0fa1ddaaba590d9e38e0db57fee8974e97da10/holmes/main.py#L107-L110)) | Every question ends after a fixed number of model steps (C10) |
+| Its own container or VM | Run the CLI in a container or VM holding only the credentials it needs, with outbound access limited to the model provider and your cluster | An outer boundary around shell and toolset commands, which otherwise run on your host with your home directory and network (C4) |
+| OpenTelemetry tracing | Set `OTEL_EXPORTER_OTLP_ENDPOINT` to a collector you control, or pass `--trace otel` ([holmes/core/tracing.py:398](https://github.com/HolmesGPT/holmesgpt/blob/8e0fa1ddaaba590d9e38e0db57fee8974e97da10/holmes/core/tracing.py#L398); [holmes/main.py:241-245](https://github.com/HolmesGPT/holmesgpt/blob/8e0fa1ddaaba590d9e38e0db57fee8974e97da10/holmes/main.py#L241-L245)) | A span for every tool call, with its command and result status, kept off the host (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve commands one at a time; the approval panel shows the first 200 characters, so ask for a shorter command when one runs longer.
+- An 'always approve' answer is saved in ~/.holmes with no expiry; choose narrow prefixes and review the saved list from time to time.
+
+### Handling data
+
+- Tool output, including anything a command prints, goes to the model provider unredacted; treat the session like the data it reads.
+- Trace spans carry each command; store them like other operational logs.
+
 ## Critical gaps
 - The CLI acts with the user's full ambient kube/cloud credentials, and auto-allowed commands plus unattended web fetch let a hijacked session exfiltrate them. (ASI03, T3, LLM06; C1) — [holmes/plugins/toolsets/bash/common/default_lists.py:35](https://github.com/HolmesGPT/holmesgpt/blob/8e0fa1ddaaba590d9e38e0db57fee8974e97da10/holmes/plugins/toolsets/bash/common/default_lists.py#L35); [holmes/plugins/toolsets/bash/common/default_lists.py:29](https://github.com/HolmesGPT/holmesgpt/blob/8e0fa1ddaaba590d9e38e0db57fee8974e97da10/holmes/plugins/toolsets/bash/common/default_lists.py#L29); [holmes/plugins/toolsets/internet/internet.py:281](https://github.com/HolmesGPT/holmesgpt/blob/8e0fa1ddaaba590d9e38e0db57fee8974e97da10/holmes/plugins/toolsets/internet/internet.py#L281)
 - Model-chosen shell commands and YAML toolset commands run on the host as the user with the full environment and no isolation. (ASI05, T11, LLM05; C4) — [holmes/plugins/toolsets/bash/common/bash.py:33-38](https://github.com/HolmesGPT/holmesgpt/blob/8e0fa1ddaaba590d9e38e0db57fee8974e97da10/holmes/plugins/toolsets/bash/common/bash.py#L33-L38); [holmes/core/tools.py:719-722](https://github.com/HolmesGPT/holmesgpt/blob/8e0fa1ddaaba590d9e38e0db57fee8974e97da10/holmes/core/tools.py#L719-L722)

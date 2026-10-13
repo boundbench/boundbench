@@ -25,6 +25,31 @@ Controls where a risk surface exists: 0.57 / 9.0 (6%); 1 criterion scored SA (su
 
 Agent S takes over your real mouse, keyboard and screen and executes the model's chosen action as Python inside its own process, with no sandbox and no human approval: the permission dialog in the CLI is never called. Anything on screen, such as a web page or email, can steer the model into running arbitrary code with your full user rights, API keys and a sudo password from its prompt. Only run it inside a disposable VM with no personal accounts or credentials.
 
+## Safest setup
+
+Agent S ships with few protections of its own: it runs the model's chosen actions as Python on your machine with no sandbox and no approval step, and has no setting that adds one. The defaults worth keeping are the CLI's 15-step bound and the code agent being off; the safest setup builds the rest around it with a disposable VM, separate keys and a narrow network.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Dedicated, low-limit keys | Give it model and grounding keys used only by this agent, each with a spending limit set at the provider | Anything that reads the keys reaches only this agent's budget, never your other projects (C8) |
+| Keys in the environment | Supply keys through the provider's environment variable, such as `OPENAI_API_KEY`, rather than on the command line ([gui_agents/s3/core/engine.py:43](https://github.com/simular-ai/Agent-S/blob/3aa272d23d2994c7bbde1acbbe0ef8e8d06b8693/gui_agents/s3/core/engine.py#L43)) | Keys stay out of process listings (C8) |
+| A disposable VM | Run it in a VM restored from a clean snapshot, signed into no personal accounts and holding no other credentials | Whatever the model's code does, it reaches only that VM and what you put on its screen (C1) |
+| A non-admin VM user | Run it as a VM user with no sudo rights | Actions stay at that user's level, without a path to root (C1) |
+| Code agent left off | Keep the default of no `--enable_local_env` ([gui_agents/s3/cli_app.py:313-315](https://github.com/simular-ai/Agent-S/blob/3aa272d23d2994c7bbde1acbbe0ef8e8d06b8693/gui_agents/s3/cli_app.py#L313-L315)) | The model gets no separate bash and Python runner, and no extra 20-step budget (C4) |
+| The CLI step bound | Run tasks through the `agent_s` command rather than the SDK class ([setup.py:38](https://github.com/simular-ai/Agent-S/blob/3aa272d23d2994c7bbde1acbbe0ef8e8d06b8693/setup.py#L38); [gui_agents/s3/cli_app.py:160](https://github.com/simular-ai/Agent-S/blob/3aa272d23d2994c7bbde1acbbe0ef8e8d06b8693/gui_agents/s3/cli_app.py#L160)) | Each task stops after 15 steps (C10) |
+| A narrow network | Limit the VM's outbound access to the model and grounding endpoints and the sites the task needs | A much smaller path for data to leave if on-screen content steers the model (C5) |
+| Logs kept outside the VM | Copy the `logs` folder from the working directory to storage outside the VM after each run ([gui_agents/s3/cli_app.py:95](https://github.com/simular-ai/Agent-S/blob/3aa272d23d2994c7bbde1acbbe0ef8e8d06b8693/gui_agents/s3/cli_app.py#L95)) | A record of each run's plans that the agent's own code can't change afterwards (C9) |
+
+### Approving with confidence
+
+- Agent S has no approval step, so watch the screen while it works; Ctrl+C pauses the run and a second Ctrl+C exits.
+- Processes the agent started can keep running after it exits, so restore the VM snapshot after each task.
+
+### Handling data
+
+- The logs folder holds every model plan at debug level; store it like the screens the agent saw.
+- Full-screen screenshots go to the model provider unfiltered, so keep only the task's windows open.
+
 ## Critical gaps
 - Model-generated code runs in-process with the user's full ambient authority, including API keys in os.environ and a sudo password supplied in the prompt. (ASI03, T3; C1) — [gui_agents/s3/utils/common_utils.py:31](https://github.com/simular-ai/Agent-S/blob/3aa272d23d2994c7bbde1acbbe0ef8e8d06b8693/gui_agents/s3/utils/common_utils.py#L31); [gui_agents/s3/memory/procedural_memory.py:110](https://github.com/simular-ai/Agent-S/blob/3aa272d23d2994c7bbde1acbbe0ef8e8d06b8693/gui_agents/s3/memory/procedural_memory.py#L110)
 - The approval dialog is dead code: the CLI comments 'Ask for permission before executing' and then exec()s the model's action without calling it. (ASI09, ASI02; C2) — [gui_agents/s3/cli_app.py:214-215](https://github.com/simular-ai/Agent-S/blob/3aa272d23d2994c7bbde1acbbe0ef8e8d06b8693/gui_agents/s3/cli_app.py#L214-L215); [gui_agents/s3/cli_app.py:133](https://github.com/simular-ai/Agent-S/blob/3aa272d23d2994c7bbde1acbbe0ef8e8d06b8693/gui_agents/s3/cli_app.py#L133)

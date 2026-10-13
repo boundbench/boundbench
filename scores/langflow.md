@@ -24,6 +24,31 @@
 
 Run as the README shows, Langflow's default authentication is not locked down. Flows, agent tools, custom components and the built-in Assistant's generated code all run inside the server process, which holds every stored credential and the key that decrypts them. Defenses against server-side request forgery (SSRF) and file-path restriction are good and on by default. A microVM sandbox and per-tool human approval exist, but both are opt-in, and nothing limits what a prompt-injected agent can do with its tools.
 
+## Safest setup
+
+Langflow blocks internal addresses and keeps file paths inside each user's storage by default, and caps each agent at 15 model calls. As shipped, default authentication is not locked down, and flows, custom code and the Assistant run in the server process that holds every stored credential, so the safest setup turns on the sandbox, approval and lockdown settings Langflow offers and builds containment around the server.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Store only the provider and service keys your flows need, each scoped or read-only with a spending limit set at the provider | Whatever a flow does, it reaches only the systems and spend you chose (C1) |
+| Login on a private network | Turn on authentication with a login for each user, and serve Langflow only on a network you control | Only people you chose can run flows or reach the credentials stored in them (C1) |
+| Server components only | `LANGFLOW_ALLOW_CUSTOM_COMPONENTS=false` ([src/lfx/src/lfx/services/settings/groups/security.py:117](https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/src/lfx/src/lfx/services/settings/groups/security.py#L117); [src/lfx/src/lfx/services/settings/groups/security.py:189](https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/src/lfx/src/lfx/services/settings/groups/security.py#L189)) | Only the server's own component code runs, with the built-in code-execution components switched off (C4) |
+| A microVM for Python | Where flows need the Python Interpreter, set `LANGFLOW_SANDBOX_BACKEND=exec-sandbox` and keep the default `sandbox_allow_network` off ([src/lfx/src/lfx/services/settings/groups/security.py:196](https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/src/lfx/src/lfx/services/settings/groups/security.py#L196); [pyproject.toml:204](https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/pyproject.toml#L204); [src/lfx/src/lfx/services/settings/groups/security.py:225](https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/src/lfx/src/lfx/services/settings/groups/security.py#L225)) | That code runs in an offline microVM, away from the server's database, keys and files (C4) |
+| Assistant turned off | `LANGFLOW_AGENTIC_EXPERIENCE=false` ([src/lfx/src/lfx/services/settings/groups/variables.py:20](https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/src/lfx/src/lfx/services/settings/groups/variables.py#L20); [src/backend/base/langflow/agentic/api/deps.py:23](https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/src/backend/base/langflow/agentic/api/deps.py#L23)) | No model-generated component code runs on the server (C2) |
+| Per-tool approval | In each Agent, pick approval actions for every tool that writes, sends or runs code ([src/lfx/src/lfx/components/models_and_agents/agent_helpers/tool_approval.py:63](https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/src/lfx/src/lfx/components/models_and_agents/agent_helpers/tool_approval.py#L63)) | The agent pauses for a person before those tools run (C2) |
+| MCP servers you chose | `LANGFLOW_SKIP_MCP_AUTO_INIT=true`, and `LANGFLOW_MCP_SERVER_ALLOWED_PACKAGES=<packages>` listing the stdio packages you use ([src/lfx/src/lfx/services/settings/groups/mcp.py:85](https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/src/lfx/src/lfx/services/settings/groups/mcp.py#L85); [src/backend/base/langflow/cli/preflight.py:364](https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/src/backend/base/langflow/cli/preflight.py#L364); [src/lfx/src/lfx/services/settings/groups/mcp.py:132](https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/src/lfx/src/lfx/services/settings/groups/mcp.py#L132); [src/lfx/src/lfx/base/mcp/security.py:647](https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/src/lfx/src/lfx/base/mcp/security.py#L647)) | Startup skips its MCP reconciliation, and package runners fetch only packages you named (C7) |
+| Its own container or VM | Run the server in a container or VM whose outbound network reaches only the model provider and the hosts your flows need | An outer boundary around in-process code, and a narrow path for data to leave (C5) |
+
+### Approving with confidence
+
+- Read each approval card and approve calls one at a time; when the agent requests several calls at once, the card describes only the first.
+- Assistant edits to a flow get a restore point, but HTTP requests, messages and code runs can't be undone, so check those before approving.
+
+### Handling data
+
+- Transaction records keep component inputs and outputs, masking only values under sensitive key names; protect the Langflow database and config directory like the credentials they hold.
+- Usage telemetry, error messages included, goes to Scarf by default; `DO_NOT_TRACK=true` turns it off.
+
 ## Critical gaps
 - Flows run with server-wide authority over all stored credentials, and default authentication is not locked down. (ASI03; C1)
 - The Assistant executes model-generated component code in-process with no approval gate. (ASI02, ASI09; C2) — [src/backend/base/langflow/agentic/services/assistant_service.py:1596-1599](https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/src/backend/base/langflow/agentic/services/assistant_service.py#L1596-L1599); [src/backend/base/langflow/agentic/helpers/validation.py:280-308](https://github.com/langflow-ai/langflow/blob/f9b283243d2fdd8502cb4ffd606c3058cff5017e/src/backend/base/langflow/agentic/helpers/validation.py#L280-L308)

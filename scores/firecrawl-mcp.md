@@ -25,6 +25,28 @@ Controls where a risk surface exists: 3.02 / 9.0 (34%); 1 criterion scored SA (s
 
 A broad web-data server: besides scraping and search it can drive a remote browser that runs model-written code, start autonomous research jobs, and create recurring monitors that email or call webhooks. It runs nothing on the local machine and labels every tool for hosts, but web content returns unflagged alongside instructions to the model, there is no local read-only mode or audit log, and a hijacked model gets both outbound channels and irreversible actions. A .env file in the launch directory is also auto-loaded without any trust decision.
 
+## Safest setup
+
+Firecrawl MCP runs nothing on your machine, sends model-written code to Firecrawl's remote browser, and labels every tool for hosts. Run locally it has no read-only mode, no approval step and no record of its own, and every tool is on, so the safest setup narrows the account behind the key and puts approval, logging and cleanup in the host around it.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated Firecrawl account | Use an API key from a Firecrawl account or team set aside for this agent, holding only the credits and monitors this work needs | A hijacked session can spend and change only that account, not the one your other work depends on (C1) |
+| Host approval on actions | Set the MCP host to ask before every tool not marked read-only, the browser interact tool included | A person sees each form submission, remote code run, crawl webhook and monitor change before it happens (C2) |
+| Feedback tools off | Start the server with `FIRECRAWL_NO_SEARCH_FEEDBACK=1` and `FIRECRAWL_NO_ENDPOINT_FEEDBACK=1` ([src/index.ts:3347-3350](https://github.com/firecrawl/firecrawl-mcp-server/blob/af5c378915280a87628a07cbc1b6041e7e8694cb/src/index.ts#L3347-L3350); [src/index.ts:3352-3355](https://github.com/firecrawl/firecrawl-mcp-server/blob/af5c378915280a87628a07cbc1b6041e7e8694cb/src/index.ts#L3352-L3355)) | Two fewer tools, and results stop pointing the model at a feedback tool (C3) |
+| A clean launch directory | Have the host start the server from a directory with no .env file you didn't write | The endpoint and credential settings come only from you (C6) |
+| A monitor check | After each session, review the account's monitors and delete any you didn't set up | No scheduled email or webhook keeps running after the session ends (C10) |
+| A record in the host | Turn on tool-call logging in the MCP host and keep it outside the project folder | A record of every Firecrawl call and its arguments, which the server itself doesn't keep (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; the interact tool is labelled non-destructive but can submit forms and run code in the remote browser.
+- Check the crawl page limit, webhook URL and monitor recipients before approving, since the server doesn't bound them.
+
+### Handling data
+
+- Run locally, the server writes no log of its own, so the host's record is the only one; store it like the pages it holds.
+
 ## Critical gaps
 - A hijacked host model can, unattended, send data out through scrape URLs, crawl webhooks or monitor emails and also take irreversible actions such as deleting monitors or submitting forms on live sites. (ASI01, LLM01, T6; C5) — [src/monitor.ts:191-230](https://github.com/firecrawl/firecrawl-mcp-server/blob/af5c378915280a87628a07cbc1b6041e7e8694cb/src/monitor.ts#L191-L230); [src/monitor.ts:396-400](https://github.com/firecrawl/firecrawl-mcp-server/blob/af5c378915280a87628a07cbc1b6041e7e8694cb/src/monitor.ts#L396-L400); [src/index.ts:4086-4093](https://github.com/firecrawl/firecrawl-mcp-server/blob/af5c378915280a87628a07cbc1b6041e7e8694cb/src/index.ts#L4086-L4093)
 - A .env file in the server's launch directory is auto-loaded with no trust decision and can change security-relevant settings such as the API endpoint and credential. (ASI06, ASI03, T1; C6) — [src/index.ts:87](https://github.com/firecrawl/firecrawl-mcp-server/blob/af5c378915280a87628a07cbc1b6041e7e8694cb/src/index.ts#L87); [src/index.ts:1977-1981](https://github.com/firecrawl/firecrawl-mcp-server/blob/af5c378915280a87628a07cbc1b6041e7e8694cb/src/index.ts#L1977-L1981)

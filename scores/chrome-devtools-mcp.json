@@ -36,6 +36,143 @@
     "external_communication": "yes"
   },
   "headline": "Chrome DevTools MCP gives an agent a real Chrome browser with JavaScript execution, navigation (including local file: URLs) and input on by default, and it returns page content to the model unlabelled. Its own file writes are well confined to the temp directory or client roots, but a hijacked agent can still read local secrets through the browser, send data anywhere and act on any site signed into the persistent profile, with nothing in the server asking a human. The biggest structural problem is configuration integrity: security-relevant configuration is not integrity-protected in how it is sourced and applied.",
+  "safe_setup": {
+    "intro": "Chrome DevTools MCP keeps its own file writes inside the temp directory or your client's roots, marks every powerful tool as not read-only for your host's approval prompt, and caps each call at 60 seconds. As shipped it gives the agent a persistent browser profile with JavaScript, local file navigation and unredacted headers on, so the safest setup narrows the accounts and tools, turns on the isolation and redaction options the server already has, and contains the browser.",
+    "steps": [
+      {
+        "setup": "Test accounts only",
+        "how": "Sign the agent's browser into only the test or low-privilege accounts the task needs",
+        "gives_you": "Any action the agent takes on a website reaches only those accounts, whatever the model asks for",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "An inspection-only tool set",
+        "how": "`--javascriptEvaluation=false` and `--fileNavigations=false` when the task doesn't need scripts or local pages",
+        "gives_you": "Scripts stop running in pages and the navigation tools refuse file: URLs",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/config/mcp-options.ts",
+            "lines": "128-130",
+            "contains": "javascriptEvaluation: {",
+            "url": "https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/b2f522c8ba0fd2e00a679159b4aa5243de5f1b78/src/config/mcp-options.ts#L128-L130"
+          },
+          {
+            "file": "src/config/mcp-options.ts",
+            "lines": "134-136",
+            "contains": "fileNavigations: {",
+            "url": "https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/b2f522c8ba0fd2e00a679159b4aa5243de5f1b78/src/config/mcp-options.ts#L134-L136"
+          }
+        ]
+      },
+      {
+        "setup": "Only the tool groups needed",
+        "how": "Set `--categoryInput=false` and the other category flags to false for tool groups the task doesn't use, leaving the off-by-default groups off",
+        "gives_you": "The model sees a smaller set of tools, with extensions, page-provided tools and WebMCP left out",
+        "criterion": "C3",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "docs/configuration.md",
+            "lines": "7-10",
+            "contains": "`--categoryInput`",
+            "url": "https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/b2f522c8ba0fd2e00a679159b4aa5243de5f1b78/docs/configuration.md#L7-L10"
+          },
+          {
+            "file": "src/config/category-options.ts",
+            "lines": "74",
+            "contains": "offByDefault ? {} : {default: true}",
+            "url": "https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/b2f522c8ba0fd2e00a679159b4aa5243de5f1b78/src/config/category-options.ts#L74"
+          }
+        ]
+      },
+      {
+        "setup": "A fresh profile per session",
+        "how": "`--isolated`",
+        "gives_you": "A temporary browser profile, deleted on close, so cookies and sign-ins don't carry across sessions",
+        "criterion": "C6",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/config/browser-options.ts",
+            "lines": "89-94",
+            "contains": "isolated: {",
+            "url": "https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/b2f522c8ba0fd2e00a679159b4aa5243de5f1b78/src/config/browser-options.ts#L89-L94"
+          }
+        ]
+      },
+      {
+        "setup": "Header redaction",
+        "how": "`--redactNetworkHeaders=true`",
+        "gives_you": "Headers the server treats as sensitive are redacted before network details reach the model",
+        "criterion": "C8",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/config/mcp-options.ts",
+            "lines": "175-180",
+            "contains": "redactNetworkHeaders: {",
+            "url": "https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/b2f522c8ba0fd2e00a679159b4aa5243de5f1b78/src/config/mcp-options.ts#L175-L180"
+          }
+        ]
+      },
+      {
+        "setup": "Chrome's renderer sandbox",
+        "how": "Keep the default launch arguments, with no `--no-sandbox` in `--chromeArg`",
+        "gives_you": "Model-written JavaScript stays inside Chrome's sandboxed renderer, away from the server process",
+        "criterion": "C4",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "src/config/browser-options.ts",
+            "lines": "111-116",
+            "contains": "chromeArg: {",
+            "url": "https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/b2f522c8ba0fd2e00a679159b4aa5243de5f1b78/src/config/browser-options.ts#L111-L116"
+          },
+          {
+            "file": "src/config/mcp-options.ts",
+            "lines": "294",
+            "contains": "--no-sandbox",
+            "url": "https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/b2f522c8ba0fd2e00a679159b4aa5243de5f1b78/src/config/mcp-options.ts#L294"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the server and its Chrome in a container or VM that holds no SSH keys or cloud credentials, with network access limited to the sites the task needs",
+        "gives_you": "An outer boundary around the browser that keeps home-directory secrets out of reach and narrows where data can go",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A tool-call log",
+        "how": "`--logFile <path>` with a path outside any project directory",
+        "gives_you": "A timestamped record of every tool call and its parameters",
+        "criterion": "C9",
+        "source": "opt_in",
+        "evidence": [
+          {
+            "file": "src/config/mcp-options.ts",
+            "lines": "23-27",
+            "contains": "logFile: {",
+            "url": "https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/b2f522c8ba0fd2e00a679159b4aa5243de5f1b78/src/config/mcp-options.ts#L23-L27"
+          }
+        ]
+      }
+    ],
+    "approving": [
+      "Read each prompt and approve calls one at a time; script, navigation, input and file-writing tools are the ones marked not read-only.",
+      "A form submission or click on a signed-in site can't be undone, so check the page and the target before approving it."
+    ],
+    "handling": [
+      "The log holds full tool parameters; store it like other sensitive logs.",
+      "Usage statistics are on by default and content-free; `--usageStatistics=false` or `CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS` turns them off."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

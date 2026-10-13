@@ -25,6 +25,32 @@ Controls where a risk surface exists: 2.07 / 9.0 (23%); 1 criterion scored SA (s
 
 Mobile MCP gives an agent full control of any phone, emulator or simulator connected to the machine, plus a billed remote device fleet, with every tool enabled and no approval, read-only mode or device allowlist of its own. Screen text, clipboard and device logs come back to the model as plain text, so a hijacked agent can read private data on the device and type, send or uninstall on it without the server asking anyone. Command handling is careful (no host shell, typed arguments, an extension and directory allowlist on file writes), but logging records full tool payloads on by default and limits on long-running or billed work are thin.
 
+## Safest setup
+
+Mobile MCP starts no host shell, keeps your keys out of the server and runs over local stdio by default. It has no approval step, read-only mode or device allowlist of its own, so the safest setup limits which devices and accounts it can reach and puts approval and containment around it.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A dedicated test device | Connect only an Android emulator or a test phone signed into test accounts while the server runs | A hijacked session reaches test apps and data, not your personal phone (C1) |
+| A capped fleet account | Use a remote device fleet account with a spending limit set at the provider | Billed remote devices stay within a budget you chose (C1) |
+| Per-call approval in your host | Set your MCP host to ask before every Mobile MCP call, not only calls marked destructive | A person checks each tap, text entry, install and URL before it reaches the device (C2) |
+| The local stdio transport | Keep the default `--stdio` transport, and set `MOBILEMCP_AUTH=<token>` whenever you use `--listen` ([src/index.ts:116-117](https://github.com/mobile-next/mobile-mcp/blob/2c6413c84ddcb8aa1760484a0e467b7aa43551d4/src/index.ts#L116-L117); [src/index.ts:33](https://github.com/mobile-next/mobile-mcp/blob/2c6413c84ddcb8aa1760484a0e467b7aa43551d4/src/index.ts#L33)) | Only your MCP host, or a client holding the token, can drive your devices (C8) |
+| Its own macOS user or VM | Run the server and any iOS Simulator under a separate macOS user or VM that holds only the app files under test | Apps installed on a simulator see only that account's files and credentials, not yours (C4) |
+| A pinned server version | Replace `@mobilenext/mobile-mcp@latest` in the launch config with an exact version you have reviewed ([README.md:155](https://github.com/mobile-next/mobile-mcp/blob/2c6413c84ddcb8aa1760484a0e467b7aa43551d4/README.md#L155)) | The server code stays the version you checked across restarts (C7) |
+| A durable call log | `LOG_FILE=<path>` in a directory you keep for logs ([src/logger.ts:4-5](https://github.com/mobile-next/mobile-mcp/blob/2c6413c84ddcb8aa1760484a0e467b7aa43551d4/src/logger.ts#L4-L5)) | A timestamped record of every tool call and result that outlives the host session (C9) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time; typing, tapping and app installs are not marked destructive, so the hint alone is not a guide.
+- A batch call runs every step in its list under one approval, so read the full list before approving it.
+- An install request is ready to approve when the app file is one you built or trust.
+
+### Handling data
+
+- Every call's full arguments and results go to stderr and to `LOG_FILE`, typed text and clipboard included; store host logs and the file like the device data they hold.
+- `MOBILEMCP_DISABLE_TELEMETRY=1` turns off the content-free usage telemetry.
+- Stopping the server leaves screen recordings running and remote devices reserved, so release remote devices before you stop it.
+
 ## Critical gaps
 - Worst case under prompt injection from device content: default tools let a hijacked agent read the clipboard and screen, send data out through the device browser or apps, and uninstall apps or send messages, with no server-side human check (C5-WORSTCASE). (ASI01, LLM01, T6; C5). Evidence: [src/server.ts:759-763](https://github.com/mobile-next/mobile-mcp/blob/2c6413c84ddcb8aa1760484a0e467b7aa43551d4/src/server.ts#L759-L763); [src/server.ts:791-799](https://github.com/mobile-next/mobile-mcp/blob/2c6413c84ddcb8aa1760484a0e467b7aa43551d4/src/server.ts#L791-L799); [src/server.ts:1058-1059](https://github.com/mobile-next/mobile-mcp/blob/2c6413c84ddcb8aa1760484a0e467b7aa43551d4/src/server.ts#L1058-L1059)
 - Model-chosen app bundles from the host's disk are installed and launched with no server-side restriction; on an iOS Simulator they run with the logged-in user's host access. (ASI05, T11, LLM05; C4). Evidence: [src/server.ts:603-621](https://github.com/mobile-next/mobile-mcp/blob/2c6413c84ddcb8aa1760484a0e467b7aa43551d4/src/server.ts#L603-L621); [src/server.ts:570-585](https://github.com/mobile-next/mobile-mcp/blob/2c6413c84ddcb8aa1760484a0e467b7aa43551d4/src/server.ts#L570-L585)

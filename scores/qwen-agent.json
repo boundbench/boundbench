@@ -36,6 +36,126 @@
     "external_communication": "opt_in"
   },
   "headline": "Qwen-Agent is a capable framework with almost no safety primitives of its own. Every model-chosen tool call runs immediately with no approval step, argument checks are limited to JSON types, and document and web tools fetch any URL or read any local file. The Docker code interpreter is a real but unhardened boundary (root, full network, read-write mount), and an exported math agent runs code directly on the host. Treat any deployment that reads untrusted content as able to leak data and change files unattended.",
+  "safe_setup": {
+    "intro": "Qwen-Agent starts agents with no tools, stops each run after 20 model calls, and runs its code interpreter in a Docker container that receives none of your host's environment variables. Beyond that the defaults are thin: no approval step, no argument limits beyond JSON types, and no durable record, so the safest setup keeps the tool list short and builds the boundaries around the process yourself.",
+    "steps": [
+      {
+        "setup": "Scoped, low-limit keys",
+        "how": "Give the process only the model and search API keys this agent needs, each scoped where the provider allows and with a spending limit set at the provider",
+        "gives_you": "Whatever the agent does, it reaches only the accounts and spend you chose, not everything in your shell",
+        "criterion": "C1",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "Only the tools needed",
+        "how": "Keep the default `function_list=None` and list only the tools the task uses",
+        "gives_you": "The model can call only the tools you chose for this agent",
+        "criterion": "C3",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "qwen_agent/agents/fncall_agent.py",
+            "lines": "31",
+            "contains": "function_list: Optional[List[Union[str, Dict, BaseTool]]] = None",
+            "url": "https://github.com/QwenLM/Qwen-Agent/blob/31a4d36d123688581a9e9744427272b33ce940e0/qwen_agent/agents/fncall_agent.py#L31"
+          }
+        ]
+      },
+      {
+        "setup": "The Docker code interpreter",
+        "how": "Run model-written code through `code_interpreter`, with `work_dir` in its config set to an empty directory kept for it",
+        "gives_you": "Code runs in a container that sees only that directory, and the mount stays where you put it",
+        "criterion": "C4",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "qwen_agent/tools/code_interpreter.py",
+            "lines": "80",
+            "contains": "@register_tool('code_interpreter')",
+            "url": "https://github.com/QwenLM/Qwen-Agent/blob/31a4d36d123688581a9e9744427272b33ce940e0/qwen_agent/tools/code_interpreter.py#L80"
+          },
+          {
+            "file": "qwen_agent/tools/code_interpreter.py",
+            "lines": "96-97",
+            "contains": "self.cfg.get('work_dir', self.work_dir)",
+            "url": "https://github.com/QwenLM/Qwen-Agent/blob/31a4d36d123688581a9e9744427272b33ce940e0/qwen_agent/tools/code_interpreter.py#L96-L97"
+          }
+        ]
+      },
+      {
+        "setup": "A clean working directory",
+        "how": "Start the app from a directory with no .env file you didn't write, and point `QWEN_AGENT_DEFAULT_WORKSPACE` at a directory for this app alone",
+        "gives_you": "Settings come only from you, and the document cache holds only this app's content",
+        "criterion": "C6",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "qwen_agent/settings.py",
+            "lines": "27",
+            "contains": "QWEN_AGENT_DEFAULT_WORKSPACE",
+            "url": "https://github.com/QwenLM/Qwen-Agent/blob/31a4d36d123688581a9e9744427272b33ce940e0/qwen_agent/settings.py#L27"
+          }
+        ]
+      },
+      {
+        "setup": "Pinned MCP servers",
+        "how": "In `mcpServers`, name an exact package version for each server and pass only the `env` it needs",
+        "gives_you": "Each server runs the code you chose, with only the credentials you gave it",
+        "criterion": "C7",
+        "source": "operator",
+        "evidence": [
+          {
+            "file": "qwen_agent/tools/mcp_manager.py",
+            "lines": "111",
+            "contains": "mcpServers",
+            "url": "https://github.com/QwenLM/Qwen-Agent/blob/31a4d36d123688581a9e9744427272b33ce940e0/qwen_agent/tools/mcp_manager.py#L111"
+          },
+          {
+            "file": "qwen_agent/tools/mcp_manager.py",
+            "lines": "134-135",
+            "contains": "'env' in server",
+            "url": "https://github.com/QwenLM/Qwen-Agent/blob/31a4d36d123688581a9e9744427272b33ce940e0/qwen_agent/tools/mcp_manager.py#L134-L135"
+          }
+        ]
+      },
+      {
+        "setup": "A model-call budget",
+        "how": "Keep `QWEN_AGENT_MAX_LLM_CALL_PER_RUN` at its default of 20, or lower it for short tasks",
+        "gives_you": "Each agent loop ends after a fixed number of model calls",
+        "criterion": "C10",
+        "source": "default",
+        "evidence": [
+          {
+            "file": "qwen_agent/settings.py",
+            "lines": "24",
+            "contains": "QWEN_AGENT_MAX_LLM_CALL_PER_RUN",
+            "url": "https://github.com/QwenLM/Qwen-Agent/blob/31a4d36d123688581a9e9744427272b33ce940e0/qwen_agent/settings.py#L24"
+          }
+        ]
+      },
+      {
+        "setup": "Its own container or VM",
+        "how": "Run the agent process in a container or VM whose network reaches only the hosts the task needs",
+        "gives_you": "An outer boundary around in-process tools and MCP servers, and a narrow path for data to leave",
+        "criterion": "C5",
+        "source": "operator",
+        "evidence": []
+      },
+      {
+        "setup": "A run record on disk",
+        "how": "Save the message list each run returns, which holds every tool call and result, to storage the agent can't modify",
+        "gives_you": "A record of what the agent did that outlives the process",
+        "criterion": "C9",
+        "source": "operator",
+        "evidence": []
+      }
+    ],
+    "handling": [
+      "Leave `QWEN_AGENT_DEBUG` unset where logs are shared; it writes full model inputs unredacted.",
+      "Parsed documents stay cached in the workspace directory across sessions; deleting that directory clears them."
+    ]
+  },
   "criteria": [
     {
       "id": "C1",

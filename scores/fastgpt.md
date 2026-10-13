@@ -24,6 +24,30 @@
 
 FastGPT isolates code well: code nodes run in a separate sandbox service with chroot, a dropped user ID and a default-deny seccomp filter, and the main app never executes code itself. The dominant risk is everything around the tools: there is no approval step for any tool call, and an app that reads untrusted web pages, files or share-link messages can use its stored credentials to send data out or change external systems unattended. Private-network addresses are reachable from tools unless the operator turns on the internal-IP check, and the shipped deployment's default access configuration needs hardening before exposure.
 
+## Safest setup
+
+FastGPT runs code nodes in a separate, locked-down sandbox service, gives each app only the tools its designer selected, and bounds every run with node and round limits. Tools run without approval using the credentials stored in the app, and the shipped deployment needs hardening before exposure, so the safest setup narrows those credentials and puts your own boundaries around the install.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped tool credentials | Give each app's HTTP, MCP and plugin tools their own credentials, scoped at the provider to what that app needs and read-only where it allows | The external system itself refuses anything outside that grant, whatever the model asks for (C1) |
+| Secrets generated per install | Before first start, replace the administrator password and every fixed key and token in the shipped deployment configuration with values generated for this install | Platform access and the encryption of stored tool credentials rest on secrets only you hold (C8) |
+| Share links for read-only apps | Publish share links only for apps whose tools read, and keep apps with write or send tools for signed-in team members | Anonymous visitors never steer tools that act with the app owner's stored credentials (C1) |
+| The internal-IP check | `CHECK_INTERNAL_IP=true` in the app's environment ([packages/service/env.ts:334](https://github.com/labring/FastGPT/blob/c01b99ba549a44a7415ad2d660802b8211ace89f/packages/service/env.ts#L334)) | HTTP, MCP and file-fetch requests from apps stay off private-network addresses, including the deployment's own services (C3) |
+| Only the tools needed | Keep the default of no tools in a new app and select only the tools each app's task uses ([packages/service/core/workflow/utils/resource.ts:95-101](https://github.com/labring/FastGPT/blob/c01b99ba549a44a7415ad2d660802b8211ace89f/packages/service/core/workflow/utils/resource.ts#L95-L101)) | A published app can call only the tools declared in its version (C3) |
+| Seccomp in the code sandbox | Keep the default `SANDBOX_DISABLE_SECCOMP=false` in the code-sandbox service ([projects/code-sandbox/src/env.ts:55](https://github.com/labring/FastGPT/blob/c01b99ba549a44a7415ad2d660802b8211ace89f/projects/code-sandbox/src/env.ts#L55)) | Code nodes keep their default-deny system-call filter with no direct network access (C4) |
+| A run budget | Keep the default `WORKFLOW_MAX_RUN_TIMES=500`, or lower it for short tasks ([packages/service/env.ts:406](https://github.com/labring/FastGPT/blob/c01b99ba549a44a7415ad2d660802b8211ace89f/packages/service/env.ts#L406)) | Every run, child apps included, ends after a fixed number of node runs (C10) |
+| A private network | Run the deployment on a private network that exposes only the web app, with outbound access limited to the hosts your apps need | An outer boundary around the sandbox services and a narrow path for data to leave (C4) |
+
+### Approving with confidence
+
+- Tool-call and agent nodes run the tools the model picks without a prompt; where a person must decide, build that part as a classic workflow with a user-choice step before the action.
+
+### Handling data
+
+- Console logs default to `LOG_CONSOLE_LEVEL=debug` and are not redacted; set `info` or higher and store them like the data your apps handle.
+- Run records live in the app database and go when a chat is deleted; back up the database where you need a lasting record.
+
 ## Critical gaps
 - A hijacked app can leak knowledge-base data and take irreversible external actions through its HTTP, MCP and plugin tools with no person involved. (ASI01, LLM01; C5). Evidence: [packages/service/core/workflow/dispatch/tools/http468.ts:551-565](https://github.com/labring/FastGPT/blob/c01b99ba549a44a7415ad2d660802b8211ace89f/packages/service/core/workflow/dispatch/tools/http468.ts#L551-L565); [packages/service/support/outLink/runtime/service.ts:408](https://github.com/labring/FastGPT/blob/c01b99ba549a44a7415ad2d660802b8211ace89f/packages/service/support/outLink/runtime/service.ts#L408)
 - No tool call, including HTTP writes, MCP tools, plugins and the sandbox shell, requires human approval. (ASI09, ASI02; C2). Evidence: [packages/service/core/workflow/dispatch/ai/toolcall/toolProvider/createToolCallToolProvider.ts:115](https://github.com/labring/FastGPT/blob/c01b99ba549a44a7415ad2d660802b8211ace89f/packages/service/core/workflow/dispatch/ai/toolcall/toolProvider/createToolCallToolProvider.ts#L115)

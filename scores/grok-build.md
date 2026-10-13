@@ -24,6 +24,31 @@
 
 Grok Build has a carefully engineered approval gate: in its default mode every shell command, edit, MCP call and unknown web fetch is shown to you with the exact command and parsed rule checks, and repo-shipped config waits for a folder-trust decision. But everything you approve runs unsandboxed as you, with your full environment and credentials, and the gate is easy to lose: the first prompt preselects a global always-approve option that persists to every future session, and a trusted repo can turn on bypass mode. There are no cost or time budgets, installed plugins update themselves silently, and secrets are redacted only from telemetry.
 
+## Safest setup
+
+Grok Build asks before every shell command, edit, MCP call and unknown web fetch, and holds repository settings back until you trust the folder. Everything you approve runs on your machine as you, with your full environment, so the safest setup keeps the gate in front of you and adds the sandbox and containment around it.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| A scoped, clean shell | Start Grok from a shell or account that holds only the credentials the task needs, scoped or read-only at each provider | Whatever runs through the agent reaches only the systems you chose, not everything your own shell can (C1) |
+| Per-call approval | Keep Ask mode, pinned with `permission_mode = "ask"` under `[ui]` in ~/.grok/config.toml ([crates/codegen/xai-grok-shell/src/util/config/permissions.rs:7-13](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-shell/src/util/config/permissions.rs#L7-L13); [crates/codegen/xai-grok-shell/src/util/config/permissions.rs:28-29](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-shell/src/util/config/permissions.rs#L28-L29)) | Every shell command, edit, MCP call and sub-agent launch waits for you, and remote settings can't change the mode (C2) |
+| Folder trust | Use the released binary, keep folder trust on (`GROK_FOLDER_TRUST` and `[folder_trust] enabled` left at their default), and trust a folder after reading its settings ([crates/codegen/xai-grok-permission-rules/src/folder_trust.rs:140-148](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-permission-rules/src/folder_trust.rs#L140-L148)) | A repository's MCP servers, hooks, permission rules, agents and instructions load only once you have looked at them (C6) |
+| Only the tools needed | `--disallowed-tools <list>` naming the built-in tools the task doesn't use ([crates/codegen/xai-grok-pager/src/app/cli.rs:661-663](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-pager/src/app/cli.rs#L661-L663)) | The model sees a smaller set of tools for each session (C3) |
+| A secret-free shell environment | Set `inherit = "core"` and `ignore_default_excludes = false` under `[shell_environment_policy]` in ~/.grok/config.toml ([crates/codegen/xai-grok-tools/src/util/shell_env_policy.rs:29-35](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-tools/src/util/shell_env_policy.rs#L29-L35); [crates/codegen/xai-grok-tools/src/util/shell_env_policy.rs:43-45](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-tools/src/util/shell_env_policy.rs#L43-L45); [crates/codegen/xai-grok-config/src/config_override.rs:116-117](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-config/src/config_override.rs#L116-L117)) | Shell commands start with core variables only, without your *KEY*, *SECRET* and *TOKEN* variables (C1) |
+| The OS sandbox | `--sandbox workspace` for everyday work, or `--sandbox strict` for untrusted code, also settable as `GROK_SANDBOX` ([crates/codegen/xai-grok-pager/src/app/cli.rs:700-702](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-pager/src/app/cli.rs#L700-L702)) | The kernel limits where Grok and every command, hook and MCP server it starts can write, and strict also cuts child network on Linux (C4) |
+| A turn limit | `--max-turns <n>` on each run ([crates/codegen/xai-grok-pager/src/app/cli.rs:664-669](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-pager/src/app/cli.rs#L664-L669)) | Every run ends after a fixed number of agent turns (C10) |
+| Its own container or VM | Run Grok in a container or VM with only the project checked out and network limited to the hosts the task needs | An outer boundary around approved commands, and a narrow path for data to leave (C5) |
+
+### Approving with confidence
+
+- Read each prompt and approve calls one at a time with the single-call option; the preselected first row turns on always-approve for this and later sessions.
+- Approving a sub-agent can cover all of its calls when its definition sets bypassPermissions, so read agent definitions before trusting a folder.
+- Files changed by approved commands have no undo, and /rewind restores only the conversation, so commit or back up before a session.
+
+### Handling data
+
+- Transcripts and events.jsonl under ~/.grok/sessions keep tool calls unredacted, and the agent's own shell can edit them; copy them elsewhere when you need a lasting record.
+
 ## Critical gaps
 - By default every shell command, test run, hook and MCP server runs directly on the host as the user, with the home directory, credentials, full environment and network reachable; the OS sandbox is opt-in. (ASI05, T11; C4) — [crates/codegen/xai-grok-shell/src/agent/config.rs:642](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-shell/src/agent/config.rs#L642); [crates/codegen/xai-grok-tools/src/util/shell_env_policy.rs:59](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-tools/src/util/shell_env_policy.rs#L59)
 

@@ -25,6 +25,27 @@ Controls where a risk surface exists: 2.80 / 9.0 (31%); 1 criterion scored SA (s
 
 Mem0's core is small: it runs no code, and its LLM can only add memories inside a scope fixed by code. The main risk is persistence. Anything said in a conversation, including injected instructions, is turned into lasting memory automatically, with no review and no untrusted label, and is served back to agents in later sessions. Multi-tenant apps should also know that get, update, delete and history by memory ID don't check which user owns the memory. Telemetry is on by default.
 
+## Safest setup
+
+Mem0 runs no code, and its model can only add memories inside the user, agent or run scope your code sets. It has no approval step and no handling for untrusted input, and it saves what conversations contain automatically, so the safest setup narrows the keys, ties scope to your own login and keeps the store private.
+
+| Setup | How | What it gives you |
+|---|---|---|
+| Scoped, low-limit keys | Give mem0 its own LLM key with a spending limit at the provider, and a vector-store credential limited to its collection | Whatever happens inside mem0 reaches only this app's memories and budget (C1) |
+| Scope from your login | Pass the `user_id` from your app's authenticated session, and confirm a memory belongs to that user before by-ID get, update, delete or history calls ([mem0/memory/main.py:764](https://github.com/mem0ai/mem0/blob/abb81c88e1f738a8117d8293530fbc31a5ef8fd9/mem0/memory/main.py#L764)) | Each user reads and changes only their own memories (C1) |
+| A token cap per call | Keep the default `max_tokens` of 2000 in the LLM config, or lower it ([mem0/configs/llms/base.py:21](https://github.com/mem0ai/mem0/blob/abb81c88e1f738a8117d8293530fbc31a5ef8fd9/mem0/configs/llms/base.py#L21)) | Each extraction call has a fixed ceiling on model output and cost (C10) |
+| Reviewed text only | Pass `infer=False` to `add` for text your app has already reviewed ([mem0/memory/main.py:760-770](https://github.com/mem0ai/mem0/blob/abb81c88e1f738a8117d8293530fbc31a5ef8fd9/mem0/memory/main.py#L760-L770)) | Only text you chose becomes memory, with no model extraction in the write path (C3) |
+| Memory expiry | Pass `expiration_date="<YYYY-MM-DD>"` to `add` for memories from short-lived sessions ([mem0/memory/main.py:760-769](https://github.com/mem0ai/mem0/blob/abb81c88e1f738a8117d8293530fbc31a5ef8fd9/mem0/memory/main.py#L760-L769)) | Those memories drop out of search and listing after that date (C6) |
+| A private store location | Set the Qdrant `path` to a directory only the app's account can read ([mem0/configs/vector_stores/qdrant.py:16](https://github.com/mem0ai/mem0/blob/abb81c88e1f738a8117d8293530fbc31a5ef8fd9/mem0/configs/vector_stores/qdrant.py#L16)) | Stored memories live outside the shared system temp directory (C6) |
+| Telemetry off | Set `MEM0_TELEMETRY=false` in the environment ([mem0/memory/telemetry.py:14-20](https://github.com/mem0ai/mem0/blob/abb81c88e1f738a8117d8293530fbc31a5ef8fd9/mem0/memory/telemetry.py#L14-L20)) | Memory IDs and hashed user IDs stay on your systems (C8) |
+| Models you installed | Install the spaCy English model yourself at a pinned version, and point HuggingFace models at a local copy you have reviewed | Only model code you chose loads into the process that holds your keys (C7) |
+
+### Handling data
+
+- The history database in ~/.mem0 keeps raw messages and old and new memory text in plaintext; store it like the conversations themselves.
+- That history table is the only record of memory changes and reset() drops it; copy it elsewhere if it needs to outlive the app.
+- Memories come back as plain text from past conversations; review a user's memories with get_all when an agent acts unexpectedly.
+
 ## Critical gaps
 - Optional HuggingFace/sentence-transformers models and the spaCy model mem0 downloads itself load in-process with the application's full credentials and environment. (ASI04, T17, LLM03; C7) — [mem0/utils/spacy_models.py:30-35](https://github.com/mem0ai/mem0/blob/abb81c88e1f738a8117d8293530fbc31a5ef8fd9/mem0/utils/spacy_models.py#L30-L35); [mem0/embeddings/huggingface.py:27](https://github.com/mem0ai/mem0/blob/abb81c88e1f738a8117d8293530fbc31a5ef8fd9/mem0/embeddings/huggingface.py#L27)
 
